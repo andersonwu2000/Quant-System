@@ -1,0 +1,39 @@
+import { MetricCard, ErrorAlert } from "@shared/ui";
+import { fmtCurrency, fmtPct, pnlColor } from "@core/utils";
+import { useT } from "@core/i18n";
+import { useDashboard } from "./hooks/useDashboard";
+import { NavChart } from "./components/NavChart";
+import { PositionTable } from "./components/PositionTable";
+
+export function DashboardPage() {
+  const { t } = useT();
+  const { pf, error, refresh, navHistory, running } = useDashboard();
+
+  if (error) return <ErrorAlert message={error} onRetry={refresh} />;
+  if (!pf) return <div className="text-slate-400">{t.dashboard.loading}</div>;
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold">{t.dashboard.title}</h2>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard label={t.dashboard.nav} value={fmtCurrency(pf.nav)} />
+        <MetricCard label={t.dashboard.cash} value={fmtCurrency(pf.cash)} />
+        <MetricCard
+          label={t.dashboard.dailyPnl}
+          value={fmtCurrency(pf.daily_pnl)}
+          sub={fmtPct(pf.daily_pnl_pct)}
+          className={pnlColor(pf.daily_pnl)}
+        />
+        <MetricCard
+          label={t.dashboard.positions}
+          value={String(pf.positions_count)}
+          sub={t.dashboard.strategiesRunning.replace("{n}", String(running))}
+        />
+      </div>
+
+      {navHistory.length > 1 && <NavChart data={navHistory} />}
+      {pf.positions.length > 0 && <PositionTable positions={pf.positions} />}
+    </div>
+  );
+}

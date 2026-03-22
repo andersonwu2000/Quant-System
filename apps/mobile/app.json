@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Quant Mobile",
+    "slug": "quant-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "quant-mobile",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ursamajor.quantmobile"
+    },
+    "android": {
+      "package": "com.ursamajor.quantmobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A"
+      }
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

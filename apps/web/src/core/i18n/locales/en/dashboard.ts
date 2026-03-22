@@ -1,0 +1,17 @@
+export const dashboard = {
+  title: "Dashboard",
+  nav: "NAV",
+  cash: "Cash",
+  dailyPnl: "Daily P&L",
+  positions: "Positions",
+  strategiesRunning: "{n} strategies running",
+  navRealtime: "NAV (Real-time)",
+  topPositions: "Top Positions",
+  symbol: "Symbol",
+  qty: "Qty",
+  price: "Price",
+  value: "Value",
+  pnl: "P&L",
+  weight: "Weight",
+  loading: "Loading...",
+};

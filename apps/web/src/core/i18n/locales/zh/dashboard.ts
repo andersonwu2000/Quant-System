@@ -1,0 +1,17 @@
+export const dashboard = {
+  title: "儀表板",
+  nav: "淨值",
+  cash: "現金",
+  dailyPnl: "當日損益",
+  positions: "持倉數",
+  strategiesRunning: "{n} 個策略運行中",
+  navRealtime: "淨值（即時）",
+  topPositions: "主要持倉",
+  symbol: "標的",
+  qty: "數量",
+  price: "價格",
+  value: "市值",
+  pnl: "損益",
+  weight: "權重",
+  loading: "載入中...",
+};

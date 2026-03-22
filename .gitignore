@@ -12,3 +12,9 @@ build/
 *.sqlite3
 .claude/
 *.pdf
+
+# Frontend
+node_modules/
+apps/*/dist/
+apps/web/dist/
+bun.lockb

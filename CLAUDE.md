@@ -4,35 +4,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Quantitative trading system — single-process Python monolith for backtesting and paper/live trading. Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance.
+Quantitative trading system — monorepo containing Python backend + React web + React Native mobile. Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance.
+
+**Monorepo structure:**
+- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (root level)
+- `apps/web/` — React 18 + Vite + Tailwind dashboard
+- `apps/mobile/` — React Native + Expo 52 mobile app
+- `apps/shared/` — `@quant/shared` TypeScript package (types, API client, WS manager, format utils)
+
+Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 ## Commands
 
 ```bash
-# Testing
+# === Backend ===
 make test                    # pytest tests/ -v
-pytest tests/unit/test_risk.py -v          # single test file
-pytest tests/unit/test_risk.py::TestMaxPositionWeight -v  # single class
-pytest tests/unit/test_risk.py::TestMaxPositionWeight::test_approve_within_limit -v  # single test
-
-# Linting
 make lint                    # ruff check + mypy strict
-ruff check src/ tests/       # ruff only
-mypy src/                    # mypy only
-
-# Running
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
 make backtest ARGS="--strategy momentum -u AAPL -u MSFT --start 2023-01-01 --end 2024-12-31"
+make migrate                 # alembic upgrade head
 
-# CLI entry point
+# Single test
+pytest tests/unit/test_risk.py -v
+pytest tests/unit/test_risk.py::TestMaxPositionWeight::test_approve_within_limit -v
+
+# CLI
 python -m src.cli.main backtest --strategy momentum -u AAPL --start 2023-01-01 --end 2024-12-31
 python -m src.cli.main server
 python -m src.cli.main status
 python -m src.cli.main factors
 
-# Database
-make migrate                 # alembic upgrade head
+# === Frontend ===
+make install-apps            # bun install (all frontend packages)
+make web                     # web dev server (port 3000)
+make mobile                  # expo dev server
+make web-build               # production build
+make web-typecheck           # tsc --noEmit
+make mobile-typecheck        # tsc --noEmit
+
+# === Full stack ===
+make start                   # backend + web in parallel
+scripts/start.bat            # Windows: backend + web in separate windows
 ```
 
 ## Architecture
@@ -55,6 +68,22 @@ Key design decisions:
 - `src/api/` — FastAPI REST + WebSocket. `AppState` singleton holds runtime state. JWT auth with role hierarchy (viewer < researcher < trader < risk_manager < admin)
 
 **Adding a new strategy**: Create a file in `strategies/`, subclass `Strategy` from `src/strategy/base.py`, implement `name()` and `on_bar(ctx) -> dict[str, float]`. Register it in `src/backtest/engine.py:_resolve_strategy()`.
+
+## Frontend Architecture
+
+**Shared package** (`apps/shared/`):
+- `src/types/` — TypeScript interfaces matching backend Pydantic schemas
+- `src/api/client.ts` — Platform-agnostic HTTP client with `ClientAdapter` injection (each platform provides its own auth/storage)
+- `src/api/ws.ts` — `WSManager` with auto-reconnect and exponential backoff; URL builder injected via `initWs()`
+- `src/api/endpoints.ts` — Typed API endpoint definitions (1:1 with backend routes)
+- `src/utils/format.ts` — Number/currency/date formatters
+
+**Platform adapters** (keep platform-specific code out of shared):
+- Web: `apps/web/src/core/api/client.ts` — localStorage for API key, browser-relative URLs, Vite proxy
+- Mobile: `apps/mobile/src/api/client.ts` — Expo SecureStore for credentials, configurable base URL
+- Color helpers (`pnlColor`) stay per-platform: web uses Tailwind classes, mobile uses hex colors
+
+**Key pattern**: Web and mobile barrel files (`@core/api/index.ts`, etc.) re-export from `@quant/shared`. Feature code imports from `@core/*` — never directly from `@quant/shared`. This keeps feature code platform-unaware while allowing platform-specific extensions.
 
 ## Configuration
 
