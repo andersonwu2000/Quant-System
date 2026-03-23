@@ -1,6 +1,7 @@
 // Types
 export type {
   UserRole,
+  UserInfo,
   Position,
   Portfolio,
   StrategyInfo,
@@ -21,7 +22,7 @@ export type {
 // API client
 export { ApiError, initClient } from "./api/client";
 export type { ClientAdapter } from "./api/client";
-export { get, post, put } from "./api/client";
+export { get, post, put, del } from "./api/client";
 
 // WebSocket
 export { WSManager, initWs } from "./api/ws";

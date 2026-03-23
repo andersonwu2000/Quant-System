@@ -2,6 +2,18 @@
 
 export type UserRole = "viewer" | "researcher" | "trader" | "risk_manager" | "admin";
 
+export interface UserInfo {
+  id: number;
+  username: string;
+  display_name: string;
+  role: UserRole;
+  is_active: boolean;
+  failed_login_count: number;
+  locked_until: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Position {
   symbol: string;
   quantity: number;

@@ -37,6 +37,7 @@ export const zh: Translations = {
     backtest: "回測",
     risk: "風控",
     settings: "設定",
+    admin: "使用者管理",
   },
 
   // dashboard
@@ -194,12 +195,49 @@ export const zh: Translations = {
     settingsSaved: "設定已儲存",
   },
 
+  // admin
+  admin: {
+    title: "使用者管理",
+    addUser: "新增使用者",
+    editUser: "編輯使用者",
+    resetPassword: "重設密碼",
+    deleteUser: "刪除使用者",
+    deleteConfirm: "確定要刪除此使用者嗎？",
+    username: "帳號",
+    displayName: "顯示名稱",
+    password: "密碼",
+    newPassword: "新密碼",
+    role: "角色",
+    active: "啟用",
+    inactive: "停用",
+    createdAt: "建立時間",
+    actions: "操作",
+    noUsers: "尚無使用者",
+    userCreated: "使用者已建立",
+    userUpdated: "使用者已更新",
+    userDeleted: "使用者已刪除",
+    passwordReset: "密碼已重設",
+    cannotDeleteSelf: "無法刪除自己的帳號",
+    roleDescriptions: {
+      viewer: "唯讀",
+      researcher: "唯讀 + 回測",
+      trader: "交易 + 策略",
+      risk_manager: "風控管理",
+      admin: "全部權限",
+    },
+    loginWithPassword: "登入",
+    loginWithApiKey: "以 API Key 登入",
+    usernameLabel: "帳號",
+    passwordLabel: "密碼",
+  },
+
   // settings
   settings: {
     title: "系統設定",
     apiKey: "API 金鑰",
     apiKeyPlaceholder: "輸入 API 金鑰",
     apiKeyHint: "請輸入 API 金鑰以存取系統。預設金鑰：",
+    loginHint: "請輸入帳號和密碼登入系統。",
     save: "儲存",
     saved: "已儲存！",
     systemStatus: "系統狀態",

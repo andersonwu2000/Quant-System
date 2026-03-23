@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Briefcase, Brain, FlaskConical,
   ShieldAlert, Settings, ListOrdered, LogOut,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Users,
 } from "lucide-react";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
@@ -19,7 +19,7 @@ const ROLE_BADGE_COLORS: Record<UserRole, string> = {
 
 export function Sidebar({ onLogout }: { onLogout?: () => void }) {
   const { t } = useT();
-  const { role } = useAuth();
+  const { role, hasRole } = useAuth();
   const [collapsed, setCollapsed] = useState(() => window.matchMedia("(max-width: 767px)").matches);
 
   useEffect(() => {
@@ -36,6 +36,7 @@ export function Sidebar({ onLogout }: { onLogout?: () => void }) {
     { to: "/orders", icon: ListOrdered, label: t.nav.orders },
     { to: "/backtest", icon: FlaskConical, label: t.nav.backtest },
     { to: "/risk", icon: ShieldAlert, label: t.nav.risk },
+    ...(hasRole("admin") ? [{ to: "/admin", icon: Users, label: t.nav.admin }] : []),
     { to: "/settings", icon: Settings, label: t.nav.settings },
   ];
 

@@ -35,6 +35,7 @@ export const en = {
     backtest: "Backtest",
     risk: "Risk",
     settings: "Settings",
+    admin: "Users",
   },
 
   // dashboard
@@ -192,12 +193,49 @@ export const en = {
     settingsSaved: "Settings saved",
   },
 
+  // admin
+  admin: {
+    title: "User Management",
+    addUser: "Add User",
+    editUser: "Edit User",
+    resetPassword: "Reset Password",
+    deleteUser: "Delete User",
+    deleteConfirm: "Are you sure you want to delete this user?",
+    username: "Username",
+    displayName: "Display Name",
+    password: "Password",
+    newPassword: "New Password",
+    role: "Role",
+    active: "Active",
+    inactive: "Inactive",
+    createdAt: "Created",
+    actions: "Actions",
+    noUsers: "No users found",
+    userCreated: "User created",
+    userUpdated: "User updated",
+    userDeleted: "User deleted",
+    passwordReset: "Password reset",
+    cannotDeleteSelf: "Cannot delete your own account",
+    roleDescriptions: {
+      viewer: "Read-only",
+      researcher: "Read + Backtest",
+      trader: "Trading + Strategies",
+      risk_manager: "Risk management",
+      admin: "Full access",
+    },
+    loginWithPassword: "Login",
+    loginWithApiKey: "Login with API Key",
+    usernameLabel: "Username",
+    passwordLabel: "Password",
+  },
+
   // settings
   settings: {
     title: "Settings",
     apiKey: "API Key",
     apiKeyPlaceholder: "Enter API key",
     apiKeyHint: "Please enter your API Key to access the system. Default key:",
+    loginHint: "Please login with your username and password to access the system.",
     save: "Save",
     saved: "Saved!",
     systemStatus: "System Status",

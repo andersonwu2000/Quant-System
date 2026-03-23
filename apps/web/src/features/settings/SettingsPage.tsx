@@ -16,6 +16,9 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
   const { toast } = useToast();
   const { setRole } = useAuth();
   const { data: status, loading } = useApi(systemApi.status);
+  const [loginMode, setLoginMode] = useState<"password" | "apikey">("password");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [key, setKey] = useState("");
   const [saved, setSaved] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -28,7 +31,10 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
     setLoginError("");
     setLoginLoading(true);
     try {
-      const role = await login(key);
+      const credentials = loginMode === "apikey"
+        ? { apiKey: key }
+        : { username, password };
+      const role = await login(credentials);
       setRole(role);
       setSaved(true);
       toast("success", t.toast.settingsSaved);
@@ -41,29 +47,67 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
     }
   };
 
+  const canSubmit = loginMode === "apikey" ? key.trim() : username.trim() && password.trim();
+
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold">{t.settings.title}</h2>
 
       {!isAuthenticated() && (
         <div className="bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl p-4 text-sm">
-          {t.settings.apiKeyHint} <code className="bg-slate-100 dark:bg-surface-dark px-1.5 py-0.5 rounded">dev-key</code>
+          {t.settings.loginHint}
         </div>
       )}
 
       <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 space-y-4 shadow-sm dark:shadow-none">
-        <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{t.settings.apiKey}</p>
-        <div className="flex gap-3">
-          <input
-            type="password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            placeholder={t.settings.apiKeyPlaceholder}
-            className="flex-1 bg-slate-50 dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm"
-          />
+        {loginMode === "password" ? (
+          <>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{t.admin.loginWithPassword}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">{t.admin.usernameLabel}</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder={t.admin.usernameLabel}
+                  className="w-full bg-slate-50 dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">{t.admin.passwordLabel}</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t.admin.passwordLabel}
+                  className="w-full bg-slate-50 dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{t.settings.apiKey}</p>
+            <input
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder={t.settings.apiKeyPlaceholder}
+              className="w-full bg-slate-50 dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm"
+            />
+          </>
+        )}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setLoginMode(loginMode === "password" ? "apikey" : "password")}
+            className="text-xs text-blue-500 hover:text-blue-400 transition-colors"
+          >
+            {loginMode === "password" ? t.admin.loginWithApiKey : t.admin.loginWithPassword}
+          </button>
           <button
             onClick={handleSave}
-            disabled={loginLoading || !key.trim()}
+            disabled={loginLoading || !canSubmit}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors"
           >
             {loginLoading ? "..." : saved ? t.settings.saved : t.settings.save}

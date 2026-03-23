@@ -86,6 +86,22 @@ risk_events_table = sa.Table(
     sa.Column("message", sa.Text),
 )
 
+users_table = sa.Table(
+    "users",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("username", sa.String(64), nullable=False, unique=True),
+    sa.Column("display_name", sa.String(128), nullable=False, server_default=""),
+    sa.Column("password_hash", sa.String(256), nullable=False),
+    sa.Column("password_salt", sa.String(64), nullable=False),
+    sa.Column("role", sa.String(20), nullable=False, server_default="viewer"),
+    sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("1")),
+    sa.Column("failed_login_count", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("locked_until", sa.Text, nullable=True),
+    sa.Column("created_at", sa.Text, nullable=False),
+    sa.Column("updated_at", sa.Text, nullable=False),
+)
+
 # ─── Engine helper ────────────────────────────────────────
 
 DEFAULT_DB_PATH = Path("data/quant.db")

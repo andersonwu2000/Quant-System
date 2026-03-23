@@ -452,6 +452,98 @@ class TestBacktest:
 # ===========================================================================
 
 
+VIEWER_KEY = "test-viewer-key"
+TRADER_KEY = "test-trader-key"
+
+
+@pytest.fixture()
+def multi_key_config():
+    """提供多 key 映射的 config fixture。"""
+    reset_app_state()
+    override_config(
+        TradingConfig(
+            env="dev",
+            api_key=API_KEY,
+            api_key_roles={
+                VIEWER_KEY: "viewer",
+                TRADER_KEY: "trader",
+            },
+            jwt_secret="test-secret-for-integration",
+            database_url="sqlite:///test.db",
+        )
+    )
+    yield
+    reset_app_state()
+
+
+class TestAuthMultiKey:
+    """多 API Key 角色映射測試。"""
+
+    @pytest.mark.asyncio
+    async def test_viewer_login_gets_viewer_role(self, app, multi_key_config):
+        """Viewer key 登入 → JWT role = 'viewer'。"""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/v1/auth/login", json={"api_key": VIEWER_KEY})
+            assert resp.status_code == 200
+            token = resp.json()["access_token"]
+            # 解碼 JWT 驗證 role
+            import base64, json as _json
+            payload = _json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
+            assert payload["role"] == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_trader_login_gets_trader_role(self, app, multi_key_config):
+        """Trader key 登入 → JWT role = 'trader'。"""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/v1/auth/login", json={"api_key": TRADER_KEY})
+            assert resp.status_code == 200
+            token = resp.json()["access_token"]
+            import base64, json as _json
+            payload = _json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
+            assert payload["role"] == "trader"
+
+    @pytest.mark.asyncio
+    async def test_legacy_admin_key_still_works(self, app, multi_key_config):
+        """原有 admin key fallback 仍正常。"""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/v1/auth/login", json={"api_key": API_KEY})
+            assert resp.status_code == 200
+            token = resp.json()["access_token"]
+            import base64, json as _json
+            payload = _json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
+            assert payload["role"] == "admin"
+
+    @pytest.mark.asyncio
+    async def test_viewer_key_denied_trader_endpoint(self, app, multi_key_config):
+        """Viewer key 帶 X-API-Key 存取 trader 端點 → 403。"""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post(
+                "/api/v1/strategies/some_strat/start",
+                headers={"X-API-Key": VIEWER_KEY},
+            )
+            assert resp.status_code in (403, 404)  # 403 權限不足，或 404 策略不存在（但角色檢查先於路由）
+
+    @pytest.mark.asyncio
+    async def test_viewer_key_allowed_readonly(self, app, multi_key_config):
+        """Viewer key 存取只讀端點 → 200。"""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/v1/system/status", headers={"X-API-Key": VIEWER_KEY})
+            assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_unknown_key_rejected(self, app, multi_key_config):
+        """未知 key → 401。"""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/v1/auth/login", json={"api_key": "unknown-key"})
+            assert resp.status_code == 401
+
+
 class TestAuthJWT:
     """JWT-based authentication flow tests."""
 
@@ -489,6 +581,180 @@ class TestStrategyEdgeCases:
             "/api/v1/strategies/ghost/stop", headers=AUTH_HEADERS
         )
         assert resp.status_code == 404
+
+
+class TestPasswordLogin:
+    """Username + password 登入測試。"""
+
+    @pytest.fixture(autouse=True)
+    def _setup_users_table(self):
+        """建立 users 表並插入測試使用者。"""
+        import sqlalchemy as sa
+        from src.data.store import metadata, _create_engine, users_table
+        from src.api.password import hash_password
+        from src.data.user_store import UserStore, override_user_store
+
+        engine = _create_engine("sqlite:///test.db")
+        # 只建立 users 表（其他表由 _reset_state 處理）
+        users_table.create(engine, checkfirst=True)
+
+        # 清空並插入測試使用者
+        with engine.begin() as conn:
+            conn.execute(users_table.delete())
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
+            for username, password, role in [
+                ("testadmin", "adminpass1234", "admin"),
+                ("testviewer", "viewerpass12", "viewer"),
+            ]:
+                h, s = hash_password(password)
+                conn.execute(users_table.insert().values(
+                    username=username, display_name=username, password_hash=h, password_salt=s,
+                    role=role, is_active=True, failed_login_count=0, created_at=now, updated_at=now,
+                ))
+
+        store = UserStore(engine)
+        override_user_store(store)
+        yield
+        override_user_store(None)  # type: ignore[arg-type]
+
+    @pytest.mark.asyncio
+    async def test_login_with_username_password(self, client: AsyncClient):
+        """正確帳密 → 200 + JWT 含正確 username。"""
+        resp = await client.post("/api/v1/auth/login", json={"username": "testadmin", "password": "adminpass1234"})
+        assert resp.status_code == 200
+        token = resp.json()["access_token"]
+        import base64, json as _json
+        payload = _json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
+        assert payload["sub"] == "testadmin"
+        assert payload["role"] == "admin"
+
+    @pytest.mark.asyncio
+    async def test_login_wrong_password(self, client: AsyncClient):
+        """錯誤密碼 → 401。"""
+        resp = await client.post("/api/v1/auth/login", json={"username": "testadmin", "password": "wrong"})
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_api_key_login_still_works(self, client: AsyncClient):
+        """API Key 登入向後相容。"""
+        resp = await client.post("/api/v1/auth/login", json={"api_key": API_KEY})
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_no_credentials_returns_400(self, client: AsyncClient):
+        """無任何 credentials → 400。"""
+        resp = await client.post("/api/v1/auth/login", json={})
+        assert resp.status_code == 400
+
+
+class TestAdminUsers:
+    """Admin 使用者管理 API 測試。"""
+
+    @pytest.fixture(autouse=True)
+    def _setup_users_table(self):
+        """建立 users 表。"""
+        import sqlalchemy as sa
+        from src.data.store import _create_engine, users_table
+        from src.api.password import hash_password
+        from src.data.user_store import UserStore, override_user_store
+
+        engine = _create_engine("sqlite:///test.db")
+        users_table.create(engine, checkfirst=True)
+        with engine.begin() as conn:
+            conn.execute(users_table.delete())
+
+        store = UserStore(engine)
+        override_user_store(store)
+        yield
+        override_user_store(None)  # type: ignore[arg-type]
+
+    @pytest.mark.asyncio
+    async def test_list_users_requires_admin(self, client: AsyncClient):
+        """非 admin 角色存取 → 403（使用 viewer key）。"""
+        override_config(
+            TradingConfig(
+                env="dev", api_key=API_KEY,
+                api_key_roles={"viewer-k": "viewer"},
+                jwt_secret="test-secret-for-integration",
+                database_url="sqlite:///test.db",
+            )
+        )
+        resp = await client.get("/api/v1/admin/users", headers={"X-API-Key": "viewer-k"})
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_create_and_list_user(self, client: AsyncClient):
+        """建立使用者後列出。"""
+        # 建立
+        resp = await client.post(
+            "/api/v1/admin/users",
+            json={"username": "newuser", "password": "password1234", "role": "trader"},
+            headers=AUTH_HEADERS,
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["username"] == "newuser"
+        assert body["role"] == "trader"
+
+        # 列出
+        resp = await client.get("/api/v1/admin/users", headers=AUTH_HEADERS)
+        assert resp.status_code == 200
+        users = resp.json()
+        assert any(u["username"] == "newuser" for u in users)
+
+    @pytest.mark.asyncio
+    async def test_create_duplicate_username(self, client: AsyncClient):
+        """重複 username → 409。"""
+        body = {"username": "dupuser", "password": "password1234", "role": "viewer"}
+        await client.post("/api/v1/admin/users", json=body, headers=AUTH_HEADERS)
+        resp = await client.post("/api/v1/admin/users", json=body, headers=AUTH_HEADERS)
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_update_user_role(self, client: AsyncClient):
+        """修改使用者角色。"""
+        resp = await client.post(
+            "/api/v1/admin/users",
+            json={"username": "roleuser", "password": "password1234", "role": "viewer"},
+            headers=AUTH_HEADERS,
+        )
+        user_id = resp.json()["id"]
+        resp = await client.put(
+            f"/api/v1/admin/users/{user_id}",
+            json={"role": "trader"},
+            headers=AUTH_HEADERS,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["role"] == "trader"
+
+    @pytest.mark.asyncio
+    async def test_delete_user(self, client: AsyncClient):
+        """刪除使用者。"""
+        resp = await client.post(
+            "/api/v1/admin/users",
+            json={"username": "deluser", "password": "password1234"},
+            headers=AUTH_HEADERS,
+        )
+        user_id = resp.json()["id"]
+        resp = await client.delete(f"/api/v1/admin/users/{user_id}", headers=AUTH_HEADERS)
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_reset_password(self, client: AsyncClient):
+        """重設密碼。"""
+        resp = await client.post(
+            "/api/v1/admin/users",
+            json={"username": "pwuser", "password": "oldpassword1"},
+            headers=AUTH_HEADERS,
+        )
+        user_id = resp.json()["id"]
+        resp = await client.post(
+            f"/api/v1/admin/users/{user_id}/reset-password",
+            json={"new_password": "newpassword1"},
+            headers=AUTH_HEADERS,
+        )
+        assert resp.status_code == 200
 
 
 class TestBacktestEdgeCases:

@@ -192,3 +192,51 @@ class SystemStatusResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "0.1.0"
+
+
+# ─── Users ──────────────────────────────────────
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    display_name: str
+    role: str
+    is_active: bool
+    failed_login_count: int
+    locked_until: str | None
+    created_at: str
+    updated_at: str
+
+
+class CreateUserRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    display_name: str = Field(default="", max_length=128)
+    password: str = Field(min_length=8, max_length=128)
+    role: str = Field(default="viewer")
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str) -> str:
+        from src.config import VALID_ROLES
+        if v not in VALID_ROLES:
+            raise ValueError(f"Invalid role: {v}. Must be one of: {sorted(VALID_ROLES)}")
+        return v
+
+
+class UpdateUserRequest(BaseModel):
+    display_name: str | None = Field(default=None, max_length=128)
+    role: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str | None) -> str | None:
+        if v is not None:
+            from src.config import VALID_ROLES
+            if v not in VALID_ROLES:
+                raise ValueError(f"Invalid role: {v}. Must be one of: {sorted(VALID_ROLES)}")
+        return v
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=128)

@@ -16,8 +16,11 @@ export function isAuthenticated(): boolean {
 }
 
 /** Login via backend JWT endpoint — sets httpOnly cookie automatically. Returns the user's role. */
-export async function login(apiKey: string): Promise<UserRole> {
-  const resp = await post<{ access_token: string }>("/api/v1/auth/login", { api_key: apiKey });
+export async function login(credentials: { username: string; password: string } | { apiKey: string }): Promise<UserRole> {
+  const body = "apiKey" in credentials
+    ? { api_key: credentials.apiKey }
+    : { username: credentials.username, password: credentials.password };
+  const resp = await post<{ access_token: string }>("/api/v1/auth/login", body);
   localStorage.setItem(AUTH_STORAGE, "true");
   return extractRoleFromJwt(resp.access_token);
 }
@@ -48,4 +51,4 @@ initWs((channel: Channel) => {
 });
 
 // Re-export shared client functions
-export { ApiError, get, post, put } from "@quant/shared";
+export { ApiError, get, post, put, del } from "@quant/shared";

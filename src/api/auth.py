@@ -27,8 +27,8 @@ def verify_api_key(
     """驗證 API Key 或 JWT Bearer token（含 httpOnly cookie fallback）。"""
     config = get_config()
 
-    # 1. X-API-Key header (constant-time comparison)
-    if api_key and hmac.compare_digest(api_key, config.api_key):
+    # 1. X-API-Key header
+    if api_key and config.resolve_api_key_role(api_key) is not None:
         return "api_key_authenticated"
 
     # 2. Bearer token
@@ -73,9 +73,13 @@ def verify_jwt(
     """驗證 JWT token（Bearer header 或 httpOnly cookie），返回 payload。API Key 視為 admin。"""
     config = get_config()
 
-    # API Key 視為 admin 角色（持有 master key = 最高權限）
-    if api_key and hmac.compare_digest(api_key, config.api_key):
-        return {"sub": "api_key_user", "role": "admin"}
+    # API Key 直接存取：角色由 config 查詢決定（不再寫死 admin）
+    if api_key:
+        role = config.resolve_api_key_role(api_key)
+        if role is not None:
+            payload = {"sub": "api_key_user", "role": role}
+            request.state.user = payload["sub"]
+            return payload
 
     token: str | None = None
 
@@ -94,6 +98,7 @@ def verify_jwt(
 
     try:
         payload: dict[str, Any] = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+        request.state.user = payload.get("sub", "anonymous")
         return payload
     except JWTError:
         raise HTTPException(

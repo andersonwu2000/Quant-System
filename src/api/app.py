@@ -14,7 +14,7 @@ from slowapi.util import get_remote_address
 
 from src.api.auth import verify_ws_token
 from src.api.middleware import AuditMiddleware
-from src.api.routes import auth, backtest, orders, portfolio, risk, strategies, system
+from src.api.routes import admin, auth, backtest, orders, portfolio, risk, strategies, system
 from src.api.ws import ws_manager
 from src.config import get_config
 from src.logging_config import setup_logging
@@ -58,6 +58,7 @@ def create_app() -> FastAPI:
 
     # 註冊路由
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(admin.router, prefix="/api/v1")
     app.include_router(portfolio.router, prefix="/api/v1")
     app.include_router(strategies.router, prefix="/api/v1")
     app.include_router(orders.router, prefix="/api/v1")

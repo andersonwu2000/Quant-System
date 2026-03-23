@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import cast, Literal
+from typing import Any, cast, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.api.auth import verify_api_key
+from src.api.auth import verify_api_key, require_role
 from src.api.schemas import (
     BacktestRequest,
     BacktestResultResponse,
@@ -32,7 +32,7 @@ _background_tasks: set[asyncio.Task[None]] = set()  # prevent GC of fire-and-for
 
 @router.post("", response_model=BacktestSummaryResponse)
 @_limiter.limit("10/minute")
-async def submit_backtest(request: Request, req: BacktestRequest, api_key: str = Depends(verify_api_key)) -> BacktestSummaryResponse:
+async def submit_backtest(request: Request, req: BacktestRequest, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("researcher"))) -> BacktestSummaryResponse:
     """提交回測任務（異步執行）。"""
     state = get_app_state()
     config = get_config()

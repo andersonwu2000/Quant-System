@@ -14,6 +14,7 @@ const OrdersPage = lazy(() => import("@feat/orders").then(m => ({ default: m.Ord
 const BacktestPage = lazy(() => import("@feat/backtest").then(m => ({ default: m.BacktestPage })));
 const RiskPage = lazy(() => import("@feat/risk").then(m => ({ default: m.RiskPage })));
 const SettingsPage = lazy(() => import("@feat/settings").then(m => ({ default: m.SettingsPage })));
+const AdminPage = lazy(() => import("@feat/admin").then(m => ({ default: m.AdminPage })));
 const NotFoundPage = lazy(() => import("@feat/not-found").then(m => ({ default: m.NotFoundPage })));
 
 function RequireKey({ children }: { children: React.ReactNode }) {
@@ -55,6 +56,7 @@ function AppContent() {
               <Route path="/orders" element={<RequireKey><OrdersPage /></RequireKey>} />
               <Route path="/backtest" element={<RequireKey><BacktestPage /></RequireKey>} />
               <Route path="/risk" element={<RequireKey><RiskPage /></RequireKey>} />
+              <Route path="/admin" element={<RequireKey><AdminPage /></RequireKey>} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>

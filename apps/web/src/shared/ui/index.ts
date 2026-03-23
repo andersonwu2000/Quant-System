@@ -8,3 +8,4 @@ export { DataTable } from "./DataTable";
 export type { Column } from "./DataTable";
 export { ExportButton } from "./ExportButton";
 export { ToastProvider, useToast } from "./Toast";
+export { Modal } from "./Modal";

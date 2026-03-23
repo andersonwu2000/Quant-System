@@ -9,7 +9,8 @@
 - **風險管理** — 6 條宣告式規則（持倉上限、單筆限額、日回撤、肥手指偵測…）+ Kill Switch 緊急停損
 - **即時監控** — WebSocket 推送投組、警報、訂單、行情四頻道
 - **多端應用** — Web 儀表板（中/英雙語）+ 行動 App，共用 `@quant/shared` 型別與 API Client
-- **REST API** — FastAPI 非同步框架，JWT 認證，五層角色權限（viewer → admin）
+- **使用者管理** — 資料庫帳號系統 + Admin GUI，PBKDF2 密碼雜湊，帳號鎖定防暴力破解
+- **REST API** — FastAPI 非同步框架，JWT 認證，五層角色權限（viewer → admin），支援帳密 / API Key 雙模登入
 - **CLI 工具** — 回測執行、啟動服務、系統狀態查詢、因子列表
 
 ## 技術棧
@@ -128,8 +129,13 @@ python -m src.cli.main factors    # 列出可用因子
 
 | 端點 | 說明 |
 |------|------|
-| `POST /auth/login` | 登入取得 JWT Token |
+| `POST /auth/login` | 登入取得 JWT Token（支援帳密或 API Key） |
 | `POST /auth/logout` | 登出並撤銷 Token |
+| `GET /admin/users` | 使用者列表（admin only） |
+| `POST /admin/users` | 建立使用者（admin only） |
+| `PUT /admin/users/{id}` | 修改使用者角色/狀態（admin only） |
+| `DELETE /admin/users/{id}` | 刪除使用者（admin only） |
+| `POST /admin/users/{id}/reset-password` | 重設密碼（admin only） |
 | `GET /portfolio` | 投資組合概覽 |
 | `GET /portfolio/positions` | 所有持倉明細 |
 | `GET /strategies` | 策略列表 |
@@ -177,7 +183,10 @@ class MyStrategy(Strategy):
 | `QUANT_DATABASE_URL` | — | PostgreSQL 連線字串 |
 | `QUANT_DATA_SOURCE` | `yahoo` | 資料來源：`yahoo` / `fubon` / `twse` |
 | `QUANT_API_PORT` | `8000` | API 伺服器埠號 |
-| `QUANT_API_KEY` | — | API 認證金鑰 |
+| `QUANT_API_KEY` | — | API 認證金鑰（admin 角色） |
+| `QUANT_API_KEY_ROLES` | `{}` | 額外 API Key→角色映射（JSON） |
+| `QUANT_MAX_FAILED_LOGINS` | `5` | 帳號鎖定前最大失敗次數 |
+| `QUANT_LOCKOUT_MINUTES` | `15` | 帳號鎖定時間（分鐘） |
 | `QUANT_COMMISSION_RATE` | `0.001425` | 券商手續費率 |
 | `QUANT_MAX_POSITION_PCT` | `0.05` | 單一持倉權重上限（5%） |
 | `QUANT_MAX_DAILY_DRAWDOWN_PCT` | `0.03` | 日內回撤上限（3%） |
@@ -195,6 +204,22 @@ make lint              # 程式碼檢查（ruff + mypy strict）
 make web-typecheck     # 網頁前端 TypeScript 型別檢查
 make mobile-typecheck  # 行動端 TypeScript 型別檢查
 ```
+
+### 權限角色
+
+系統支援五層角色，高層級自動包含低層級的所有權限：
+
+| 角色 | 權限 |
+|------|------|
+| `viewer` | 唯讀（檢視投組、策略、訂單、風控） |
+| `researcher` | 唯讀 + 提交回測 |
+| `trader` | 交易下單 + 啟停策略 |
+| `risk_manager` | 風控規則管理 + 緊急熔斷 |
+| `admin` | 全部權限 + 使用者管理 |
+
+管理員可透過 Web UI（`/admin`）或 API 管理使用者帳號。系統支援兩種登入方式：
+- **帳號密碼** — 適用於人工操作，密碼以 PBKDF2-SHA256 雜湊儲存
+- **API Key** — 適用於自動化腳本/機器人，透過環境變數設定
 
 ### 架構設計
 
