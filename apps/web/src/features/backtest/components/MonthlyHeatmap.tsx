@@ -14,7 +14,7 @@ const MONTH_LABELS = [
 ];
 
 function cellColor(value: number | undefined): string {
-  if (value === undefined) return "bg-surface-dark text-slate-600";
+  if (value === undefined) return "bg-slate-100 dark:bg-surface-dark text-slate-400 dark:text-slate-600";
   if (value >= 0.08) return "bg-emerald-600 text-white";
   if (value >= 0.04) return "bg-emerald-500/80 text-white";
   if (value >= 0.02) return "bg-emerald-500/50 text-emerald-100";
@@ -93,23 +93,23 @@ export function MonthlyHeatmap({ data }: { data: NavPoint[] }) {
   if (years.length === 0) return null;
 
   return (
-    <div className="bg-surface rounded-xl p-5">
-      <p className="text-sm font-medium text-slate-400 mb-3">{t.backtest.monthlyReturns}</p>
+    <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+      <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">{t.backtest.monthlyReturns}</p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr>
-              <th className="px-2 py-1.5 text-left text-slate-400 font-medium">{t.backtest.year}</th>
+              <th className="px-2 py-1.5 text-left text-slate-500 dark:text-slate-400 font-medium">{t.backtest.year}</th>
               {MONTH_LABELS.map((m) => (
-                <th key={m} className="px-2 py-1.5 text-center text-slate-400 font-medium">{m}</th>
+                <th key={m} className="px-2 py-1.5 text-center text-slate-500 dark:text-slate-400 font-medium">{m}</th>
               ))}
-              <th className="px-2 py-1.5 text-center text-slate-400 font-medium">{t.backtest.yearly}</th>
+              <th className="px-2 py-1.5 text-center text-slate-500 dark:text-slate-400 font-medium">{t.backtest.yearly}</th>
             </tr>
           </thead>
           <tbody>
             {years.map((year) => (
               <tr key={year}>
-                <td className="px-2 py-1.5 text-slate-300 font-medium">{year}</td>
+                <td className="px-2 py-1.5 text-slate-700 dark:text-slate-300 font-medium">{year}</td>
                 {Array.from({ length: 12 }, (_, m) => {
                   const v = grid.get(`${year}-${m}`);
                   return (

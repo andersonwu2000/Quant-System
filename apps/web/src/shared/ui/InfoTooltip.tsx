@@ -10,11 +10,11 @@ function InfoIcon() {
 
 export function InfoTooltip({ description }: { description: string }) {
   return (
-    <span className="relative group inline-flex items-center ml-1.5 text-slate-500 hover:text-slate-300 cursor-default">
+    <span className="relative group inline-flex items-center ml-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-default">
       <InfoIcon />
-      <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-72 rounded-lg bg-slate-800 border border-slate-600 px-3 py-2 text-xs text-slate-200 leading-relaxed shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
+      <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-72 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 leading-relaxed shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
         {description}
-        <span className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-600" />
+        <span className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-200 dark:border-t-slate-600" />
       </span>
     </span>
   );

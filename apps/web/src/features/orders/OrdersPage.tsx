@@ -55,7 +55,7 @@ export function OrdersPage() {
           <button
             onClick={() => setShowForm(!showForm)}
             aria-label={showForm ? t.common.cancel : t.orders.newOrder}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors"
           >
             {showForm ? t.common.cancel : t.orders.newOrder}
           </button>
@@ -81,8 +81,8 @@ export function OrdersPage() {
             onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               filter === f
-                ? "bg-blue-500/20 text-blue-400"
-                : "text-slate-400 hover:text-slate-200 hover:bg-surface"
+                ? "bg-blue-500/20 text-blue-600 dark:text-blue-400"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-surface"
             }`}
           >
             {filterLabels[f]}
@@ -94,10 +94,10 @@ export function OrdersPage() {
       {loading && <TableSkeleton rows={8} cols={10} />}
 
       {!loading && !error && (
-        <div className="bg-surface rounded-xl p-5 overflow-x-auto">
+        <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 overflow-x-auto border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-slate-400 border-b border-surface-light">
+              <tr className="text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-surface-light">
                 <th className="text-left py-2">{t.orders.time}</th>
                 <th className="text-left py-2">{t.orders.symbol}</th>
                 <th className="text-left py-2">{t.orders.side}</th>
@@ -112,7 +112,7 @@ export function OrdersPage() {
             </thead>
             <tbody>
               {orderList?.map((o) => (
-                <tr key={o.id} className="border-b border-surface-light/50 hover:bg-surface-light/30">
+                <tr key={o.id} className="border-b border-slate-100 dark:border-surface-light/50 hover:bg-slate-50 dark:hover:bg-surface-light/30">
                   <td className="py-2 whitespace-nowrap">
                     <span className="text-slate-400">{fmtDate(o.created_at)}</span>{" "}
                     {fmtTime(o.created_at)}

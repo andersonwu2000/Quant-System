@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { useT } from "@core/i18n";
+import { useTheme } from "@core/theme";
+import { getChartColors } from "@shared/utils/chartColors";
 import type { BacktestHistoryEntry } from "../hooks/useBacktestHistory";
 
 const COLORS = ["#3B82F6", "#22C55E", "#F59E0B", "#EF4444"];
@@ -11,6 +13,8 @@ interface Props {
 
 export function CompareChart({ entries }: Props) {
   const { t } = useT();
+  const { isDark } = useTheme();
+  const c = getChartColors(isDark);
   const { data, names } = useMemo(() => {
     const dateMap = new Map<string, Record<string, number>>();
     for (const entry of entries) {
@@ -34,14 +38,14 @@ export function CompareChart({ entries }: Props) {
   if (entries.length < 2 || data.length === 0) return null;
 
   return (
-    <div className="bg-surface rounded-xl p-5">
-      <p className="text-sm font-medium text-slate-400 mb-3">{t.backtest.navComparison}</p>
+    <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+      <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">{t.backtest.navComparison}</p>
       <ResponsiveContainer width="100%" height={320}>
         <LineChart data={data}>
-          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748B" }} tickFormatter={(v) => v.slice(5)} />
-          <YAxis tick={{ fontSize: 11, fill: "#64748B" }} tickFormatter={(v: number) => `${v.toFixed(0)}%`} />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: c.tick }} tickFormatter={(v) => v.slice(5)} />
+          <YAxis tick={{ fontSize: 11, fill: c.tick }} tickFormatter={(v: number) => `${v.toFixed(0)}%`} />
           <Tooltip
-            contentStyle={{ backgroundColor: "#1E293B", border: "none", borderRadius: "8px", fontSize: 12 }}
+            contentStyle={{ backgroundColor: c.tooltip.bg, border: `1px solid ${c.tooltip.border}`, borderRadius: "8px", fontSize: 12 }}
             formatter={(value: number) => [`${value.toFixed(2)}%`]}
           />
           <Legend />

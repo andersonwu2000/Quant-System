@@ -10,10 +10,18 @@ body {
 ::-webkit-scrollbar {
   width: 6px;
 }
+:root {
+  --scrollbar-track: #e2e8f0;
+  --scrollbar-thumb: #94a3b8;
+}
+:root.dark {
+  --scrollbar-track: #0f172a;
+  --scrollbar-thumb: #334155;
+}
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: var(--scrollbar-track);
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }

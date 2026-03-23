@@ -10,7 +10,7 @@ export function NotFoundPage() {
         <p className="text-slate-400">{t.notFound.title}</p>
         <Link
           to="/"
-          className="inline-block px-6 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
+          className="inline-block px-6 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors"
         >
           {t.notFound.backLink}
         </Link>

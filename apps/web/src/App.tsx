@@ -43,7 +43,7 @@ function AppContent() {
 
   return (
     <I18nContext.Provider value={i18nValue}>
-      <div className="flex min-h-screen bg-slate-50 dark:bg-surface-dark text-slate-900 dark:text-slate-100">
+      <div className="flex min-h-screen bg-slate-200 dark:bg-surface-dark text-slate-900 dark:text-slate-100">
         <Sidebar onLogout={isAuthenticated() ? handleLogout : undefined} />
         <main className="flex-1 p-6 overflow-auto">
           <Suspense fallback={<div className="text-slate-500 dark:text-slate-400 p-6">Loading...</div>}>

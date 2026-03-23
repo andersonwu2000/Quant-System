@@ -5,6 +5,7 @@ export type Theme = "light" | "dark" | "system";
 interface ThemeContextValue {
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  isDark: boolean;
 }
 
 const STORAGE_KEY = "quant-theme";
@@ -12,6 +13,7 @@ const STORAGE_KEY = "quant-theme";
 const ThemeContext = createContext<ThemeContextValue>({
   theme: "system",
   setTheme: () => {},
+  isDark: false,
 });
 
 function getStoredTheme(): Theme {
@@ -31,6 +33,7 @@ function applyTheme(theme: Theme) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(getStoredTheme);
+  const [sysDark, setSysDark] = useState(getSystemDark);
 
   const setTheme = useCallback((t: Theme) => {
     localStorage.setItem(STORAGE_KEY, t);
@@ -46,7 +49,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => {
-      // Only re-apply if using system preference
+      setSysDark(getSystemDark());
       if (getStoredTheme() === "system") {
         applyTheme("system");
       }
@@ -55,7 +58,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
+  const isDark = theme === "dark" || (theme === "system" && sysDark);
+  const value = useMemo(() => ({ theme, setTheme, isDark }), [theme, setTheme, isDark]);
 
   return (
     <ThemeContext.Provider value={value}>

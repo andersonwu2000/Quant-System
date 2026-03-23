@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { useT } from "@core/i18n";
+import { useTheme } from "@core/theme";
+import { getChartColors } from "@shared/utils/chartColors";
 import type { NavPoint } from "@quant/shared";
 
 interface DrawdownPoint {
@@ -19,26 +21,28 @@ function computeDrawdown(data: NavPoint[]): DrawdownPoint[] {
 
 export function DrawdownChart({ data }: { data: NavPoint[] }) {
   const { t } = useT();
+  const { isDark } = useTheme();
+  const c = getChartColors(isDark);
   const ddData = useMemo(() => computeDrawdown(data), [data]);
 
   return (
-    <div className="bg-surface rounded-xl p-5">
-      <p className="text-sm font-medium text-slate-400 mb-3">{t.backtest.drawdown}</p>
+    <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+      <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">{t.backtest.drawdown}</p>
       <ResponsiveContainer width="100%" height={320}>
         <AreaChart data={ddData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <CartesianGrid strokeDasharray="3 3" stroke={c.grid} />
           <XAxis
             dataKey="date"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
+            tick={{ fill: c.tick, fontSize: 11 }}
             tickFormatter={(v: string) => v.slice(5)}
           />
           <YAxis
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
+            tick={{ fill: c.tick, fontSize: 12 }}
             domain={["auto", 0]}
             tickFormatter={(v: number) => `${v.toFixed(0)}%`}
           />
           <Tooltip
-            contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8 }}
+            contentStyle={{ background: c.tooltip.bg, border: `1px solid ${c.tooltip.border}`, borderRadius: 8 }}
             formatter={(value: number) => [`${value.toFixed(2)}%`, t.backtest.drawdown]}
           />
           <Area

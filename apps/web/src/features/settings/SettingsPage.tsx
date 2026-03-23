@@ -51,7 +51,7 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         </div>
       )}
 
-      <div className="bg-white dark:bg-surface rounded-xl p-5 space-y-4 shadow-sm dark:shadow-none">
+      <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 space-y-4 shadow-sm dark:shadow-none">
         <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{t.settings.apiKey}</p>
         <div className="flex gap-3">
           <input
@@ -64,7 +64,7 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
           <button
             onClick={handleSave}
             disabled={loginLoading || !key.trim()}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors"
           >
             {loginLoading ? "..." : saved ? t.settings.saved : t.settings.save}
           </button>
@@ -74,7 +74,7 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         )}
       </div>
 
-      <div className="bg-white dark:bg-surface rounded-xl p-5 space-y-4 shadow-sm dark:shadow-none">
+      <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 space-y-4 shadow-sm dark:shadow-none">
         <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{t.settings.language}</p>
         <div className="flex gap-2">
           {(Object.entries(langLabels) as [Lang, string][]).map(([code, label]) => (
@@ -93,7 +93,7 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-surface rounded-xl p-5 space-y-4 shadow-sm dark:shadow-none">
+      <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 space-y-4 shadow-sm dark:shadow-none">
         <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{t.settings.theme}</p>
         <div className="flex gap-2">
           {(["light", "dark", "system"] as Theme[]).map((option) => {

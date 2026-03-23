@@ -70,7 +70,7 @@ export function StrategiesPage() {
       <Skeleton className="h-7 w-40" />
       <div className="grid gap-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-surface rounded-xl px-5 py-4">
+          <div key={i} className="bg-slate-50 dark:bg-surface rounded-xl px-5 py-4 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
             <div className="flex items-center gap-3">
               <Skeleton className="h-5 w-32" />
               <Skeleton className="h-5 w-16" />
@@ -96,7 +96,7 @@ export function StrategiesPage() {
           const isExpanded = expanded === s.name;
 
           return (
-            <div key={s.name} className="bg-surface rounded-xl overflow-hidden">
+            <div key={s.name} className="bg-slate-50 dark:bg-surface rounded-xl overflow-hidden border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
               <div className="px-5 py-4 flex items-center gap-3">
                 <div className="w-44 shrink-0">
                   <p className="font-semibold flex items-center gap-1.5">
@@ -120,8 +120,8 @@ export function StrategiesPage() {
                     disabled={toggling === s.name}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
                       s.status === "running"
-                        ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
-                        : "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                        ? "bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/25"
+                        : "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-500/25"
                     }`}
                   >
                     {s.status === "running" ? (
@@ -138,7 +138,7 @@ export function StrategiesPage() {
                   className="overflow-hidden transition-all duration-300 ease-in-out"
                   style={{ maxHeight: isExpanded ? "200px" : "0px" }}
                 >
-                  <p className="px-5 pb-4 text-sm text-slate-400 leading-relaxed border-t border-surface-light/40 pt-3">
+                  <p className="px-5 pb-4 text-sm text-slate-500 dark:text-slate-400 leading-relaxed border-t border-slate-100 dark:border-surface-light/40 pt-3">
                     {description}
                   </p>
                 </div>

@@ -25,7 +25,7 @@ export function AnimatedSelect({ value, options, onChange }: Props) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-full bg-surface-dark border border-surface-light rounded-lg px-3 py-2 text-sm flex items-center justify-between transition-colors hover:border-slate-500"
+        className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm flex items-center justify-between transition-colors hover:border-slate-400 dark:hover:border-slate-500"
       >
         <span>{current}</span>
         <svg
@@ -38,7 +38,7 @@ export function AnimatedSelect({ value, options, onChange }: Props) {
       </button>
 
       <div
-        className="absolute z-20 left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl overflow-hidden transition-all duration-200 origin-top"
+        className="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl overflow-hidden transition-all duration-200 origin-top"
         style={{
           opacity: open ? 1 : 0,
           transform: open ? "scaleY(1) translateY(0)" : "scaleY(0.92) translateY(-6px)",
@@ -50,8 +50,8 @@ export function AnimatedSelect({ value, options, onChange }: Props) {
             key={o.value}
             type="button"
             onClick={() => { onChange(o.value); setOpen(false); }}
-            className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-slate-700 ${
-              value === o.value ? "text-blue-400 bg-blue-500/10" : "text-slate-200"
+            className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-slate-100 dark:hover:bg-slate-700 ${
+              value === o.value ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10" : "text-slate-700 dark:text-slate-200"
             }`}
           >
             {o.label}

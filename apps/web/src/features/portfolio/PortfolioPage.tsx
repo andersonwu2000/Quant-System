@@ -25,34 +25,34 @@ export function PortfolioPage() {
       <h2 className="text-xl font-bold">{t.portfolio.title}</h2>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 text-sm">
-        <div className="bg-surface rounded-xl p-4">
-          <p className="text-slate-400">{t.dashboard.nav}</p>
+        <div className="bg-slate-50 dark:bg-surface rounded-xl p-4 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+          <p className="text-slate-500 dark:text-slate-400">{t.dashboard.nav}</p>
           <p className="text-lg font-bold">{fmtCurrency(pf.nav)}</p>
         </div>
-        <div className="bg-surface rounded-xl p-4">
-          <p className="text-slate-400">{t.dashboard.cash}</p>
+        <div className="bg-slate-50 dark:bg-surface rounded-xl p-4 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+          <p className="text-slate-500 dark:text-slate-400">{t.dashboard.cash}</p>
           <p className="text-lg font-bold">{fmtCurrency(pf.cash)}</p>
         </div>
-        <div className="bg-surface rounded-xl p-4">
-          <p className="text-slate-400">{t.portfolio.grossExposure}</p>
+        <div className="bg-slate-50 dark:bg-surface rounded-xl p-4 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+          <p className="text-slate-500 dark:text-slate-400">{t.portfolio.grossExposure}</p>
           <p className="text-lg font-bold">{fmtPct(pf.gross_exposure)}</p>
         </div>
-        <div className="bg-surface rounded-xl p-4">
-          <p className="text-slate-400">{t.portfolio.netExposure}</p>
+        <div className="bg-slate-50 dark:bg-surface rounded-xl p-4 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+          <p className="text-slate-500 dark:text-slate-400">{t.portfolio.netExposure}</p>
           <p className="text-lg font-bold">{fmtPct(pf.net_exposure)}</p>
         </div>
-        <div className="bg-surface rounded-xl p-4">
-          <p className="text-slate-400">{t.dashboard.dailyPnl}</p>
+        <div className="bg-slate-50 dark:bg-surface rounded-xl p-4 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+          <p className="text-slate-500 dark:text-slate-400">{t.dashboard.dailyPnl}</p>
           <p className={`text-lg font-bold ${pnlColor(pf.daily_pnl)}`}>
             {fmtCurrency(pf.daily_pnl)} ({fmtPct(pf.daily_pnl_pct)})
           </p>
         </div>
       </div>
 
-      <div className="bg-surface rounded-xl p-5 overflow-x-auto">
+      <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 overflow-x-auto border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-slate-500 border-b border-surface-light">
+            <tr className="text-slate-500 border-b border-slate-200 dark:border-surface-light">
               <th className="text-left py-2">{t.dashboard.symbol}</th>
               <th className="text-right py-2">{t.portfolio.quantity}</th>
               <th className="text-right py-2">{t.portfolio.avgCost}</th>
@@ -64,7 +64,7 @@ export function PortfolioPage() {
           </thead>
           <tbody>
             {pf.positions.map((p) => (
-              <tr key={p.symbol} className="border-b border-surface-light/50 hover:bg-surface-light/30">
+              <tr key={p.symbol} className="border-b border-slate-100 dark:border-surface-light/50 hover:bg-slate-50 dark:hover:bg-surface-light/30">
                 <td className="py-2 font-medium">{p.symbol}</td>
                 <td className="text-right py-2">{p.quantity}</td>
                 <td className="text-right py-2">${p.avg_cost?.toFixed(2) ?? "—"}</td>

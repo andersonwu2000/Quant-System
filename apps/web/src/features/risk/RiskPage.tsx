@@ -76,7 +76,7 @@ export function RiskPage() {
           <button onClick={handleKill}
             disabled={killLoading}
             aria-label={t.risk.killSwitch}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors">
             <ShieldOff size={16} /> {killLoading ? "..." : t.risk.killSwitch}
           </button>
         )}
@@ -86,14 +86,14 @@ export function RiskPage() {
 
       {rulesError && <ErrorAlert message={rulesError} onRetry={refreshRules} />}
       {!rulesError && (
-        <div className="bg-surface rounded-xl p-5">
-          <p className="text-sm font-medium text-slate-400 mb-3">{t.risk.riskRules}</p>
+        <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">{t.risk.riskRules}</p>
           <div className="space-y-2">
             {rules?.map((r) => {
               const descKey = getRuleDescKey(r.name);
               const description = descKey ? t.risk.ruleDescriptions[descKey] : null;
               return (
-                <div key={r.name} className="flex items-center justify-between py-2 border-b border-surface-light/50">
+                <div key={r.name} className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-surface-light/50">
                   <span className="font-medium text-sm flex items-center">
                     {r.name}
                     {description && <InfoTooltip description={description} />}
@@ -106,8 +106,8 @@ export function RiskPage() {
                       aria-checked={r.enabled}
                       className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 ${
                         r.enabled
-                          ? "bg-emerald-500/20 text-emerald-400"
-                          : "bg-slate-500/20 text-slate-400"
+                          ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+                          : "bg-slate-100 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400"
                       }`}
                     >
                       {r.enabled ? t.risk.enabled : t.risk.disabled}
@@ -115,8 +115,8 @@ export function RiskPage() {
                   ) : (
                     <span className={`px-3 py-1 rounded-md text-xs font-semibold ${
                       r.enabled
-                        ? "bg-emerald-500/20 text-emerald-400"
-                        : "bg-slate-500/20 text-slate-400"
+                        ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+                        : "bg-slate-100 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400"
                     }`}>
                       {r.enabled ? t.risk.enabled : t.risk.disabled}
                     </span>
@@ -130,12 +130,12 @@ export function RiskPage() {
 
       {alertsError && <ErrorAlert message={alertsError} onRetry={refreshAlerts} />}
       {!alertsError && (
-        <div className="bg-surface rounded-xl p-5" role="alert" aria-live="polite">
-          <p className="text-sm font-medium text-slate-400 mb-3">{t.risk.recentAlerts}</p>
+        <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none" role="alert" aria-live="polite">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">{t.risk.recentAlerts}</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-slate-400 border-b border-surface-light">
+                <tr className="text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-surface-light">
                   <th className="text-left py-2">{t.risk.time}</th>
                   <th className="text-left py-2">{t.risk.rule}</th>
                   <th className="text-left py-2">{t.risk.severity}</th>
@@ -147,7 +147,7 @@ export function RiskPage() {
               </thead>
               <tbody>
                 {alerts?.map((a, i) => (
-                  <tr key={`${a.timestamp}-${a.rule_name}-${i}`} className="border-b border-surface-light/50 hover:bg-surface-light/30">
+                  <tr key={`${a.timestamp}-${a.rule_name}-${i}`} className="border-b border-slate-100 dark:border-surface-light/50 hover:bg-slate-50 dark:hover:bg-surface-light/30">
                     <td className="py-2 whitespace-nowrap">
                       <span className="text-slate-400">{fmtDate(a.timestamp)}</span> {fmtTime(a.timestamp)}
                     </td>

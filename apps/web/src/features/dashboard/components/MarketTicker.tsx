@@ -72,8 +72,8 @@ export function MarketTicker() {
   if (list.length === 0) return null;
 
   return (
-    <div className="bg-surface rounded-xl px-4 py-3 overflow-hidden">
-      <p className="text-xs font-medium text-slate-400 mb-2">{t.dashboard.marketTicker}</p>
+    <div className="bg-slate-50 dark:bg-surface rounded-xl px-4 py-3 overflow-hidden border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">
+      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">{t.dashboard.marketTicker}</p>
       <div className="flex gap-6 overflow-x-auto scrollbar-hide">
         {list.map((item) => {
           const flash = state.flashes[item.symbol];
@@ -90,7 +90,7 @@ export function MarketTicker() {
               key={item.symbol}
               className={`flex items-center gap-3 shrink-0 rounded-lg px-2 py-1 transition-colors duration-300 ${flashBg}`}
             >
-              <span className="text-sm font-semibold text-slate-200">{item.symbol}</span>
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{item.symbol}</span>
               <span className={`text-sm font-mono ${colorClass} transition-colors duration-300`}>
                 {item.price.toFixed(2)}
               </span>
