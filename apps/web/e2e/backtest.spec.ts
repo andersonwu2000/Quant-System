@@ -26,16 +26,10 @@ test.describe("Backtest page", () => {
     const form = page.locator("form");
     await expect(form).toBeVisible({ timeout: 5_000 });
 
-    // Fill universe field — clear and type
-    const universeInput = form.locator('input[required]').first();
-    await universeInput.clear();
-    await universeInput.fill("AAPL,MSFT,GOOGL");
-
-    // Set start date
+    // Universe is pre-filled via UniversePicker; just set dates
     const startInput = form.locator('input[type="date"]').first();
     await startInput.fill("2023-01-01");
 
-    // Set end date
     const endInput = form.locator('input[type="date"]').nth(1);
     await endInput.fill("2024-01-01");
 

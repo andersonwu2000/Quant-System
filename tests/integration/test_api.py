@@ -488,7 +488,8 @@ class TestAuthMultiKey:
             assert resp.status_code == 200
             token = resp.json()["access_token"]
             # 解碼 JWT 驗證 role
-            import base64, json as _json
+            import base64
+            import json as _json
             payload = _json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
             assert payload["role"] == "viewer"
 
@@ -500,7 +501,8 @@ class TestAuthMultiKey:
             resp = await c.post("/api/v1/auth/login", json={"api_key": TRADER_KEY})
             assert resp.status_code == 200
             token = resp.json()["access_token"]
-            import base64, json as _json
+            import base64
+            import json as _json
             payload = _json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
             assert payload["role"] == "trader"
 
@@ -512,7 +514,8 @@ class TestAuthMultiKey:
             resp = await c.post("/api/v1/auth/login", json={"api_key": API_KEY})
             assert resp.status_code == 200
             token = resp.json()["access_token"]
-            import base64, json as _json
+            import base64
+            import json as _json
             payload = _json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
             assert payload["role"] == "admin"
 
@@ -589,8 +592,7 @@ class TestPasswordLogin:
     @pytest.fixture(autouse=True)
     def _setup_users_table(self):
         """建立 users 表並插入測試使用者。"""
-        import sqlalchemy as sa
-        from src.data.store import metadata, _create_engine, users_table
+        from src.data.store import _create_engine, users_table
         from src.api.password import hash_password
         from src.data.user_store import UserStore, override_user_store
 
@@ -624,7 +626,8 @@ class TestPasswordLogin:
         resp = await client.post("/api/v1/auth/login", json={"username": "testadmin", "password": "adminpass1234"})
         assert resp.status_code == 200
         token = resp.json()["access_token"]
-        import base64, json as _json
+        import base64
+        import json as _json
         payload = _json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
         assert payload["sub"] == "testadmin"
         assert payload["role"] == "admin"
@@ -654,9 +657,7 @@ class TestAdminUsers:
     @pytest.fixture(autouse=True)
     def _setup_users_table(self):
         """建立 users 表。"""
-        import sqlalchemy as sa
         from src.data.store import _create_engine, users_table
-        from src.api.password import hash_password
         from src.data.user_store import UserStore, override_user_store
 
         engine = _create_engine("sqlite:///test.db")
