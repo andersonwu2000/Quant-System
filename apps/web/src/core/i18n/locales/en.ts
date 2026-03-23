@@ -1,7 +1,25 @@
 export const en = {
-  // common
   appName: "Quant Trading",
   appVersion: "System v0.1.0",
+  common: {
+    cancel: "Cancel",
+    submit: "Submit",
+    retry: "Retry",
+    reload: "Reload",
+    exportCSV: "Export CSV",
+    noData: "No data",
+    rows: "rows",
+    errorTitle: "Something went wrong",
+    unexpectedError: "An unexpected error occurred",
+    orderFailed: "Order failed",
+    requestFailed: "Request failed",
+    logout: "Logout",
+    expandDescription: "Expand description",
+  },
+  notFound: {
+    title: "Page not found",
+    backLink: "Back to Dashboard",
+  },
   nav: {
     dashboard: "Dashboard",
     portfolio: "Portfolio",
@@ -74,6 +92,9 @@ export const en = {
     strategy: "Strategy",
     status: "Status",
     noOrders: "No orders found",
+    newOrder: "New Order",
+    market: "Market",
+    mktIfEmpty: "MKT if empty",
   },
 
   // backtest
@@ -101,6 +122,20 @@ export const en = {
     winRate: "Win Rate",
     totalTrades: "Total Trades",
     navCurve: "NAV Curve",
+    history: "History",
+    clearAll: "Clear all",
+    navComparison: "NAV Comparison (%)",
+    comparison: "Comparison",
+    metric: "Metric",
+    volatility: "Volatility",
+    trades: "Trades",
+    commission: "Commission",
+    errorEndDate: "End date must be after start date",
+    errorCash: "Initial cash must be positive",
+    errorUniverse: "Universe must have at least 1 symbol",
+    timedOut: "Backtest timed out (30 minutes)",
+    failed: "Backtest failed",
+    selectForComparison: "Select for comparison",
   },
 
   // risk

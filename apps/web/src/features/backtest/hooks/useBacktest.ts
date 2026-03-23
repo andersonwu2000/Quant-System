@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { backtestApi } from "../api";
+import { useT } from "@core/i18n";
 import type { BacktestRequest, BacktestResult } from "@quant/shared";
 
 export function useBacktest() {
+  const { t } = useT();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export function useBacktest() {
       let status = summary.status;
       while (status === "running" && mountedRef.current) {
         if (Date.now() - pollStart > MAX_POLL_MS) {
-          setError("Backtest timed out (30 minutes)");
+          setError(t.backtest.timedOut);
           return null;
         }
         await new Promise((r) => setTimeout(r, 2000));
@@ -49,11 +51,11 @@ export function useBacktest() {
         if (mountedRef.current) setResult(r);
         return r;
       } else if (status === "failed") {
-        if (mountedRef.current) setError("Backtest failed");
+        if (mountedRef.current) setError(t.backtest.failed);
       }
     } catch (err) {
       if (mountedRef.current) {
-        setError(err instanceof Error ? err.message : "Request failed");
+        setError(err instanceof Error ? err.message : t.common.requestFailed);
       }
     } finally {
       if (mountedRef.current) {

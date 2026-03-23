@@ -32,7 +32,7 @@ export function OrderForm({ onSubmitted }: Props) {
       setPrice("");
       onSubmitted();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Order failed");
+      setError(err instanceof Error ? err.message : t.common.orderFailed);
     } finally {
       setSubmitting(false);
     }
@@ -40,7 +40,7 @@ export function OrderForm({ onSubmitted }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-surface rounded-xl p-5 space-y-4">
-      <p className="text-sm font-medium text-slate-400">New Order</p>
+      <p className="text-sm font-medium text-slate-400">{t.orders.newOrder}</p>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <label className="space-y-1">
           <span className="text-xs text-slate-500">{t.orders.symbol}</span>
@@ -92,7 +92,7 @@ export function OrderForm({ onSubmitted }: Props) {
         </label>
         <label className="space-y-1">
           <span className="text-xs text-slate-500">
-            {t.orders.price} (MKT if empty)
+            {t.orders.price} ({t.orders.mktIfEmpty})
           </span>
           <input
             type="number"
@@ -100,7 +100,7 @@ export function OrderForm({ onSubmitted }: Props) {
             value={price}
             min={0}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder="Market"
+            placeholder={t.orders.market}
             className="w-full bg-surface-dark border border-surface-light rounded-lg px-3 py-2 text-sm"
           />
         </label>
@@ -110,7 +110,7 @@ export function OrderForm({ onSubmitted }: Props) {
             disabled={submitting || !symbol.trim() || !quantity}
             className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
-            {submitting ? "..." : "Submit"}
+            {submitting ? "..." : t.common.submit}
           </button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { fmtPct, fmtNum, fmtDate } from "@core/utils";
+import { useT } from "@core/i18n";
 import type { BacktestHistoryEntry } from "../hooks/useBacktestHistory";
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function HistoryPanel({ history, onSelect, onRemove, onClear, selectedIds, onToggleCompare }: Props) {
+  const { t } = useT();
   const [expanded, setExpanded] = useState(true);
 
   if (history.length === 0) return null;
@@ -23,13 +25,13 @@ export function HistoryPanel({ history, onSelect, onRemove, onClear, selectedIds
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-5 py-3 text-sm font-medium text-slate-400 hover:text-slate-200 transition-colors"
       >
-        <span>History ({history.length})</span>
+        <span>{t.backtest.history} ({history.length})</span>
         <div className="flex items-center gap-2">
           <span
             onClick={(e) => { e.stopPropagation(); onClear(); }}
             className="text-xs text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
           >
-            Clear all
+            {t.backtest.clearAll}
           </span>
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </div>
@@ -46,7 +48,7 @@ export function HistoryPanel({ history, onSelect, onRemove, onClear, selectedIds
                 checked={selectedIds.has(entry.id)}
                 onChange={() => onToggleCompare(entry.id)}
                 className="accent-blue-500"
-                title="Select for comparison"
+                title={t.backtest.selectForComparison}
               />
               <button
                 onClick={() => onSelect(entry)}

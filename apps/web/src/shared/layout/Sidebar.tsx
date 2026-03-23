@@ -64,11 +64,11 @@ export function Sidebar({ onLogout }: { onLogout?: () => void }) {
         {onLogout && (
           <button
             onClick={onLogout}
-            title={collapsed ? "Logout" : undefined}
+            title={collapsed ? t.common.logout : undefined}
             className={`flex items-center ${collapsed ? "justify-center" : "gap-3 px-3"} py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-red-400 hover:bg-surface transition-colors w-full`}
           >
             <LogOut size={18} />
-            {!collapsed && "Logout"}
+            {!collapsed && t.common.logout}
           </button>
         )}
         <button

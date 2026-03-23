@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { useT } from "@core/i18n";
 
 export interface Column<T> {
   key: string;
@@ -22,8 +23,10 @@ export function DataTable<T>({
   data,
   keyFn,
   pageSize = 25,
-  emptyMessage = "No data",
+  emptyMessage,
 }: Props<T>) {
+  const { t } = useT();
+  const empty = emptyMessage ?? t.common.noData;
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
@@ -111,11 +114,11 @@ export function DataTable<T>({
         </tbody>
       </table>
       {sorted.length === 0 && (
-        <p className="text-center text-slate-500 py-8">{emptyMessage}</p>
+        <p className="text-center text-slate-500 py-8">{empty}</p>
       )}
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 text-sm text-slate-400">
-          <span>{sorted.length} rows</span>
+          <span>{sorted.length} {t.common.rows}</span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPage(Math.max(0, clamped - 1))}

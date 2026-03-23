@@ -15,12 +15,12 @@ function getStrategyDescKey(name: string): StrategyDescKey | null {
   return STRATEGY_PREFIXES.find((p) => name.startsWith(p)) ?? null;
 }
 
-function InfoButton({ expanded, onClick }: { expanded: boolean; onClick: () => void }) {
+function InfoButton({ expanded, onClick, ariaLabel }: { expanded: boolean; onClick: () => void; ariaLabel: string }) {
   return (
     <button
       onClick={onClick}
       aria-expanded={expanded}
-      aria-label="展開說明"
+      aria-label={ariaLabel}
       className={`inline-flex items-center justify-center transition-colors ${
         expanded ? "text-blue-400" : "text-slate-500 hover:text-slate-300"
       }`}
@@ -102,6 +102,7 @@ export function StrategiesPage() {
                       <InfoButton
                         expanded={isExpanded}
                         onClick={() => setExpanded(isExpanded ? null : s.name)}
+                        ariaLabel={t.common.expandDescription}
                       />
                     )}
                   </p>

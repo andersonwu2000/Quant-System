@@ -52,7 +52,7 @@ export function OrdersPage() {
           onClick={() => setShowForm(!showForm)}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
         >
-          {showForm ? "Cancel" : "New Order"}
+          {showForm ? t.common.cancel : t.orders.newOrder}
         </button>
       </div>
 

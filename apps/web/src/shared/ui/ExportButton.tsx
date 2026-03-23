@@ -1,4 +1,5 @@
 import { Download } from "lucide-react";
+import { useT } from "@core/i18n";
 
 interface Props {
   filename: string;
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export function ExportButton({ filename, headers, rows }: Props) {
+  const { t } = useT();
   const handleExport = () => {
     const escape = (v: string | number) => {
       const s = String(v);
@@ -32,7 +34,7 @@ export function ExportButton({ filename, headers, rows }: Props) {
       onClick={handleExport}
       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-surface transition-colors"
     >
-      <Download size={12} /> Export CSV
+      <Download size={12} /> {t.common.exportCSV}
     </button>
   );
 }

@@ -1,9 +1,27 @@
 import type { Translations } from "./en";
 
 export const zh: Translations = {
-  // common
   appName: "量化交易系統",
   appVersion: "版本 v0.1.0",
+  common: {
+    cancel: "取消",
+    submit: "送出",
+    retry: "重試",
+    reload: "重新載入",
+    exportCSV: "匯出 CSV",
+    noData: "無資料",
+    rows: "筆",
+    errorTitle: "發生錯誤",
+    unexpectedError: "發生了未預期的錯誤",
+    orderFailed: "下單失敗",
+    requestFailed: "請求失敗",
+    logout: "登出",
+    expandDescription: "展開說明",
+  },
+  notFound: {
+    title: "找不到頁面",
+    backLink: "返回儀表板",
+  },
   nav: {
     dashboard: "儀表板",
     portfolio: "投資組合",
@@ -76,6 +94,9 @@ export const zh: Translations = {
     strategy: "策略",
     status: "狀態",
     noOrders: "無訂單記錄",
+    newOrder: "新增訂單",
+    market: "市價",
+    mktIfEmpty: "留空為市價",
   },
 
   // backtest
@@ -103,6 +124,20 @@ export const zh: Translations = {
     winRate: "勝率",
     totalTrades: "總交易數",
     navCurve: "淨值曲線",
+    history: "歷史紀錄",
+    clearAll: "全部清除",
+    navComparison: "淨值比較（%）",
+    comparison: "指標比較",
+    metric: "指標",
+    volatility: "波動率",
+    trades: "交易數",
+    commission: "手續費",
+    errorEndDate: "結束日期必須在開始日期之後",
+    errorCash: "初始資金必須為正數",
+    errorUniverse: "股票池至少需要 1 個標的",
+    timedOut: "回測逾時（30 分鐘）",
+    failed: "回測失敗",
+    selectForComparison: "選取以比較",
   },
 
   // risk

@@ -44,9 +44,9 @@ export function BacktestPage() {
     setForm((f) => ({ ...f, [key]: val }));
 
   const formErrors: string[] = [];
-  if (form.start >= form.end) formErrors.push("End date must be after start date");
-  if (form.initial_cash <= 0) formErrors.push("Initial cash must be positive");
-  if (form.universe.length === 0) formErrors.push("Universe must have at least 1 symbol");
+  if (form.start >= form.end) formErrors.push(t.backtest.errorEndDate);
+  if (form.initial_cash <= 0) formErrors.push(t.backtest.errorCash);
+  if (form.universe.length === 0) formErrors.push(t.backtest.errorUniverse);
   const formValid = formErrors.length === 0;
 
   const handleSubmit = async (e: React.FormEvent) => {

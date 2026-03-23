@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { useT } from "@core/i18n";
 import type { BacktestHistoryEntry } from "../hooks/useBacktestHistory";
 
 const COLORS = ["#3B82F6", "#22C55E", "#F59E0B", "#EF4444"];
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function CompareChart({ entries }: Props) {
+  const { t } = useT();
   const { data, names } = useMemo(() => {
     const dateMap = new Map<string, Record<string, number>>();
     for (const entry of entries) {
@@ -33,7 +35,7 @@ export function CompareChart({ entries }: Props) {
 
   return (
     <div className="bg-surface rounded-xl p-5">
-      <p className="text-sm font-medium text-slate-400 mb-3">NAV Comparison (%)</p>
+      <p className="text-sm font-medium text-slate-400 mb-3">{t.backtest.navComparison}</p>
       <ResponsiveContainer width="100%" height={320}>
         <LineChart data={data}>
           <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748B" }} tickFormatter={(v) => v.slice(5)} />
