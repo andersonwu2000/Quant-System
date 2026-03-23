@@ -43,9 +43,9 @@ export const strategies = {
     ),
   get: (id: string) => get<StrategyInfo>(`/api/v1/strategies/${id}`),
   start: (id: string, params?: Record<string, unknown>) =>
-    post<StrategyInfo>(`/api/v1/strategies/${id}/start`, params ? { params } : undefined),
+    post<{ message: string }>(`/api/v1/strategies/${id}/start`, params ? { params } : undefined),
   stop: (id: string) =>
-    post<StrategyInfo>(`/api/v1/strategies/${id}/stop`),
+    post<{ message: string }>(`/api/v1/strategies/${id}/stop`),
 };
 
 export const orders = {
@@ -69,7 +69,7 @@ export const backtest = {
 export const risk = {
   rules: () => get<RiskRule[]>("/api/v1/risk/rules"),
   toggleRule: (name: string, enabled: boolean) =>
-    put<RiskRule>(`/api/v1/risk/rules/${name}`, { enabled }),
+    put<{ message: string }>(`/api/v1/risk/rules/${name}`, { enabled }),
   alerts: () => get<RiskAlert[]>("/api/v1/risk/alerts"),
-  killSwitch: () => post<{ detail: string }>("/api/v1/risk/kill-switch"),
+  killSwitch: () => post<{ message: string; strategies_stopped: number; orders_cancelled: number }>("/api/v1/risk/kill-switch"),
 };

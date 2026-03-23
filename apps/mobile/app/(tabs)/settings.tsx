@@ -28,6 +28,9 @@ export default function SettingsScreen() {
     loadData();
   }, [loadData]);
 
+  // TODO: toggleRule requires risk_manager role on backend but mobile has no
+  // role-based UI gating yet. The backend will reject unauthorized requests,
+  // but ideally the UI should hide/disable the toggle for insufficient roles.
   const toggleRule = async (name: string, enabled: boolean) => {
     try {
       await risk.toggleRule(name, !enabled);

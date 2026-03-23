@@ -19,6 +19,12 @@ export interface AuthContextValue {
 }
 
 function getSavedRole(): UserRole {
+  // If the auth flag is gone (e.g. JWT cookie expired and user logged out),
+  // clear the stale role to avoid privilege desync.
+  if (localStorage.getItem("quant_authenticated") !== "true") {
+    localStorage.removeItem(ROLE_STORAGE_KEY);
+    return "viewer";
+  }
   const stored = localStorage.getItem(ROLE_STORAGE_KEY);
   if (stored && stored in ROLE_HIERARCHY) return stored as UserRole;
   return "viewer";

@@ -11,6 +11,8 @@ import {
 } from "../api/client";
 import { system, auth } from "@quant/shared";
 
+// TODO: Extract user role from JWT token after login (decode JWT payload to get
+// role field) and expose it in AuthState so mobile UI can enforce role-based access.
 export interface AuthState {
   authenticated: boolean;
   loading: boolean;

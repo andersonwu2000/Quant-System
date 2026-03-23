@@ -29,7 +29,7 @@ async def login(req: LoginRequest, response: Response) -> LoginResponse:
     if not hmac.compare_digest(req.api_key, config.api_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    token = create_jwt_token(subject="api_user", role="trader")
+    token = create_jwt_token(subject="api_user", role="admin")
 
     # httpOnly cookie — 瀏覽器自動帶入，XSS 無法讀取
     response.set_cookie(

@@ -59,7 +59,7 @@ export function RiskPage() {
     setKillLoading(true);
     try {
       const resp = await riskApi.killSwitch();
-      setKillMsg(resp.detail);
+      setKillMsg(resp.message);
       toast("success", t.toast.killSwitchActivated);
     } catch (err) {
       setKillMsg(err instanceof Error ? err.message : "Kill switch failed");

@@ -16,6 +16,7 @@ from src.api.schemas import (
     BacktestRequest,
     BacktestResultResponse,
     BacktestSummaryResponse,
+    TradeRecordResponse,
 )
 from src.api.state import get_app_state
 from src.backtest.engine import BacktestConfig, BacktestEngine
@@ -160,6 +161,19 @@ async def get_backtest_result(task_id: str, api_key: str = Depends(verify_api_ke
         for date, nav in result.nav_series.items()
     ]
 
+    _MAX_TRADES = 10_000
+    trade_data = [
+        TradeRecordResponse(
+            date=str(t.timestamp),
+            symbol=t.symbol,
+            side=t.side.value,
+            quantity=float(t.quantity),
+            price=float(t.price),
+            commission=float(t.commission),
+        )
+        for t in result.trades[:_MAX_TRADES]
+    ] if result.trades else None
+
     return BacktestResultResponse(
         strategy_name=result.strategy_name,
         start_date=result.start_date,
@@ -177,6 +191,7 @@ async def get_backtest_result(task_id: str, api_key: str = Depends(verify_api_ke
         win_rate=result.win_rate,
         total_commission=result.total_commission,
         nav_series=nav_data,
+        trades=trade_data,
     )
 
 

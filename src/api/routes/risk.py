@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.auth import verify_api_key, require_role
-from src.api.schemas import RiskAlertResponse, RiskRuleResponse
+from src.api.schemas import KillSwitchResponse, RiskAlertResponse, RiskRuleResponse, MessageResponse
 from src.api.state import get_app_state
 
 router = APIRouter(prefix="/risk", tags=["risk"])
@@ -23,14 +23,14 @@ async def get_risk_rules(api_key: str = Depends(verify_api_key)) -> list[RiskRul
     ]
 
 
-@router.put("/rules/{rule_name}")
-async def toggle_rule(rule_name: str, enabled: bool = True, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("risk_manager"))) -> dict[str, str]:
+@router.put("/rules/{rule_name}", response_model=MessageResponse)
+async def toggle_rule(rule_name: str, enabled: bool = True, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("risk_manager"))) -> MessageResponse:
     """啟用/停用風控規則。"""
     state = get_app_state()
     for rule in state.risk_engine.rules:
         if rule.name == rule_name:
             rule.enabled = enabled
-            return {"message": f"Rule {rule_name} {'enabled' if enabled else 'disabled'}"}
+            return MessageResponse(message=f"Rule {rule_name} {'enabled' if enabled else 'disabled'}")
     raise HTTPException(status_code=404, detail=f"Rule {rule_name} not found")
 
 
@@ -58,8 +58,8 @@ async def get_risk_alerts(
     ]
 
 
-@router.post("/kill-switch")
-async def kill_switch(api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("risk_manager"))) -> dict[str, Any]:
+@router.post("/kill-switch", response_model=KillSwitchResponse)
+async def kill_switch(api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("risk_manager"))) -> KillSwitchResponse:
     """緊急熔斷：停止所有策略，撤銷所有訂單。"""
     state = get_app_state()
 
@@ -70,8 +70,8 @@ async def kill_switch(api_key: str = Depends(verify_api_key), _role: dict[str, A
     # 撤銷所有訂單
     cancelled = state.oms.cancel_all()
 
-    return {
-        "message": "Kill switch activated",
-        "strategies_stopped": len(state.strategies),
-        "orders_cancelled": cancelled,
-    }
+    return KillSwitchResponse(
+        message="Kill switch activated",
+        strategies_stopped=len(state.strategies),
+        orders_cancelled=cancelled,
+    )

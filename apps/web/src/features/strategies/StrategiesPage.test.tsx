@@ -16,8 +16,8 @@ vi.mock("./api", () => ({
 vi.mock("@core/auth", () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useAuth: () => ({
-    role: "admin",
-    hasRole: () => true,
+    role: "trader",
+    hasRole: (min: string) => ["viewer", "researcher", "trader"].includes(min),
     setRole: () => {},
     clearRole: () => {},
   }),
@@ -64,7 +64,7 @@ describe("StrategiesPage", () => {
 
   it("calls stop API when stop button clicked on running strategy", async () => {
     vi.mocked(strategiesApi.list).mockResolvedValue(mockStrategies);
-    vi.mocked(strategiesApi.stop).mockResolvedValue(mockStrategies[0]);
+    vi.mocked(strategiesApi.stop).mockResolvedValue({ message: "Strategy momentum stopped" });
 
     renderWithProviders(<StrategiesPage />);
 
@@ -81,7 +81,7 @@ describe("StrategiesPage", () => {
 
   it("calls start API when start button clicked on stopped strategy", async () => {
     vi.mocked(strategiesApi.list).mockResolvedValue(mockStrategies);
-    vi.mocked(strategiesApi.start).mockResolvedValue(mockStrategies[1]);
+    vi.mocked(strategiesApi.start).mockResolvedValue({ message: "Strategy mean_reversion started" });
 
     renderWithProviders(<StrategiesPage />);
 

@@ -62,6 +62,11 @@ class ConnectionManager:
         """推送告警到 alerts 頻道。"""
         await self.broadcast("alerts", data)
 
+    # TODO: market channel broadcasting requires a market data feed integration.
+    # Currently no real-time market data source is configured in the backend.
+    # When a feed is added, create a background task that periodically broadcasts
+    # price updates via self.broadcast("market", {...}).
+
     async def close_all(self) -> None:
         """關閉所有連線（優雅關機用）。"""
         for channel, connections in self._connections.items():

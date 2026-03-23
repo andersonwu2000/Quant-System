@@ -53,6 +53,10 @@ class StrategyStartRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class MessageResponse(BaseModel):
+    message: str
+
+
 class StrategyListResponse(BaseModel):
     strategies: list[StrategyInfo]
 
@@ -123,6 +127,15 @@ class BacktestSummaryResponse(BaseModel):
     error: str | None = None
 
 
+class TradeRecordResponse(BaseModel):
+    date: str
+    symbol: str
+    side: str
+    quantity: float
+    price: float
+    commission: float
+
+
 class BacktestResultResponse(BaseModel):
     strategy_name: str
     start_date: str
@@ -140,6 +153,7 @@ class BacktestResultResponse(BaseModel):
     win_rate: float
     total_commission: float
     nav_series: list[dict[str, Any]] | None = None
+    trades: list[TradeRecordResponse] | None = None
 
 
 # ─── Risk ────────────────────────────────────────
@@ -147,6 +161,12 @@ class BacktestResultResponse(BaseModel):
 class RiskRuleResponse(BaseModel):
     name: str
     enabled: bool
+
+
+class KillSwitchResponse(BaseModel):
+    message: str
+    strategies_stopped: int
+    orders_cancelled: int
 
 
 class RiskAlertResponse(BaseModel):

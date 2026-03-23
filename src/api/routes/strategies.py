@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.api.auth import verify_api_key
-from src.api.schemas import StrategyInfo, StrategyListResponse
+from src.api.auth import verify_api_key, require_role
+from src.api.schemas import MessageResponse, StrategyInfo, StrategyListResponse
 from src.api.state import get_app_state
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
@@ -39,21 +41,21 @@ async def get_strategy(strategy_id: str, api_key: str = Depends(verify_api_key))
     )
 
 
-@router.post("/{strategy_id}/start")
-async def start_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)) -> dict[str, str]:
+@router.post("/{strategy_id}/start", response_model=MessageResponse)
+async def start_strategy(strategy_id: str, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("trader"))) -> MessageResponse:
     """啟動策略。"""
     state = get_app_state()
     if strategy_id not in state.strategies:
         raise HTTPException(status_code=404, detail=f"Strategy {strategy_id} not found")
     state.strategies[strategy_id]["status"] = "running"
-    return {"message": f"Strategy {strategy_id} started"}
+    return MessageResponse(message=f"Strategy {strategy_id} started")
 
 
-@router.post("/{strategy_id}/stop")
-async def stop_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)) -> dict[str, str]:
+@router.post("/{strategy_id}/stop", response_model=MessageResponse)
+async def stop_strategy(strategy_id: str, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("trader"))) -> MessageResponse:
     """停止策略。"""
     state = get_app_state()
     if strategy_id not in state.strategies:
         raise HTTPException(status_code=404, detail=f"Strategy {strategy_id} not found")
     state.strategies[strategy_id]["status"] = "stopped"
-    return {"message": f"Strategy {strategy_id} stopped"}
+    return MessageResponse(message=f"Strategy {strategy_id} stopped")

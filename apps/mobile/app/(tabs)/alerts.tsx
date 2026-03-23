@@ -12,6 +12,9 @@ export default function AlertsScreen() {
   const { t } = useT();
   const { alerts, loading, refresh } = useAlerts();
 
+  // TODO: killSwitch requires risk_manager role on backend but mobile has no
+  // role-based UI gating yet. The backend will reject unauthorized requests,
+  // but ideally the UI should hide/disable the button for insufficient roles.
   const handleKillSwitch = () => {
     Alert.alert(
       t.risk.killSwitch,

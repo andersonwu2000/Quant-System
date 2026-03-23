@@ -2,16 +2,35 @@
 
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from src.api.auth import verify_api_key
+from src.api.auth import verify_api_key, require_role
 from src.api.schemas import ManualOrderRequest, OrderResponse
 from src.api.state import get_app_state
+from src.api.ws import ws_manager
 from src.domain.models import Instrument, Order, OrderStatus, OrderType, Side
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+def _to_response(o: Order) -> OrderResponse:
+    return OrderResponse(
+        id=o.id,
+        symbol=o.instrument.symbol,
+        side=o.side.value,
+        quantity=float(o.quantity),
+        price=float(o.price) if o.price else None,
+        status=o.status.value,
+        filled_qty=float(o.filled_qty),
+        filled_avg_price=float(o.filled_avg_price),
+        commission=float(o.commission),
+        created_at=str(o.created_at),
+        strategy_id=o.strategy_id,
+    )
 
 
 @router.get("", response_model=list[OrderResponse])
@@ -31,29 +50,14 @@ async def list_orders(
         orders = [o for o in orders if o.status.value == "FILLED"]
 
     paginated = orders[offset:offset + limit]
-
-    return [
-        OrderResponse(
-            id=o.id,
-            symbol=o.instrument.symbol,
-            side=o.side.value,
-            quantity=float(o.quantity),
-            price=float(o.price) if o.price else None,
-            status=o.status.value,
-            filled_qty=float(o.filled_qty),
-            filled_avg_price=float(o.filled_avg_price),
-            commission=float(o.commission),
-            created_at=str(o.created_at),
-            strategy_id=o.strategy_id,
-        )
-        for o in paginated
-    ]
+    return [_to_response(o) for o in paginated]
 
 
 @router.post("", response_model=OrderResponse)
 async def create_order(
     req: ManualOrderRequest,
     api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("trader")),
 ) -> OrderResponse:
     """手動下單。"""
     state = get_app_state()
@@ -77,16 +81,9 @@ async def create_order(
             order.quantity = decision.modified_qty
         state.oms.submit(order)
 
-    return OrderResponse(
-        id=order.id,
-        symbol=order.instrument.symbol,
-        side=order.side.value,
-        quantity=float(order.quantity),
-        price=float(order.price) if order.price else None,
-        status=order.status.value,
-        filled_qty=float(order.filled_qty),
-        filled_avg_price=float(order.filled_avg_price),
-        commission=float(order.commission),
-        created_at=str(order.created_at),
-        strategy_id=order.strategy_id,
-    )
+    response = _to_response(order)
+
+    # Broadcast new order to "orders" WS channel (fire-and-forget)
+    asyncio.create_task(ws_manager.broadcast("orders", response.model_dump()))
+
+    return response
