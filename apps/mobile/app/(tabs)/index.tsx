@@ -4,9 +4,11 @@ import { usePortfolio } from "../../src/hooks/usePortfolio";
 import { MetricCard } from "../../src/components/MetricCard";
 import { PositionRow } from "../../src/components/PositionRow";
 import { fmtCurrency, fmtPct, pnlColor } from "../../src/utils/format";
+import { useT } from "@/src/i18n";
 import { useMemo } from "react";
 
 export default function DashboardScreen() {
+  const { t } = useT();
   const { data, loading, error, refresh } = usePortfolio();
 
   const topPositions = useMemo(
@@ -24,7 +26,7 @@ export default function DashboardScreen() {
         {error ? (
           <Text style={styles.error}>{error}</Text>
         ) : (
-          <Text style={styles.loading}>Loading...</Text>
+          <Text style={styles.loading}>{t.dashboard.loading}</Text>
         )}
       </SafeAreaView>
     );
@@ -44,21 +46,21 @@ export default function DashboardScreen() {
         ListHeaderComponent={
           <>
             <View style={styles.navHeader}>
-              <Text style={styles.navLabel}>Net Asset Value</Text>
+              <Text style={styles.navLabel}>{t.dashboard.netAssetValue}</Text>
               <Text style={styles.navValue}>{fmtCurrency(data.nav)}</Text>
               <Text style={[styles.dailyPnl, { color: dailyColor }]}>
-                {fmtCurrency(data.daily_pnl)} ({fmtPct(data.daily_pnl_pct)}) today
+                {fmtCurrency(data.daily_pnl)} ({fmtPct(data.daily_pnl_pct)}) {t.dashboard.today}
               </Text>
             </View>
             <View style={styles.metricsRow}>
-              <MetricCard label="Cash" value={fmtCurrency(data.cash)} small />
-              <MetricCard label="Exposure" value={fmtCurrency(data.gross_exposure)} small />
-              <MetricCard label="Positions" value={String(data.positions_count)} small />
+              <MetricCard label={t.dashboard.cash} value={fmtCurrency(data.cash)} small />
+              <MetricCard label={t.dashboard.exposure} value={fmtCurrency(data.gross_exposure)} small />
+              <MetricCard label={t.dashboard.positions} value={String(data.positions_count)} small />
             </View>
-            <Text style={styles.sectionTitle}>Positions</Text>
+            <Text style={styles.sectionTitle}>{t.dashboard.positions}</Text>
           </>
         }
-        ListEmptyComponent={<Text style={styles.empty}>No open positions</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{t.dashboard.noPositions}</Text>}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
       />
     </SafeAreaView>

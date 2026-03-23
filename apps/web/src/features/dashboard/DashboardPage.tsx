@@ -1,4 +1,4 @@
-import { MetricCard, ErrorAlert } from "@shared/ui";
+import { MetricCard, ErrorAlert, MetricCardSkeleton, TableSkeleton, Skeleton } from "@shared/ui";
 import { fmtCurrency, fmtPct, pnlColor } from "@core/utils";
 import { useT } from "@core/i18n";
 import { useDashboard } from "./hooks/useDashboard";
@@ -10,7 +10,15 @@ export function DashboardPage() {
   const { pf, error, refresh, navHistory, running } = useDashboard();
 
   if (error) return <ErrorAlert message={error} onRetry={refresh} />;
-  if (!pf) return <div className="text-slate-400">{t.dashboard.loading}</div>;
+  if (!pf) return (
+    <div className="space-y-6">
+      <Skeleton className="h-7 w-40" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCardSkeleton /><MetricCardSkeleton /><MetricCardSkeleton /><MetricCardSkeleton />
+      </div>
+      <TableSkeleton rows={5} cols={6} />
+    </div>
+  );
 
   return (
     <div className="space-y-6">

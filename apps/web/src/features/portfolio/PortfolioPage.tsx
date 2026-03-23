@@ -1,6 +1,6 @@
 import { useApi } from "@core/hooks";
 import { fmtCurrency, fmtPct, pnlColor } from "@core/utils";
-import { ErrorAlert } from "@shared/ui";
+import { ErrorAlert, MetricCardSkeleton, TableSkeleton, Skeleton } from "@shared/ui";
 import { useT } from "@core/i18n";
 import type { Portfolio } from "@quant/shared";
 import { portfolioApi } from "./api";
@@ -10,7 +10,15 @@ export function PortfolioPage() {
   const { data: pf, loading, error, refresh } = useApi<Portfolio>(portfolioApi.get);
 
   if (error) return <ErrorAlert message={error} onRetry={refresh} />;
-  if (loading || !pf) return <div className="text-slate-400">{t.dashboard.loading}</div>;
+  if (loading || !pf) return (
+    <div className="space-y-6">
+      <Skeleton className="h-7 w-40" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <MetricCardSkeleton /><MetricCardSkeleton /><MetricCardSkeleton /><MetricCardSkeleton /><MetricCardSkeleton />
+      </div>
+      <TableSkeleton rows={8} cols={7} />
+    </div>
+  );
 
   return (
     <div className="space-y-6">

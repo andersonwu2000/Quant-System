@@ -4,6 +4,7 @@ export type {
   Portfolio,
   StrategyInfo,
   OrderInfo,
+  ManualOrderRequest,
   BacktestRequest,
   BacktestSummary,
   BacktestResult,

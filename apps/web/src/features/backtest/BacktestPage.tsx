@@ -1,11 +1,19 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { MetricCard } from "@shared/ui";
 import { fmtPct, fmtNum, fmtCurrency } from "@core/utils";
 import { useT } from "@core/i18n";
+import { useApi } from "@core/hooks";
+import type { BacktestRequest, StrategyInfo } from "@quant/shared";
 import { useBacktest } from "./hooks/useBacktest";
+import { useBacktestHistory } from "./hooks/useBacktestHistory";
+import type { BacktestHistoryEntry } from "./hooks/useBacktestHistory";
+import { strategiesApi } from "./api";
 import { AnimatedSelect } from "./components/AnimatedSelect";
 import { ResultChart } from "./components/ResultChart";
-import type { BacktestRequest } from "./types";
+import { ParamsEditor } from "./components/ParamsEditor";
+import { HistoryPanel } from "./components/HistoryPanel";
+import { CompareTable } from "./components/CompareTable";
+import { CompareChart } from "./components/CompareChart";
 
 const defaultForm: BacktestRequest = {
   strategy: "momentum",
@@ -23,6 +31,17 @@ export function BacktestPage() {
   const { t } = useT();
   const [form, setForm] = useState(defaultForm);
   const { running, result, error, progress, submit } = useBacktest();
+  const { history, addEntry, removeEntry, clearHistory } = useBacktestHistory();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Dynamic strategy list from API
+  const { data: strategies } = useApi<StrategyInfo[]>(() => strategiesApi.list());
+  const strategyOptions = (strategies || []).map((s) => ({ value: s.name, label: s.name }));
+
+  // Fallback if API hasn't loaded yet
+  const effectiveStrategyOptions = strategyOptions.length > 0
+    ? strategyOptions
+    : [{ value: "momentum", label: "momentum" }];
 
   const set = (key: keyof BacktestRequest, val: unknown) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -33,10 +52,46 @@ export function BacktestPage() {
   if (form.universe.length === 0) formErrors.push("Universe must have at least 1 symbol");
   const formValid = formErrors.length === 0;
 
-  const strategyOptions = [
-    { value: "momentum", label: "momentum" },
-    { value: "mean_reversion", label: "mean_reversion" },
-  ];
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await submit(form);
+    if (res) {
+      addEntry(form, res);
+    }
+  };
+
+  const handleSelectHistory = useCallback((entry: BacktestHistoryEntry) => {
+    setForm(entry.request);
+  }, []);
+
+  const handleToggleCompare = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearHistory = useCallback(() => {
+    clearHistory();
+    setSelectedIds(new Set());
+  }, [clearHistory]);
+
+  const handleRemoveEntry = useCallback((id: string) => {
+    removeEntry(id);
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, [removeEntry]);
+
+  const compareEntries = history.filter((e) => selectedIds.has(e.id));
 
   const rebalanceOptions = [
     { value: "daily", label: t.backtest.daily },
@@ -49,12 +104,12 @@ export function BacktestPage() {
       <h2 className="text-xl font-bold">{t.backtest.title}</h2>
 
       <form
-        onSubmit={(e) => { e.preventDefault(); submit(form); }}
+        onSubmit={handleSubmit}
         className="bg-surface rounded-xl p-5 grid grid-cols-2 lg:grid-cols-4 gap-4"
       >
         <div className="space-y-1">
           <span className="text-sm text-slate-400">{t.backtest.strategy}</span>
-          <AnimatedSelect value={form.strategy} options={strategyOptions} onChange={(v) => set("strategy", v)} />
+          <AnimatedSelect value={form.strategy} options={effectiveStrategyOptions} onChange={(v) => set("strategy", v)} />
         </div>
         <label className="space-y-1">
           <span className="text-sm text-slate-400">{t.backtest.universe}</span>
@@ -93,6 +148,8 @@ export function BacktestPage() {
           <AnimatedSelect value={form.rebalance_freq} options={rebalanceOptions} onChange={(v) => set("rebalance_freq", v)} />
         </div>
 
+        <ParamsEditor params={form.params} onChange={(p) => set("params", p)} />
+
         <div className="col-span-full space-y-2">
           {formErrors.length > 0 && (
             <ul className="text-sm text-amber-400 list-disc list-inside">
@@ -126,6 +183,22 @@ export function BacktestPage() {
           {result.nav_series && result.nav_series.length > 0 && (
             <ResultChart data={result.nav_series} />
           )}
+        </>
+      )}
+
+      <HistoryPanel
+        history={history}
+        onSelect={handleSelectHistory}
+        onRemove={handleRemoveEntry}
+        onClear={handleClearHistory}
+        selectedIds={selectedIds}
+        onToggleCompare={handleToggleCompare}
+      />
+
+      {compareEntries.length >= 2 && (
+        <>
+          <CompareChart entries={compareEntries} />
+          <CompareTable entries={compareEntries} />
         </>
       )}
     </div>

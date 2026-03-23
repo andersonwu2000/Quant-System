@@ -1,11 +1,14 @@
-import { View, Text, ScrollView, Pressable, Alert, StyleSheet } from "react-native";
+import { View, Text, ScrollView, Pressable, Alert, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useCallback } from "react";
 import type { SystemStatus, RiskRule } from "@quant/shared";
 import { system, risk } from "@quant/shared";
 import { useAuth } from "../../src/hooks/useAuth";
+import { useT } from "@/src/i18n";
+import type { Lang } from "@/src/i18n";
 
 export default function SettingsScreen() {
+  const { t, lang, setLang } = useT();
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [rules, setRules] = useState<RiskRule[]>([]);
   const { logout } = useAuth();
@@ -29,30 +32,53 @@ export default function SettingsScreen() {
       await risk.toggleRule(name, !enabled);
       loadData();
     } catch (err) {
-      Alert.alert("Error", err instanceof Error ? err.message : "Failed");
+      Alert.alert(t.common.error, err instanceof Error ? err.message : t.common.failed);
     }
   };
+
+  const langOptions: { key: Lang; label: string }[] = [
+    { key: "en", label: "EN" },
+    { key: "zh", label: "繁體中文" },
+  ];
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
     <ScrollView style={{ flex: 1, padding: 16 }}>
+      {/* Language */}
+      <Text style={styles.sectionTitle}>{t.settings.language}</Text>
+      <View style={styles.card}>
+        <View style={styles.langRow}>
+          {langOptions.map((opt) => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.langBtn, lang === opt.key && styles.langBtnActive]}
+              onPress={() => setLang(opt.key)}
+            >
+              <Text style={[styles.langBtnText, lang === opt.key && styles.langBtnTextActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
       {/* System Status */}
-      <Text style={styles.sectionTitle}>System</Text>
+      <Text style={styles.sectionTitle}>{t.settings.system}</Text>
       {status && (
         <View style={styles.card}>
-          <InfoRow label="Mode" value={status.mode} />
-          <InfoRow label="Data Source" value={status.data_source} />
-          <InfoRow label="Database" value={status.database} />
-          <InfoRow label="Strategies Running" value={String(status.strategies_running)} />
+          <InfoRow label={t.settings.mode} value={status.mode} />
+          <InfoRow label={t.settings.dataSource} value={status.data_source} />
+          <InfoRow label={t.settings.database} value={status.database} />
+          <InfoRow label={t.settings.strategiesRunning} value={String(status.strategies_running)} />
           <InfoRow
-            label="Uptime"
+            label={t.settings.uptime}
             value={`${Math.floor(status.uptime_seconds / 3600)}h ${Math.floor((status.uptime_seconds % 3600) / 60)}m`}
           />
         </View>
       )}
 
       {/* Risk Rules */}
-      <Text style={styles.sectionTitle}>Risk Rules</Text>
+      <Text style={styles.sectionTitle}>{t.risk.riskRules}</Text>
       <View style={styles.card}>
         {rules.map((rule) => (
           <Pressable
@@ -75,7 +101,7 @@ export default function SettingsScreen() {
 
       {/* Disconnect */}
       <Pressable style={styles.logoutBtn} onPress={logout}>
-        <Text style={styles.logoutText}>Disconnect</Text>
+        <Text style={styles.logoutText}>{t.settings.disconnect}</Text>
       </Pressable>
 
       <View style={{ height: 40 }} />
@@ -127,4 +153,27 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   logoutText: { color: "#EF4444", fontSize: 15, fontWeight: "600" },
+  langRow: {
+    flexDirection: "row",
+    padding: 10,
+    gap: 8,
+  },
+  langBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#0F172A",
+    alignItems: "center",
+  },
+  langBtnActive: {
+    backgroundColor: "rgba(59, 130, 246, 0.2)",
+  },
+  langBtnText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  langBtnTextActive: {
+    color: "#60A5FA",
+  },
 });

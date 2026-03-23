@@ -1,18 +1,30 @@
-import { useState } from "react";
-import { useApi } from "@core/hooks";
+import { useState, useCallback } from "react";
+import { useApi, useWs } from "@core/hooks";
 import { fmtCurrency, fmtDate, fmtTime } from "@core/utils";
-import { StatusBadge, ErrorAlert } from "@shared/ui";
+import { StatusBadge, ErrorAlert, TableSkeleton } from "@shared/ui";
 import { useT } from "@core/i18n";
 import { ordersApi } from "./api";
+import { OrderForm } from "./components/OrderForm";
 
 const filterKeys = ["all", "filled", "pending", "cancelled", "rejected"] as const;
 
 export function OrdersPage() {
   const { t } = useT();
   const [filter, setFilter] = useState("all");
+  const [showForm, setShowForm] = useState(false);
   const { data: orderList, loading, error, refresh } = useApi(
     () => ordersApi.list(filter === "all" ? undefined : filter),
     [filter],
+  );
+
+  useWs(
+    "orders",
+    useCallback(
+      (msg: unknown) => {
+        if (msg && typeof msg === "object") refresh();
+      },
+      [refresh],
+    ),
   );
 
   const filterLabels: Record<string, string> = {
@@ -25,7 +37,24 @@ export function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold">{t.orders.title}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold">{t.orders.title}</h2>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
+        >
+          {showForm ? "Cancel" : "New Order"}
+        </button>
+      </div>
+
+      {showForm && (
+        <OrderForm
+          onSubmitted={() => {
+            setShowForm(false);
+            refresh();
+          }}
+        />
+      )}
 
       <div className="flex gap-2">
         {filterKeys.map((f) => (
@@ -44,7 +73,7 @@ export function OrdersPage() {
       </div>
 
       {error && <ErrorAlert message={error} onRetry={refresh} />}
-      {loading && <div className="text-slate-400">{t.dashboard.loading}</div>}
+      {loading && <TableSkeleton rows={8} cols={10} />}
 
       {!loading && !error && (
         <div className="bg-surface rounded-xl p-5 overflow-x-auto">
@@ -78,7 +107,7 @@ export function OrdersPage() {
                   <td className="text-right py-2">{o.price != null ? `$${o.price.toFixed(2)}` : "MKT"}</td>
                   <td className="text-right py-2">{o.filled_qty}</td>
                   <td className="text-right py-2">
-                    {o.filled_avg_price != null ? `$${o.filled_avg_price.toFixed(2)}` : "—"}
+                    {o.filled_avg_price != null ? `$${o.filled_avg_price.toFixed(2)}` : "\u2014"}
                   </td>
                   <td className="text-right py-2">{fmtCurrency(o.commission)}</td>
                   <td className="py-2 text-xs text-slate-400">{o.strategy_id}</td>

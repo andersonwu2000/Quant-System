@@ -10,8 +10,10 @@ import {
   Platform,
 } from "react-native";
 import { useAuth } from "../src/hooks/useAuth";
+import { useT } from "@/src/i18n";
 
 export default function LoginScreen() {
+  const { t } = useT();
   const [serverUrl, setServerUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const { login, loading, error } = useAuth();
@@ -28,10 +30,10 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>Quant Trading</Text>
-        <Text style={styles.subtitle}>Connect to your trading server</Text>
+        <Text style={styles.title}>{t.login.title}</Text>
+        <Text style={styles.subtitle}>{t.login.subtitle}</Text>
 
-        <Text style={styles.label}>Server URL</Text>
+        <Text style={styles.label}>{t.login.serverUrl}</Text>
         <TextInput
           style={styles.input}
           value={serverUrl}
@@ -43,15 +45,15 @@ export default function LoginScreen() {
           keyboardType="url"
         />
         {serverUrl.startsWith("http://") && !serverUrl.includes("localhost") && !serverUrl.includes("127.0.0.1") && (
-          <Text style={styles.warning}>Insecure connection — use HTTPS in production</Text>
+          <Text style={styles.warning}>{t.login.insecureWarning}</Text>
         )}
 
-        <Text style={styles.label}>API Key</Text>
+        <Text style={styles.label}>{t.login.apiKey}</Text>
         <TextInput
           style={styles.input}
           value={apiKey}
           onChangeText={setApiKey}
-          placeholder="Enter your API key"
+          placeholder={t.login.apiKeyPlaceholder}
           placeholderTextColor="#475569"
           autoCapitalize="none"
           autoCorrect={false}
@@ -68,7 +70,7 @@ export default function LoginScreen() {
           {loading ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.btnText}>Connect</Text>
+            <Text style={styles.btnText}>{t.login.connect}</Text>
           )}
         </Pressable>
       </View>

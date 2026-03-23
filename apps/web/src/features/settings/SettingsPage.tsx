@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useApi } from "@core/hooks";
 import { isAuthenticated, login } from "@core/api";
-import { MetricCard } from "@shared/ui";
+import { MetricCard, MetricCardSkeleton } from "@shared/ui";
 import { useT } from "@core/i18n";
 import { langLabels, type Lang } from "@core/i18n";
 import { systemApi } from "./api";
@@ -90,7 +90,11 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         </div>
       </div>
 
-      {loading && <div className="text-slate-400">{t.dashboard.loading}</div>}
+      {loading && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <MetricCardSkeleton /><MetricCardSkeleton /><MetricCardSkeleton /><MetricCardSkeleton />
+        </div>
+      )}
       {status && (
         <div>
           <p className="text-sm font-medium text-slate-400 mb-3">{t.settings.systemStatus}</p>

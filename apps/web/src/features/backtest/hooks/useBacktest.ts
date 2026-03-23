@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { backtestApi } from "../api";
-import type { BacktestRequest, BacktestResult } from "../types";
+import type { BacktestRequest, BacktestResult } from "@quant/shared";
 
 export function useBacktest() {
   const [running, setRunning] = useState(false);
@@ -14,8 +14,8 @@ export function useBacktest() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const submit = async (form: BacktestRequest): Promise<void> => {
-    if (form.initial_cash <= 0 || form.universe.length === 0 || !form.strategy.trim()) return;
+  const submit = async (form: BacktestRequest): Promise<BacktestResult | null> => {
+    if (form.initial_cash <= 0 || form.universe.length === 0 || !form.strategy.trim()) return null;
 
     setRunning(true);
     setError(null);
@@ -31,7 +31,7 @@ export function useBacktest() {
       while (status === "running" && mountedRef.current) {
         if (Date.now() - pollStart > MAX_POLL_MS) {
           setError("Backtest timed out (30 minutes)");
-          return;
+          return null;
         }
         await new Promise((r) => setTimeout(r, 2000));
         if (!mountedRef.current) break;
@@ -42,11 +42,12 @@ export function useBacktest() {
         }
       }
 
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) return null;
 
       if (status === "completed") {
         const r = await backtestApi.result(summary.task_id);
         if (mountedRef.current) setResult(r);
+        return r;
       } else if (status === "failed") {
         if (mountedRef.current) setError("Backtest failed");
       }
@@ -60,6 +61,7 @@ export function useBacktest() {
         setProgress(null);
       }
     }
+    return null;
   };
 
   return { running, result, error, progress, submit };

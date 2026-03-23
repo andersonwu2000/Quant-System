@@ -4,8 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import type { StrategyInfo } from "@quant/shared";
 import { strategies as api } from "@quant/shared";
 import { StrategyRow } from "../../src/components/StrategyRow";
+import { useT } from "@/src/i18n";
 
 export default function StrategiesScreen() {
+  const { t } = useT();
   const [items, setItems] = useState<StrategyInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -35,10 +37,10 @@ export default function StrategiesScreen() {
         }
         refresh();
       } catch (err) {
-        Alert.alert("Error", err instanceof Error ? err.message : "Operation failed");
+        Alert.alert(t.common.error, err instanceof Error ? err.message : t.common.operationFailed);
       }
     },
-    [refresh],
+    [refresh, t],
   );
 
   return (
@@ -52,10 +54,10 @@ export default function StrategiesScreen() {
         }
         ListHeaderComponent={
           <Text style={styles.header}>
-            {items.filter((s) => s.status === "running").length} of {items.length} running
+            {items.filter((s) => s.status === "running").length} {t.common.of} {items.length} {t.strategies.running}
           </Text>
         }
-        ListEmptyComponent={<Text style={styles.empty}>No strategies registered</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{t.strategies.noRegistered}</Text>}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
       />
     </SafeAreaView>

@@ -5,8 +5,10 @@ import type { Position } from "@quant/shared";
 import { portfolio } from "@quant/shared";
 import { PositionRow } from "../../src/components/PositionRow";
 import { fmtCurrency } from "../../src/utils/format";
+import { useT } from "@/src/i18n";
 
 export default function PositionsScreen() {
+  const { t } = useT();
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +52,11 @@ export default function PositionsScreen() {
             {error && <Text style={styles.error}>{error}</Text>}
             <View style={styles.summary}>
               <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Total Value</Text>
+                <Text style={styles.summaryLabel}>{t.portfolio.totalValue}</Text>
                 <Text style={styles.summaryValue}>{fmtCurrency(totalMV)}</Text>
               </View>
               <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Unrealized P&L</Text>
+                <Text style={styles.summaryLabel}>{t.portfolio.unrealizedPnl}</Text>
                 <Text style={[styles.summaryValue, { color: totalPnl >= 0 ? "#22C55E" : "#EF4444" }]}>
                   {fmtCurrency(totalPnl)}
                 </Text>
@@ -62,7 +64,7 @@ export default function PositionsScreen() {
             </View>
           </>
         }
-        ListEmptyComponent={<Text style={styles.empty}>No open positions</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{t.portfolio.noPositions}</Text>}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
       />
     </SafeAreaView>

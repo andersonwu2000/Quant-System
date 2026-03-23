@@ -8,6 +8,7 @@ import type {
   Position,
   StrategyInfo,
   OrderInfo,
+  ManualOrderRequest,
   BacktestRequest,
   BacktestSummary,
   BacktestResult,
@@ -50,6 +51,8 @@ export const orders = {
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
     return get<OrderInfo[]>(`/api/v1/orders${query}`);
   },
+  create: (req: ManualOrderRequest) =>
+    post<OrderInfo>("/api/v1/orders", req),
 };
 
 export const backtest = {

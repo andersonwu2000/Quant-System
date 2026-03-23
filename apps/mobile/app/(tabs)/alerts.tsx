@@ -3,25 +3,27 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAlerts } from "../../src/hooks/useAlerts";
 import { AlertItem } from "../../src/components/AlertItem";
 import { risk } from "@quant/shared";
+import { useT } from "@/src/i18n";
 
 export default function AlertsScreen() {
+  const { t } = useT();
   const { alerts, loading, refresh } = useAlerts();
 
   const handleKillSwitch = () => {
     Alert.alert(
-      "Kill Switch",
-      "This will stop ALL strategies and cancel ALL pending orders. Are you sure?",
+      t.risk.killSwitch,
+      t.risk.killConfirm,
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t.common.cancel, style: "cancel" },
         {
-          text: "Confirm",
+          text: t.common.confirm,
           style: "destructive",
           onPress: async () => {
             try {
               await risk.killSwitch();
-              Alert.alert("Kill Switch", "All strategies stopped, all orders cancelled.");
+              Alert.alert(t.risk.killSwitch, t.risk.allStopped);
             } catch (err) {
-              Alert.alert("Error", err instanceof Error ? err.message : "Failed");
+              Alert.alert(t.common.error, err instanceof Error ? err.message : t.common.failed);
             }
           },
         },
@@ -38,15 +40,15 @@ export default function AlertsScreen() {
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#3B82F6" />
         }
-        ListEmptyComponent={<Text style={styles.empty}>No risk alerts</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{t.risk.noAlerts}</Text>}
         ListFooterComponent={
           <Pressable
             style={styles.killButton}
             onLongPress={handleKillSwitch}
             delayLongPress={1000}
           >
-            <Text style={styles.killText}>KILL SWITCH</Text>
-            <Text style={styles.killHint}>Long press to activate</Text>
+            <Text style={styles.killText}>{t.risk.killSwitch.toUpperCase()}</Text>
+            <Text style={styles.killHint}>{t.common.longPressHint}</Text>
           </Pressable>
         }
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}

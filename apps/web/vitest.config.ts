@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    setupFiles: ["./src/test/setup.ts"],
   },
   resolve: {
     alias: {
@@ -12,6 +13,7 @@ export default defineConfig({
       "@core": resolve(__dirname, "src/core"),
       "@feat": resolve(__dirname, "src/features"),
       "@shared": resolve(__dirname, "src/shared"),
+      "@test": resolve(__dirname, "src/test"),
     },
   },
 });

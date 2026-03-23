@@ -54,6 +54,13 @@ export interface BacktestRequest {
   rebalance_freq: "daily" | "weekly" | "monthly";
 }
 
+export interface ManualOrderRequest {
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  price: number | null; // null = market order
+}
+
 export interface BacktestSummary {
   task_id: string;
   status: "running" | "completed" | "failed";
@@ -63,6 +70,9 @@ export interface BacktestSummary {
   sharpe: number | null;
   max_drawdown: number | null;
   total_trades: number | null;
+  progress_current: number | null;
+  progress_total: number | null;
+  error: string | null;
 }
 
 export interface BacktestResult {

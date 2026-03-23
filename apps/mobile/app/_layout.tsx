@@ -1,9 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import * as SecureStore from "expo-secure-store";
 import { AuthProvider, useAuth } from "../src/hooks/useAuth";
+import { ErrorBoundary } from "../src/components/ErrorBoundary";
+import { I18nContext, translations, type Lang } from "../src/i18n";
 
 function RootNavigator() {
   const { authenticated, loading } = useAuth();
@@ -49,12 +52,33 @@ function RootNavigator() {
   );
 }
 
+const LANG_KEY = "quant_lang";
+
 export default function RootLayout() {
+  const [lang, setLangState] = useState<Lang>("en");
+
+  useEffect(() => {
+    SecureStore.getItemAsync(LANG_KEY).then((saved) => {
+      if (saved === "zh" || saved === "en") {
+        setLangState(saved);
+      }
+    });
+  }, []);
+
+  const setLang = (newLang: Lang) => {
+    setLangState(newLang);
+    SecureStore.setItemAsync(LANG_KEY, newLang);
+  };
+
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <I18nContext.Provider value={{ t: translations[lang], lang, setLang }}>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <RootNavigator />
+          </AuthProvider>
+        </SafeAreaProvider>
+      </I18nContext.Provider>
+    </ErrorBoundary>
   );
 }
