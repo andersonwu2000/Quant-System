@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.domain.models import Trade
+from src.domain.models import Order, Trade
 
 
 @dataclass
@@ -41,6 +41,10 @@ class BacktestResult:
     total_commission: float
     turnover: float                 # 平均換手率
 
+    # ── 拒絕訂單統計 ──
+    rejected_orders: int = 0
+    rejected_notional: float = 0.0
+
     # ── 時序數據 ──
     nav_series: pd.Series = field(repr=False, default_factory=pd.Series)
     daily_returns: pd.Series = field(repr=False, default_factory=pd.Series)
@@ -68,6 +72,8 @@ class BacktestResult:
             f"Total Trades:  {self.total_trades}",
             f"Win Rate:      {self.win_rate:.1%}",
             f"Total Comm.:   ${self.total_commission:,.0f}",
+            f"Rejected Ord.: {self.rejected_orders}",
+            f"Rejected Not.: ${self.rejected_notional:,.0f}",
         ]
         return "\n".join(lines)
 
@@ -89,6 +95,8 @@ class BacktestResult:
             "total_trades": self.total_trades,
             "win_rate": self.win_rate,
             "total_commission": self.total_commission,
+            "rejected_orders": self.rejected_orders,
+            "rejected_notional": self.rejected_notional,
         }
 
 
@@ -98,6 +106,7 @@ def compute_analytics(
     trades: list[Trade],
     strategy_name: str = "",
     config: object = None,
+    rejected_orders: list[Order] | None = None,
 ) -> BacktestResult:
     """從 NAV 序列計算完整績效指標。"""
     if nav_series.empty:
@@ -148,6 +157,11 @@ def compute_analytics(
     # 換手率
     turnover = _estimate_turnover(trades, initial_cash, n_days)
 
+    # Rejected order stats
+    _rejected = rejected_orders or []
+    n_rejected = len(_rejected)
+    rejected_notional = sum(float(o.notional) for o in _rejected)
+
     # 確定日期範圍
     start_date = str(nav_series.index[0].date()) if hasattr(nav_series.index[0], "date") else str(nav_series.index[0])
     end_date = str(nav_series.index[-1].date()) if hasattr(nav_series.index[-1], "date") else str(nav_series.index[-1])
@@ -171,6 +185,8 @@ def compute_analytics(
         avg_trade_return=avg_trade_return,
         total_commission=total_commission,
         turnover=turnover,
+        rejected_orders=n_rejected,
+        rejected_notional=rejected_notional,
         nav_series=nav_series,
         daily_returns=daily_returns,
         drawdown_series=drawdown,

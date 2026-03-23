@@ -11,7 +11,7 @@ from src.domain.models import Trade
 
 class TestSimBroker:
     def test_basic_fill(self):
-        broker = SimBroker(SimConfig(slippage_bps=0, commission_rate=0, tax_rate=0))
+        broker = SimBroker(SimConfig(impact_model="fixed", slippage_bps=0, commission_rate=0, tax_rate=0))
         order = Order(
             instrument=Instrument(symbol="A"),
             side=Side.BUY,
@@ -28,7 +28,7 @@ class TestSimBroker:
         assert order.status == OrderStatus.FILLED
 
     def test_slippage_applied(self):
-        broker = SimBroker(SimConfig(slippage_bps=10, commission_rate=0, tax_rate=0))
+        broker = SimBroker(SimConfig(impact_model="fixed", slippage_bps=10, commission_rate=0, tax_rate=0))
         order = Order(
             instrument=Instrument(symbol="A"),
             side=Side.BUY,
@@ -42,7 +42,7 @@ class TestSimBroker:
         assert trades[0].price == Decimal("100.10")
 
     def test_sell_slippage(self):
-        broker = SimBroker(SimConfig(slippage_bps=10, commission_rate=0, tax_rate=0))
+        broker = SimBroker(SimConfig(impact_model="fixed", slippage_bps=10, commission_rate=0, tax_rate=0))
         order = Order(
             instrument=Instrument(symbol="A"),
             side=Side.SELL,
@@ -56,7 +56,7 @@ class TestSimBroker:
         assert trades[0].price == Decimal("99.90")
 
     def test_commission(self):
-        broker = SimBroker(SimConfig(slippage_bps=0, commission_rate=0.001, tax_rate=0))
+        broker = SimBroker(SimConfig(impact_model="fixed", slippage_bps=0, commission_rate=0.001, tax_rate=0))
         order = Order(
             instrument=Instrument(symbol="A"),
             side=Side.BUY,
@@ -70,7 +70,7 @@ class TestSimBroker:
         assert trades[0].commission == Decimal("100")
 
     def test_sell_tax(self):
-        broker = SimBroker(SimConfig(slippage_bps=0, commission_rate=0.001, tax_rate=0.003))
+        broker = SimBroker(SimConfig(impact_model="fixed", slippage_bps=0, commission_rate=0.001, tax_rate=0.003))
         order = Order(
             instrument=Instrument(symbol="A"),
             side=Side.SELL,

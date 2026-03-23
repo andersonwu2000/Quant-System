@@ -5,16 +5,16 @@ Yahoo Finance 數據源 — 開發和研究用。
 from __future__ import annotations
 
 import logging
-import time
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
+from cachetools import LRUCache
 
 from src.data.feed import DataFeed
 from src.data.quality import check_bars
+from src.data.sources.parquet_cache import ParquetDiskCache
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +30,17 @@ class YahooFeed(DataFeed):
     適用於：開發測試、日線級別策略研究。
     """
 
-    def __init__(self, universe: list[str] | None = None):
+    def __init__(
+        self,
+        universe: list[str] | None = None,
+        cache_size: int | None = None,
+    ):
         self._universe = universe or []
-        self._cache: dict[str, pd.DataFrame] = {}
+        if cache_size is None:
+            from src.config import get_config
+            cache_size = get_config().data_cache_size
+        self._cache: LRUCache[str, pd.DataFrame] = LRUCache(maxsize=cache_size)
+        self._disk_cache = ParquetDiskCache(prefix="")
 
     def get_bars(
         self,
@@ -72,7 +80,7 @@ class YahooFeed(DataFeed):
     ) -> pd.DataFrame:
         """從 Yahoo Finance 下載數據（優先使用本地快取）。"""
         # 嘗試從快取讀取
-        cached = self._load_cache(symbol, freq)
+        cached = self._disk_cache.load(symbol, freq)
         if cached is not None:
             logger.info("Cache hit for %s (freq=%s)", symbol, freq)
             return cached
@@ -118,48 +126,92 @@ class YahooFeed(DataFeed):
         df = df.dropna()
 
         # 寫入快取
-        self._save_cache(symbol, freq, df)
+        self._disk_cache.save(symbol, freq, df)
 
         result_df: pd.DataFrame = df
         return result_df
-
-    def _cache_path(self, symbol: str, freq: str) -> Path:
-        from src.config import get_config
-        cache_dir = Path(get_config().data_cache_dir)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        # Sanitize symbol to prevent path traversal
-        safe_symbol = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
-        path = (cache_dir / f"{safe_symbol}_{freq}.parquet").resolve()
-        if not str(path).startswith(str(cache_dir.resolve())):
-            raise ValueError(f"Invalid symbol for cache path: {symbol}")
-        return path
-
-    def _load_cache(self, symbol: str, freq: str) -> pd.DataFrame | None:
-        path = self._cache_path(symbol, freq)
-        if not path.exists():
-            return None
-        age = time.time() - path.stat().st_mtime
-        if age > _CACHE_TTL:
-            return None
-        try:
-            return pd.read_parquet(path)
-        except Exception:
-            return None
-
-    def _save_cache(self, symbol: str, freq: str, df: pd.DataFrame) -> None:
-        if df.empty:
-            return
-        try:
-            path = self._cache_path(symbol, freq)
-            df.to_parquet(path)
-        except Exception as e:
-            logger.debug("Failed to cache %s: %s", symbol, e)
 
     def get_latest_price(self, symbol: str) -> Decimal:
         df = self.get_bars(symbol)
         if df.empty:
             return Decimal("0")
         return Decimal(str(round(df["close"].iloc[-1], 4)))
+
+    def get_dividends(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+    ) -> dict[str, float]:
+        """取得股利數據。
+
+        Args:
+            symbol: 股票代碼
+            start: 起始日期 (YYYY-MM-DD)
+            end: 結束日期 (YYYY-MM-DD)
+
+        Returns:
+            dict mapping date string (YYYY-MM-DD) to dividend amount per share.
+        """
+        cache_key = f"{symbol}_dividends"
+
+        if cache_key not in self._cache:
+            self._cache[cache_key] = self._download_dividends(symbol, start, end)
+
+        div_df = self._cache[cache_key]
+        if div_df.empty:
+            return {}
+
+        # Extract dividend column if DataFrame
+        series = div_df["dividend"] if "dividend" in div_df.columns else div_df.iloc[:, 0]
+
+        # Filter to requested range
+        mask = (series.index >= pd.Timestamp(start)) & (
+            series.index <= pd.Timestamp(end)
+        )
+        filtered = series[mask]
+
+        result: dict[str, float] = {}
+        for ts, amount in filtered.items():
+            date_str = ts.strftime("%Y-%m-%d")
+            result[date_str] = float(amount)
+        return result
+
+    def _download_dividends(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+    ) -> pd.DataFrame:
+        """從 Yahoo Finance 下載股利數據（優先使用本地快取）。"""
+        cached = self._disk_cache.load(symbol, "dividends")
+        if cached is not None:
+            logger.info("Dividend cache hit for %s", symbol)
+            return cached
+
+        logger.info("Downloading dividends for %s from Yahoo Finance", symbol)
+        try:
+            ticker = yf.Ticker(symbol)
+            divs = ticker.dividends
+        except Exception as e:
+            logger.error("Failed to download dividends for %s: %s", symbol, e)
+            return pd.DataFrame(columns=["dividend"])
+
+        if divs is None or divs.empty:
+            logger.debug("No dividend data for %s", symbol)
+            return pd.DataFrame(columns=["dividend"])
+
+        # Normalize to tz-naive
+        if divs.index.tz is not None:
+            divs.index = divs.index.tz_convert("UTC").tz_localize(None)
+
+        divs = divs.sort_index()
+
+        # Convert Series to DataFrame for parquet caching and consistent type
+        div_df = divs.to_frame(name="dividend")
+
+        self._disk_cache.save(symbol, "dividends", div_df)
+        return div_df
 
     def get_universe(self) -> list[str]:
         return list(self._universe)
