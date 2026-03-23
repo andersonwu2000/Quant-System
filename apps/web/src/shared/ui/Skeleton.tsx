@@ -17,6 +17,21 @@ export function MetricCardSkeleton() {
   );
 }
 
+export function PageSkeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      <Skeleton className="h-7 w-52" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <MetricCardSkeleton key={i} />
+        ))}
+      </div>
+      <Skeleton className="h-64 rounded-xl" />
+      <Skeleton className="h-40 rounded-xl" />
+    </div>
+  );
+}
+
 export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
   return (
     <div className="bg-slate-50 dark:bg-surface rounded-xl p-5 space-y-3 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none">

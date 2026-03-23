@@ -1,7 +1,7 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { lazy, Suspense, useState, useCallback, useMemo } from "react";
 import { Sidebar } from "@shared/layout";
-import { ErrorBoundary, ToastProvider } from "@shared/ui";
+import { ErrorBoundary, ToastProvider, PageSkeleton } from "@shared/ui";
 import { isAuthenticated, logout } from "@core/api";
 import { I18nContext, getSavedLang, saveLang, translations, type Lang } from "@core/i18n";
 import { ThemeProvider } from "@core/theme";
@@ -26,6 +26,7 @@ function AppContent() {
   const [, refresh] = useState(0);
   const [lang, setLangState] = useState<Lang>(getSavedLang);
   const { clearRole } = useAuth();
+  const location = useLocation();
 
   const setLang = useCallback((l: Lang) => {
     saveLang(l);
@@ -46,8 +47,9 @@ function AppContent() {
     <I18nContext.Provider value={i18nValue}>
       <div className="flex min-h-screen bg-slate-200 dark:bg-surface-dark text-slate-900 dark:text-slate-100">
         <Sidebar onLogout={isAuthenticated() ? handleLogout : undefined} />
-        <main className="flex-1 p-6 overflow-auto">
-          <Suspense fallback={<div className="text-slate-500 dark:text-slate-400 p-6">Loading...</div>}>
+        <main className="flex-1 overflow-auto">
+          <Suspense fallback={<div className="p-6"><PageSkeleton /></div>}>
+            <div key={location.pathname} className="p-6 page-enter">
             <Routes>
               <Route path="/settings" element={<SettingsPage onSave={() => refresh((n) => n + 1)} />} />
               <Route path="/" element={<RequireKey><DashboardPage /></RequireKey>} />
@@ -59,6 +61,7 @@ function AppContent() {
               <Route path="/admin" element={<RequireKey><AdminPage /></RequireKey>} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
+            </div>
           </Suspense>
         </main>
       </div>

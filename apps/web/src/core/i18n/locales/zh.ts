@@ -157,6 +157,11 @@ export const zh: Translations = {
     addParam: "新增",
     paramKey: "參數名稱",
     paramValue: "值",
+    universeList: "列表",
+    universePickerTitle: "股票池選擇",
+    universeSearch: "搜尋代碼或公司名稱...",
+    universeSelected: "已選",
+    universeDone: "完成",
   },
 
   // risk

@@ -242,7 +242,7 @@ export function AdminPage() {
         <h2 className="text-2xl font-bold">{t.admin.title}</h2>
         <button
           onClick={() => {
-            setCreateForm({ username: "", display_name: "", password: "", role: "viewer" });
+            setCreateForm({ username: "", display_name: "", password: "", confirmPassword: "", role: "viewer" });
             setShowCreateModal(true);
           }}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors"

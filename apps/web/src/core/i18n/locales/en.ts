@@ -155,6 +155,11 @@ export const en = {
     addParam: "Add",
     paramKey: "key",
     paramValue: "value",
+    universeList: "List",
+    universePickerTitle: "Stock Universe",
+    universeSearch: "Search ticker or company name...",
+    universeSelected: "selected",
+    universeDone: "Done",
   },
 
   // risk

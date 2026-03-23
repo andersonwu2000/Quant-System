@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { ChevronDown } from "lucide-react";
 import { MetricCard } from "@shared/ui";
 import { fmtPct, fmtNum, fmtCurrency } from "@core/utils";
 import { useT } from "@core/i18n";
@@ -9,6 +10,7 @@ import { useBacktestHistory } from "./hooks/useBacktestHistory";
 import type { BacktestHistoryEntry } from "./hooks/useBacktestHistory";
 import { strategiesApi } from "@feat/strategies/api";
 import { AnimatedSelect } from "./components/AnimatedSelect";
+import { UniversePicker } from "./components/UniversePicker";
 import { ResultChart } from "./components/ResultChart";
 import { DrawdownChart } from "./components/DrawdownChart";
 import { MonthlyHeatmap } from "./components/MonthlyHeatmap";
@@ -35,6 +37,7 @@ const defaultForm: BacktestRequest = {
 export function BacktestPage() {
   const { t } = useT();
   const [form, setForm] = useState(defaultForm);
+  const [formOpen, setFormOpen] = useState(true);
   const { running, result, error, progress, submit } = useBacktest();
   const { history, addEntry, removeEntry, clearHistory } = useBacktestHistory();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -112,64 +115,75 @@ export function BacktestPage() {
       <form
         onSubmit={handleSubmit}
         aria-busy={running}
-        className="bg-slate-50 dark:bg-surface rounded-xl p-5 grid grid-cols-2 lg:grid-cols-4 gap-4 border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none"
+        className="bg-slate-50 dark:bg-surface rounded-xl border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none overflow-hidden"
       >
-        <div className="space-y-1">
-          <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.strategy}</span>
-          <AnimatedSelect value={form.strategy} options={effectiveStrategyOptions} onChange={(v) => set("strategy", v)} />
-        </div>
-        <label className="space-y-1">
-          <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.universe}</span>
-          <input value={form.universe.join(",")} required
-            onChange={(e) => set("universe", e.target.value.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean))}
-            className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
-        </label>
-        <label className="space-y-1">
-          <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.start}</span>
-          <input type="date" value={form.start} onChange={(e) => set("start", e.target.value)} required
-            className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
-        </label>
-        <label className="space-y-1">
-          <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.end}</span>
-          <input type="date" value={form.end} onChange={(e) => set("end", e.target.value)} required
-            className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
-        </label>
-        <label className="space-y-1">
-          <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.initialCash}</span>
-          <input type="number" value={form.initial_cash} min={1} onChange={(e) => set("initial_cash", +e.target.value)}
-            className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
-        </label>
-        <label className="space-y-1">
-          <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.slippage}</span>
-          <input type="number" value={form.slippage_bps} min={0} onChange={(e) => set("slippage_bps", +e.target.value)}
-            className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
-        </label>
-        <label className="space-y-1">
-          <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.commissionRate}</span>
-          <input type="number" step="0.0001" value={form.commission_rate} min={0} max={1}
-            onChange={(e) => set("commission_rate", +e.target.value)}
-            className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
-        </label>
-        <div className="space-y-1">
-          <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.rebalance}</span>
-          <AnimatedSelect value={form.rebalance_freq} options={rebalanceOptions} onChange={(v) => set("rebalance_freq", v)} />
-        </div>
+        <button
+          type="button"
+          onClick={() => setFormOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-100 dark:hover:bg-surface-light/30 transition-colors"
+        >
+          <span className="text-base font-semibold text-slate-500 dark:text-slate-400">{t.backtest.strategyParams}</span>
+          <ChevronDown
+            size={16}
+            className={`text-slate-400 transition-transform duration-200 ${formOpen ? "rotate-180" : ""}`}
+          />
+        </button>
 
-        <ParamsEditor params={form.params} onChange={(p) => set("params", p)} />
+        {formOpen && (
+          <div className="px-5 pb-5 pt-1 grid grid-cols-2 lg:grid-cols-4 gap-4 border-t border-slate-200 dark:border-surface-light/40">
+            <div className="space-y-1">
+              <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.strategy}</span>
+              <AnimatedSelect value={form.strategy} options={effectiveStrategyOptions} onChange={(v) => set("strategy", v)} />
+            </div>
+            <UniversePicker value={form.universe} onChange={(v) => set("universe", v)} />
+            <label className="space-y-1">
+              <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.start}</span>
+              <input type="date" value={form.start} onChange={(e) => set("start", e.target.value)} required
+                className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.end}</span>
+              <input type="date" value={form.end} onChange={(e) => set("end", e.target.value)} required
+                className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.initialCash}</span>
+              <input type="number" value={form.initial_cash} min={1} onChange={(e) => set("initial_cash", +e.target.value)}
+                className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.slippage}</span>
+              <input type="number" value={form.slippage_bps} min={0} onChange={(e) => set("slippage_bps", +e.target.value)}
+                className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.commissionRate}</span>
+              <input type="number" step="0.0001" value={form.commission_rate} min={0} max={1}
+                onChange={(e) => set("commission_rate", +e.target.value)}
+                className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
+            </label>
+            <div className="space-y-1">
+              <span className="text-sm text-slate-500 dark:text-slate-400">{t.backtest.rebalance}</span>
+              <AnimatedSelect value={form.rebalance_freq} options={rebalanceOptions} onChange={(v) => set("rebalance_freq", v)} />
+            </div>
 
-        <div className="col-span-full space-y-2">
-          {formErrors.length > 0 && (
-            <ul className="text-sm text-amber-400 list-disc list-inside">
-              {formErrors.map((e) => <li key={e}>{e}</li>)}
-            </ul>
-          )}
-          <button type="submit" disabled={running || !formValid}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors">
-            {running
-              ? (progress ? `${t.backtest.running} (${progress.current}/${progress.total})` : t.backtest.running)
-              : t.backtest.run}
-          </button>
-        </div>
+            <ParamsEditor params={form.params} onChange={(p) => set("params", p)} />
+
+            <div className="col-span-full space-y-2">
+              {formErrors.length > 0 && (
+                <ul className="text-sm text-amber-400 list-disc list-inside">
+                  {formErrors.map((e) => <li key={e}>{e}</li>)}
+                </ul>
+              )}
+              <button type="submit" disabled={running || !formValid}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors">
+                {running
+                  ? (progress ? `${t.backtest.running} (${progress.current}/${progress.total})` : t.backtest.running)
+                  : t.backtest.run}
+              </button>
+            </div>
+          </div>
+        )}
       </form>
 
       {error && <div aria-live="polite" className="bg-red-500/10 text-red-400 rounded-xl p-4 text-sm">{error}</div>}

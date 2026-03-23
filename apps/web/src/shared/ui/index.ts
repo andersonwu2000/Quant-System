@@ -3,7 +3,7 @@ export { StatusBadge } from "./StatusBadge";
 export { InfoTooltip } from "./InfoTooltip";
 export { MetricCard } from "./MetricCard";
 export { ErrorBoundary } from "./ErrorBoundary";
-export { Skeleton, MetricCardSkeleton, TableSkeleton } from "./Skeleton";
+export { Skeleton, MetricCardSkeleton, TableSkeleton, PageSkeleton } from "./Skeleton";
 export { DataTable } from "./DataTable";
 export type { Column } from "./DataTable";
 export { ExportButton } from "./ExportButton";
