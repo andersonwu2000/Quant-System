@@ -8,10 +8,7 @@ import { useAuth } from "@core/auth";
 import { langLabels, type Lang } from "@core/i18n";
 import { useTheme, type Theme } from "@core/theme";
 import { auth as authApi } from "@quant/shared";
-import { translateApiError } from "@core/utils";
-
-const PW_PATTERN = /^[a-zA-Z0-9]+$/;
-const isValidPassword = (pw: string) => pw.length >= 8 && PW_PATTERN.test(pw);
+import { translateApiError, isValidPassword } from "@core/utils";
 import { systemApi } from "./api";
 import { SystemMetrics } from "./components/SystemMetrics";
 
@@ -74,6 +71,7 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
       setSaved(true);
       toast("success", t.toast.settingsSaved);
       onSave?.();
+      clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       setLoginError(translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));

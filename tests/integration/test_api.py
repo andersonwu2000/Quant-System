@@ -103,7 +103,7 @@ class TestAuth:
     @pytest.mark.asyncio
     async def test_logout(self, client: AsyncClient):
         """POST /auth/logout returns 200 and clears cookie."""
-        resp = await client.post("/api/v1/auth/logout")
+        resp = await client.post("/api/v1/auth/logout", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["detail"] == "Logged out"
 

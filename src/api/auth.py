@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import hmac
 from datetime import datetime, timedelta, timezone
 
 from typing import Any, Callable
@@ -103,7 +102,7 @@ def verify_jwt(
         )
 
     try:
-        payload: dict[str, Any] = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+        payload = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -127,7 +126,7 @@ def verify_jwt(
         token_iat = payload.get("iat")
         if token_valid_after and token_iat:
             valid_after_dt = datetime.fromisoformat(token_valid_after)
-            issued_at_dt = datetime.fromtimestamp(token_iat, tz=timezone.utc)
+            issued_at_dt = datetime.fromtimestamp(float(token_iat), tz=timezone.utc)
             if issued_at_dt < valid_after_dt:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

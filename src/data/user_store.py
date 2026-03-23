@@ -81,7 +81,7 @@ class UserStore:
                     updated_at=now,
                 )
             )
-            user_id = result.inserted_primary_key[0]
+            user_id: int = result.inserted_primary_key[0]  # type: ignore[index]
         return self.get_by_id(user_id)  # type: ignore[return-value]
 
     # 允許透過 update() 修改的欄位白名單
@@ -107,7 +107,7 @@ class UserStore:
             result = conn.execute(
                 users_table.delete().where(users_table.c.id == user_id)
             )
-            return result.rowcount > 0  # type: ignore[union-attr]
+            return (result.rowcount or 0) > 0
 
     def increment_failed_login(self, user_id: int) -> None:
         with self._engine.begin() as conn:

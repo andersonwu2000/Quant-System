@@ -7,11 +7,8 @@ import type { Column } from "@shared/ui";
 import type { UserInfo, UserRole } from "@quant/shared";
 import { fmtDate } from "@quant/shared";
 import { Pencil, KeyRound, Trash2 } from "lucide-react";
-import { translateApiError } from "@core/utils";
+import { translateApiError, isValidPassword } from "@core/utils";
 import { adminApi } from "./api";
-
-const PW_PATTERN = /^[a-zA-Z0-9]+$/;
-const isValidPassword = (pw: string) => pw.length >= 8 && PW_PATTERN.test(pw);
 
 const ROLE_BADGE_COLORS: Record<UserRole, string> = {
   viewer: "bg-slate-200 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400",

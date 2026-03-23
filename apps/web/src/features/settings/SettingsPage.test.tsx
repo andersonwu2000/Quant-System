@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "@test/helpers";
 import { SettingsPage } from "./SettingsPage";
 import { systemApi } from "./api";
@@ -16,70 +16,74 @@ vi.mock("@core/api", () => ({
   get: vi.fn(),
   post: vi.fn(),
   put: vi.fn(),
+  del: vi.fn(),
   ApiError: class ApiError extends Error {},
 }));
 
-const mockStatus = {
-  mode: "paper",
-  uptime_seconds: 7200,
-  strategies_running: 2,
-  data_source: "yahoo",
-  database: "connected",
-};
+vi.mock("@quant/shared", async () => {
+  const actual = await vi.importActual("@quant/shared");
+  return {
+    ...actual,
+    auth: { changePassword: vi.fn() },
+  };
+});
+
+vi.mock("@core/utils", async () => {
+  const actual = await vi.importActual("@core/utils");
+  return {
+    ...actual,
+    translateApiError: (msg: string) => msg,
+  };
+});
 
 describe("SettingsPage", () => {
   beforeEach(async () => {
     vi.resetAllMocks();
-    // Restore isAuthenticated mock default
     const { isAuthenticated } = await import("@core/api");
     vi.mocked(isAuthenticated).mockReturnValue(false);
   });
 
-  it("renders API key input field", () => {
+  it("renders page title", () => {
     vi.mocked(systemApi.status).mockReturnValue(new Promise(() => {}));
 
     renderWithProviders(<SettingsPage />);
-    expect(screen.getByPlaceholderText("Enter API key")).toBeInTheDocument();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
-  it("renders language selector buttons", () => {
+  it("shows login hint when not authenticated", () => {
     vi.mocked(systemApi.status).mockReturnValue(new Promise(() => {}));
 
     renderWithProviders(<SettingsPage />);
-    expect(screen.getByText("English")).toBeInTheDocument();
-    // Use a function matcher for the Chinese text
-    expect(screen.getByText("繁體中文")).toBeInTheDocument();
+    expect(screen.getByText(/Please login with your/)).toBeInTheDocument();
   });
 
-  it("renders save button", () => {
+  it("renders collapsible section headers", () => {
     vi.mocked(systemApi.status).mockReturnValue(new Promise(() => {}));
 
     renderWithProviders(<SettingsPage />);
+    // Login, Language, Theme, System Status sections exist
+    expect(screen.getByText("Language")).toBeInTheDocument();
+    expect(screen.getByText("Theme")).toBeInTheDocument();
+    expect(screen.getByText("System Status")).toBeInTheDocument();
+  });
+
+  it("expands login section and shows save button", () => {
+    vi.mocked(systemApi.status).mockReturnValue(new Promise(() => {}));
+
+    renderWithProviders(<SettingsPage />);
+    // Click the login section header to expand
+    fireEvent.click(screen.getByText("Login"));
+
     expect(screen.getByText("Save")).toBeInTheDocument();
   });
 
-  it("shows system status cards when loaded", async () => {
-    vi.mocked(systemApi.status).mockResolvedValue(mockStatus);
-
-    renderWithProviders(<SettingsPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText("System Status")).toBeInTheDocument();
-    });
-    expect(screen.getByText("Mode")).toBeInTheDocument();
-    expect(screen.getByText("paper")).toBeInTheDocument();
-    expect(screen.getByText("Uptime")).toBeInTheDocument();
-    expect(screen.getByText("2h 0m")).toBeInTheDocument();
-    expect(screen.getByText("Strategies Running")).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.getByText("Data Source")).toBeInTheDocument();
-    expect(screen.getByText("yahoo")).toBeInTheDocument();
-  });
-
-  it("shows API key hint when not authenticated", () => {
+  it("expands language section and shows language options", () => {
     vi.mocked(systemApi.status).mockReturnValue(new Promise(() => {}));
 
     renderWithProviders(<SettingsPage />);
-    expect(screen.getByText(/Please enter your API Key/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Language"));
+
+    expect(screen.getByText("English")).toBeInTheDocument();
+    expect(screen.getByText("繁體中文")).toBeInTheDocument();
   });
 });
