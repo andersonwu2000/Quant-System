@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -70,7 +71,7 @@ class BacktestResult:
         ]
         return "\n".join(lines)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """轉為 dict（用於 API 回應和 DB 存儲）。"""
         return {
             "strategy_name": self.strategy_name,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # ── 因子註冊表 ──────────────────────────────────────────────────
 
-FACTOR_REGISTRY: dict[str, dict] = {
+FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
     "momentum": {
         "fn": flib.momentum,
         "key": "momentum",
@@ -247,12 +248,16 @@ def compute_ic(
             continue
 
         if method == "rank":
-            corr = fv[common].rank().corr(fr[common].rank())
+            fv_series = pd.Series(fv[common].rank())
+            fr_series = pd.Series(fr[common].rank())
+            corr_val: float = fv_series.corr(fr_series)
         else:
-            corr = fv[common].corr(fr[common])
+            fv_series = pd.Series(fv[common])
+            fr_series = pd.Series(fr[common])
+            corr_val = fv_series.corr(fr_series)
 
-        if not np.isnan(corr):
-            ic_values.append(corr)
+        if not np.isnan(corr_val):
+            ic_values.append(corr_val)
             ic_dates.append(dt)
 
     if not ic_values:
@@ -369,10 +374,10 @@ def combine_factors(
         final_weights = {k: 1.0 / len(individual_fv) for k in individual_fv}
 
     # 合成複合因子
-    common_dates = None
-    common_symbols = None
+    common_dates: set[Any] | None = None
+    common_symbols: set[str] | None = None
     for fv in individual_fv.values():
-        if common_dates is None:
+        if common_dates is None or common_symbols is None:
             common_dates = set(fv.index)
             common_symbols = set(fv.columns)
         else:
@@ -417,7 +422,7 @@ def analyze_factor(
     **kwargs: object,
 ) -> ICResult:
     """單因子完整分析的便利函式。"""
-    fv = compute_factor_values(data, factor_name, **kwargs)
+    fv = compute_factor_values(data, factor_name, **kwargs)  # type: ignore[arg-type]
     if fv.empty:
         return ICResult(factor_name=factor_name, ic_mean=0, ic_std=0, icir=0)
 

@@ -7,6 +7,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from decimal import Decimal
 
+from typing import Any
+
 from src.domain.models import Order
 
 
@@ -22,11 +24,11 @@ class BrokerAdapter(ABC):
         """撤單，返回是否成功。"""
 
     @abstractmethod
-    def query_positions(self) -> dict[str, dict]:
+    def query_positions(self) -> dict[str, dict[str, Any]]:
         """查詢券商端持倉。返回 {symbol: {qty, avg_cost, ...}}"""
 
     @abstractmethod
-    def query_account(self) -> dict:
+    def query_account(self) -> dict[str, Any]:
         """查詢帳戶信息 (餘額、購買力等)。"""
 
     @abstractmethod
@@ -41,9 +43,9 @@ class PaperBroker(BrokerAdapter):
     用於模擬盤測試，不實際下單。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._connected = True
-        self._positions: dict[str, dict] = {}
+        self._positions: dict[str, dict[str, Any]] = {}
         self._cash = Decimal("10000000")
 
     def submit_order(self, order: Order) -> str:
@@ -53,10 +55,10 @@ class PaperBroker(BrokerAdapter):
     def cancel_order(self, order_id: str) -> bool:
         return True
 
-    def query_positions(self) -> dict[str, dict]:
+    def query_positions(self) -> dict[str, dict[str, Any]]:
         return dict(self._positions)
 
-    def query_account(self) -> dict:
+    def query_account(self) -> dict[str, Any]:
         return {"cash": float(self._cash), "status": "active"}
 
     def is_connected(self) -> bool:

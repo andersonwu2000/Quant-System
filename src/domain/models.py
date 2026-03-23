@@ -151,11 +151,11 @@ class Portfolio:
 
     @property
     def gross_exposure(self) -> Decimal:
-        return sum(abs(p.market_value) for p in self.positions.values())
+        return sum((abs(p.market_value) for p in self.positions.values()), Decimal(0))
 
     @property
     def net_exposure(self) -> Decimal:
-        return sum(p.market_value for p in self.positions.values())
+        return sum((p.market_value for p in self.positions.values()), Decimal(0))
 
     @property
     def daily_pnl(self) -> Decimal:

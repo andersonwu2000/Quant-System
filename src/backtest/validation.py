@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 
 from src.backtest.analytics import BacktestResult
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ValidationResult:
     """驗證結果。"""
     passed: bool
-    checks: list[dict]
+    checks: list[dict[str, Any]]
 
     def summary(self) -> str:
         lines = ["═══ Backtest Validation ═══"]
@@ -31,7 +32,7 @@ class ValidationResult:
 
 def validate_backtest(result: BacktestResult) -> ValidationResult:
     """執行所有驗證檢查。"""
-    checks: list[dict] = []
+    checks: list[dict[str, Any]] = []
 
     # 1. 非零交易檢查
     checks.append(_check_nonzero_trades(result))
@@ -52,7 +53,7 @@ def validate_backtest(result: BacktestResult) -> ValidationResult:
     return ValidationResult(passed=all_passed, checks=checks)
 
 
-def _check_nonzero_trades(result: BacktestResult) -> dict:
+def _check_nonzero_trades(result: BacktestResult) -> dict[str, Any]:
     passed = result.total_trades > 0
     return {
         "name": "非零交易",
@@ -61,7 +62,7 @@ def _check_nonzero_trades(result: BacktestResult) -> dict:
     }
 
 
-def _check_nav_continuity(result: BacktestResult) -> dict:
+def _check_nav_continuity(result: BacktestResult) -> dict[str, Any]:
     """NAV 序列不應有日報酬 > 50% 的突變。"""
     if result.daily_returns.empty:
         return {"name": "NAV 連續性", "passed": True, "detail": "無數據"}
@@ -75,7 +76,7 @@ def _check_nav_continuity(result: BacktestResult) -> dict:
     }
 
 
-def _check_return_sanity(result: BacktestResult) -> dict:
+def _check_return_sanity(result: BacktestResult) -> dict[str, Any]:
     """年化報酬不應超過 200%（除非是極短期回測）。"""
     passed = abs(result.annual_return) < 2.0
     return {
@@ -85,7 +86,7 @@ def _check_return_sanity(result: BacktestResult) -> dict:
     }
 
 
-def _check_sharpe_sanity(result: BacktestResult) -> dict:
+def _check_sharpe_sanity(result: BacktestResult) -> dict[str, Any]:
     """Sharpe > 3.0 通常暗示過擬合。"""
     suspicious = result.sharpe > 3.0
     return {
@@ -95,7 +96,7 @@ def _check_sharpe_sanity(result: BacktestResult) -> dict:
     }
 
 
-def _check_cost_impact(result: BacktestResult) -> dict:
+def _check_cost_impact(result: BacktestResult) -> dict[str, Any]:
     """交易成本佔總收益的比例。"""
     if result.total_return == 0:
         return {"name": "成本影響", "passed": True, "detail": "總收益為零"}

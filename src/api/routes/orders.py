@@ -17,7 +17,7 @@ async def list_orders(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     api_key: str = Depends(verify_api_key),
-):
+) -> list[OrderResponse]:
     """列出訂單（支援分頁）。"""
     state = get_app_state()
     orders = state.oms.get_all_orders()

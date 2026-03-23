@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -43,7 +44,7 @@ class SimBroker:
     def execute(
         self,
         orders: list[Order],
-        current_bars: dict[str, dict],
+        current_bars: dict[str, dict[str, Any]],
         timestamp: datetime | None = None,
     ) -> list[Trade]:
         """

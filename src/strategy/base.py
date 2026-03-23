@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any
 from decimal import Decimal
 
 import pandas as pd
@@ -75,7 +76,7 @@ class Context:
             return self._current_time
         return datetime.utcnow()
 
-    def log(self, msg: str, **kwargs) -> None:
+    def log(self, msg: str, **kwargs: Any) -> None:
         """策略日誌。"""
         self._logger.info(msg, **kwargs)
 

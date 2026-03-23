@@ -120,7 +120,8 @@ class YahooFeed(DataFeed):
         # 寫入快取
         self._save_cache(symbol, freq, df)
 
-        return df
+        result_df: pd.DataFrame = df
+        return result_df
 
     def _cache_path(self, symbol: str, freq: str) -> Path:
         from src.config import get_config

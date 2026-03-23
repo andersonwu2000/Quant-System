@@ -12,7 +12,7 @@ router = APIRouter(prefix="/strategies", tags=["strategies"])
 
 
 @router.get("", response_model=StrategyListResponse)
-async def list_strategies(api_key: str = Depends(verify_api_key)):
+async def list_strategies(api_key: str = Depends(verify_api_key)) -> StrategyListResponse:
     """列出所有已註冊策略。"""
     state = get_app_state()
     strategies = []
@@ -26,7 +26,7 @@ async def list_strategies(api_key: str = Depends(verify_api_key)):
 
 
 @router.get("/{strategy_id}", response_model=StrategyInfo)
-async def get_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)):
+async def get_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)) -> StrategyInfo:
     """取得單一策略詳情。"""
     state = get_app_state()
     info = state.strategies.get(strategy_id)
@@ -40,7 +40,7 @@ async def get_strategy(strategy_id: str, api_key: str = Depends(verify_api_key))
 
 
 @router.post("/{strategy_id}/start")
-async def start_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)):
+async def start_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)) -> dict[str, str]:
     """啟動策略。"""
     state = get_app_state()
     if strategy_id not in state.strategies:
@@ -50,7 +50,7 @@ async def start_strategy(strategy_id: str, api_key: str = Depends(verify_api_key
 
 
 @router.post("/{strategy_id}/stop")
-async def stop_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)):
+async def stop_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)) -> dict[str, str]:
     """停止策略。"""
     state = get_app_state()
     if strategy_id not in state.strategies:

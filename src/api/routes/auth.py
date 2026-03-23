@@ -23,7 +23,7 @@ class LoginResponse(BaseModel):
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(req: LoginRequest, response: Response):
+async def login(req: LoginRequest, response: Response) -> LoginResponse:
     """驗證 API Key，回傳 JWT（同時設定 httpOnly cookie）。"""
     config = get_config()
     if not hmac.compare_digest(req.api_key, config.api_key):
@@ -45,7 +45,7 @@ async def login(req: LoginRequest, response: Response):
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(response: Response) -> dict[str, str]:
     """清除 JWT cookie。"""
     response.delete_cookie(key="access_token")
     return {"detail": "Logged out"}

@@ -12,7 +12,7 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 
 @router.get("", response_model=PortfolioResponse)
-async def get_portfolio(api_key: str = Depends(verify_api_key)):
+async def get_portfolio(api_key: str = Depends(verify_api_key)) -> PortfolioResponse:
     """取得當前投資組合。"""
     state = get_app_state()
     portfolio = state.portfolio
@@ -31,24 +31,24 @@ async def get_portfolio(api_key: str = Depends(verify_api_key)):
             weight=weight,
         ))
 
-    nav = float(portfolio.nav)
+    nav_float = float(portfolio.nav)
     daily_pnl = float(portfolio.daily_pnl)
 
     return PortfolioResponse(
-        nav=nav,
+        nav=nav_float,
         cash=float(portfolio.cash),
         gross_exposure=float(portfolio.gross_exposure),
         net_exposure=float(portfolio.net_exposure),
         positions_count=len(portfolio.positions),
         daily_pnl=daily_pnl,
-        daily_pnl_pct=daily_pnl / nav if nav > 0 else 0,
+        daily_pnl_pct=daily_pnl / nav_float if nav_float > 0 else 0.0,
         positions=positions,
         as_of=str(portfolio.as_of),
     )
 
 
 @router.get("/positions", response_model=list[PositionResponse])
-async def get_positions(api_key: str = Depends(verify_api_key)):
+async def get_positions(api_key: str = Depends(verify_api_key)) -> list[PositionResponse]:
     """取得所有持倉明細。"""
     state = get_app_state()
     portfolio = state.portfolio

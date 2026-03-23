@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import WebSocket
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ConnectionManager:
     """管理所有 WebSocket 連線。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._connections: dict[str, list[WebSocket]] = {}  # channel → connections
 
     async def connect(self, websocket: WebSocket, channel: str) -> None:
@@ -31,7 +32,7 @@ class ConnectionManager:
             ]
             logger.info("WS disconnected: channel=%s", channel)
 
-    async def broadcast(self, channel: str, data: dict) -> None:
+    async def broadcast(self, channel: str, data: dict[str, Any]) -> None:
         """向指定頻道的所有連線推送數據。"""
         if channel not in self._connections:
             return
@@ -57,7 +58,7 @@ class ConnectionManager:
                 ws for ws in self._connections[channel] if ws not in dead
             ]
 
-    async def send_alert(self, data: dict) -> None:
+    async def send_alert(self, data: dict[str, Any]) -> None:
         """推送告警到 alerts 頻道。"""
         await self.broadcast("alerts", data)
 

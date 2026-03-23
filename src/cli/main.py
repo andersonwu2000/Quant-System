@@ -10,7 +10,7 @@ CLI 工具 — 量化交易系統的命令列介面。
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Literal, Optional, cast
 
 import typer
 from rich.console import Console
@@ -50,7 +50,7 @@ def backtest(
     export_trades: Optional[str] = typer.Option(None, "--export-trades", help="匯出交易明細 CSV"),
     benchmark: Optional[str] = typer.Option(None, "--benchmark", "-b", help="基準指數代碼（如 SPY, 0050.TW）"),
     log_level: str = typer.Option("INFO", "--log-level", "-l"),
-):
+) -> None:
     """執行回測。"""
     _setup_logging(log_level)
 
@@ -69,7 +69,7 @@ def backtest(
         start=start,
         end=end,
         initial_cash=cash,
-        rebalance_freq=rebalance,
+        rebalance_freq=cast(Literal["daily", "weekly", "monthly"], rebalance),
         slippage_bps=slippage,
     )
 
@@ -121,7 +121,6 @@ def backtest(
         generate_html_report(result, benchmark_comparison=bench_comparison, output_path=report)
         console.print(f"[green]HTML report saved to {report}[/green]")
 
-    return result
 
 
 @app.command()
@@ -130,7 +129,7 @@ def server(
     port: int = typer.Option(8000, "--port"),
     reload: bool = typer.Option(False, "--reload"),
     log_level: str = typer.Option("INFO", "--log-level", "-l"),
-):
+) -> None:
     """啟動 API 伺服器。"""
     _setup_logging(log_level)
     import uvicorn
@@ -146,7 +145,7 @@ def server(
 
 
 @app.command()
-def status():
+def status() -> None:
     """顯示系統狀態。"""
     _setup_logging("WARNING")
 
@@ -173,7 +172,7 @@ def status():
 def factors(
     symbol: str = typer.Argument(help="股票代號"),
     lookback: int = typer.Option(252, "--lookback", "-l"),
-):
+) -> None:
     """計算並顯示因子值。"""
     _setup_logging("WARNING")
 
@@ -229,7 +228,7 @@ def factor_analysis(
     horizon: int = typer.Option(5, "--horizon", "-h", help="報酬週期（交易日）"),
     decay: bool = typer.Option(False, "--decay", "-d", help="執行因子衰減分析"),
     log_level: str = typer.Option("WARNING", "--log-level", "-l"),
-):
+) -> None:
     """因子研究分析。"""
     _setup_logging(log_level)
 
@@ -254,7 +253,7 @@ def factor_analysis(
     import pandas as pd
     yahoo = YahooFeed()
     warmup_start = (pd.Timestamp(start) - pd.tseries.offsets.BDay(400)).strftime("%Y-%m-%d")
-    data: dict = {}
+    data: dict[str, Any] = {}
     for sym in universe:
         bars = yahoo.get_bars(sym, start=warmup_start, end=end)
         if not bars.empty:

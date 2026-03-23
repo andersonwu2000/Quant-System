@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from typing import cast, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
@@ -25,12 +26,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 _limiter = Limiter(key_func=get_remote_address)
 _MAX_BACKTEST_TASKS = 50  # evict oldest tasks beyond this limit
-_background_tasks: set[asyncio.Task] = set()  # prevent GC of fire-and-forget tasks
+_background_tasks: set[asyncio.Task[None]] = set()  # prevent GC of fire-and-forget tasks
 
 
 @router.post("", response_model=BacktestSummaryResponse)
 @_limiter.limit("10/minute")
-async def submit_backtest(request: Request, req: BacktestRequest, api_key: str = Depends(verify_api_key)):
+async def submit_backtest(request: Request, req: BacktestRequest, api_key: str = Depends(verify_api_key)) -> BacktestSummaryResponse:
     """提交回測任務（異步執行）。"""
     state = get_app_state()
     config = get_config()
@@ -44,7 +45,7 @@ async def submit_backtest(request: Request, req: BacktestRequest, api_key: str =
         "progress": None,
     }
 
-    def _run():
+    def _run() -> None:
         try:
             strategy = resolve_strategy(req.strategy, req.params)
             bt_config = BacktestConfig(
@@ -54,7 +55,7 @@ async def submit_backtest(request: Request, req: BacktestRequest, api_key: str =
                 initial_cash=req.initial_cash,
                 slippage_bps=req.slippage_bps,
                 commission_rate=req.commission_rate,
-                rebalance_freq=req.rebalance_freq,
+                rebalance_freq=cast(Literal["daily", "weekly", "monthly"], req.rebalance_freq),
             )
 
             def progress_cb(current: int, total: int) -> None:
@@ -76,7 +77,7 @@ async def submit_backtest(request: Request, req: BacktestRequest, api_key: str =
                 state.backtest_tasks[task_id]["error"] = str(e)
 
     # 在背景執行，設定超時
-    async def _run_with_timeout():
+    async def _run_with_timeout() -> None:
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(_run),
@@ -118,7 +119,7 @@ async def submit_backtest(request: Request, req: BacktestRequest, api_key: str =
 
 
 @router.get("/{task_id}", response_model=BacktestSummaryResponse)
-async def get_backtest_status(task_id: str, api_key: str = Depends(verify_api_key)):
+async def get_backtest_status(task_id: str, api_key: str = Depends(verify_api_key)) -> BacktestSummaryResponse:
     """查詢回測狀態。"""
     state = get_app_state()
     task = state.backtest_tasks.get(task_id)
@@ -143,7 +144,7 @@ async def get_backtest_status(task_id: str, api_key: str = Depends(verify_api_ke
 
 
 @router.get("/{task_id}/result", response_model=BacktestResultResponse)
-async def get_backtest_result(task_id: str, api_key: str = Depends(verify_api_key)):
+async def get_backtest_result(task_id: str, api_key: str = Depends(verify_api_key)) -> BacktestResultResponse:
     """取得完整回測結果。"""
     state = get_app_state()
     task = state.backtest_tasks.get(task_id)

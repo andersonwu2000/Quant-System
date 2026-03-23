@@ -7,6 +7,8 @@ from __future__ import annotations
 import hmac
 from datetime import datetime, timedelta, timezone
 
+from typing import Any, Callable
+
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
@@ -66,7 +68,7 @@ def verify_jwt(
     request: Request,
     api_key: str | None = Security(api_key_header),
     credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
-) -> dict:
+) -> dict[str, Any]:
     """驗證 JWT token（Bearer header 或 httpOnly cookie），返回 payload。API Key 視為 admin。"""
     config = get_config()
 
@@ -99,7 +101,7 @@ def verify_jwt(
         )
 
 
-def verify_ws_token(token: str) -> dict | None:
+def verify_ws_token(token: str) -> dict[str, Any] | None:
     """驗證 WebSocket 連線的 JWT token，返回 payload 或 None。"""
     config = get_config()
     try:
@@ -108,9 +110,9 @@ def verify_ws_token(token: str) -> dict | None:
         return None
 
 
-def require_role(required_role: str):
+def require_role(required_role: str) -> Callable[..., dict[str, Any]]:
     """角色檢查依賴。"""
-    def checker(payload: dict = Depends(verify_jwt)) -> dict:
+    def checker(payload: dict[str, Any] = Depends(verify_jwt)) -> dict[str, Any]:
         role = payload.get("role", "")
         role_hierarchy = {"viewer": 0, "researcher": 1, "trader": 2, "risk_manager": 3, "admin": 4}
         if role_hierarchy.get(role, 0) < role_hierarchy.get(required_role, 99):

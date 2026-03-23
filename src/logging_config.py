@@ -10,12 +10,13 @@ import structlog
 
 def setup_logging(log_level: str = "INFO", log_format: str = "text") -> None:
     """Configure structured logging."""
-    shared_processors = [
+    shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
     ]
 
+    renderer: structlog.types.Processor
     if log_format == "json":
         renderer = structlog.processors.JSONRenderer()
     else:

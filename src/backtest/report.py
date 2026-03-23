@@ -9,6 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -58,7 +59,7 @@ def compare_with_benchmark(
     result: BacktestResult,
     benchmark_nav: pd.Series,
     benchmark_name: str = "Benchmark",
-) -> dict:
+) -> dict[str, Any]:
     """
     與基準指數比較。
 
@@ -145,7 +146,7 @@ def compare_with_benchmark(
 
 def generate_html_report(
     result: BacktestResult,
-    benchmark_comparison: dict | None = None,
+    benchmark_comparison: dict[str, Any] | None = None,
     output_path: str | Path | None = None,
 ) -> str:
     """
@@ -402,15 +403,15 @@ def _compute_monthly_returns(daily_returns: pd.Series) -> pd.DataFrame:
     dr.index = pd.to_datetime(dr.index)
 
     monthly = (1 + dr).resample("ME").prod() - 1
+    idx = pd.DatetimeIndex(monthly.index)
     monthly_df = pd.DataFrame({
-        "year": monthly.index.year,
-        "month": monthly.index.month,
+        "year": idx.year,
+        "month": idx.month,
         "return": monthly.values,
     })
 
     pivot = monthly_df.pivot(index="year", columns="month", values="return")
-    # 加上年度報酬
-    yearly = monthly_df.groupby("year")["return"].apply(lambda x: (1 + x).prod() - 1)
+    yearly = monthly_df.groupby("year")["return"].apply(lambda x: (1 + x).prod() - 1)  # type: ignore[operator]
     pivot["YTD"] = yearly
     return pivot
 

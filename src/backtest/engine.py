@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -45,7 +45,7 @@ class BacktestConfig:
     slippage_bps: float = 5.0
     commission_rate: float = 0.001425
     tax_rate: float = 0.003
-    risk_rules: list | None = None          # None = 使用預設規則
+    risk_rules: list[Any] | None = None          # None = 使用預設規則
 
 
 class BacktestEngine:
@@ -111,7 +111,7 @@ class BacktestEngine:
         logger.info("Trading dates: %d days", total_bars)
 
         # 4. 逐 bar 模擬
-        nav_history: list[dict] = []
+        nav_history: list[dict[str, Any]] = []
         rebalance_count = 0
 
         for i, bar_date in enumerate(trading_dates):

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class OrderManager:
     """訂單管理：追蹤所有訂單狀態。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._orders: dict[str, Order] = {}
         self._trade_history: list[Trade] = []
 

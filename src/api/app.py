@@ -42,7 +42,7 @@ def create_app() -> FastAPI:
 
     # Rate limiter
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
     # Audit logging middleware
     app.add_middleware(AuditMiddleware)
@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
         websocket: WebSocket,
         channel: str,
         token: str | None = Query(default=None),
-    ):
+    ) -> None:
         """WebSocket 連線端點。支持頻道：portfolio, alerts, orders, market"""
         valid_channels = {"portfolio", "alerts", "orders", "market"}
         if channel not in valid_channels:
@@ -102,7 +102,7 @@ def create_app() -> FastAPI:
             ws_manager.disconnect(websocket, channel)
 
     @app.on_event("startup")
-    async def startup():
+    async def startup() -> None:
         logger.info(
             "Quant Trading System starting (env=%s, mode=%s)",
             config.env, config.mode,
@@ -115,7 +115,7 @@ def create_app() -> FastAPI:
         }
 
     @app.on_event("shutdown")
-    async def shutdown():
+    async def shutdown() -> None:
         logger.info("Quant Trading System shutting down...")
         await ws_manager.close_all()
 

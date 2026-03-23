@@ -10,6 +10,7 @@ import asyncio
 import threading
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Any
 
 from src.domain.models import Portfolio
 from src.execution.oms import OrderManager
@@ -22,8 +23,8 @@ class AppState:
     portfolio: Portfolio = field(default_factory=lambda: Portfolio(cash=Decimal("10000000")))
     oms: OrderManager = field(default_factory=OrderManager)
     risk_engine: RiskEngine = field(default_factory=RiskEngine)
-    strategies: dict[str, dict] = field(default_factory=dict)
-    backtest_tasks: dict[str, dict] = field(default_factory=dict)
+    strategies: dict[str, dict[str, Any]] = field(default_factory=dict)
+    backtest_tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     # 保護 portfolio mutation 的非同步鎖
     mutation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # 保護 backtest_tasks 跨執行緒存取

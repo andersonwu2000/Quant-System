@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import functools
 import inspect
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.strategy.base import Strategy
@@ -40,7 +40,7 @@ def list_strategies() -> list[str]:
     return list(_load_strategy_map().keys())
 
 
-def resolve_strategy(name: str, params: dict | None = None) -> Strategy:
+def resolve_strategy(name: str, params: dict[str, Any] | None = None) -> Strategy:
     """
     根據名稱解析並實例化策略。
 

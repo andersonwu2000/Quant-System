@@ -7,6 +7,7 @@ from __future__ import annotations
 from itertools import combinations
 
 import numpy as np
+import numpy.typing as npt
 
 from src.strategy.base import Context, Strategy
 from src.strategy.optimizer import equal_weight, OptConstraints
@@ -34,12 +35,12 @@ class PairsTradingStrategy(Strategy):
             return {}
 
         # 收集所有標的的收盤價序列
-        price_data: dict[str, np.ndarray] = {}
+        price_data: dict[str, npt.NDArray[np.float64]] = {}
         for symbol in universe:
             bars = ctx.bars(symbol, lookback=self.lookback + 10)
             if len(bars) < self.lookback:
                 continue
-            price_data[symbol] = bars["close"].values[-self.lookback:]
+            price_data[symbol] = np.asarray(bars["close"].values[-self.lookback:], dtype=np.float64)
 
         if len(price_data) < 2:
             return {}

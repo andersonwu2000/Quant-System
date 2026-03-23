@@ -95,7 +95,8 @@ class MultiFactorStrategy(Strategy):
         def rank_percentile(values: list[float]) -> list[float]:
             arr = np.array(values)
             ranks = np.argsort(np.argsort(arr)).astype(float)
-            return (ranks / (len(ranks) - 1)).tolist()
+            result: list[float] = (ranks / (len(ranks) - 1)).tolist()
+            return result
 
         mom_ranks = rank_percentile(mom_values)
         z_ranks = rank_percentile(z_values)

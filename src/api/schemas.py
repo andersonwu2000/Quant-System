@@ -4,7 +4,10 @@ API 請求/回應模型 — Pydantic models → 自動生成 OpenAPI spec。
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
+from pydantic import ValidationInfo
 
 
 # ─── 通用 ─────────────────────────────────────────
@@ -47,7 +50,7 @@ class StrategyInfo(BaseModel):
 
 
 class StrategyStartRequest(BaseModel):
-    params: dict = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class StrategyListResponse(BaseModel):
@@ -85,7 +88,7 @@ class BacktestRequest(BaseModel):
     start: str = Field(default="2020-01-01", pattern=r"^\d{4}-\d{2}-\d{2}$")
     end: str = Field(default="2025-12-31", pattern=r"^\d{4}-\d{2}-\d{2}$")
     initial_cash: float = Field(default=10_000_000.0, gt=0)
-    params: dict = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
     slippage_bps: float = Field(default=5.0, ge=0)
     commission_rate: float = Field(default=0.001425, ge=0, le=1)
     rebalance_freq: str = "weekly"
@@ -99,7 +102,7 @@ class BacktestRequest(BaseModel):
 
     @field_validator("end")
     @classmethod
-    def end_after_start(cls, v: str, info) -> str:
+    def end_after_start(cls, v: str, info: ValidationInfo) -> str:
         start = info.data.get("start", "")
         if start and v <= start:
             raise ValueError("end date must be after start date")
@@ -136,7 +139,7 @@ class BacktestResultResponse(BaseModel):
     total_trades: int
     win_rate: float
     total_commission: float
-    nav_series: list[dict] | None = None
+    nav_series: list[dict[str, Any]] | None = None
 
 
 # ─── Risk ────────────────────────────────────────
