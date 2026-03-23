@@ -61,7 +61,8 @@ def create_jwt_token(subject: str, role: str = "trader") -> str:
         "role": role,
         "exp": expire,
     }
-    return jwt.encode(payload, config.jwt_secret, algorithm="HS256")
+    encoded: str = jwt.encode(payload, config.jwt_secret, algorithm="HS256")
+    return encoded
 
 
 def verify_jwt(
@@ -92,7 +93,7 @@ def verify_jwt(
         )
 
     try:
-        payload = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+        payload: dict[str, Any] = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
         return payload
     except JWTError:
         raise HTTPException(
@@ -105,7 +106,8 @@ def verify_ws_token(token: str) -> dict[str, Any] | None:
     """驗證 WebSocket 連線的 JWT token，返回 payload 或 None。"""
     config = get_config()
     try:
-        return jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+        result: dict[str, Any] = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+        return result
     except JWTError:
         return None
 

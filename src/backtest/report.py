@@ -411,7 +411,11 @@ def _compute_monthly_returns(daily_returns: pd.Series) -> pd.DataFrame:
     })
 
     pivot = monthly_df.pivot(index="year", columns="month", values="return")
-    yearly = monthly_df.groupby("year")["return"].apply(lambda x: (1 + x).prod() - 1)  # type: ignore[operator]
+    def _compound(x: pd.Series[float]) -> float:
+        from typing import cast as _cast
+        return _cast(float, (1 + x).prod()) - 1
+
+    yearly = monthly_df.groupby("year")["return"].apply(_compound)
     pivot["YTD"] = yearly
     return pivot
 
