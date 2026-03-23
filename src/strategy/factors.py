@@ -99,6 +99,63 @@ def moving_average_crossover(
     return pd.Series({"ma_cross": float(signal)})
 
 
+def value_pe(pe_ratio: float) -> float:
+    """PE value factor: lower PE = higher score.
+
+    Returns inverted normalized score. Negative PE (losses) returns 0.
+    Typical PE range 5-50; score is 1/PE normalized.
+    """
+    if pe_ratio <= 0:
+        return 0.0
+    # Inverse: lower PE -> higher score. Cap at PE=5 for safety.
+    return 1.0 / max(pe_ratio, 5.0)
+
+
+def value_pb(pb_ratio: float) -> float:
+    """PB value factor: lower PB = higher score.
+
+    Returns inverted normalized score. Negative PB returns 0.
+    """
+    if pb_ratio <= 0:
+        return 0.0
+    # Inverse: lower PB -> higher score. Cap at PB=0.5 for safety.
+    return 1.0 / max(pb_ratio, 0.5)
+
+
+def quality_roe(roe: float) -> float:
+    """Quality factor: higher ROE = higher score.
+
+    ROE is typically in percentage (e.g., 15.0 means 15%).
+    Returns normalized score in [0, 1] range.
+    """
+    if roe <= 0:
+        return 0.0
+    # Normalize: 30%+ ROE = max score
+    return min(roe / 30.0, 1.0)
+
+
+def revenue_momentum(revenues: pd.Series, periods: int = 3) -> float:
+    """Revenue momentum: average MoM growth over recent periods.
+
+    Args:
+        revenues: Series of revenue values (chronologically ordered)
+        periods: Number of recent periods to average
+
+    Returns:
+        Average month-over-month growth rate (as decimal, e.g., 0.05 = 5%)
+    """
+    if len(revenues) < periods + 1:
+        return 0.0
+
+    recent = revenues.iloc[-(periods + 1) :]
+    growths = recent.pct_change().dropna()
+
+    if growths.empty:
+        return 0.0
+
+    return float(growths.mean())
+
+
 def volume_price_trend(prices: pd.DataFrame, lookback: int = 20) -> pd.Series:
     """
     量價趨勢因子：價格上漲且成交量放大 = 正信號。

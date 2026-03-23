@@ -19,16 +19,55 @@ from src.domain.models import (
 logger = logging.getLogger(__name__)
 
 
+def _get_lot_size(
+    symbol: str,
+    instrument: Instrument,
+    market_lot_sizes: dict[str, int] | None = None,
+    fractional_shares: bool = False,
+) -> int:
+    """
+    Determine lot size based on market. Extensible for any market.
+
+    Priority:
+    1. fractional_shares=True → always 1 (零股模式)
+    2. instrument.lot_size > 1 → explicit instrument override
+    3. market_lot_sizes suffix match → market-level default
+    4. fallback → 1 (US-style, single share)
+    """
+    if fractional_shares:
+        return 1
+    if instrument.lot_size > 1:
+        return instrument.lot_size
+    if market_lot_sizes:
+        for suffix, lot_size in market_lot_sizes.items():
+            if symbol.endswith(suffix):
+                return lot_size
+    return 1  # Default: 1 share (US, etc.)
+
+
 def weights_to_orders(
     target_weights: dict[str, float],
     portfolio: Portfolio,
     prices: dict[str, Decimal],
     instruments: dict[str, Instrument] | None = None,
+    available_cash: Decimal | None = None,
+    market_lot_sizes: dict[str, int] | None = None,
+    fractional_shares: bool = False,
 ) -> list[Order]:
     """
     將目標權重轉換為訂單列表。
 
     計算差異：target_weight - current_weight → 需要買賣多少。
+
+    Args:
+        available_cash: If provided, cap buy orders so total notional does not
+                        exceed this amount. Used by T+N settlement to prevent
+                        spending unsettled funds.
+        market_lot_sizes: Mapping of symbol suffix to lot size,
+                          e.g. {".TW": 1000, ".T": 100}. Used to determine
+                          trading units per market. Instrument-level lot_size
+                          takes priority if > 1.
+        fractional_shares: If True, always use lot_size=1 (零股模式).
     """
     if portfolio.nav <= 0:
         return []
@@ -56,9 +95,9 @@ def weights_to_orders(
         target_value = Decimal(str(diff_w)) * nav
         qty = abs(target_value / price)
 
-        # 取整到 lot_size
+        # 取整到 lot_size（市場感知）
         inst = (instruments or {}).get(symbol, Instrument(symbol=symbol))
-        lot_size = inst.lot_size
+        lot_size = _get_lot_size(symbol, inst, market_lot_sizes, fractional_shares)
         if lot_size > 0:
             qty = (qty // Decimal(str(lot_size))) * Decimal(str(lot_size))
 
@@ -66,6 +105,19 @@ def weights_to_orders(
             continue
 
         side = Side.BUY if diff_w > 0 else Side.SELL
+
+        # Cap buy orders to available cash when settlement constraint is active
+        if side == Side.BUY and available_cash is not None:
+            max_buy_value = max(available_cash, Decimal("0"))
+            max_buy_qty = max_buy_value / price if price > 0 else Decimal("0")
+            if lot_size > 0:
+                max_buy_qty = (max_buy_qty // Decimal(str(lot_size))) * Decimal(str(lot_size))
+            if qty > max_buy_qty:
+                qty = max_buy_qty
+            if qty <= 0:
+                continue
+            # Reduce remaining available cash for subsequent buy orders
+            available_cash -= qty * price
 
         order = Order(
             id=uuid.uuid4().hex[:12],

@@ -26,7 +26,7 @@ AUTH_HEADERS = {"X-API-Key": API_KEY}
 
 @pytest.fixture(autouse=True)
 def _reset_state():
-    """Reset app state and config before each test."""
+    """Reset app state, config, and rate limiter before each test."""
     reset_app_state()
     override_config(
         TradingConfig(
@@ -36,7 +36,17 @@ def _reset_state():
             database_url="sqlite:///test.db",
         )
     )
+
+    # Disable rate limiters to prevent cross-test state bleed
+    from src.api.app import limiter
+    from src.api.routes.auth import _login_limiter
+    limiter.enabled = False
+    _login_limiter.enabled = False
+
     yield
+
+    limiter.enabled = True
+    _login_limiter.enabled = True
     reset_app_state()
 
 

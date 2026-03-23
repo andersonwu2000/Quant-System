@@ -4,6 +4,7 @@ WebSocket 管理 — 即時推送持倉、PnL、告警。
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -33,10 +34,15 @@ class ConnectionManager:
             logger.info("WS disconnected: channel=%s", channel)
 
     async def broadcast(self, channel: str, data: dict[str, Any]) -> None:
-        """向指定頻道的所有連線推送數據。"""
+        """向指定頻道的所有連線推送數據。
+
+        Pre-serializes JSON once, sends to all clients in parallel via
+        asyncio.gather, and cleans up dead/slow connections.
+        """
         if channel not in self._connections:
             return
 
+        # Pre-serialize once for all clients
         message = json.dumps({
             "type": "update",
             "channel": channel,
@@ -44,15 +50,24 @@ class ConnectionManager:
             "data": data,
         })
 
-        dead: list[WebSocket] = []
-        for ws in list(self._connections[channel]):  # iterate a copy
+        clients = list(self._connections[channel])
+        if not clients:
+            return
+
+        async def _send(ws: WebSocket) -> WebSocket | None:
+            """Send to a single client; return ws on failure for cleanup."""
             try:
-                await ws.send_text(message)
+                await asyncio.wait_for(ws.send_text(message), timeout=5.0)
+                return None
             except Exception:
                 logger.debug("WS send failed for channel=%s", channel, exc_info=True)
-                dead.append(ws)
+                return ws
 
-        # 清理斷開的連線
+        # Parallel send to all clients
+        results = await asyncio.gather(*[_send(ws) for ws in clients])
+
+        # 清理斷開或超時的連線
+        dead = {ws for ws in results if ws is not None}
         if dead:
             self._connections[channel] = [
                 ws for ws in self._connections[channel] if ws not in dead

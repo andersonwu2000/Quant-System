@@ -13,6 +13,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from prometheus_fastapi_instrumentator import Instrumentator
+
 from src.api.auth import verify_ws_token
 from src.api.middleware import AuditMiddleware
 from src.api.routes import admin, auth, backtest, orders, portfolio, risk, strategies, system
@@ -80,6 +82,9 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
+
+    # Prometheus metrics
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
     # 註冊路由
     app.include_router(auth.router, prefix="/api/v1")
@@ -160,9 +165,18 @@ def create_app() -> FastAPI:
 
         app.state.kill_switch_task = asyncio.create_task(_kill_switch_monitor())
 
+        # 啟動排程器（若啟用）
+        from src.scheduler import SchedulerService
+
+        scheduler = SchedulerService()
+        scheduler.start(config)
+        app.state.scheduler = scheduler
+
     @app.on_event("shutdown")
     async def shutdown() -> None:
         logger.info("Quant Trading System shutting down...")
+        if hasattr(app.state, "scheduler"):
+            app.state.scheduler.stop()
         if hasattr(app.state, "kill_switch_task"):
             app.state.kill_switch_task.cancel()
         await ws_manager.close_all()

@@ -17,6 +17,21 @@ class ErrorResponse(BaseModel):
     code: str = "error"
 
 
+# ─── Shared validators ──────────────────────────────
+
+def _validate_strategy_not_empty(v: str) -> str:
+    if not v.strip():
+        raise ValueError("strategy must not be empty")
+    return v.strip()
+
+
+def _validate_end_after_start(v: str, info: ValidationInfo) -> str:
+    start = info.data.get("start", "")
+    if start and v <= start:
+        raise ValueError("end date must be after start date")
+    return v
+
+
 # ─── Portfolio ────────────────────────────────────
 
 class PositionResponse(BaseModel):
@@ -100,17 +115,12 @@ class BacktestRequest(BaseModel):
     @field_validator("strategy")
     @classmethod
     def strategy_not_empty(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("strategy must not be empty")
-        return v.strip()
+        return _validate_strategy_not_empty(v)
 
     @field_validator("end")
     @classmethod
     def end_after_start(cls, v: str, info: ValidationInfo) -> str:
-        start = info.data.get("start", "")
-        if start and v <= start:
-            raise ValueError("end date must be after start date")
-        return v
+        return _validate_end_after_start(v, info)
 
 
 class BacktestSummaryResponse(BaseModel):
@@ -261,3 +271,109 @@ class ResetPasswordRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128, pattern=r"^[a-zA-Z0-9]+$")
+
+
+# ─── Walk-Forward Analysis ──────────────────────
+
+class WalkForwardRequest(BaseModel):
+    strategy: str
+    universe: list[str] = Field(min_length=1)
+    start: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    train_days: int = Field(gt=0)
+    test_days: int = Field(gt=0)
+    step_days: int = Field(gt=0)
+    initial_cash: float = Field(default=10_000_000.0, gt=0)
+    params: dict[str, Any] = Field(default_factory=dict)
+    param_grid: dict[str, list[Any]] | None = None
+
+    @field_validator("strategy")
+    @classmethod
+    def strategy_not_empty(cls, v: str) -> str:
+        return _validate_strategy_not_empty(v)
+
+    @field_validator("end")
+    @classmethod
+    def end_after_start(cls, v: str, info: ValidationInfo) -> str:
+        return _validate_end_after_start(v, info)
+
+
+class WalkForwardFoldResponse(BaseModel):
+    fold_index: int
+    train_start: str
+    train_end: str
+    test_start: str
+    test_end: str
+    train_sharpe: float
+    test_sharpe: float
+    test_total_return: float
+    best_params: dict[str, Any] | None = None
+
+
+class WalkForwardResultResponse(BaseModel):
+    folds: list[WalkForwardFoldResponse]
+    oos_total_return: float
+    oos_sharpe: float
+    oos_max_drawdown: float
+    param_stability: dict[str, Any]
+
+
+# ─── Portfolio CRUD ─────────────────────────────────
+
+class PortfolioCreateRequest(BaseModel):
+    name: str
+    initial_cash: float = 10_000_000.0
+    strategy_name: str = ""
+
+
+class PortfolioDetailResponse(BaseModel):
+    id: str
+    name: str
+    cash: float
+    initial_cash: float
+    strategy_name: str
+    positions: list[dict[str, Any]]
+    nav: float
+    created_at: str
+
+
+class PortfolioListItem(BaseModel):
+    id: str
+    name: str
+    cash: float
+    initial_cash: float
+    strategy_name: str
+    position_count: int
+    created_at: str
+
+
+class PortfolioListResponse(BaseModel):
+    portfolios: list[PortfolioListItem]
+
+
+# ─── Rebalance Preview ─────────────────────────────
+
+class RebalancePreviewRequest(BaseModel):
+    strategy: str
+    universes: list[str] = Field(min_length=1)
+    params: dict[str, Any] = Field(default_factory=dict)
+    slippage_bps: float | None = None
+    commission_rate: float | None = None
+    tax_rate: float | None = None
+
+
+class SuggestedTrade(BaseModel):
+    symbol: str
+    side: str  # "BUY" or "SELL"
+    quantity: int
+    estimated_price: float
+    estimated_cost: float
+
+
+class RebalancePreviewResponse(BaseModel):
+    strategy: str
+    target_weights: dict[str, float]
+    current_weights: dict[str, float]
+    suggested_trades: list[SuggestedTrade]
+    estimated_total_commission: float
+    estimated_total_tax: float

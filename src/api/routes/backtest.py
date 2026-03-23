@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from typing import Any, cast, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from prometheus_client import Histogram
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -19,15 +21,25 @@ from src.api.schemas import (
     BacktestResultResponse,
     BacktestSummaryResponse,
     TradeRecordResponse,
+    WalkForwardFoldResponse,
+    WalkForwardRequest,
+    WalkForwardResultResponse,
 )
 from src.api.state import get_app_state
 from src.backtest.engine import BacktestConfig, BacktestEngine
+from src.backtest.walk_forward import WalkForwardAnalyzer, WFAConfig
 from src.data.store import DataStore
 from src.strategy.registry import resolve_strategy
 from src.config import get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/backtest", tags=["backtest"])
+
+BACKTEST_DURATION = Histogram(
+    "backtest_duration_seconds",
+    "Time spent running a backtest",
+    labelnames=["strategy"],
+)
 _limiter = Limiter(key_func=get_remote_address)
 _MAX_BACKTEST_TASKS = 50  # evict oldest tasks beyond this limit
 _background_tasks: set[asyncio.Task[None]] = set()  # prevent GC of fire-and-forget tasks
@@ -70,7 +82,10 @@ async def submit_backtest(request: Request, req: BacktestRequest, api_key: str =
                     }
 
             engine = BacktestEngine()
+            start_time = time.monotonic()
             result = engine.run(strategy, bt_config, progress_callback=progress_cb)
+            duration = time.monotonic() - start_time
+            BACKTEST_DURATION.labels(strategy=req.strategy).observe(duration)
             with state.backtest_lock:
                 state.backtest_tasks[task_id]["status"] = "completed"
                 state.backtest_tasks[task_id]["result"] = result
@@ -238,5 +253,74 @@ async def get_backtest_result(task_id: str, api_key: str = Depends(verify_api_ke
         nav_series=nav_data,
         trades=trade_data,
     )
+
+
+@router.post("/walk-forward", response_model=WalkForwardResultResponse)
+@_limiter.limit("5/minute")
+async def submit_walk_forward(
+    request: Request,
+    req: WalkForwardRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> WalkForwardResultResponse:
+    """提交 Walk-Forward Analysis（同步執行於背景線程）。"""
+    config = get_config()
+
+    def _run() -> WalkForwardResultResponse:
+        wfa_config = WFAConfig(
+            train_days=req.train_days,
+            test_days=req.test_days,
+            step_days=req.step_days,
+            universe=req.universe,
+            initial_cash=req.initial_cash,
+        )
+
+        analyzer = WalkForwardAnalyzer()
+        result = analyzer.run(
+            strategy_name=req.strategy,
+            universe=req.universe,
+            start=req.start,
+            end=req.end,
+            config=wfa_config,
+            param_grid=req.param_grid,
+        )
+
+        fold_responses = [
+            WalkForwardFoldResponse(
+                fold_index=f.fold_index,
+                train_start=f.train_start,
+                train_end=f.train_end,
+                test_start=f.test_start,
+                test_end=f.test_end,
+                train_sharpe=f.train_sharpe,
+                test_sharpe=f.test_sharpe,
+                test_total_return=f.test_total_return,
+                best_params=f.best_params,
+            )
+            for f in result.folds
+        ]
+
+        return WalkForwardResultResponse(
+            folds=fold_responses,
+            oos_total_return=result.oos_total_return,
+            oos_sharpe=result.oos_sharpe,
+            oos_max_drawdown=result.oos_max_drawdown,
+            param_stability=result.param_stability,
+        )
+
+    try:
+        response = await asyncio.wait_for(
+            asyncio.to_thread(_run),
+            timeout=config.backtest_timeout,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Walk-forward analysis timed out after {config.backtest_timeout}s",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return response
 
 

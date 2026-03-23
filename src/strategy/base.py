@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from decimal import Decimal
 
 import pandas as pd
 
 from src.data.feed import DataFeed
+from src.data.fundamentals import FundamentalsProvider
 from src.domain.models import Portfolio
 
 logger = logging.getLogger(__name__)
@@ -36,10 +37,12 @@ class Context:
         feed: DataFeed,
         portfolio: Portfolio,
         current_time: datetime | None = None,
+        fundamentals_provider: FundamentalsProvider | None = None,
     ):
         self._feed = feed
         self._portfolio = portfolio
         self._current_time = current_time
+        self._fundamentals = fundamentals_provider
         self._logger = logging.getLogger("strategy")
 
     def bars(self, symbol: str, lookback: int = 252) -> pd.DataFrame:
@@ -74,7 +77,7 @@ class Context:
         """當前時間。"""
         if self._current_time is not None:
             return self._current_time
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
     def log(self, msg: str, **kwargs: Any) -> None:
         """策略日誌。"""
@@ -83,6 +86,29 @@ class Context:
     def latest_price(self, symbol: str) -> Decimal:
         """取得最新價格。"""
         return self._feed.get_latest_price(symbol)
+
+    def fundamentals(self, symbol: str) -> dict[str, float]:
+        """Get fundamental data for symbol. Returns {} if no provider."""
+        if self._fundamentals is None:
+            return {}
+        try:
+            date_str = (
+                self._current_time.strftime("%Y-%m-%d")
+                if self._current_time
+                else None
+            )
+            return self._fundamentals.get_financials(symbol, date_str)
+        except Exception:
+            return {}
+
+    def sector(self, symbol: str) -> str:
+        """Get sector classification. Returns '' if no provider."""
+        if self._fundamentals is None:
+            return ""
+        try:
+            return self._fundamentals.get_sector(symbol)
+        except Exception:
+            return ""
 
 
 class Strategy(ABC):

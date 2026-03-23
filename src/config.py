@@ -35,7 +35,8 @@ class TradingConfig(BaseSettings):
     database_url: str = "sqlite:///data/quant.db"
 
     # ── 數據源 ──
-    data_source: Literal["yahoo", "fubon", "twse"] = "yahoo"
+    data_source: Literal["yahoo", "finmind", "fubon", "twse"] = "yahoo"
+    finmind_token: str = ""
     data_cache_dir: str = ".cache/market_data"
 
     # ── 風控 ──
@@ -46,6 +47,15 @@ class TradingConfig(BaseSettings):
     max_daily_trades: int = 100
     fat_finger_pct: float = 0.05
     max_order_vs_adv_pct: float = 0.10
+
+    # ── 市場交易單位 ──
+    market_lot_sizes: dict[str, int] = {
+        ".TW": 1000,    # TWSE 整股 (整張)
+        ".TWO": 1000,   # OTC 整股 (整張)
+        # US stocks default to 1 (no suffix match)
+        # Add ".T": 100 for Japan, etc.
+    }
+    fractional_shares: bool = False   # True = allow fractional (零股模式)
 
     # ── 執行 ──
     default_slippage_bps: float = 5.0
@@ -65,9 +75,23 @@ class TradingConfig(BaseSettings):
     lockout_minutes: int = 15
     allowed_origins: list[str] = ["http://localhost:3000"]
 
+    # ── 通知 ──
+    notify_provider: Literal["discord", "line", "telegram", ""] = ""
+    discord_webhook_url: str = ""
+    line_notify_token: str = ""
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
+    # ── 排程 ──
+    scheduler_enabled: bool = False
+    rebalance_cron: str = "0 9 1 * *"    # 每月1日 09:00
+
     # ── 日誌 ──
     log_level: str = "INFO"
     log_format: Literal["json", "text"] = "text"
+
+    # ── 數據快取 ──
+    data_cache_size: int = 128                  # LRU memory cache 最大條目數
 
     # ── 回測 ──
     backtest_initial_cash: float = 10_000_000.0

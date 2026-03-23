@@ -103,6 +103,56 @@ users_table = sa.Table(
     sa.Column("updated_at", sa.Text, nullable=False),
 )
 
+portfolios_table = sa.Table(
+    "portfolios",
+    metadata,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("cash", sa.Numeric, nullable=False, server_default="10000000"),
+    sa.Column("initial_cash", sa.Numeric, nullable=False, server_default="10000000"),
+    sa.Column("strategy_name", sa.Text, server_default=""),
+    sa.Column("created_at", sa.Text, nullable=False),
+    sa.Column("updated_at", sa.Text, nullable=False),
+)
+
+position_snapshots_table = sa.Table(
+    "position_snapshots",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column(
+        "portfolio_id",
+        sa.Text,
+        sa.ForeignKey("portfolios.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("symbol", sa.Text, nullable=False),
+    sa.Column("quantity", sa.Numeric, nullable=False),
+    sa.Column("avg_cost", sa.Numeric, nullable=False),
+    sa.Column("market_price", sa.Numeric, nullable=False, server_default="0"),
+    sa.Column("snapshot_date", sa.Text, nullable=False),
+    sa.UniqueConstraint("portfolio_id", "symbol", "snapshot_date"),
+)
+
+trade_records_table = sa.Table(
+    "trade_records",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column(
+        "portfolio_id",
+        sa.Text,
+        sa.ForeignKey("portfolios.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("symbol", sa.Text, nullable=False),
+    sa.Column("side", sa.Text, nullable=False),
+    sa.Column("quantity", sa.Numeric, nullable=False),
+    sa.Column("price", sa.Numeric, nullable=False),
+    sa.Column("commission", sa.Numeric, nullable=False, server_default="0"),
+    sa.Column("executed_at", sa.Text, nullable=False),
+    sa.Column("source", sa.Text, server_default="system"),
+    sa.Column("notes", sa.Text, server_default=""),
+)
+
 # ─── Engine helper ────────────────────────────────────────
 
 DEFAULT_DB_PATH = Path("data/quant.db")

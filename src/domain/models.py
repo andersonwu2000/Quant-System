@@ -143,6 +143,13 @@ class Portfolio:
     as_of: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     initial_cash: Decimal = Decimal("1000000")
     nav_sod: Decimal = Decimal("0")  # start-of-day NAV（回測引擎更新）
+    pending_settlements: list[tuple[str, Decimal]] = field(default_factory=list)  # (settle_date_str, amount)
+
+    @property
+    def available_cash(self) -> Decimal:
+        """Cash available for new orders (excluding unsettled amounts)."""
+        pending = sum(amt for _, amt in self.pending_settlements)
+        return self.cash - pending
 
     @property
     def nav(self) -> Decimal:

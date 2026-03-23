@@ -9,9 +9,10 @@
 
 from __future__ import annotations
 
+import bisect
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable, Literal
@@ -21,9 +22,10 @@ import pandas as pd
 
 from src.backtest.analytics import BacktestResult, compute_analytics
 from src.data.feed import HistoricalFeed
+from src.data.fundamentals import FundamentalsProvider
 from src.data.quality import check_bars
-from src.data.sources.yahoo import YahooFeed
-from src.domain.models import Portfolio
+from src.data.sources import create_feed, create_fundamentals
+from src.domain.models import Instrument, Order, Portfolio, Side
 from src.execution.oms import apply_trades
 from src.execution.sim import SimBroker, SimConfig
 from src.risk.engine import RiskEngine
@@ -47,6 +49,37 @@ class BacktestConfig:
     commission_rate: float = 0.001425
     tax_rate: float = 0.003
     risk_rules: list[Any] | None = None          # None = 使用預設規則
+    max_ffill_days: int = 5                       # forward-fill 最多天數，超過視為無報價
+    enable_dividends: bool = False
+    market_lot_sizes: dict[str, int] | None = None  # symbol suffix → lot size, e.g. {".TW": 1000}
+    fractional_shares: bool = False                  # True = 零股模式 (lot_size=1)
+
+    # ── Execution delay ──
+    execution_delay: int = 1                      # 0 = same-day close, 1 = next-day open (default)
+    fill_on: Literal["close", "open"] = "open"    # which price to fill on when delayed
+
+    # ── Kill switch ──
+    enable_kill_switch: bool = True
+    kill_switch_cooldown: Literal["end_of_month", "never"] = "end_of_month"
+
+    # ── Settlement ──
+    settlement_days: int = 0                      # 0 = instant; 2 = T+2 (Taiwan)
+
+    # ── SimBroker overrides (forwarded to SimConfig) ──
+    impact_model: Literal["fixed", "sqrt"] = "sqrt"
+    impact_coeff: float = 50.0
+    base_slippage_bps: float = 2.0
+    price_limit_pct: float = 0.0                  # 0 = no limit; 0.10 = ±10%
+
+
+@dataclass
+class _BarCache:
+    """Per-bar cached market data to avoid redundant matrix lookups."""
+    bar_date: datetime | None = None
+    prices: dict[str, Decimal] = field(default_factory=dict)
+    open_prices: dict[str, Decimal] = field(default_factory=dict)
+    volumes: dict[str, Decimal] = field(default_factory=dict)
+    prev_close: dict[str, Decimal] = field(default_factory=dict)
 
 
 class BacktestEngine:
@@ -64,10 +97,11 @@ class BacktestEngine:
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> BacktestResult:
         """執行回測。"""
-        # 重置實例狀態，避免多次 run() 之間的狀態洩漏
         self._price_matrix = pd.DataFrame()
+        self._open_matrix = pd.DataFrame()
         self._volume_matrix = pd.DataFrame()
         self._last_rebalance_month = -1
+        self._bar_cache = _BarCache()
 
         run_id = uuid.uuid4().hex[:8]
         logger.info(
@@ -76,21 +110,21 @@ class BacktestEngine:
             config.start, config.end,
         )
 
-        # 存活者偏差警告
-        logger.warning(
-            "Yahoo Finance data may exhibit survivorship bias — only currently listed "
-            "symbols are available. Consider using a point-in-time dataset for "
-            "production research."
-        )
-
         # 1. 準備數據（含品質檢查）
-        feed, suspect_dates = self._load_data(config)
+        feed, suspect_dates, fundamentals = self._load_data(config)
         if not feed.get_universe():
             raise ValueError("No data loaded for any symbol in universe")
         if suspect_dates:
             logger.warning("Skipping %d suspect dates: %s", len(suspect_dates), sorted(suspect_dates)[:10])
 
-        # 預建價格/成交量矩陣（向量化查詢）
+        self._config = config
+
+        # 載入股利數據（如果啟用）
+        self._dividend_data: dict[str, dict[str, float]] = {}
+        if config.enable_dividends:
+            self._dividend_data = self._load_dividends(config)
+
+        # 預建價格/成交量矩陣
         self._build_matrices(feed, config.universe)
 
         # 2. 準備元件
@@ -98,6 +132,10 @@ class BacktestEngine:
             slippage_bps=config.slippage_bps,
             commission_rate=config.commission_rate,
             tax_rate=config.tax_rate,
+            impact_model=config.impact_model,
+            impact_coeff=config.impact_coeff,
+            base_slippage_bps=config.base_slippage_bps,
+            price_limit_pct=config.price_limit_pct,
         ))
         risk_engine = RiskEngine(config.risk_rules)
         portfolio = Portfolio(
@@ -116,71 +154,85 @@ class BacktestEngine:
         # 4. 逐 bar 模擬
         nav_history: list[dict[str, Any]] = []
         rebalance_count = 0
+        pending_orders: list[Order] = []
+        kill_switch_active = False
+        kill_switch_month: int = -1
 
         for i, bar_date in enumerate(trading_dates):
-            # 跳過品質可疑日期（價格跳變 > 5σ）
             date_str = bar_date.strftime("%Y-%m-%d")
             if date_str in suspect_dates:
                 logger.debug("Skipping suspect date %s", date_str)
                 continue
 
-            # 設定 feed 的可見時間
             feed.set_current_date(bar_date)
 
+            # Pre-compute all market data for this bar (cached)
+            self._refresh_bar_cache(config.universe, bar_date)
+
+            # ── Settle pending settlements ──
+            self._process_settlements(portfolio, date_str, config)
+
+            # ── Execute pending orders from previous day(s) ──
+            if pending_orders and config.execution_delay >= 1:
+                portfolio, pending_orders = self._execute_pending_orders(
+                    pending_orders, config, bar_date, portfolio,
+                    sim_broker, trading_dates,
+                )
+
             # 更新市場價格
-            prices = self._get_prices(config.universe, bar_date)
-            portfolio.update_market_prices(prices)
+            portfolio.update_market_prices(self._bar_cache.prices)
             portfolio.as_of = bar_date
 
-            # 記錄當日開盤 NAV
             if portfolio.nav_sod == 0:
                 portfolio.nav_sod = portfolio.nav
 
+            # ── Kill switch check ──
+            if config.enable_kill_switch and risk_engine.kill_switch(portfolio):
+                if not kill_switch_active:
+                    self._execute_kill_switch(
+                        portfolio, sim_broker, bar_date, date_str,
+                    )
+                    kill_switch_active = True
+                    kill_switch_month = bar_date.month
+
+            # Kill switch cooldown
+            if kill_switch_active:
+                if (
+                    config.kill_switch_cooldown == "end_of_month"
+                    and bar_date.month != kill_switch_month
+                ):
+                    kill_switch_active = False
+                    logger.info(
+                        "Kill switch cooldown expired on %s — resuming trading",
+                        date_str,
+                    )
+                else:
+                    nav_history.append(self._snap_nav(portfolio, bar_date))
+                    portfolio.nav_sod = portfolio.nav
+                    if progress_callback:
+                        progress_callback(i + 1, total_bars)
+                    continue
+
+            # 股利注入
+            if config.enable_dividends:
+                self._inject_dividends_impl(portfolio, date_str)
+
             # 判斷是否再平衡日
             if self._is_rebalance_day(bar_date, i, config.rebalance_freq):
-                # 建立 Context
-                ctx = Context(feed=feed, portfolio=portfolio, current_time=bar_date)
-
-                # 策略計算目標權重
-                target_weights = strategy.on_bar(ctx)
-
-                if target_weights:
-                    # 轉換為訂單
-                    orders = weights_to_orders(target_weights, portfolio, prices)
-
-                    # 風控檢查
-                    volumes = self._get_volumes(config.universe, bar_date)
-                    market_state = MarketState(prices=prices, daily_volumes=volumes)
-                    approved = risk_engine.check_orders(orders, portfolio, market_state)
-
-                    # 模擬成交（使用真實成交量）
-                    current_bars = {
-                        s: {
-                            "close": float(p),
-                            "volume": float(volumes.get(s, Decimal("1e8"))),
-                        }
-                        for s, p in prices.items()
-                    }
-                    trades = sim_broker.execute(approved, current_bars, bar_date)
-
-                    # 更新持倉
-                    if trades:
-                        portfolio = apply_trades(portfolio, trades)
+                rebalanced = self._do_rebalance(
+                    strategy, config, bar_date, portfolio, feed,
+                    fundamentals, sim_broker, risk_engine,
+                    trading_dates, pending_orders,
+                )
+                if rebalanced is not None:
+                    portfolio, pending_orders, did_rebalance = rebalanced
+                    if did_rebalance:
                         rebalance_count += 1
 
             # 記錄 NAV
-            nav_history.append({
-                "date": bar_date,
-                "nav": float(portfolio.nav),
-                "cash": float(portfolio.cash),
-                "positions_count": len(portfolio.positions),
-                "gross_exposure": float(portfolio.gross_exposure),
-            })
-
-            # 更新次日 SOD NAV
+            nav_history.append(self._snap_nav(portfolio, bar_date))
             portfolio.nav_sod = portfolio.nav
 
-            # 回報進度
             if progress_callback:
                 progress_callback(i + 1, total_bars)
 
@@ -192,42 +244,287 @@ class BacktestEngine:
             trades=sim_broker.trade_log,
             strategy_name=strategy.name(),
             config=config,
+            rejected_orders=sim_broker.rejected_log,
         )
 
         logger.info(
-            "BACKTEST DONE [%s] return=%.2f%% sharpe=%.2f maxdd=%.2f%% trades=%d",
+            "BACKTEST DONE [%s] return=%.2f%% sharpe=%.2f maxdd=%.2f%% trades=%d rejected=%d",
             run_id,
             result.total_return * 100,
             result.sharpe,
             result.max_drawdown * 100,
             result.total_trades,
+            result.rejected_orders,
         )
 
         # 釋放矩陣記憶體
         self._price_matrix = pd.DataFrame()
+        self._open_matrix = pd.DataFrame()
         self._volume_matrix = pd.DataFrame()
 
         return result
 
-    def _load_data(self, config: BacktestConfig) -> tuple[HistoricalFeed, set[str]]:
-        """從 Yahoo Finance 下載數據並載入 HistoricalFeed。
+    # ──────────────────────────────────────────────────────
+    # Per-bar helper methods (extracted from run())
+    # ──────────────────────────────────────────────────────
 
-        額外前拉 400 個交易日（約 18 個月），確保策略有足夠的回溯數據計算因子。
-        返回 (feed, suspect_dates) — suspect_dates 為品質檢查標記的可疑日期。
-        """
+    def _refresh_bar_cache(
+        self, universe: list[str], bar_date: datetime
+    ) -> None:
+        """Pre-compute all market data for this bar once."""
+        self._bar_cache = _BarCache(
+            bar_date=bar_date,
+            prices=self._lookup_from_matrix(self._price_matrix, universe, bar_date),
+            open_prices=self._lookup_from_matrix(self._open_matrix, universe, bar_date),
+            volumes=self._lookup_from_matrix(
+                self._volume_matrix, universe, bar_date, as_int=True, skip_zero=True,
+            ),
+            prev_close=self._get_prev_close(universe, bar_date),
+        )
+        # Fallback: if no open data, use close prices
+        if not self._bar_cache.open_prices:
+            self._bar_cache.open_prices = self._bar_cache.prices
+
+    @staticmethod
+    def _process_settlements(
+        portfolio: Portfolio, date_str: str, config: BacktestConfig
+    ) -> None:
+        """Release settled funds."""
+        if config.settlement_days > 0:
+            portfolio.pending_settlements = [
+                (sd, amt) for sd, amt in portfolio.pending_settlements
+                if sd > date_str
+            ]
+
+    def _execute_pending_orders(
+        self,
+        pending_orders: list[Order],
+        config: BacktestConfig,
+        bar_date: datetime,
+        portfolio: Portfolio,
+        sim_broker: SimBroker,
+        trading_dates: list[datetime],
+    ) -> tuple[Portfolio, list[Order]]:
+        """Execute orders queued from previous day(s). Returns (portfolio, [])."""
+        if config.fill_on == "open":
+            exec_prices = self._bar_cache.open_prices
+        else:
+            exec_prices = self._bar_cache.prices
+
+        exec_bars = self._build_bar_dict(
+            exec_prices, self._bar_cache.volumes, self._bar_cache.prev_close,
+        )
+        trades = sim_broker.execute(pending_orders, exec_bars, bar_date)
+        if trades:
+            portfolio = apply_trades(portfolio, trades)
+            if config.settlement_days > 0:
+                self._record_settlements(
+                    trades, bar_date, config.settlement_days,
+                    trading_dates, portfolio,
+                )
+        return portfolio, []
+
+    def _execute_kill_switch(
+        self,
+        portfolio: Portfolio,
+        sim_broker: SimBroker,
+        bar_date: datetime,
+        date_str: str,
+    ) -> None:
+        """Liquidate all positions on kill switch activation."""
+        logger.critical(
+            "Kill switch activated on %s — liquidating all positions",
+            date_str,
+        )
+        prices = self._bar_cache.prices
+        liquidation_orders: list[Order] = []
+        for symbol, pos in list(portfolio.positions.items()):
+            if pos.quantity > 0:
+                liquidation_orders.append(Order(
+                    id=uuid.uuid4().hex[:12],
+                    instrument=Instrument(symbol=symbol),
+                    side=Side.SELL,
+                    quantity=pos.quantity,
+                    price=prices.get(symbol, Decimal("0")),
+                ))
+        if liquidation_orders:
+            liq_bars = self._build_bar_dict(
+                prices, self._bar_cache.volumes, self._bar_cache.prev_close,
+            )
+            liq_trades = sim_broker.execute(liquidation_orders, liq_bars, bar_date)
+            if liq_trades:
+                apply_trades(portfolio, liq_trades)
+
+    def _inject_dividends_impl(
+        self, portfolio: Portfolio, date_str: str
+    ) -> None:
+        """Inject dividend cash for ex-date matches."""
+        for symbol, pos in portfolio.positions.items():
+            div_map = self._dividend_data.get(symbol, {})
+            div_amount = div_map.get(date_str)
+            if div_amount is not None and pos.quantity != Decimal("0"):
+                cash_received = pos.quantity * Decimal(str(div_amount))
+                portfolio.cash += cash_received
+                logger.info(
+                    "DIVIDEND %s: %s shares × $%s = $%s cash",
+                    symbol, pos.quantity, div_amount, cash_received,
+                )
+
+    def _do_rebalance(
+        self,
+        strategy: Strategy,
+        config: BacktestConfig,
+        bar_date: datetime,
+        portfolio: Portfolio,
+        feed: HistoricalFeed,
+        fundamentals: FundamentalsProvider | None,
+        sim_broker: SimBroker,
+        risk_engine: RiskEngine,
+        trading_dates: list[datetime],
+        pending_orders: list[Order],
+    ) -> tuple[Portfolio, list[Order], bool] | None:
+        """Run strategy and generate/execute orders. Returns (portfolio, pending_orders, did_rebalance)."""
+        prices = self._bar_cache.prices
+        volumes = self._bar_cache.volumes
+
+        ctx = Context(
+            feed=feed,
+            portfolio=portfolio,
+            current_time=bar_date,
+            fundamentals_provider=fundamentals,
+        )
+
+        target_weights = strategy.on_bar(ctx)
+        if not target_weights:
+            return None
+
+        # Determine available cash for settlement constraint
+        avail_cash: Decimal | None = None
+        if config.settlement_days > 0:
+            avail_cash = portfolio.available_cash
+
+        orders = weights_to_orders(
+            target_weights, portfolio, prices,
+            available_cash=avail_cash,
+            market_lot_sizes=config.market_lot_sizes,
+            fractional_shares=config.fractional_shares,
+        )
+
+        market_state = MarketState(prices=prices, daily_volumes=volumes)
+        approved = risk_engine.check_orders(orders, portfolio, market_state)
+
+        if config.execution_delay == 0:
+            current_bars = self._build_bar_dict(
+                prices, volumes, self._bar_cache.prev_close,
+            )
+            trades = sim_broker.execute(approved, current_bars, bar_date)
+            if trades:
+                portfolio = apply_trades(portfolio, trades)
+                if config.settlement_days > 0:
+                    self._record_settlements(
+                        trades, bar_date, config.settlement_days,
+                        trading_dates, portfolio,
+                    )
+            return portfolio, [], bool(trades)
+        else:
+            return portfolio, approved, bool(approved)
+
+    @staticmethod
+    def _snap_nav(portfolio: Portfolio, bar_date: datetime) -> dict[str, Any]:
+        """Create a NAV history record."""
+        return {
+            "date": bar_date,
+            "nav": float(portfolio.nav),
+            "cash": float(portfolio.cash),
+            "positions_count": len(portfolio.positions),
+            "gross_exposure": float(portfolio.gross_exposure),
+        }
+
+    # ──────────────────────────────────────────────────────
+    # Static / utility helpers
+    # ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_bar_dict(
+        prices: dict[str, Decimal],
+        volumes: dict[str, Decimal],
+        prev_close: dict[str, Decimal],
+    ) -> dict[str, dict[str, Any]]:
+        """Build bars dict for SimBroker.execute()."""
+        bars: dict[str, dict[str, Any]] = {}
+        for s, p in prices.items():
+            bars[s] = {
+                "close": float(p),
+                "volume": float(volumes.get(s, Decimal("1e8"))),
+                "prev_close": float(prev_close[s]) if s in prev_close else None,
+            }
+        return bars
+
+    @staticmethod
+    def _record_settlements(
+        trades: list[Any],
+        bar_date: datetime,
+        settlement_days: int,
+        trading_dates: list[datetime],
+        portfolio: Portfolio,
+    ) -> None:
+        """Record pending settlements for BUY trades."""
+        for trade in trades:
+            if trade.side == Side.BUY:
+                settle_dt = BacktestEngine._add_business_days(
+                    bar_date, settlement_days, trading_dates
+                )
+                settle_str = settle_dt.strftime("%Y-%m-%d")
+                settle_amount = trade.quantity * trade.price + trade.commission
+                portfolio.pending_settlements.append((settle_str, settle_amount))
+
+    def _load_dividends(
+        self, config: BacktestConfig
+    ) -> dict[str, dict[str, float]]:
+        """載入所有標的的股利數據。"""
+        from src.data.sources.yahoo import YahooFeed
+
+        yahoo = YahooFeed(config.universe)
+        result: dict[str, dict[str, float]] = {}
+        for symbol in config.universe:
+            divs = yahoo.get_dividends(symbol, config.start, config.end)
+            if divs:
+                result[symbol] = divs
+                logger.info("Loaded %d dividend events for %s", len(divs), symbol)
+        return result
+
+    def _load_data(
+        self, config: BacktestConfig
+    ) -> tuple[HistoricalFeed, set[str], FundamentalsProvider | None]:
+        """下載數據並載入 HistoricalFeed，使用配置的數據源。"""
+        from src.config import get_config
+
+        cfg = get_config()
+        source = cfg.data_source
+        source_kwargs: dict[str, object] = {}
+        if source == "finmind":
+            source_kwargs["token"] = cfg.finmind_token
+
+        # 存活者偏差警告（僅 Yahoo 數據源）
+        if source == "yahoo":
+            logger.warning(
+                "Yahoo Finance data may exhibit survivorship bias — only currently listed "
+                "symbols are available. Consider using a point-in-time dataset for "
+                "production research."
+            )
+
         warmup_days = 400
         warmup_start = (
             pd.Timestamp(config.start) - pd.tseries.offsets.BDay(warmup_days)
         ).strftime("%Y-%m-%d")
 
-        yahoo = YahooFeed(config.universe)
+        data_feed = create_feed(source, config.universe, **source_kwargs)
         feed = HistoricalFeed()
         all_suspect_dates: set[str] = set()
 
         for symbol in config.universe:
-            df = yahoo.get_bars(symbol, start=warmup_start, end=config.end)
+            df = data_feed.get_bars(symbol, start=warmup_start, end=config.end)
             if not df.empty:
-                # 品質檢查
                 qr = check_bars(df, symbol)
                 if qr.suspect_dates:
                     all_suspect_dates.update(qr.suspect_dates)
@@ -240,7 +537,9 @@ class BacktestEngine:
             else:
                 logger.warning("No data for %s, skipping", symbol)
 
-        return feed, all_suspect_dates
+        fundamentals = create_fundamentals(source, **source_kwargs)
+
+        return feed, all_suspect_dates, fundamentals
 
     def _get_trading_dates(
         self, feed: HistoricalFeed, config: BacktestConfig
@@ -261,7 +560,6 @@ class BacktestEngine:
 
         sorted_dates = sorted(all_dates)
 
-        # 過濾到回測範圍
         start = pd.Timestamp(config.start)
         end = pd.Timestamp(config.end)
         return [d.to_pydatetime() for d in sorted_dates if start <= d <= end]
@@ -271,28 +569,40 @@ class BacktestEngine:
         feed: HistoricalFeed,
         universe: list[str],
     ) -> None:
-        """預先建立價格與成交量矩陣，避免逐 symbol 逐 bar 查詢。"""
+        """預先建立價格、開盤價與成交量矩陣。"""
         price_frames: dict[str, pd.Series] = {}
+        open_frames: dict[str, pd.Series] = {}
         volume_frames: dict[str, pd.Series] = {}
         for symbol in universe:
             df = feed.get_bars(symbol)
             if df.empty:
                 continue
             price_frames[symbol] = df["close"]
+            if "open" in df.columns:
+                open_frames[symbol] = df["open"]
             if "volume" in df.columns:
                 volume_frames[symbol] = df["volume"]
 
         if price_frames:
             self._price_matrix = pd.DataFrame(price_frames).sort_index()
-            # Forward-fill so each date has the latest known price
-            self._price_matrix = self._price_matrix.ffill()
+            self._price_matrix = self._price_matrix.ffill(limit=self._config.max_ffill_days)
         else:
             self._price_matrix = pd.DataFrame()
+
+        if open_frames:
+            self._open_matrix = pd.DataFrame(open_frames).sort_index()
+            self._open_matrix = self._open_matrix.ffill(limit=self._config.max_ffill_days)
+        else:
+            self._open_matrix = pd.DataFrame()
 
         if volume_frames:
             self._volume_matrix = pd.DataFrame(volume_frames).sort_index()
         else:
             self._volume_matrix = pd.DataFrame()
+
+    # ──────────────────────────────────────────────────────
+    # Matrix lookup (unified)
+    # ──────────────────────────────────────────────────────
 
     @staticmethod
     def _lookup_row(matrix: pd.DataFrame, ts: pd.Timestamp) -> pd.Series | None:
@@ -304,23 +614,79 @@ class BacktestEngine:
             return None
         return matrix.iloc[idx]
 
+    def _lookup_from_matrix(
+        self,
+        matrix: pd.DataFrame,
+        universe: list[str],
+        bar_date: datetime,
+        *,
+        as_int: bool = False,
+        skip_zero: bool = False,
+    ) -> dict[str, Decimal]:
+        """Generic matrix → dict[symbol, Decimal] lookup.
+
+        Args:
+            matrix: Pre-built price/open/volume matrix.
+            universe: Symbols to look up.
+            bar_date: Target date.
+            as_int: If True, convert values to int (for volumes).
+            skip_zero: If True, skip zero or negative values.
+        """
+        row = self._lookup_row(matrix, pd.Timestamp(bar_date))
+        if row is None:
+            return {}
+        result: dict[str, Decimal] = {}
+        for symbol in universe:
+            if symbol in row.index:
+                val = row[symbol]
+                if np.isnan(val):
+                    continue
+                if skip_zero and val <= 0:
+                    continue
+                if as_int:
+                    result[symbol] = Decimal(str(int(val)))
+                else:
+                    result[symbol] = Decimal(str(round(val, 4)))
+        return result
+
     def _get_prices(
         self,
         universe: list[str],
         bar_date: datetime,
     ) -> dict[str, Decimal]:
-        """取得指定日期的收盤價（從預建矩陣查詢）。"""
-        row = self._lookup_row(self._price_matrix, pd.Timestamp(bar_date))
-        if row is None:
+        """取得指定日期的收盤價。"""
+        return self._lookup_from_matrix(self._price_matrix, universe, bar_date)
+
+    def _get_open_prices(
+        self,
+        universe: list[str],
+        bar_date: datetime,
+    ) -> dict[str, Decimal]:
+        """取得指定日期的開盤價。"""
+        result = self._lookup_from_matrix(self._open_matrix, universe, bar_date)
+        if not result:
+            return self._get_prices(universe, bar_date)
+        return result
+
+    def _get_prev_close(
+        self,
+        universe: list[str],
+        bar_date: datetime,
+    ) -> dict[str, Decimal]:
+        """取得前一日收盤價（用於漲跌停判斷）。"""
+        if self._price_matrix.empty:
             return {}
+        ts = pd.Timestamp(bar_date)
+        idx = self._price_matrix.index.searchsorted(ts, side="right") - 1
+        if idx <= 0:
+            return {}
+        prev_row = self._price_matrix.iloc[idx - 1]
         prices: dict[str, Decimal] = {}
         for symbol in universe:
-            if symbol in row.index:
-                val = row[symbol]
+            if symbol in prev_row.index:
+                val = prev_row[symbol]
                 if not np.isnan(val):
                     prices[symbol] = Decimal(str(round(val, 4)))
-                else:
-                    logger.debug("No price for %s on %s, skipping", symbol, bar_date)
         return prices
 
     def _get_volumes(
@@ -328,17 +694,11 @@ class BacktestEngine:
         universe: list[str],
         bar_date: datetime,
     ) -> dict[str, Decimal]:
-        """取得指定日期的成交量（從預建矩陣查詢）。"""
-        row = self._lookup_row(self._volume_matrix, pd.Timestamp(bar_date))
-        if row is None:
-            return {}
-        volumes: dict[str, Decimal] = {}
-        for symbol in universe:
-            if symbol in row.index:
-                vol = row[symbol]
-                if not np.isnan(vol) and vol > 0:
-                    volumes[symbol] = Decimal(str(int(vol)))
-        return volumes
+        """取得指定日期的成交量。"""
+        return self._lookup_from_matrix(
+            self._volume_matrix, universe, bar_date,
+            as_int=True, skip_zero=True,
+        )
 
     def _is_rebalance_day(
         self, bar_date: datetime, idx: int, freq: str
@@ -347,12 +707,28 @@ class BacktestEngine:
         if freq == "daily":
             return True
         elif freq == "weekly":
-            return bar_date.weekday() == 0 or idx == 0  # 週一或第一天
+            return bar_date.weekday() == 0 or idx == 0
         elif freq == "monthly":
-            # First trading day of each month (rebalance once per month)
             month_key = bar_date.year * 100 + bar_date.month
             if idx == 0 or month_key != self._last_rebalance_month:
                 self._last_rebalance_month = month_key
                 return True
             return False
         return True
+
+    @staticmethod
+    def _add_business_days(
+        start: datetime,
+        n_days: int,
+        trading_dates: list[datetime],
+    ) -> datetime:
+        """Return the trading date that is n_days after start.
+
+        Uses bisect for O(log N) lookup in the trading calendar.
+        """
+        idx = bisect.bisect_left(trading_dates, start)
+        target_idx = idx + n_days
+        if target_idx < len(trading_dates):
+            return trading_dates[target_idx]
+        result = pd.Timestamp(start) + pd.tseries.offsets.BDay(n_days)
+        return result.to_pydatetime()

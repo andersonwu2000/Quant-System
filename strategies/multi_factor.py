@@ -7,7 +7,7 @@ from __future__ import annotations
 import numpy as np
 
 from src.strategy.base import Context, Strategy
-from src.strategy.factors import momentum, mean_reversion, rsi
+from src.strategy.factors import momentum, mean_reversion, rsi, value_pe, value_pb, quality_roe
 from src.strategy.optimizer import signal_weight, OptConstraints
 
 
@@ -35,7 +35,7 @@ class MultiFactorStrategy(Strategy):
         return "multi_factor"
 
     def on_bar(self, ctx: Context) -> dict[str, float]:
-        raw_scores: dict[str, dict[str, float]] = {}
+        raw_scores: dict[str, dict[str, float | None]] = {}
 
         for symbol in ctx.universe():
             bars = ctx.bars(symbol, lookback=300)
@@ -57,11 +57,33 @@ class MultiFactorStrategy(Strategy):
             if rsi_factor.empty:
                 continue
 
-            raw_scores[symbol] = {
+            # Try fundamentals-based value/quality factors first
+            fund = ctx.fundamentals(symbol)
+            fund_value = None
+            fund_quality = None
+
+            if fund:
+                pe = fund.get("pe_ratio")
+                pb = fund.get("pb_ratio")
+                roe = fund.get("roe")
+                if pe is not None and pb is not None:
+                    # Average of PE and PB value scores (both are inverted: lower = better)
+                    fund_value = (value_pe(pe) + value_pb(pb)) / 2.0
+                elif pe is not None:
+                    fund_value = value_pe(pe)
+                elif pb is not None:
+                    fund_value = value_pb(pb)
+                if roe is not None:
+                    fund_quality = quality_roe(roe)
+
+            scores: dict[str, float | None] = {
                 "momentum": mom["momentum"],
-                "z_score": mr["z_score"],  # 已取反：負偏離→正值
+                "z_score": mr["z_score"],
                 "rsi": rsi_factor["rsi"],
+                "fund_value": fund_value,
+                "fund_quality": fund_quality,
             }
+            raw_scores[symbol] = scores
 
         if not raw_scores:
             return {}
@@ -70,14 +92,38 @@ class MultiFactorStrategy(Strategy):
         symbols = list(raw_scores.keys())
         n = len(symbols)
 
+        # Check if any symbol has fundamentals data
+        has_fundamentals = any(
+            s["fund_value"] is not None or s["fund_quality"] is not None
+            for s in raw_scores.values()
+        )
+
         if n < 2:
             # 只有一個標的，無法排名，直接使用原始分數
             sym = symbols[0]
-            s = raw_scores[sym]
+            scores_single = raw_scores[sym]
+
+            # Use fundamentals if available, otherwise fall back to technical proxies
+            fv = scores_single["fund_value"]
+            fq = scores_single["fund_quality"]
+            mom_val = scores_single["momentum"] or 0.0
+            z_val = scores_single["z_score"] or 0.0
+            rsi_val = scores_single["rsi"] or 50.0
+
+            if has_fundamentals and fv is not None:
+                value_score = min(fv * 10.0, 1.0)
+            else:
+                value_score = max(0.0, z_val / 3.0)
+
+            if has_fundamentals and fq is not None:
+                quality_score = fq
+            else:
+                quality_score = 1.0 - rsi_val / 100.0
+
             composite = (
-                self.momentum_weight * (1.0 if s["momentum"] > 0 else 0.0)
-                + self.value_weight * max(0.0, s["z_score"] / 3.0)
-                + self.quality_weight * (1.0 - s["rsi"] / 100.0)
+                self.momentum_weight * (1.0 if mom_val > 0 else 0.0)
+                + self.value_weight * value_score
+                + self.quality_weight * quality_score
             )
             if composite > 0:
                 return signal_weight(
@@ -87,9 +133,33 @@ class MultiFactorStrategy(Strategy):
             return {}
 
         # 提取各因子的值
-        mom_values = [raw_scores[s]["momentum"] for s in symbols]
-        z_values = [raw_scores[s]["z_score"] for s in symbols]
-        rsi_values = [raw_scores[s]["rsi"] for s in symbols]
+        mom_values: list[float] = [raw_scores[s]["momentum"] or 0.0 for s in symbols]
+
+        # Value scores: use fundamentals if available, else technical Z-score
+        if has_fundamentals:
+            value_values: list[float] = []
+            for s in symbols:
+                fv = raw_scores[s]["fund_value"]
+                if fv is not None:
+                    value_values.append(min(fv * 10.0, 1.0))
+                else:
+                    z = raw_scores[s]["z_score"] or 0.0
+                    value_values.append(max(0.0, z / 3.0))
+        else:
+            value_values = [raw_scores[s]["z_score"] or 0.0 for s in symbols]
+
+        # Quality scores: use fundamentals ROE if available, else RSI-based
+        if has_fundamentals:
+            quality_values: list[float] = []
+            for s in symbols:
+                fq = raw_scores[s]["fund_quality"]
+                if fq is not None:
+                    quality_values.append(fq)
+                else:
+                    r = raw_scores[s]["rsi"] or 50.0
+                    quality_values.append(1.0 - r / 100.0)
+        else:
+            quality_values = [1.0 - (raw_scores[s]["rsi"] or 50.0) / 100.0 for s in symbols]
 
         # 排名百分位（0~1）
         def rank_percentile(values: list[float]) -> list[float]:
@@ -99,13 +169,13 @@ class MultiFactorStrategy(Strategy):
             return result
 
         mom_ranks = rank_percentile(mom_values)
-        z_ranks = rank_percentile(z_values)
+        value_ranks = rank_percentile(value_values)
 
         signals: dict[str, float] = {}
         for i, symbol in enumerate(symbols):
             momentum_score = mom_ranks[i]
-            value_score = z_ranks[i]
-            quality_score = 1.0 - rsi_values[i] / 100.0
+            value_score = value_ranks[i]
+            quality_score = quality_values[i]
 
             composite = (
                 self.momentum_weight * momentum_score
