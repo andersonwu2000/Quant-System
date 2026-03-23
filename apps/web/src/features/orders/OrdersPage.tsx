@@ -3,6 +3,7 @@ import { useApi, useWs } from "@core/hooks";
 import { fmtCurrency, fmtDate, fmtTime } from "@core/utils";
 import { StatusBadge, ErrorAlert, TableSkeleton } from "@shared/ui";
 import { useT } from "@core/i18n";
+import { useAuth } from "@core/auth";
 import { ordersApi } from "./api";
 import { OrderForm } from "./components/OrderForm";
 
@@ -10,6 +11,8 @@ const filterKeys = ["all", "filled", "pending", "cancelled", "rejected"] as cons
 
 export function OrdersPage() {
   const { t } = useT();
+  const { hasRole } = useAuth();
+  const canTrade = hasRole("trader");
   const [filter, setFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
   const { data: orderList, loading, error, refresh } = useApi(
@@ -48,16 +51,18 @@ export function OrdersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold">{t.orders.title}</h2>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          aria-label={showForm ? t.common.cancel : t.orders.newOrder}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
-        >
-          {showForm ? t.common.cancel : t.orders.newOrder}
-        </button>
+        {canTrade && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            aria-label={showForm ? t.common.cancel : t.orders.newOrder}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
+          >
+            {showForm ? t.common.cancel : t.orders.newOrder}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {canTrade && showForm && (
         <OrderForm
           onSubmitted={() => {
             setShowForm(false);

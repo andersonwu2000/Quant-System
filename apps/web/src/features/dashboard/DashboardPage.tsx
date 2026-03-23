@@ -2,6 +2,7 @@ import { MetricCard, ErrorAlert, MetricCardSkeleton, TableSkeleton, Skeleton } f
 import { fmtCurrency, fmtPct, pnlColor } from "@core/utils";
 import { useT } from "@core/i18n";
 import { useDashboard } from "./hooks/useDashboard";
+import { MarketTicker } from "./components/MarketTicker";
 import { NavChart } from "./components/NavChart";
 import { PositionTable } from "./components/PositionTable";
 
@@ -22,6 +23,7 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <MarketTicker />
       <h2 className="text-xl font-bold">{t.dashboard.title}</h2>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" aria-live="polite">

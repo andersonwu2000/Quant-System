@@ -3,6 +3,7 @@ import { useApi } from "@core/hooks";
 import { fmtCurrency, pnlColor } from "@core/utils";
 import { StatusBadge, ErrorAlert, InfoTooltip, Skeleton } from "@shared/ui";
 import { useT } from "@core/i18n";
+import { useAuth } from "@core/auth";
 import type { StrategyInfo } from "@quant/shared";
 import { Play, Square } from "lucide-react";
 import { strategiesApi } from "./api";
@@ -36,6 +37,8 @@ function InfoButton({ expanded, onClick, ariaLabel }: { expanded: boolean; onCli
 
 export function StrategiesPage() {
   const { t } = useT();
+  const { hasRole } = useAuth();
+  const canTrade = hasRole("trader");
   const { data: strats, loading, error, refresh } = useApi<StrategyInfo[]>(strategiesApi.list);
   const [toggling, setToggling] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
@@ -111,21 +114,23 @@ export function StrategiesPage() {
                 <div className="w-px h-8 bg-slate-600/60 shrink-0" />
                 <StatusBadge status={s.status} />
                 <div className="flex-1" />
-                <button
-                  onClick={() => handleToggle(s.name, s.status)}
-                  disabled={toggling === s.name}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
-                    s.status === "running"
-                      ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
-                      : "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
-                  }`}
-                >
-                  {s.status === "running" ? (
-                    <><Square size={14} /> {t.strategies.stop}</>
-                  ) : (
-                    <><Play size={14} /> {t.strategies.start}</>
-                  )}
-                </button>
+                {canTrade && (
+                  <button
+                    onClick={() => handleToggle(s.name, s.status)}
+                    disabled={toggling === s.name}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                      s.status === "running"
+                        ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                        : "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                    }`}
+                  >
+                    {s.status === "running" ? (
+                      <><Square size={14} /> {t.strategies.stop}</>
+                    ) : (
+                      <><Play size={14} /> {t.strategies.start}</>
+                    )}
+                  </button>
+                )}
               </div>
 
               {description && (

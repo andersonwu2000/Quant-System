@@ -1,5 +1,7 @@
 // Types matching backend Pydantic schemas (src/api/schemas.py)
 
+export type UserRole = "viewer" | "researcher" | "trader" | "risk_manager" | "admin";
+
 export interface Position {
   symbol: string;
   quantity: number;
@@ -120,4 +122,12 @@ export interface SystemStatus {
 export interface HealthCheck {
   status: string;
   version: string;
+}
+
+export interface SystemMetrics {
+  uptime_seconds: number;
+  total_requests: number;
+  active_ws_connections: number;
+  strategies_running: number;
+  active_backtests: number;
 }

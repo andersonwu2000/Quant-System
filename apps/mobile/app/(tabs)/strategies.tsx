@@ -7,6 +7,8 @@ import { StrategyRow } from "../../src/components/StrategyRow";
 import { useT } from "@/src/i18n";
 import { bg, textSecondary, textMuted, blue } from "@/src/theme/colors";
 
+const STRATEGY_ROW_HEIGHT = 64; // padding 14*2 + content ~28 + marginBottom 8
+
 export default function StrategiesScreen() {
   const { t } = useT();
   const [items, setItems] = useState<StrategyInfo[]>([]);
@@ -50,6 +52,11 @@ export default function StrategiesScreen() {
         data={items}
         keyExtractor={(item) => item.name}
         renderItem={({ item }) => <StrategyRow strategy={item} onToggle={handleToggle} />}
+        getItemLayout={(_data, index) => ({
+          length: STRATEGY_ROW_HEIGHT,
+          offset: STRATEGY_ROW_HEIGHT * index,
+          index,
+        })}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={blue} />
         }

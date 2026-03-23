@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { backtestApi } from "../api";
 import { useT } from "@core/i18n";
+import { pollBacktestResult } from "@quant/shared";
 import type { BacktestRequest, BacktestResult } from "@quant/shared";
 
 export function useBacktest() {
@@ -26,35 +27,24 @@ export function useBacktest() {
     try {
       const summary = await backtestApi.submit(form);
 
-      // Iterative polling with 30-minute timeout
-      const MAX_POLL_MS = 30 * 60 * 1000;
-      const pollStart = Date.now();
-      let status = summary.status;
-      let attempt = 0;
-      while (status === "running" && mountedRef.current) {
-        if (Date.now() - pollStart > MAX_POLL_MS) {
-          setError(t.backtest.timedOut);
-          return null;
-        }
-        const delay = Math.min(2000 * 2 ** attempt, 30000);
-        attempt++;
-        await new Promise((r) => setTimeout(r, delay));
-        if (!mountedRef.current) break;
-        const s = await backtestApi.status(summary.task_id);
-        status = s.status;
-        if (s.progress_current != null && s.progress_total != null) {
-          setProgress({ current: s.progress_current, total: s.progress_total });
-        }
-      }
+      const outcome = await pollBacktestResult(summary, {
+        timeoutMs: 30 * 60 * 1000,
+        baseDelayMs: 2000,
+        onProgress: (current, total) => {
+          if (mountedRef.current) setProgress({ current, total });
+        },
+        shouldAbort: () => !mountedRef.current,
+      });
 
       if (!mountedRef.current) return null;
 
-      if (status === "completed") {
-        const r = await backtestApi.result(summary.task_id);
-        if (mountedRef.current) setResult(r);
-        return r;
-      } else if (status === "failed") {
-        if (mountedRef.current) setError(t.backtest.failed);
+      if (outcome.status === "completed") {
+        setResult(outcome.result);
+        return outcome.result;
+      } else if (outcome.status === "timeout") {
+        setError(t.backtest.timedOut);
+      } else if (outcome.status === "failed") {
+        setError(t.backtest.failed);
       }
     } catch (err) {
       if (mountedRef.current) {

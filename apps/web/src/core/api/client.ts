@@ -6,6 +6,8 @@
 
 import { initClient, initWs, post } from "@quant/shared";
 import type { Channel } from "@quant/shared";
+import type { UserRole } from "@quant/shared";
+import { extractRoleFromJwt } from "@core/auth";
 
 const AUTH_STORAGE = "quant_authenticated";
 
@@ -13,10 +15,11 @@ export function isAuthenticated(): boolean {
   return localStorage.getItem(AUTH_STORAGE) === "true";
 }
 
-/** Login via backend JWT endpoint — sets httpOnly cookie automatically. */
-export async function login(apiKey: string): Promise<void> {
-  await post<{ access_token: string }>("/api/v1/auth/login", { api_key: apiKey });
+/** Login via backend JWT endpoint — sets httpOnly cookie automatically. Returns the user's role. */
+export async function login(apiKey: string): Promise<UserRole> {
+  const resp = await post<{ access_token: string }>("/api/v1/auth/login", { api_key: apiKey });
   localStorage.setItem(AUTH_STORAGE, "true");
+  return extractRoleFromJwt(resp.access_token);
 }
 
 /** Logout — clears cookie and local flag. */

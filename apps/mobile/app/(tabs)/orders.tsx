@@ -6,6 +6,7 @@ import { useT } from "@/src/i18n";
 import { bg, surface, blueAlpha, textSecondary, blueLight, danger, textMuted } from "@/src/theme/colors";
 
 const FILTERS = ["all", "filled", "pending"] as const;
+const ORDER_ROW_HEIGHT = 49; // paddingVertical 12*2 + content ~25 + hairlineWidth border
 
 export default function OrdersScreen() {
   const { t } = useT();
@@ -32,6 +33,11 @@ export default function OrdersScreen() {
         data={data}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <OrderRow order={item} />}
+        getItemLayout={(_data, index) => ({
+          length: ORDER_ROW_HEIGHT,
+          offset: ORDER_ROW_HEIGHT * index,
+          index,
+        })}
         refreshing={loading}
         onRefresh={refresh}
         ListEmptyComponent={!loading ? <Text style={styles.empty}>{t.orders.noOrders}</Text> : null}

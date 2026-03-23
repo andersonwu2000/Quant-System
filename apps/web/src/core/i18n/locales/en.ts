@@ -15,6 +15,13 @@ export const en = {
     requestFailed: "Request failed",
     logout: "Logout",
     expandDescription: "Expand description",
+    roles: {
+      viewer: "Viewer",
+      researcher: "Researcher",
+      trader: "Trader",
+      risk_manager: "Risk Manager",
+      admin: "Admin",
+    },
   },
   notFound: {
     title: "Page not found",
@@ -38,6 +45,7 @@ export const en = {
     dailyPnl: "Daily P&L",
     positions: "Positions",
     strategiesRunning: "{n} strategies running",
+    marketTicker: "Market",
     navRealtime: "NAV (Real-time)",
     topPositions: "Top Positions",
     symbol: "Symbol",
@@ -136,6 +144,12 @@ export const en = {
     timedOut: "Backtest timed out (30 minutes)",
     failed: "Backtest failed",
     selectForComparison: "Select for comparison",
+    drawdown: "Drawdown",
+    monthlyReturns: "Monthly Returns",
+    tradeDetail: "Trade Detail",
+    year: "Year",
+    yearly: "Yearly",
+    exportTrades: "Export Trades",
   },
 
   // risk
@@ -188,6 +202,17 @@ export const en = {
     strategiesRunning: "Strategies Running",
     dataSource: "Data Source",
     language: "Language",
+    metrics: "System Metrics",
+    apiLatency: "API Latency",
+    requestCount: "Total Requests",
+    errorRate: "Error Rate",
+    memoryUsage: "Memory Usage",
+    wsConnections: "WS Connections",
+    activeBacktests: "Active Backtests",
+    theme: "Theme",
+    themeLight: "Light",
+    themeDark: "Dark",
+    themeSystem: "System",
   },
 };
 

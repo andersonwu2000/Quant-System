@@ -6,9 +6,20 @@ import {
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useT } from "@core/i18n";
+import { useAuth } from "@core/auth";
+import type { UserRole } from "@quant/shared";
+
+const ROLE_BADGE_COLORS: Record<UserRole, string> = {
+  viewer: "bg-slate-500/20 text-slate-400",
+  researcher: "bg-cyan-500/20 text-cyan-400",
+  trader: "bg-emerald-500/20 text-emerald-400",
+  risk_manager: "bg-amber-500/20 text-amber-400",
+  admin: "bg-purple-500/20 text-purple-400",
+};
 
 export function Sidebar({ onLogout }: { onLogout?: () => void }) {
   const { t } = useT();
+  const { role } = useAuth();
   const [collapsed, setCollapsed] = useState(() => window.matchMedia("(max-width: 767px)").matches);
 
   useEffect(() => {
@@ -29,14 +40,17 @@ export function Sidebar({ onLogout }: { onLogout?: () => void }) {
   ];
 
   return (
-    <aside className={`${collapsed ? "w-16" : "w-56"} bg-surface-dark border-r border-surface-light flex flex-col h-screen sticky top-0 transition-all duration-200`}>
-      <div className={`px-5 py-6 border-b border-surface-light ${collapsed ? "px-3" : ""}`}>
+    <aside className={`${collapsed ? "w-16" : "w-56"} bg-white dark:bg-surface-dark border-r border-slate-200 dark:border-surface-light flex flex-col h-screen sticky top-0 transition-all duration-200`}>
+      <div className={`px-5 py-6 border-b border-slate-200 dark:border-surface-light ${collapsed ? "px-3" : ""}`}>
         {collapsed ? (
           <h1 className="text-lg font-bold text-center">Q</h1>
         ) : (
           <>
             <h1 className="text-lg font-bold tracking-tight">{t.appName}</h1>
-            <p className="text-xs text-slate-400 mt-0.5">{t.appVersion}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t.appVersion}</p>
+            <span className={`inline-block mt-1.5 px-2 py-0.5 rounded text-xs font-semibold ${ROLE_BADGE_COLORS[role]}`}>
+              {t.common.roles[role]}
+            </span>
           </>
         )}
       </div>
@@ -50,8 +64,8 @@ export function Sidebar({ onLogout }: { onLogout?: () => void }) {
             className={({ isActive }) =>
               `flex items-center ${collapsed ? "justify-center" : "gap-3 px-3"} py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
-                  ? "bg-blue-500/15 text-blue-400"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-surface"
+                  ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-surface"
               }`
             }
           >
@@ -65,7 +79,7 @@ export function Sidebar({ onLogout }: { onLogout?: () => void }) {
           <button
             onClick={onLogout}
             title={collapsed ? t.common.logout : undefined}
-            className={`flex items-center ${collapsed ? "justify-center" : "gap-3 px-3"} py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-red-400 hover:bg-surface transition-colors w-full`}
+            className={`flex items-center ${collapsed ? "justify-center" : "gap-3 px-3"} py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-surface transition-colors w-full`}
           >
             <LogOut size={18} />
             {!collapsed && t.common.logout}
@@ -74,7 +88,7 @@ export function Sidebar({ onLogout }: { onLogout?: () => void }) {
         <button
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="flex items-center justify-center py-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-surface transition-colors w-full"
+          className="flex items-center justify-center py-2 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-surface transition-colors w-full"
         >
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>

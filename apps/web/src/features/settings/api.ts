@@ -1,7 +1,6 @@
-import { get } from "@core/api";
-import type { SystemStatus } from "./types";
+/**
+ * Re-export shared system endpoints as `systemApi` for feature-local use.
+ */
+import { system } from "@quant/shared";
 
-export const systemApi = {
-  health: () => get<{ status: string; version: string }>("/api/v1/system/health"),
-  status: () => get<SystemStatus>("/api/v1/system/status"),
-};
+export const systemApi = system;

@@ -1,5 +1,6 @@
 // Types
 export type {
+  UserRole,
   Position,
   Portfolio,
   StrategyInfo,
@@ -11,6 +12,7 @@ export type {
   RiskRule,
   RiskAlert,
   SystemStatus,
+  SystemMetrics,
   HealthCheck,
 } from "./types";
 
@@ -25,6 +27,10 @@ export type { Channel } from "./api/ws";
 
 // Endpoints
 export { auth, system, portfolio, strategies, orders, backtest, risk } from "./api/endpoints";
+
+// Hooks / utilities
+export { pollBacktestResult } from "./hooks/pollBacktestResult";
+export type { PollOptions, PollOutcome, PollSuccess, PollFailure } from "./hooks/pollBacktestResult";
 
 // Utils
 export { fmtCurrency, fmtPct, fmtNum, fmtDate, fmtTime } from "./utils/format";

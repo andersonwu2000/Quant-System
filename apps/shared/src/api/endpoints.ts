@@ -15,6 +15,7 @@ import type {
   RiskRule,
   RiskAlert,
   SystemStatus,
+  SystemMetrics,
   HealthCheck,
 } from "../types";
 
@@ -27,6 +28,7 @@ export const auth = {
 export const system = {
   health: () => get<HealthCheck>("/api/v1/system/health"),
   status: () => get<SystemStatus>("/api/v1/system/status"),
+  metrics: () => get<SystemMetrics>("/api/v1/system/metrics"),
 };
 
 export const portfolio = {

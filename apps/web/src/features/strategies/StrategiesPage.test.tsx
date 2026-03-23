@@ -12,6 +12,17 @@ vi.mock("./api", () => ({
   },
 }));
 
+// Mock auth to have trader-level role so start/stop buttons are visible
+vi.mock("@core/auth", () => ({
+  AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useAuth: () => ({
+    role: "admin",
+    hasRole: () => true,
+    setRole: () => {},
+    clearRole: () => {},
+  }),
+}));
+
 const mockStrategies: StrategyInfo[] = [
   { name: "momentum", status: "running", pnl: 15_000 },
   { name: "mean_reversion", status: "stopped", pnl: -2_000 },

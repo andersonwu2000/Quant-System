@@ -10,10 +10,16 @@ import type { BacktestHistoryEntry } from "./hooks/useBacktestHistory";
 import { strategiesApi } from "@feat/strategies/api";
 import { AnimatedSelect } from "./components/AnimatedSelect";
 import { ResultChart } from "./components/ResultChart";
+import { DrawdownChart } from "./components/DrawdownChart";
+import { MonthlyHeatmap } from "./components/MonthlyHeatmap";
+import { TradeTable } from "./components/TradeTable";
+import type { TradeRecord } from "./components/TradeTable";
 import { ParamsEditor } from "./components/ParamsEditor";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { CompareTable } from "./components/CompareTable";
 import { CompareChart } from "./components/CompareChart";
+
+type AnalysisTab = "nav" | "drawdown" | "monthly" | "trades";
 
 const defaultForm: BacktestRequest = {
   strategy: "momentum",
@@ -33,6 +39,7 @@ export function BacktestPage() {
   const { running, result, error, progress, submit } = useBacktest();
   const { history, addEntry, removeEntry, clearHistory } = useBacktestHistory();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [analysisTab, setAnalysisTab] = useState<AnalysisTab>("nav");
 
   const { data: strategies } = useApi<StrategyInfo[]>(() => strategiesApi.list());
   const effectiveStrategyOptions = useMemo(() => {
@@ -182,7 +189,39 @@ export function BacktestPage() {
           </div>
 
           {result.nav_series && result.nav_series.length > 0 && (
-            <ResultChart data={result.nav_series} />
+            <>
+              <div className="flex gap-1 bg-surface rounded-xl p-1">
+                {(
+                  [
+                    { key: "nav", label: t.backtest.navCurve },
+                    { key: "drawdown", label: t.backtest.drawdown },
+                    { key: "monthly", label: t.backtest.monthlyReturns },
+                    { key: "trades", label: t.backtest.tradeDetail },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setAnalysisTab(tab.key)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      analysisTab === tab.key
+                        ? "bg-blue-600 text-white"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-surface-light"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {analysisTab === "nav" && <ResultChart data={result.nav_series} />}
+              {analysisTab === "drawdown" && <DrawdownChart data={result.nav_series} />}
+              {analysisTab === "monthly" && <MonthlyHeatmap data={result.nav_series} />}
+              {analysisTab === "trades" && (
+                (result as unknown as Record<string, unknown>).trades
+                  ? <TradeTable trades={(result as unknown as { trades: TradeRecord[] }).trades} />
+                  : <div className="bg-surface rounded-xl p-5 text-sm text-slate-400">{t.common.noData}</div>
+              )}
+            </>
           )}
         </>
       )}

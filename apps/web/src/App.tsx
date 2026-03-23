@@ -4,6 +4,8 @@ import { Sidebar } from "@shared/layout";
 import { ErrorBoundary, ToastProvider } from "@shared/ui";
 import { isAuthenticated, logout } from "@core/api";
 import { I18nContext, getSavedLang, saveLang, translations, type Lang } from "@core/i18n";
+import { ThemeProvider } from "@core/theme";
+import { AuthProvider, useAuth } from "@core/auth";
 
 const DashboardPage = lazy(() => import("@feat/dashboard").then(m => ({ default: m.DashboardPage })));
 const PortfolioPage = lazy(() => import("@feat/portfolio").then(m => ({ default: m.PortfolioPage })));
@@ -19,9 +21,10 @@ function RequireKey({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export default function App() {
+function AppContent() {
   const [, refresh] = useState(0);
   const [lang, setLangState] = useState<Lang>(getSavedLang);
+  const { clearRole } = useAuth();
 
   const setLang = useCallback((l: Lang) => {
     saveLang(l);
@@ -30,35 +33,46 @@ export default function App() {
 
   const handleLogout = useCallback(async () => {
     await logout();
+    clearRole();
     refresh((n) => n + 1);
-  }, []);
+  }, [clearRole]);
 
   const i18nValue = useMemo(() => ({
     t: translations[lang], lang, setLang,
   }), [lang, setLang]);
 
   return (
+    <I18nContext.Provider value={i18nValue}>
+      <div className="flex min-h-screen bg-slate-50 dark:bg-surface-dark text-slate-900 dark:text-slate-100">
+        <Sidebar onLogout={isAuthenticated() ? handleLogout : undefined} />
+        <main className="flex-1 p-6 overflow-auto">
+          <Suspense fallback={<div className="text-slate-500 dark:text-slate-400 p-6">Loading...</div>}>
+            <Routes>
+              <Route path="/settings" element={<SettingsPage onSave={() => refresh((n) => n + 1)} />} />
+              <Route path="/" element={<RequireKey><DashboardPage /></RequireKey>} />
+              <Route path="/portfolio" element={<RequireKey><PortfolioPage /></RequireKey>} />
+              <Route path="/strategies" element={<RequireKey><StrategiesPage /></RequireKey>} />
+              <Route path="/orders" element={<RequireKey><OrdersPage /></RequireKey>} />
+              <Route path="/backtest" element={<RequireKey><BacktestPage /></RequireKey>} />
+              <Route path="/risk" element={<RequireKey><RiskPage /></RequireKey>} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </Suspense>
+        </main>
+      </div>
+    </I18nContext.Provider>
+  );
+}
+
+export default function App() {
+  return (
     <ErrorBoundary>
       <ToastProvider>
-      <I18nContext.Provider value={i18nValue}>
-        <div className="flex min-h-screen bg-surface-dark text-slate-100">
-          <Sidebar onLogout={isAuthenticated() ? handleLogout : undefined} />
-          <main className="flex-1 p-6 overflow-auto">
-            <Suspense fallback={<div className="text-slate-400 p-6">Loading...</div>}>
-              <Routes>
-                <Route path="/settings" element={<SettingsPage onSave={() => refresh((n) => n + 1)} />} />
-                <Route path="/" element={<RequireKey><DashboardPage /></RequireKey>} />
-                <Route path="/portfolio" element={<RequireKey><PortfolioPage /></RequireKey>} />
-                <Route path="/strategies" element={<RequireKey><StrategiesPage /></RequireKey>} />
-                <Route path="/orders" element={<RequireKey><OrdersPage /></RequireKey>} />
-                <Route path="/backtest" element={<RequireKey><BacktestPage /></RequireKey>} />
-                <Route path="/risk" element={<RequireKey><RiskPage /></RequireKey>} />
-                <Route path="*" element={<NotFoundPage />} />
-              </Routes>
-            </Suspense>
-          </main>
-        </div>
-      </I18nContext.Provider>
+      <ThemeProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+      </ThemeProvider>
       </ToastProvider>
     </ErrorBoundary>
   );

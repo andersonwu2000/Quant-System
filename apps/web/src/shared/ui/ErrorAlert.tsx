@@ -9,10 +9,10 @@ interface Props {
 export function ErrorAlert({ message, onRetry }: Props) {
   const { t } = useT();
   return (
-    <div role="alert" aria-live="assertive" className="bg-red-500/10 text-red-400 rounded-xl p-4 text-sm flex items-center justify-between">
+    <div role="alert" aria-live="assertive" className="bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl p-4 text-sm flex items-center justify-between">
       <span>{message}</span>
       {onRetry && (
-        <button onClick={onRetry} className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 transition-colors text-xs font-medium">
+        <button onClick={onRetry} className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-100 dark:bg-red-500/20 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors text-xs font-medium">
           <RefreshCw size={12} /> {t.common.retry}
         </button>
       )}

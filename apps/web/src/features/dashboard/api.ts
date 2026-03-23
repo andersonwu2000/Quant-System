@@ -1,10 +1,7 @@
-import { get } from "@core/api";
-import type { Portfolio, StrategyInfo } from "@quant/shared";
+/**
+ * Re-export shared endpoints as feature-local names for the dashboard.
+ */
+import { portfolio, strategies } from "@quant/shared";
 
-export const portfolioApi = {
-  get: () => get<Portfolio>("/api/v1/portfolio"),
-};
-
-export const strategiesApi = {
-  list: () => get<{ strategies: StrategyInfo[] }>("/api/v1/strategies").then((r) => r.strategies),
-};
+export const portfolioApi = portfolio;
+export const strategiesApi = strategies;

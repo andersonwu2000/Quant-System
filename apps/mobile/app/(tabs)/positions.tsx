@@ -8,6 +8,8 @@ import { fmtCurrency } from "../../src/utils/format";
 import { useT } from "@/src/i18n";
 import { bg, surface, textSecondary, textPrimary, blue, success, danger, textMuted } from "@/src/theme/colors";
 
+const POSITION_ROW_HEIGHT = 64; // padding 14*2 + content ~28 + marginBottom 8
+
 export default function PositionsScreen() {
   const { t } = useT();
   const [positions, setPositions] = useState<Position[]>([]);
@@ -45,6 +47,11 @@ export default function PositionsScreen() {
         data={sorted}
         keyExtractor={(item) => item.symbol}
         renderItem={({ item }) => <PositionRow position={item} />}
+        getItemLayout={(_data, index) => ({
+          length: POSITION_ROW_HEIGHT,
+          offset: POSITION_ROW_HEIGHT * index,
+          index,
+        })}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={blue} />
         }

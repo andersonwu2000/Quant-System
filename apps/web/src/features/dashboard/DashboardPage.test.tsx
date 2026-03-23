@@ -9,6 +9,11 @@ vi.mock("./hooks/useDashboard", () => ({
   useDashboard: vi.fn(),
 }));
 
+// Mock MarketTicker to avoid WS initialization requirement
+vi.mock("./components/MarketTicker", () => ({
+  MarketTicker: () => null,
+}));
+
 // Mock recharts to avoid canvas issues in jsdom
 vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

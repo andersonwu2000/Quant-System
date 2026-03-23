@@ -3,6 +3,7 @@ import { useApi, useWs } from "@core/hooks";
 import { fmtDate, fmtTime, fmtNum } from "@core/utils";
 import { StatusBadge, ErrorAlert, InfoTooltip, useToast } from "@shared/ui";
 import { useT } from "@core/i18n";
+import { useAuth } from "@core/auth";
 import { ShieldOff } from "lucide-react";
 import { riskApi } from "./api";
 import type { RiskRule, RiskAlert } from "./types";
@@ -25,6 +26,8 @@ function getRuleDescKey(name: string): RuleDescKey | null {
 export function RiskPage() {
   const { t } = useT();
   const { toast } = useToast();
+  const { hasRole } = useAuth();
+  const canManageRisk = hasRole("risk_manager");
   const { data: rules, error: rulesError, refresh: refreshRules } = useApi<RiskRule[]>(riskApi.rules);
   const { data: alerts, error: alertsError, refresh: refreshAlerts, setData: setAlerts } = useApi<RiskAlert[]>(riskApi.alerts);
   const [killMsg, setKillMsg] = useState<string | null>(null);
@@ -69,12 +72,14 @@ export function RiskPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold">{t.risk.title}</h2>
-        <button onClick={handleKill}
-          disabled={killLoading}
-          aria-label={t.risk.killSwitch}
-          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
-          <ShieldOff size={16} /> {killLoading ? "..." : t.risk.killSwitch}
-        </button>
+        {canManageRisk && (
+          <button onClick={handleKill}
+            disabled={killLoading}
+            aria-label={t.risk.killSwitch}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
+            <ShieldOff size={16} /> {killLoading ? "..." : t.risk.killSwitch}
+          </button>
+        )}
       </div>
 
       {killMsg && <div className="bg-red-500/10 text-red-400 rounded-xl p-4 text-sm">{killMsg}</div>}
@@ -93,19 +98,29 @@ export function RiskPage() {
                     {r.name}
                     {description && <InfoTooltip description={description} />}
                   </span>
-                  <button
-                    onClick={() => handleToggle(r.name, r.enabled)}
-                    disabled={toggling === r.name}
-                    role="switch"
-                    aria-checked={r.enabled}
-                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 ${
+                  {canManageRisk ? (
+                    <button
+                      onClick={() => handleToggle(r.name, r.enabled)}
+                      disabled={toggling === r.name}
+                      role="switch"
+                      aria-checked={r.enabled}
+                      className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 ${
+                        r.enabled
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : "bg-slate-500/20 text-slate-400"
+                      }`}
+                    >
+                      {r.enabled ? t.risk.enabled : t.risk.disabled}
+                    </button>
+                  ) : (
+                    <span className={`px-3 py-1 rounded-md text-xs font-semibold ${
                       r.enabled
                         ? "bg-emerald-500/20 text-emerald-400"
                         : "bg-slate-500/20 text-slate-400"
-                    }`}
-                  >
-                    {r.enabled ? t.risk.enabled : t.risk.disabled}
-                  </button>
+                    }`}>
+                      {r.enabled ? t.risk.enabled : t.risk.disabled}
+                    </span>
+                  )}
                 </div>
               );
             })}

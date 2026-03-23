@@ -6,6 +6,8 @@ import { risk } from "@quant/shared";
 import { useT } from "@/src/i18n";
 import { bg, dangerDark, white, dangerLight, textMuted, blue } from "@/src/theme/colors";
 
+const ALERT_ITEM_HEIGHT = 56; // padding 12*2 + content ~24 + marginBottom 8
+
 export default function AlertsScreen() {
   const { t } = useT();
   const { alerts, loading, refresh } = useAlerts();
@@ -38,6 +40,11 @@ export default function AlertsScreen() {
         data={alerts}
         keyExtractor={(item, i) => `${item.timestamp}-${i}`}
         renderItem={({ item }) => <AlertItem alert={item} />}
+        getItemLayout={(_data, index) => ({
+          length: ALERT_ITEM_HEIGHT,
+          offset: ALERT_ITEM_HEIGHT * index,
+          index,
+        })}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={blue} />
         }

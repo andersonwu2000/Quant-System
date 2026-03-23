@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { backtest } from "@quant/shared";
+import { backtest, pollBacktestResult } from "@quant/shared";
 import type { BacktestRequest, BacktestResult } from "@quant/shared";
 
 export function useBacktest() {
@@ -21,31 +21,24 @@ export function useBacktest() {
     setProgress(null);
     try {
       const summary = await backtest.submit(form);
-      const MAX_POLL_MS = 10 * 60 * 1000; // 10 min on mobile
-      const pollStart = Date.now();
-      let status = summary.status;
-      let attempt = 0;
-      while (status === "running" && mountedRef.current) {
-        if (Date.now() - pollStart > MAX_POLL_MS) {
-          setError("Backtest timed out");
-          return;
-        }
-        const delay = Math.min(3000 * 2 ** attempt, 30000);
-        attempt++;
-        await new Promise((r) => setTimeout(r, delay));
-        if (!mountedRef.current) break;
-        const s = await backtest.status(summary.task_id);
-        status = s.status;
-        if (s.progress_current != null && s.progress_total != null) {
-          setProgress({ current: s.progress_current, total: s.progress_total });
-        }
-      }
+
+      const outcome = await pollBacktestResult(summary, {
+        timeoutMs: 10 * 60 * 1000, // 10 min on mobile
+        baseDelayMs: 3000,
+        onProgress: (current, total) => {
+          if (mountedRef.current) setProgress({ current, total });
+        },
+        shouldAbort: () => !mountedRef.current,
+      });
+
       if (!mountedRef.current) return;
-      if (status === "completed") {
-        const r = await backtest.result(summary.task_id);
-        if (mountedRef.current) setResult(r);
-      } else if (status === "failed") {
-        if (mountedRef.current) setError("Backtest failed");
+
+      if (outcome.status === "completed") {
+        setResult(outcome.result);
+      } else if (outcome.status === "timeout") {
+        setError("Backtest timed out");
+      } else if (outcome.status === "failed") {
+        setError("Backtest failed");
       }
     } catch (err) {
       if (mountedRef.current) setError(err instanceof Error ? err.message : "Request failed");
