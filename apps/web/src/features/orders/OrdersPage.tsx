@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useApi, useWs } from "@core/hooks";
 import { fmtCurrency, fmtPrice, fmtDate, fmtTime } from "@core/utils";
 import { Card, StatusBadge, ErrorAlert, TableSkeleton, ConnectionBanner } from "@shared/ui";
@@ -22,6 +22,14 @@ export function OrdersPage() {
 
   // Debounce WS-triggered refresh to at most once per second
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, []);
   const { connected: wsConnected } = useWs(
     "orders",
     useCallback(
@@ -30,7 +38,7 @@ export function OrdersPage() {
           if (!refreshTimer.current) {
             refreshTimer.current = setTimeout(() => {
               refreshTimer.current = null;
-              refresh();
+              if (mountedRef.current) refresh();
             }, 1000);
           }
         }

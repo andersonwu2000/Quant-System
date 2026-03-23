@@ -222,6 +222,7 @@ export const zh: Translations = {
     resetPassword: "重設密碼",
     deleteUser: "刪除使用者",
     deleteConfirm: "確定要刪除此使用者嗎？",
+    cannotDeleteLastAdmin: "無法刪除最後一位啟用的管理員",
     username: "帳號",
     displayName: "顯示名稱",
     password: "密碼",

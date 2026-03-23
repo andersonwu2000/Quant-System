@@ -18,13 +18,16 @@ export function CompareChart({ entries }: Props) {
   const c = getChartColors(isDark);
   const { data, names } = useMemo(() => {
     const dateMap = new Map<string, Record<string, number>>();
+    const validNames: string[] = [];
     for (const entry of entries) {
-      const series = entry.result.nav_series;
+      const series = entry.result?.nav_series;
       if (!series || series.length === 0) continue;
+      const name = entry.result?.strategy_name ?? "Unknown";
+      validNames.push(name);
       const initial = series[0].nav;
       for (const point of series) {
         const row = dateMap.get(point.date) || {};
-        row[entry.result.strategy_name] = (point.nav / initial - 1) * 100;
+        row[name] = (point.nav / initial - 1) * 100;
         dateMap.set(point.date, row);
       }
     }
@@ -32,7 +35,7 @@ export function CompareChart({ entries }: Props) {
       data: Array.from(dateMap.entries())
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, values]) => ({ date, ...values })),
-      names: entries.map((e) => e.result.strategy_name),
+      names: validNames,
     };
   }, [entries]);
 

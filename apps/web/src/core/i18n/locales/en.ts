@@ -220,6 +220,7 @@ export const en = {
     resetPassword: "Reset Password",
     deleteUser: "Delete User",
     deleteConfirm: "Are you sure you want to delete this user?",
+    cannotDeleteLastAdmin: "Cannot delete the last active admin",
     username: "Username",
     displayName: "Display Name",
     password: "Password",

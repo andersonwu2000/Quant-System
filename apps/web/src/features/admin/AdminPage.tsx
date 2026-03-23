@@ -98,9 +98,13 @@ export function AdminPage() {
   };
 
   const handleDelete = async (user: UserInfo) => {
-    // Prevent self-deletion — compare by username stored in JWT/localStorage
-    if (user.role === currentRole && user.is_active) {
-      // Simple heuristic: warn if trying to delete an active admin when logged in as admin
+    // Prevent deleting the last active admin
+    if (user.role === "admin" && user.is_active) {
+      const activeAdmins = users?.filter((u) => u.role === "admin" && u.is_active) ?? [];
+      if (activeAdmins.length <= 1) {
+        toast("error", t.admin.cannotDeleteLastAdmin);
+        return;
+      }
     }
     if (!window.confirm(t.admin.deleteConfirm)) return;
     try {

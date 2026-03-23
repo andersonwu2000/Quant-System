@@ -74,7 +74,7 @@ class FinMindFeed(DataFeed):
                 if end is not None and pd.Timestamp(end) > cached.index.max():
                     self._cache[cache_key] = self._download(symbol, start, end, freq)
 
-        df = self._cache[cache_key]
+        df: pd.DataFrame = self._cache[cache_key]
 
         if start is not None:
             df = df[df.index >= pd.Timestamp(start)]
@@ -136,8 +136,9 @@ class FinMindFeed(DataFeed):
         df.index.name = None
 
         # Normalize to tz-naive (consistent with YahooFeed)
-        if df.index.tz is not None:
-            df.index = df.index.tz_convert("UTC").tz_localize(None)
+        idx = df.index
+        if hasattr(idx, "tz") and idx.tz is not None:
+            df.index = idx.tz_convert("UTC").tz_localize(None)  # type: ignore[attr-defined]
 
         df = df.sort_index()
 

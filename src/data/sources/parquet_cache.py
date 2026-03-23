@@ -45,7 +45,8 @@ class ParquetDiskCache:
         if age > self._ttl:
             return None
         try:
-            return pd.read_parquet(path)
+            df: pd.DataFrame = pd.read_parquet(path)
+            return df
         except Exception:
             return None
 

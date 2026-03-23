@@ -62,7 +62,7 @@ class YahooFeed(DataFeed):
                 if end is not None and pd.Timestamp(end) > cached.index.max():
                     self._cache[cache_key] = self._download(symbol, start, end, freq)
 
-        df = self._cache[cache_key]
+        df: pd.DataFrame = self._cache[cache_key]
 
         if start is not None:
             df = df[df.index >= pd.Timestamp(start)]
@@ -208,7 +208,7 @@ class YahooFeed(DataFeed):
         divs = divs.sort_index()
 
         # Convert Series to DataFrame for parquet caching and consistent type
-        div_df = divs.to_frame(name="dividend")
+        div_df: pd.DataFrame = divs.to_frame(name="dividend")
 
         self._disk_cache.save(symbol, "dividends", div_df)
         return div_df

@@ -100,6 +100,7 @@ export function OrderForm({ onSubmitted }: Props) {
             type="number"
             value={quantity}
             min={1}
+            step={1}
             onChange={(e) => setQuantity(e.target.value)}
             required
             className="w-full bg-slate-50 dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm"
