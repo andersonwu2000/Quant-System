@@ -84,11 +84,21 @@ class UserStore:
             user_id = result.inserted_primary_key[0]
         return self.get_by_id(user_id)  # type: ignore[return-value]
 
+    # 允許透過 update() 修改的欄位白名單
+    _UPDATABLE_FIELDS = frozenset({
+        "display_name", "role", "is_active",
+        "password_hash", "password_salt",
+        "failed_login_count", "locked_until",
+        "token_valid_after",
+    })
+
     def update(self, user_id: int, **fields: Any) -> dict[str, Any] | None:
-        fields["updated_at"] = _now_iso()
+        # 過濾不允許的欄位（防止意外修改 id, username, created_at 等）
+        safe_fields = {k: v for k, v in fields.items() if k in self._UPDATABLE_FIELDS}
+        safe_fields["updated_at"] = _now_iso()
         with self._engine.begin() as conn:
             conn.execute(
-                users_table.update().where(users_table.c.id == user_id).values(**fields)
+                users_table.update().where(users_table.c.id == user_id).values(**safe_fields)
             )
         return self.get_by_id(user_id)
 
@@ -129,6 +139,10 @@ class UserStore:
                 .where(users_table.c.id == user_id)
                 .values(locked_until=until, updated_at=_now_iso())
             )
+
+    def invalidate_tokens(self, user_id: int) -> None:
+        """撤銷該用戶所有已發出的 JWT token。"""
+        self.update(user_id, token_valid_after=_now_iso())
 
     def count_active_admins(self) -> int:
         with self._engine.connect() as conn:

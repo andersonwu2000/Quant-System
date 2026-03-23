@@ -98,6 +98,7 @@ users_table = sa.Table(
     sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("1")),
     sa.Column("failed_login_count", sa.Integer, nullable=False, server_default="0"),
     sa.Column("locked_until", sa.Text, nullable=True),
+    sa.Column("token_valid_after", sa.Text, nullable=True),
     sa.Column("created_at", sa.Text, nullable=False),
     sa.Column("updated_at", sa.Text, nullable=False),
 )

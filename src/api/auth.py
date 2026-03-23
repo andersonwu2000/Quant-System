@@ -53,12 +53,14 @@ def verify_api_key(
 
 
 def create_jwt_token(subject: str, role: str = "trader") -> str:
-    """建立 JWT token。"""
+    """建立 JWT token（含 iat 供撤銷比對）。"""
     config = get_config()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=config.jwt_expire_minutes)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=config.jwt_expire_minutes)
     payload = {
         "sub": subject,
         "role": role,
+        "iat": now,
         "exp": expire,
     }
     encoded: str = jwt.encode(payload, config.jwt_secret, algorithm="HS256")
@@ -70,10 +72,14 @@ def verify_jwt(
     api_key: str | None = Security(api_key_header),
     credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
 ) -> dict[str, Any]:
-    """驗證 JWT token（Bearer header 或 httpOnly cookie），返回 payload。API Key 視為 admin。"""
+    """驗證 JWT token（Bearer header 或 httpOnly cookie），返回 payload。
+
+    DB 即時查詢確保：停用/刪除/角色變更立即生效，token 可被撤銷。
+    API Key 不走 DB，角色由 config 決定。
+    """
     config = get_config()
 
-    # API Key 直接存取：角色由 config 查詢決定（不再寫死 admin）
+    # API Key 直接存取：角色由 config 查詢決定
     if api_key:
         role = config.resolve_api_key_role(api_key)
         if role is not None:
@@ -98,13 +104,41 @@ def verify_jwt(
 
     try:
         payload: dict[str, Any] = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
-        request.state.user = payload.get("sub", "anonymous")
-        return payload
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+
+    # ── DB 即時驗證 ──
+    subject = payload.get("sub", "")
+    if subject and subject != "api_key_user":
+        from src.data.user_store import get_user_store
+        user = get_user_store().get_by_username(subject)
+
+        if not user or not user["is_active"]:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account disabled or deleted",
+            )
+
+        # token 撤銷檢查：token 的 iat 必須 >= user.token_valid_after
+        token_valid_after = user.get("token_valid_after")
+        token_iat = payload.get("iat")
+        if token_valid_after and token_iat:
+            valid_after_dt = datetime.fromisoformat(token_valid_after)
+            issued_at_dt = datetime.fromtimestamp(token_iat, tz=timezone.utc)
+            if issued_at_dt < valid_after_dt:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                )
+
+        # 使用 DB 中的即時角色，而非 token 中的快照
+        payload["role"] = user["role"]
+
+    request.state.user = payload.get("sub", "anonymous")
+    return payload
 
 
 def verify_ws_token(token: str) -> dict[str, Any] | None:

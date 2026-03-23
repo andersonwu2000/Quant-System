@@ -107,6 +107,11 @@ async def update_user(
     updated = store.update(user_id, **fields)
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # 角色變更或停用時，撤銷該用戶所有 token
+    if req.role is not None or req.is_active is False:
+        store.invalidate_tokens(user_id)
+
     return _to_response(updated)
 
 
@@ -149,4 +154,6 @@ async def reset_password(
 
     pw_hash, pw_salt = hash_password(req.new_password)
     store.update(user_id, password_hash=pw_hash, password_salt=pw_salt, failed_login_count=0, locked_until=None)
+    # 密碼重設後撤銷舊 token，強制重新登入
+    store.invalidate_tokens(user_id)
     return MessageResponse(message=f"Password reset for '{user['username']}'")

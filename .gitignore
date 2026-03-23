@@ -19,3 +19,4 @@ node_modules/
 apps/*/dist/
 apps/web/dist/
 bun.lockb
+/data/
