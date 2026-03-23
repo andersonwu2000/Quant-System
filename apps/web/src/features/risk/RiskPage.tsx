@@ -42,6 +42,9 @@ export function RiskPage() {
   }, [setAlerts]));
 
   const handleToggle = async (name: string, enabled: boolean) => {
+    const action = enabled ? t.risk.disableRule : t.risk.enableRule;
+    if (!window.confirm(`${action}: ${name}?`)) return;
+
     setToggling(name);
     try {
       await riskApi.toggleRule(name, !enabled);

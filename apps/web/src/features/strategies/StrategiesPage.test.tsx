@@ -1,7 +1,7 @@
 import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "@test/helpers";
 import { StrategiesPage } from "./StrategiesPage";
-import type { StrategyInfo } from "@quant/shared";
+import type { StrategyInfo } from "@core/api";
 import { strategiesApi } from "./api";
 
 vi.mock("./api", () => ({
@@ -24,13 +24,14 @@ vi.mock("@core/auth", () => ({
 }));
 
 const mockStrategies: StrategyInfo[] = [
-  { name: "momentum", status: "running", pnl: 15_000 },
+  { name: "momentum_12_1", status: "running", pnl: 15_000 },
   { name: "mean_reversion", status: "stopped", pnl: -2_000 },
 ];
 
 describe("StrategiesPage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
   it("shows loading skeleton initially", () => {
@@ -46,7 +47,7 @@ describe("StrategiesPage", () => {
     renderWithProviders(<StrategiesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("momentum")).toBeInTheDocument();
+      expect(screen.getByText("momentum_12_1")).toBeInTheDocument();
     });
     expect(screen.getByText("mean_reversion")).toBeInTheDocument();
   });
@@ -75,7 +76,7 @@ describe("StrategiesPage", () => {
     fireEvent.click(screen.getByText("Stop"));
 
     await waitFor(() => {
-      expect(strategiesApi.stop).toHaveBeenCalledWith("momentum");
+      expect(strategiesApi.stop).toHaveBeenCalledWith("momentum_12_1");
     });
   });
 

@@ -4,7 +4,7 @@
  * so we widen the `status` parameter here.
  */
 import { get, post } from "@core/api";
-import type { OrderInfo, ManualOrderRequest } from "@quant/shared";
+import type { OrderInfo, ManualOrderRequest } from "@core/api";
 
 export const ordersApi = {
   list: (status?: string) =>

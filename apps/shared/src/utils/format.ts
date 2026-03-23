@@ -19,6 +19,10 @@ export function fmtPct(value: number, decimals = 2): string {
   return `${sign}${(value * 100).toFixed(decimals)}%`;
 }
 
+export function fmtPrice(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
+
 export function fmtNum(value: number, decimals = 2): string {
   return value.toLocaleString(undefined, {
     minimumFractionDigits: decimals,

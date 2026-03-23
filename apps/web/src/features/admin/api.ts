@@ -1,5 +1,5 @@
-import { get, post, put, del } from "@quant/shared";
-import type { UserInfo } from "@quant/shared";
+import { get, post, put, del } from "@core/api";
+import type { UserInfo } from "@core/api";
 
 export const adminApi = {
   listUsers: () => get<UserInfo[]>("/api/v1/admin/users"),

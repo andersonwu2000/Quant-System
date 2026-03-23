@@ -5,14 +5,19 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from src.api.auth import create_jwt_token, verify_jwt
-from src.api.password import hash_password, verify_password
+from src.api.password import hash_password, validate_password, verify_password
 from src.api.schemas import ChangePasswordRequest, MessageResponse
 from src.config import get_config
 from src.data.user_store import get_user_store
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+_login_limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,7 +46,8 @@ def _set_cookie(response: Response, token: str) -> None:
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(req: LoginRequest, response: Response) -> LoginResponse:
+@_login_limiter.limit("10/minute")
+async def login(request: Request, req: LoginRequest, response: Response) -> LoginResponse:
     """雙模登入：username+password 或 API Key。"""
     config = get_config()
 
@@ -127,6 +133,10 @@ async def change_password(
 
     if not verify_password(req.current_password, user["password_hash"], user["password_salt"]):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    pw_error = validate_password(req.new_password)
+    if pw_error:
+        raise HTTPException(status_code=400, detail=pw_error)
 
     pw_hash, pw_salt = hash_password(req.new_password)
     store.update(user["id"], password_hash=pw_hash, password_salt=pw_salt)

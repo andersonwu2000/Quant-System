@@ -4,16 +4,15 @@ import { fmtCurrency, pnlColor, translateApiError } from "@core/utils";
 import { StatusBadge, ErrorAlert, InfoTooltip, Skeleton } from "@shared/ui";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
-import type { StrategyInfo } from "@quant/shared";
+import type { StrategyInfo } from "@core/api";
 import { Play, Square } from "lucide-react";
 import { strategiesApi } from "./api";
 
-const STRATEGY_PREFIXES = ["momentum", "mean_reversion"] as const;
-type StrategyDescKey = typeof STRATEGY_PREFIXES[number];
+const STRATEGY_KEYS = ["momentum_12_1", "mean_reversion", "rsi_oversold", "ma_crossover", "pairs_trading", "multi_factor", "sector_rotation"] as const;
+type StrategyDescKey = typeof STRATEGY_KEYS[number];
 
 function getStrategyDescKey(name: string): StrategyDescKey | null {
-  if ((STRATEGY_PREFIXES as readonly string[]).includes(name)) return name as StrategyDescKey;
-  return STRATEGY_PREFIXES.find((p) => name.startsWith(p)) ?? null;
+  return (STRATEGY_KEYS as readonly string[]).includes(name) ? (name as StrategyDescKey) : null;
 }
 
 function InfoButton({ expanded, onClick, ariaLabel }: { expanded: boolean; onClick: () => void; ariaLabel: string }) {
@@ -48,6 +47,9 @@ export function StrategiesPage() {
   void InfoTooltip;
 
   const handleToggle = async (name: string, current: string) => {
+    const action = current === "running" ? t.strategies.stop : t.strategies.start;
+    if (!window.confirm(`${action} "${name}"?`)) return;
+
     setToggling(name);
     setToggleError(null);
     try {

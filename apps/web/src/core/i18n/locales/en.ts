@@ -4,6 +4,7 @@ export const en = {
   common: {
     cancel: "Cancel",
     submit: "Submit",
+    confirm: "Confirm",
     retry: "Retry",
     reload: "Reload",
     exportCSV: "Export CSV",
@@ -15,6 +16,9 @@ export const en = {
     requestFailed: "Request failed",
     logout: "Logout",
     expandDescription: "Expand description",
+    skipToContent: "Skip to content",
+    connectionLost: "Live connection lost. Data may be stale. Reconnecting…",
+    close: "Close",
     roles: {
       viewer: "Viewer",
       researcher: "Researcher",
@@ -56,6 +60,8 @@ export const en = {
     pnl: "P&L",
     weight: "Weight",
     loading: "Loading...",
+    showAll: "Show all",
+    showLess: "Show less",
   },
 
   // portfolio
@@ -77,8 +83,13 @@ export const en = {
     stop: "Stop",
     noStrategies: "No strategies configured",
     strategyDescriptions: {
-      momentum: "Classic 12-1 momentum strategy. Buys the top performers of the past 12 months (skipping the most recent month to avoid short-term reversal). Weights are allocated proportionally to signal strength, capped at 10% per position and 95% gross exposure. Rebalances weekly or monthly.",
+      momentum_12_1: "Classic 12-1 momentum strategy. Buys the top performers of the past 12 months (skipping the most recent month to avoid short-term reversal). Weights are allocated proportionally to signal strength, capped at 10% per position and 95% gross exposure. Rebalances weekly or monthly.",
       mean_reversion: "Mean-reversion strategy. Buys stocks whose price has fallen significantly below their moving average (Z-score above threshold, default 1.5). Signal-weighted allocation with a max 8% per position and 90% gross exposure. Suited for range-bound, low-momentum markets.",
+      rsi_oversold: "RSI oversold strategy. Buys stocks with RSI below 30 (oversold zone) and exits when RSI exceeds 70 (overbought). Signal strength = 100 - RSI; the more oversold, the higher the weight. Uses 14-day RSI by default.",
+      ma_crossover: "Moving average crossover strategy. Goes long when the fast MA crosses above the slow MA; signal strength depends on crossover magnitude. Default fast = 10 days, slow = 50 days. Best suited for trending markets.",
+      pairs_trading: "Pairs trading strategy. Computes Z-scores of price ratios for each stock pair and buys the relatively weaker side when Z-score exceeds threshold. A market-neutral strategy independent of market direction.",
+      multi_factor: "Multi-factor strategy. Combines momentum, mean-reversion, and RSI into a composite scoring model. Each factor is normalized and weighted; top-scoring stocks are selected. Balances trend-following with contrarian signals.",
+      sector_rotation: "Sector rotation strategy. Ranks stocks by 60-day short-term momentum and concentrates on the top N. Uses risk-parity allocation (inverse volatility weighting) to reduce concentration in high-volatility names.",
     },
   },
 
@@ -104,6 +115,7 @@ export const en = {
     newOrder: "New Order",
     market: "Market",
     mktIfEmpty: "MKT if empty",
+    confirmTitle: "Confirm Order",
   },
 
   // backtest
@@ -168,6 +180,8 @@ export const en = {
     killSwitch: "Kill Switch",
     killConfirm: "Activate kill switch? This will liquidate all positions and stop all strategies.",
     riskRules: "Risk Rules",
+    enableRule: "Enable rule",
+    disableRule: "Disable rule",
     enabled: "Enabled",
     disabled: "Disabled",
     recentAlerts: "Recent Alerts",

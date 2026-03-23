@@ -3,7 +3,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { useT } from "@core/i18n";
 import { useTheme } from "@core/theme";
 import { getChartColors } from "@shared/utils/chartColors";
-import type { NavPoint } from "@quant/shared";
+import type { NavPoint } from "@core/api";
 
 interface DrawdownPoint {
   date: string;

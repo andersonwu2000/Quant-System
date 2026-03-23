@@ -1,14 +1,14 @@
 import { useCallback, useState } from "react";
 import { useApi, useWs } from "@core/hooks";
 import { portfolioApi, strategiesApi } from "../api";
-import type { Portfolio, StrategyInfo } from "@quant/shared";
+import type { Portfolio, StrategyInfo } from "@core/api";
 
 export function useDashboard() {
   const { data: pf, error, refresh, setData: setPf } = useApi<Portfolio>(portfolioApi.get);
   const { data: strats } = useApi<StrategyInfo[]>(strategiesApi.list);
   const [navHistory, setNavHistory] = useState<{ time: string; nav: number }[]>([]);
 
-  useWs("portfolio", useCallback((msg: unknown) => {
+  const { connected } = useWs("portfolio", useCallback((msg: unknown) => {
     // Type guard: verify WS message structure before casting
     if (!msg || typeof msg !== "object" || !("nav" in msg) || typeof (msg as Record<string, unknown>).nav !== "number") return;
     const d = msg as Partial<Portfolio>;
@@ -24,5 +24,5 @@ export function useDashboard() {
 
   const running = strats?.filter((s) => s.status === "running").length ?? 0;
 
-  return { pf, error, refresh, navHistory, running };
+  return { pf, error, refresh, navHistory, running, connected };
 }

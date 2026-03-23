@@ -1,1 +1,1 @@
-export type { OrderInfo } from "@quant/shared";
+export type { OrderInfo } from "@core/api";

@@ -7,7 +7,7 @@ import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
 import { langLabels, type Lang } from "@core/i18n";
 import { useTheme, type Theme } from "@core/theme";
-import { auth as authApi } from "@quant/shared";
+import { authEndpoints as authApi } from "@core/api";
 import { translateApiError, isValidPassword } from "@core/utils";
 import { systemApi } from "./api";
 import { SystemMetrics } from "./components/SystemMetrics";

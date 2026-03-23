@@ -8,7 +8,6 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
-import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -24,6 +23,7 @@ class QualityStatus(Enum):
 class QualityResult:
     status: QualityStatus
     issues: list[str]
+    suspect_dates: set[str] | None = None  # ISO 日期字串，標記為不可交易日
 
     @property
     def ok(self) -> bool:
@@ -81,16 +81,19 @@ def check_bars(df: pd.DataFrame, symbol: str = "") -> QualityResult:
             issues.append(f"{prefix}時間戳非單調遞增")
 
     # 7. 價格跳變
+    suspect_dates: set[str] = set()
     if len(df) > 20:
         returns = df["close"].pct_change().dropna()
         if len(returns) > 0:
             mean_ret = returns.mean()
             std_ret = returns.std()
             if std_ret > 0:
-                z_scores = np.abs((returns - mean_ret) / std_ret)
-                jumps = (z_scores > 5).sum()
+                z_scores = ((returns - mean_ret) / std_ret).abs()
+                jump_mask = z_scores > 5
+                jumps = int(jump_mask.sum())
                 if jumps > 0:
                     issues.append(f"{prefix}{jumps} 個價格跳變 > 5σ (可疑)")
+                    suspect_dates = {str(d.date()) for d in z_scores[jump_mask].index}
 
     if not issues:
         return QualityResult(QualityStatus.PASS, [])
@@ -102,4 +105,4 @@ def check_bars(df: pd.DataFrame, symbol: str = "") -> QualityResult:
     for issue in issues:
         logger.warning("DataQuality: %s", issue)
 
-    return QualityResult(status, issues)
+    return QualityResult(status, issues, suspect_dates=suspect_dates or None)

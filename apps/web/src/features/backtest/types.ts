@@ -1,1 +1,1 @@
-export type { BacktestRequest, BacktestSummary, BacktestResult } from "@quant/shared";
+export type { BacktestRequest, BacktestSummary, BacktestResult } from "@core/api";

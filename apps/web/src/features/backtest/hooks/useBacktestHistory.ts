@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { BacktestResult, BacktestRequest } from "@quant/shared";
+import type { BacktestResult, BacktestRequest } from "@core/api";
 
 const STORAGE_KEY = "quant_backtest_history";
 const MAX_ENTRIES = 20;

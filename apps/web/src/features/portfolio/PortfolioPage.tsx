@@ -1,8 +1,8 @@
 import { useApi } from "@core/hooks";
-import { fmtCurrency, fmtPct, pnlColor } from "@core/utils";
+import { fmtCurrency, fmtPrice, fmtPct, pnlColor } from "@core/utils";
 import { ErrorAlert, MetricCardSkeleton, TableSkeleton, Skeleton } from "@shared/ui";
 import { useT } from "@core/i18n";
-import type { Portfolio } from "@quant/shared";
+import type { Portfolio } from "@core/api";
 import { portfolioApi } from "./api";
 
 export function PortfolioPage() {
@@ -67,8 +67,8 @@ export function PortfolioPage() {
               <tr key={p.symbol} className="border-b border-slate-100 dark:border-surface-light/50 hover:bg-slate-50 dark:hover:bg-surface-light/30">
                 <td className="py-2 font-medium">{p.symbol}</td>
                 <td className="text-right py-2">{p.quantity}</td>
-                <td className="text-right py-2">${p.avg_cost?.toFixed(2) ?? "—"}</td>
-                <td className="text-right py-2">${p.market_price?.toFixed(2) ?? "—"}</td>
+                <td className="text-right py-2">{p.avg_cost != null ? fmtPrice(p.avg_cost) : "—"}</td>
+                <td className="text-right py-2">{p.market_price != null ? fmtPrice(p.market_price) : "—"}</td>
                 <td className="text-right py-2">{fmtCurrency(p.market_value)}</td>
                 <td className={`text-right py-2 ${pnlColor(p.unrealized_pnl)}`}>
                   {fmtCurrency(p.unrealized_pnl)}

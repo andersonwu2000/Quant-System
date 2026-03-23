@@ -1,4 +1,4 @@
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, Alert, StyleSheet } from "react-native";
 import type { StrategyInfo } from "@quant/shared";
 import { fmtCurrency, pnlColor } from "../utils/format";
 import { surface, textPrimary, success, textMuted, textSecondary, danger, white } from "@/src/theme/colors";
@@ -28,7 +28,17 @@ export function StrategyRow({ strategy, onToggle }: Props) {
         </Text>
         <Pressable
           style={[styles.button, isRunning ? styles.stopBtn : styles.startBtn]}
-          onPress={() => onToggle(strategy.name, isRunning)}
+          onPress={() => {
+            const action = isRunning ? "Stop" : "Start";
+            Alert.alert(
+              `${action} Strategy`,
+              `${action} "${strategy.name}"?`,
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: action, style: isRunning ? "destructive" : "default", onPress: () => onToggle(strategy.name, isRunning) },
+              ],
+            );
+          }}
         >
           <Text style={styles.btnText}>{isRunning ? "Stop" : "Start"}</Text>
         </Pressable>

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { backtestApi } from "../api";
 import { useT } from "@core/i18n";
-import { pollBacktestResult } from "@quant/shared";
-import type { BacktestRequest, BacktestResult } from "@quant/shared";
+import { pollBacktestResult } from "@core/api";
+import type { BacktestRequest, BacktestResult } from "@core/api";
 
 export function useBacktest() {
   const { t } = useT();

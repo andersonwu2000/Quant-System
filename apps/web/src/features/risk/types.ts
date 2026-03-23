@@ -1,1 +1,1 @@
-export type { RiskRule, RiskAlert } from "@quant/shared";
+export type { RiskRule, RiskAlert } from "@core/api";

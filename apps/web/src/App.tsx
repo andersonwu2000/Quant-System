@@ -1,7 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { lazy, Suspense, useState, useCallback, useMemo } from "react";
 import { Sidebar } from "@shared/layout";
-import { ErrorBoundary, ToastProvider, PageSkeleton } from "@shared/ui";
+import { ErrorBoundary, RouteErrorBoundary, ToastProvider, PageSkeleton } from "@shared/ui";
 import { isAuthenticated, logout } from "@core/api";
 import { I18nContext, getSavedLang, saveLang, translations, type Lang } from "@core/i18n";
 import { ThemeProvider } from "@core/theme";
@@ -45,11 +45,19 @@ function AppContent() {
 
   return (
     <I18nContext.Provider value={i18nValue}>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:rounded-lg focus:text-sm focus:font-medium">
+        {i18nValue.t.common.skipToContent}
+      </a>
       <div className="flex min-h-screen bg-slate-200 dark:bg-surface-dark text-slate-900 dark:text-slate-100">
         <Sidebar onLogout={isAuthenticated() ? handleLogout : undefined} />
-        <main className="flex-1 overflow-auto">
+        <main id="main-content" className="flex-1 overflow-auto">
           <Suspense fallback={<div className="p-6"><PageSkeleton /></div>}>
-            <div key={location.pathname} className="p-6 page-enter">
+            <RouteErrorBoundary key={location.pathname} labels={{
+              title: i18nValue.t.common.errorTitle,
+              fallbackMessage: i18nValue.t.common.unexpectedError,
+              action: i18nValue.t.common.retry,
+            }}>
+            <div className="p-6 page-enter">
             <Routes>
               <Route path="/settings" element={<SettingsPage onSave={() => refresh((n) => n + 1)} />} />
               <Route path="/" element={<RequireKey><DashboardPage /></RequireKey>} />
@@ -62,6 +70,7 @@ function AppContent() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
             </div>
+            </RouteErrorBoundary>
           </Suspense>
         </main>
       </div>

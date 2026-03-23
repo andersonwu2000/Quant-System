@@ -19,7 +19,12 @@ _engine: sa.Engine | None = None
 def _get_engine() -> sa.Engine:
     global _engine
     if _engine is None:
-        _engine = _create_engine(get_config().database_url)
+        url = get_config().database_url
+        if url.startswith("sqlite"):
+            from pathlib import Path
+            db_path = url.replace("sqlite:///", "")
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        _engine = _create_engine(url)
     return _engine
 
 

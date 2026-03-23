@@ -21,6 +21,7 @@ import pandas as pd
 
 from src.backtest.analytics import BacktestResult, compute_analytics
 from src.data.feed import HistoricalFeed
+from src.data.quality import check_bars
 from src.data.sources.yahoo import YahooFeed
 from src.domain.models import Portfolio
 from src.execution.oms import apply_trades
@@ -82,10 +83,12 @@ class BacktestEngine:
             "production research."
         )
 
-        # 1. 準備數據
-        feed = self._load_data(config)
+        # 1. 準備數據（含品質檢查）
+        feed, suspect_dates = self._load_data(config)
         if not feed.get_universe():
             raise ValueError("No data loaded for any symbol in universe")
+        if suspect_dates:
+            logger.warning("Skipping %d suspect dates: %s", len(suspect_dates), sorted(suspect_dates)[:10])
 
         # 預建價格/成交量矩陣（向量化查詢）
         self._build_matrices(feed, config.universe)
@@ -115,6 +118,12 @@ class BacktestEngine:
         rebalance_count = 0
 
         for i, bar_date in enumerate(trading_dates):
+            # 跳過品質可疑日期（價格跳變 > 5σ）
+            date_str = bar_date.strftime("%Y-%m-%d")
+            if date_str in suspect_dates:
+                logger.debug("Skipping suspect date %s", date_str)
+                continue
+
             # 設定 feed 的可見時間
             feed.set_current_date(bar_date)
 
@@ -200,10 +209,11 @@ class BacktestEngine:
 
         return result
 
-    def _load_data(self, config: BacktestConfig) -> HistoricalFeed:
+    def _load_data(self, config: BacktestConfig) -> tuple[HistoricalFeed, set[str]]:
         """從 Yahoo Finance 下載數據並載入 HistoricalFeed。
 
         額外前拉 400 個交易日（約 18 個月），確保策略有足夠的回溯數據計算因子。
+        返回 (feed, suspect_dates) — suspect_dates 為品質檢查標記的可疑日期。
         """
         warmup_days = 400
         warmup_start = (
@@ -212,16 +222,25 @@ class BacktestEngine:
 
         yahoo = YahooFeed(config.universe)
         feed = HistoricalFeed()
+        all_suspect_dates: set[str] = set()
 
         for symbol in config.universe:
             df = yahoo.get_bars(symbol, start=warmup_start, end=config.end)
             if not df.empty:
+                # 品質檢查
+                qr = check_bars(df, symbol)
+                if qr.suspect_dates:
+                    all_suspect_dates.update(qr.suspect_dates)
+                    logger.warning("Quality suspect dates for %s: %s", symbol, qr.suspect_dates)
+                if not qr.ok:
+                    logger.warning("Quality issues for %s: %s", symbol, qr.issues)
+
                 feed.load(symbol, df)
                 logger.info("Loaded %d bars for %s (warmup from %s)", len(df), symbol, warmup_start)
             else:
                 logger.warning("No data for %s, skipping", symbol)
 
-        return feed
+        return feed, all_suspect_dates
 
     def _get_trading_dates(
         self, feed: HistoricalFeed, config: BacktestConfig

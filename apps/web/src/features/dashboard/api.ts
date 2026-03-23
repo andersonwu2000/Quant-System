@@ -1,4 +1,4 @@
-import { portfolio, strategies } from "@quant/shared";
+import { portfolioEndpoints, strategiesEndpoints } from "@core/api";
 
-export const portfolioApi = portfolio;
-export const strategiesApi = strategies;
+export const portfolioApi = portfolioEndpoints;
+export const strategiesApi = strategiesEndpoints;

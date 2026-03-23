@@ -71,15 +71,16 @@ async def create_order(
         strategy_id="manual",
     )
 
-    # Run through risk engine before submitting
-    decision = state.risk_engine.check_order(order, state.portfolio)
-    if not decision.approved:
-        order.status = OrderStatus.REJECTED
-        order.reject_reason = decision.reason
-    else:
-        if decision.modified_qty is not None:
-            order.quantity = decision.modified_qty
-        state.oms.submit(order)
+    # 取得鎖 → 風控檢查 + 提交必須原子執行，防止 race condition
+    async with state.mutation_lock:
+        decision = state.risk_engine.check_order(order, state.portfolio)
+        if not decision.approved:
+            order.status = OrderStatus.REJECTED
+            order.reject_reason = decision.reason
+        else:
+            if decision.modified_qty is not None:
+                order.quantity = decision.modified_qty
+            state.oms.submit(order)
 
     response = _to_response(order)
 

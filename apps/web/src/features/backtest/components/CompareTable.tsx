@@ -1,7 +1,7 @@
 import { fmtPct, fmtNum, fmtCurrency } from "@core/utils";
 import { useT } from "@core/i18n";
 import type { BacktestHistoryEntry } from "../hooks/useBacktestHistory";
-import type { BacktestResult } from "@quant/shared";
+import type { BacktestResult } from "@core/api";
 import type { Translations } from "@core/i18n/locales/en";
 
 interface Props {

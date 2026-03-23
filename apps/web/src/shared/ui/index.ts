@@ -1,11 +1,14 @@
+export { Card } from "./Card";
 export { ErrorAlert } from "./ErrorAlert";
 export { StatusBadge } from "./StatusBadge";
 export { InfoTooltip } from "./InfoTooltip";
 export { MetricCard } from "./MetricCard";
-export { ErrorBoundary } from "./ErrorBoundary";
+export { ErrorBoundary, RouteErrorBoundary } from "./ErrorBoundary";
 export { Skeleton, MetricCardSkeleton, TableSkeleton, PageSkeleton } from "./Skeleton";
 export { DataTable } from "./DataTable";
 export type { Column } from "./DataTable";
 export { ExportButton } from "./ExportButton";
 export { ToastProvider, useToast } from "./Toast";
 export { Modal } from "./Modal";
+export { ConnectionBanner } from "./ConnectionBanner";
+export { ROLE_BADGE_COLORS } from "./roleBadgeColors";

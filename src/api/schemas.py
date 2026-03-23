@@ -136,6 +136,22 @@ class TradeRecordResponse(BaseModel):
     commission: float
 
 
+class BacktestHistoryItem(BaseModel):
+    id: str
+    strategy_name: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    started_at: str
+    finished_at: str | None = None
+    total_return: float | None = None
+    annual_return: float | None = None
+    sharpe: float | None = None
+    max_drawdown: float | None = None
+
+
+class BacktestHistoryResponse(BaseModel):
+    items: list[BacktestHistoryItem]
+
+
 class BacktestResultResponse(BaseModel):
     strategy_name: str
     start_date: str

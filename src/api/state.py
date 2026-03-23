@@ -12,9 +12,15 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
+from src.data.store import DataStore
 from src.domain.models import Portfolio
 from src.execution.oms import OrderManager
 from src.risk.engine import RiskEngine
+
+
+def _make_risk_engine() -> RiskEngine:
+    store = DataStore()
+    return RiskEngine(persist_fn=store.save_risk_event)
 
 
 @dataclass
@@ -22,7 +28,7 @@ class AppState:
     """應用全局狀態。"""
     portfolio: Portfolio = field(default_factory=lambda: Portfolio(cash=Decimal("10000000")))
     oms: OrderManager = field(default_factory=OrderManager)
-    risk_engine: RiskEngine = field(default_factory=RiskEngine)
+    risk_engine: RiskEngine = field(default_factory=_make_risk_engine)
     strategies: dict[str, dict[str, Any]] = field(default_factory=dict)
     backtest_tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     # 保護 portfolio mutation 的非同步鎖

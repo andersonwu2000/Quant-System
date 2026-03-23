@@ -36,4 +36,4 @@ export { pollBacktestResult } from "./hooks/pollBacktestResult";
 export type { PollOptions, PollOutcome, PollSuccess, PollFailure } from "./hooks/pollBacktestResult";
 
 // Utils
-export { fmtCurrency, fmtPct, fmtNum, fmtDate, fmtTime, fmtUptime } from "./utils/format";
+export { fmtCurrency, fmtPrice, fmtPct, fmtNum, fmtDate, fmtTime, fmtUptime } from "./utils/format";

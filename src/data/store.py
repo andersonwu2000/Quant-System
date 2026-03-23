@@ -10,7 +10,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import sqlalchemy as sa
@@ -325,6 +325,38 @@ class DataStore:
                     set_={k: v for k, v in row.items() if k != "id"},
                 )
                 conn.execute(pg_stmt)
+
+    def load_backtest_history(
+        self,
+        strategy_name: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """載入回測歷史記錄。"""
+        t = backtest_results_table
+        stmt = t.select().where(t.c.status == "completed")
+
+        if strategy_name:
+            stmt = stmt.where(t.c.strategy_name == strategy_name)
+
+        stmt = stmt.order_by(t.c.finished_at.desc()).limit(limit)
+
+        with self._engine.connect() as conn:
+            rows = conn.execute(stmt).mappings().all()
+
+        return [
+            {
+                "id": r["id"],
+                "strategy_name": r["strategy_name"],
+                "config": json.loads(r["config"]) if r["config"] else {},
+                "started_at": r["started_at"],
+                "finished_at": r["finished_at"],
+                "sharpe": float(r["sharpe"]) if r["sharpe"] is not None else None,
+                "max_drawdown": float(r["max_drawdown"]) if r["max_drawdown"] is not None else None,
+                "total_return": float(r["total_return"]) if r["total_return"] is not None else None,
+                "annual_return": float(r["annual_return"]) if r["annual_return"] is not None else None,
+            }
+            for r in rows
+        ]
 
     # ─── Risk Events ────────────────────────────────
 

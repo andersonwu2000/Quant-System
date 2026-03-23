@@ -1,3 +1,3 @@
-import { backtest } from "@quant/shared";
+import { backtestEndpoints } from "@core/api";
 
-export const backtestApi = backtest;
+export const backtestApi = backtestEndpoints;

@@ -5,6 +5,7 @@
 
 export type Channel = "portfolio" | "alerts" | "orders" | "market";
 type MessageHandler = (data: unknown) => void;
+type StatusHandler = (connected: boolean) => void;
 
 const PING_INTERVAL_MS = 30_000;
 const MAX_BACKOFF_MS = 60_000;
@@ -19,10 +20,12 @@ export function initWs(urlBuilder: (channel: Channel) => string) {
 export class WSManager {
   private ws: WebSocket | null = null;
   private handlers = new Set<MessageHandler>();
+  private statusHandlers = new Set<StatusHandler>();
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private active = true;
   private retries = 0;
+  private _connected = false;
 
   constructor(private channel: Channel) {}
 
@@ -47,6 +50,7 @@ export class WSManager {
 
     this.ws.onopen = () => {
       this.retries = 0;
+      this.setConnected(true);
       this.pingTimer = setInterval(() => {
         if (this.ws?.readyState === WebSocket.OPEN) this.ws.send("ping");
       }, PING_INTERVAL_MS);
@@ -64,6 +68,7 @@ export class WSManager {
 
     this.ws.onclose = () => {
       this.cleanup();
+      this.setConnected(false);
       if (this.active) {
         const delay = Math.min(BASE_DELAY_MS * 2 ** this.retries, MAX_BACKOFF_MS);
         this.retries++;
@@ -94,6 +99,25 @@ export class WSManager {
     return () => {
       this.handlers.delete(handler);
     };
+  }
+
+  onStatus(handler: StatusHandler): () => void {
+    this.statusHandlers.add(handler);
+    handler(this._connected);
+    return () => {
+      this.statusHandlers.delete(handler);
+    };
+  }
+
+  get connected(): boolean {
+    return this._connected;
+  }
+
+  private setConnected(value: boolean) {
+    if (this._connected !== value) {
+      this._connected = value;
+      this.statusHandlers.forEach((h) => h(value));
+    }
   }
 
   private cleanup() {

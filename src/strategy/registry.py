@@ -24,7 +24,6 @@ def _load_strategy_map() -> dict[str, type[Strategy]]:
     from strategies.sector_rotation import SectorRotationStrategy
 
     return {
-        "momentum": MomentumStrategy,
         "momentum_12_1": MomentumStrategy,
         "mean_reversion": MeanReversionStrategy,
         "rsi_oversold": RsiOversoldStrategy,
@@ -35,8 +34,14 @@ def _load_strategy_map() -> dict[str, type[Strategy]]:
     }
 
 
+# 別名：供 CLI / backtest 向後相容，不出現在策略列表中
+_ALIASES: dict[str, str] = {
+    "momentum": "momentum_12_1",
+}
+
+
 def list_strategies() -> list[str]:
-    """回傳所有可用的策略名稱。"""
+    """回傳所有可用的策略名稱（不含別名）。"""
     return list(_load_strategy_map().keys())
 
 
@@ -51,8 +56,9 @@ def resolve_strategy(name: str, params: dict[str, Any] | None = None) -> Strateg
     Raises:
         ValueError: 未知的策略名稱
     """
+    canonical = _ALIASES.get(name, name)
     strategy_map = _load_strategy_map()
-    cls = strategy_map.get(name)
+    cls = strategy_map.get(canonical)
     if cls is None:
         raise ValueError(
             f"Unknown strategy: {name}. Available: {list(strategy_map.keys())}"

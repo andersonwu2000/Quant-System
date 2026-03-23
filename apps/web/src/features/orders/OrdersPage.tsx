@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import { useApi, useWs } from "@core/hooks";
-import { fmtCurrency, fmtDate, fmtTime } from "@core/utils";
-import { StatusBadge, ErrorAlert, TableSkeleton } from "@shared/ui";
+import { fmtCurrency, fmtPrice, fmtDate, fmtTime } from "@core/utils";
+import { StatusBadge, ErrorAlert, TableSkeleton, ConnectionBanner } from "@shared/ui";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
 import { ordersApi } from "./api";
@@ -22,7 +22,7 @@ export function OrdersPage() {
 
   // Debounce WS-triggered refresh to at most once per second
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useWs(
+  const { connected: wsConnected } = useWs(
     "orders",
     useCallback(
       (msg: unknown) => {
@@ -49,6 +49,7 @@ export function OrdersPage() {
 
   return (
     <div className="space-y-6">
+      <ConnectionBanner connected={wsConnected} label={t.common.connectionLost} />
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">{t.orders.title}</h2>
         {canTrade && (
@@ -122,10 +123,10 @@ export function OrdersPage() {
                     {o.side}
                   </td>
                   <td className="text-right py-2">{o.quantity}</td>
-                  <td className="text-right py-2">{o.price != null ? `$${o.price.toFixed(2)}` : "MKT"}</td>
+                  <td className="text-right py-2">{o.price != null ? fmtPrice(o.price) : "MKT"}</td>
                   <td className="text-right py-2">{o.filled_qty}</td>
                   <td className="text-right py-2">
-                    {o.filled_avg_price != null ? `$${o.filled_avg_price.toFixed(2)}` : "\u2014"}
+                    {o.filled_avg_price != null ? fmtPrice(o.filled_avg_price) : "\u2014"}
                   </td>
                   <td className="text-right py-2">{fmtCurrency(o.commission)}</td>
                   <td className="py-2 text-sm text-slate-400">{o.strategy_id}</td>

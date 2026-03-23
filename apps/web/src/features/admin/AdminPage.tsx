@@ -4,19 +4,12 @@ import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
 import { DataTable, Modal, useToast } from "@shared/ui";
 import type { Column } from "@shared/ui";
-import type { UserInfo, UserRole } from "@quant/shared";
-import { fmtDate } from "@quant/shared";
+import type { UserInfo, UserRole } from "@core/api";
+import { fmtDate } from "@core/utils";
 import { Pencil, KeyRound, Trash2 } from "lucide-react";
 import { translateApiError, isValidPassword } from "@core/utils";
+import { ROLE_BADGE_COLORS } from "@shared/ui";
 import { adminApi } from "./api";
-
-const ROLE_BADGE_COLORS: Record<UserRole, string> = {
-  viewer: "bg-slate-200 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400",
-  researcher: "bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400",
-  trader: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400",
-  risk_manager: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400",
-  admin: "bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400",
-};
 
 const ALL_ROLES: UserRole[] = ["viewer", "researcher", "trader", "risk_manager", "admin"];
 
@@ -260,7 +253,7 @@ export function AdminPage() {
       )}
 
       {/* Create User Modal */}
-      <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title={t.admin.addUser}>
+      <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title={t.admin.addUser} closeLabel={t.common.close}>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">{t.admin.username}</label>
@@ -346,7 +339,7 @@ export function AdminPage() {
       </Modal>
 
       {/* Edit User Modal */}
-      <Modal open={!!editingUser} onClose={() => setEditingUser(null)} title={t.admin.editUser}>
+      <Modal open={!!editingUser} onClose={() => setEditingUser(null)} title={t.admin.editUser} closeLabel={t.common.close}>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">{t.admin.displayName}</label>
@@ -402,7 +395,7 @@ export function AdminPage() {
       </Modal>
 
       {/* Reset Password Modal */}
-      <Modal open={!!resetUser} onClose={() => setResetUser(null)} title={t.admin.resetPassword}>
+      <Modal open={!!resetUser} onClose={() => setResetUser(null)} title={t.admin.resetPassword} closeLabel={t.common.close}>
         <div className="space-y-4">
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {resetUser?.username}

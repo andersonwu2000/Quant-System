@@ -1,3 +1,3 @@
-import { portfolio } from "@quant/shared";
+import { portfolioEndpoints } from "@core/api";
 
-export const portfolioApi = portfolio;
+export const portfolioApi = portfolioEndpoints;

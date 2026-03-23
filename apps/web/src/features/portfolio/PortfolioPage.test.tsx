@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@test/helpers";
 import { PortfolioPage } from "./PortfolioPage";
-import type { Portfolio } from "@quant/shared";
+import type { Portfolio } from "@core/api";
 import { portfolioApi } from "./api";
 
 vi.mock("./api", () => ({

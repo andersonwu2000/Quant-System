@@ -6,6 +6,7 @@ export const zh: Translations = {
   common: {
     cancel: "取消",
     submit: "送出",
+    confirm: "確認",
     retry: "重試",
     reload: "重新載入",
     exportCSV: "匯出 CSV",
@@ -17,6 +18,9 @@ export const zh: Translations = {
     requestFailed: "請求失敗",
     logout: "登出",
     expandDescription: "展開說明",
+    skipToContent: "跳至主要內容",
+    connectionLost: "即時連線已中斷，資料可能非最新。重新連線中…",
+    close: "關閉",
     roles: {
       viewer: "檢視者",
       researcher: "研究員",
@@ -58,6 +62,8 @@ export const zh: Translations = {
     pnl: "損益",
     weight: "權重",
     loading: "載入中...",
+    showAll: "顯示全部",
+    showLess: "收起",
   },
 
   // portfolio
@@ -79,8 +85,13 @@ export const zh: Translations = {
     stop: "停止",
     noStrategies: "尚未配置策略",
     strategyDescriptions: {
-      momentum: "經典 12-1 動量策略。買入過去 12 個月漲幅最強的股票（跳過最近 1 個月以避免短期反轉）。依信號強度比例分配權重，單一標的上限 10%、總曝險上限 95%。每週或每月再平衡。",
+      momentum_12_1: "經典 12-1 動量策略。買入過去 12 個月漲幅最強的股票（跳過最近 1 個月以避免短期反轉）。依信號強度比例分配權重，單一標的上限 10%、總曝險上限 95%。每週或每月再平衡。",
       mean_reversion: "均值回歸策略。買入價格大幅偏離移動平均線下方（Z-score 超過閾值，預設 1.5）的股票。依信號加權配置，單一標的上限 8%、總曝險上限 90%。適合橫盤震盪、動量不明顯的市場環境。",
+      rsi_oversold: "RSI 超賣策略。買入 RSI 低於 30 的股票（超賣區間），RSI 高於 70 時不持有（超買區間）。信號強度為 100 - RSI，越超賣權重越高。預設使用 14 日 RSI。",
+      ma_crossover: "均線交叉策略。當快均線上穿慢均線時做多，信號強度取決於交叉幅度。預設快線 10 日、慢線 50 日。適合趨勢明顯的市場環境。",
+      pairs_trading: "配對交易策略。計算每對股票價格比率的 Z-score，當 Z-score 超過閾值時買入相對弱勢方。屬於市場中性策略，不依賴市場方向。",
+      multi_factor: "多因子策略。結合動量、均值回歸、RSI 三個因子的複合評分模型。各因子正規化後加權平均，取綜合分數最高的標的。兼顧趨勢追蹤與逆向操作。",
+      sector_rotation: "板塊輪動策略。以 60 日短期動量排名，集中買入前 N 名標的。採用風險平價配置（按波動率倒數分配權重），降低高波動標的的集中度。",
     },
   },
 
@@ -106,6 +117,7 @@ export const zh: Translations = {
     newOrder: "新增訂單",
     market: "市價",
     mktIfEmpty: "留空為市價",
+    confirmTitle: "確認下單",
   },
 
   // backtest
@@ -170,6 +182,8 @@ export const zh: Translations = {
     killSwitch: "緊急停止",
     killConfirm: "確定啟動緊急停止？這將平倉所有持倉並停止所有策略。",
     riskRules: "風控規則",
+    enableRule: "啟用規則",
+    disableRule: "停用規則",
     enabled: "啟用",
     disabled: "停用",
     recentAlerts: "近期警報",

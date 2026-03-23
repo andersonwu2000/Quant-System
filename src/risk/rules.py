@@ -18,6 +18,7 @@ class MarketState:
     """市場狀態快照，供風控規則使用。"""
     prices: dict[str, Decimal]
     daily_volumes: dict[str, Decimal]   # ADV (平均日成交量)
+    prev_close: dict[str, Decimal] | None = None  # 前收盤價（熔斷規則用）
 
 
 @dataclass
@@ -165,6 +166,28 @@ def max_order_vs_adv(threshold: float = 0.10) -> RiskRule:
     return RiskRule(f"max_order_vs_adv_{threshold}", check)
 
 
+def price_circuit_breaker(threshold: float = 0.10) -> RiskRule:
+    """價格熔斷：若市場價偏離前收盤超過閾值（預設 ±10%），拒絕下單。
+
+    用於防護閃崩、漲跌停鎖死、異常跳空等極端行情。
+    需要 MarketState.prev_close 提供前收盤價（選用）。
+    """
+    def check(order: Order, portfolio: Portfolio, market: MarketState) -> RiskDecision:
+        symbol = order.instrument.symbol
+        price = market.prices.get(symbol)
+        prev_close = market.prev_close.get(symbol) if market.prev_close else None
+        if price is None or prev_close is None or prev_close <= 0:
+            return RiskDecision.APPROVE()
+        change = abs(float(price - prev_close) / float(prev_close))
+        if change > threshold:
+            return RiskDecision.REJECT(
+                f"[{symbol}] 價格變動 {change:.1%} 超過熔斷閾值 {threshold:.0%}"
+            )
+        return RiskDecision.APPROVE()
+
+    return RiskRule(f"price_circuit_breaker_{threshold}", check)
+
+
 # ─── 預設規則集 ─────────────────────────────────────
 
 def default_rules() -> list[RiskRule]:
@@ -176,4 +199,5 @@ def default_rules() -> list[RiskRule]:
         fat_finger_check(0.05),
         max_daily_trades(100),
         max_order_vs_adv(0.10),
+        price_circuit_breaker(0.10),
     ]

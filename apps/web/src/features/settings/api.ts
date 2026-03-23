@@ -1,3 +1,3 @@
-import { system } from "@quant/shared";
+import { systemEndpoints } from "@core/api";
 
-export const systemApi = system;
+export const systemApi = systemEndpoints;

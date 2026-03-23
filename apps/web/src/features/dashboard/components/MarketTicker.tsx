@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useWs } from "@core/hooks";
+import { fmtPrice } from "@core/utils";
 import { useT } from "@core/i18n";
 
 interface MarketItem {
@@ -56,13 +57,18 @@ export function MarketTicker() {
         }, 1000);
       }
 
-      return {
-        items: {
-          ...prev.items,
-          [sym]: { symbol: sym, price: msg.price!, change_pct: msg.change_pct ?? 0 },
-        },
-        flashes: nextFlashes,
+      const nextItems = {
+        ...prev.items,
+        [sym]: { symbol: sym, price: msg.price!, change_pct: msg.change_pct ?? 0 },
       };
+
+      // Cap at 50 symbols to prevent unbounded growth
+      const keys = Object.keys(nextItems);
+      if (keys.length > 50) {
+        delete nextItems[keys[0]];
+      }
+
+      return { items: nextItems, flashes: nextFlashes };
     });
   }, []);
 
@@ -92,7 +98,7 @@ export function MarketTicker() {
             >
               <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{item.symbol}</span>
               <span className={`text-sm font-mono ${colorClass} transition-colors duration-300`}>
-                {item.price.toFixed(2)}
+                {fmtPrice(item.price)}
               </span>
               <span className={`text-xs ${colorClass}`}>
                 {isUp ? "+" : ""}{item.change_pct.toFixed(2)}%

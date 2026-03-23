@@ -1,7 +1,7 @@
 import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "@test/helpers";
 import { OrdersPage } from "./OrdersPage";
-import type { OrderInfo } from "@quant/shared";
+import type { OrderInfo } from "@core/api";
 import { ordersApi } from "./api";
 
 vi.mock("./api", () => ({
@@ -12,10 +12,10 @@ vi.mock("./api", () => ({
 }));
 
 vi.mock("@core/hooks", async () => {
-  const actual = await vi.importActual("@core/hooks");
+  const actual = await vi.importActual<typeof import("@core/hooks")>("@core/hooks");
   return {
     ...actual,
-    useWs: vi.fn(),
+    useWs: vi.fn().mockReturnValue({ connected: true }),
   };
 });
 
@@ -50,7 +50,7 @@ const mockOrders: OrderInfo[] = [
 
 describe("OrdersPage", () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    vi.clearAllMocks();
   });
 
   it("shows loading skeleton initially", () => {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ordersApi } from "../api";
 import { useT } from "@core/i18n";
-import { translateApiError } from "@core/utils";
+import { fmtPrice, translateApiError } from "@core/utils";
 import { useToast } from "@shared/ui";
 
 interface Props {
@@ -16,11 +16,17 @@ export function OrderForm({ onSubmitted }: Props) {
   const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!symbol.trim() || !quantity || Number(quantity) <= 0) return;
+    setConfirming(true);
+  };
+
+  const handleConfirm = async () => {
+    setConfirming(false);
     setSubmitting(true);
     setError(null);
     try {
@@ -122,6 +128,21 @@ export function OrderForm({ onSubmitted }: Props) {
           </button>
         </div>
       </div>
+      {confirming && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 space-y-3">
+          <p className="text-sm font-medium text-amber-300">{t.orders.confirmTitle}</p>
+          <div className="grid grid-cols-4 gap-2 text-sm">
+            <div><span className="text-slate-500">{t.orders.symbol}:</span> <span className="font-medium">{symbol.trim().toUpperCase()}</span></div>
+            <div><span className="text-slate-500">{t.orders.side}:</span> <span className={`font-medium ${side === "BUY" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{side}</span></div>
+            <div><span className="text-slate-500">{t.orders.qty}:</span> <span className="font-medium">{quantity}</span></div>
+            <div><span className="text-slate-500">{t.orders.price}:</span> <span className="font-medium">{price ? fmtPrice(Number(price)) : t.orders.market}</span></div>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={handleConfirm} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white">{t.common.confirm}</button>
+            <button type="button" onClick={() => setConfirming(false)} className="px-4 py-1.5 bg-slate-600 hover:bg-slate-500 rounded-lg text-sm font-medium text-white">{t.common.cancel}</button>
+          </div>
+        </div>
+      )}
       {error && <p className="text-sm text-red-400">{error}</p>}
     </form>
   );

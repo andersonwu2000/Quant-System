@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 
 from src.api.auth import require_role, verify_api_key
-from src.api.password import hash_password
+from src.api.password import hash_password, validate_password
 from src.api.schemas import (
     CreateUserRequest,
     MessageResponse,
@@ -53,6 +53,9 @@ async def create_user(
 ) -> UserResponse:
     """建立使用者。"""
     store = get_user_store()
+    pw_error = validate_password(req.password)
+    if pw_error:
+        raise HTTPException(status_code=400, detail=pw_error)
     pw_hash, pw_salt = hash_password(req.password)
     try:
         user = store.create(
@@ -152,6 +155,9 @@ async def reset_password(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    pw_error = validate_password(req.new_password)
+    if pw_error:
+        raise HTTPException(status_code=400, detail=pw_error)
     pw_hash, pw_salt = hash_password(req.new_password)
     store.update(user_id, password_hash=pw_hash, password_salt=pw_salt, failed_login_count=0, locked_until=None)
     # 密碼重設後撤銷舊 token，強制重新登入

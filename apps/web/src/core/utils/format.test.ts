@@ -62,13 +62,13 @@ describe("fmtNum", () => {
 
 describe("pnlColor", () => {
   it("returns green class for positive", () => {
-    expect(pnlColor(100)).toBe("text-emerald-400");
+    expect(pnlColor(100)).toBe("text-emerald-600 dark:text-emerald-400");
   });
   it("returns red class for negative", () => {
-    expect(pnlColor(-50)).toBe("text-red-400");
+    expect(pnlColor(-50)).toBe("text-red-600 dark:text-red-400");
   });
   it("returns slate class for zero", () => {
-    expect(pnlColor(0)).toBe("text-slate-400");
+    expect(pnlColor(0)).toBe("text-slate-500 dark:text-slate-400");
   });
 });
 

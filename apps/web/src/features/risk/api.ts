@@ -1,3 +1,3 @@
-import { risk } from "@quant/shared";
+import { riskEndpoints } from "@core/api";
 
-export const riskApi = risk;
+export const riskApi = riskEndpoints;

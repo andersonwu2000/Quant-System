@@ -4,7 +4,7 @@ import { MetricCard } from "@shared/ui";
 import { fmtPct, fmtNum, fmtCurrency } from "@core/utils";
 import { useT } from "@core/i18n";
 import { useApi } from "@core/hooks";
-import type { BacktestRequest, StrategyInfo } from "@quant/shared";
+import type { BacktestRequest, StrategyInfo } from "@core/api";
 import { useBacktest } from "./hooks/useBacktest";
 import { useBacktestHistory } from "./hooks/useBacktestHistory";
 import type { BacktestHistoryEntry } from "./hooks/useBacktestHistory";
@@ -22,21 +22,23 @@ import { CompareChart } from "./components/CompareChart";
 
 type AnalysisTab = "nav" | "drawdown" | "monthly" | "trades";
 
-const defaultForm: BacktestRequest = {
-  strategy: "momentum",
-  universe: ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"],
-  start: "2023-01-01",
-  end: "2024-01-01",
-  initial_cash: 1_000_000,
-  params: {},
-  slippage_bps: 5,
-  commission_rate: 0.001,
-  rebalance_freq: "weekly",
-};
+function createDefaultForm(): BacktestRequest {
+  return {
+    strategy: "momentum_12_1",
+    universe: ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"],
+    start: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    end: new Date().toISOString().slice(0, 10),
+    initial_cash: 1_000_000,
+    params: {},
+    slippage_bps: 5,
+    commission_rate: 0.001,
+    rebalance_freq: "weekly",
+  };
+}
 
 export function BacktestPage() {
   const { t } = useT();
-  const [form, setForm] = useState(defaultForm);
+  const [form, setForm] = useState(createDefaultForm);
   const [formOpen, setFormOpen] = useState(true);
   const { running, result, error, progress, submit } = useBacktest();
   const { history, addEntry, removeEntry, clearHistory } = useBacktestHistory();
@@ -46,7 +48,7 @@ export function BacktestPage() {
   const { data: strategies } = useApi<StrategyInfo[]>(() => strategiesApi.list());
   const effectiveStrategyOptions = useMemo(() => {
     const opts = (strategies || []).map((s) => ({ value: s.name, label: s.name }));
-    return opts.length > 0 ? opts : [{ value: "momentum", label: "momentum" }];
+    return opts.length > 0 ? opts : [{ value: "momentum_12_1", label: "momentum_12_1" }];
   }, [strategies]);
 
   const set = (key: keyof BacktestRequest, val: unknown) =>

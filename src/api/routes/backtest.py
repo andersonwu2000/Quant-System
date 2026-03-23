@@ -13,6 +13,8 @@ from slowapi.util import get_remote_address
 
 from src.api.auth import verify_api_key, require_role
 from src.api.schemas import (
+    BacktestHistoryItem,
+    BacktestHistoryResponse,
     BacktestRequest,
     BacktestResultResponse,
     BacktestSummaryResponse,
@@ -20,6 +22,7 @@ from src.api.schemas import (
 )
 from src.api.state import get_app_state
 from src.backtest.engine import BacktestConfig, BacktestEngine
+from src.data.store import DataStore
 from src.strategy.registry import resolve_strategy
 from src.config import get_config
 
@@ -71,6 +74,35 @@ async def submit_backtest(request: Request, req: BacktestRequest, api_key: str =
             with state.backtest_lock:
                 state.backtest_tasks[task_id]["status"] = "completed"
                 state.backtest_tasks[task_id]["result"] = result
+
+            # 持久化至 SQLite
+            try:
+                store = DataStore()
+                store.save_backtest_result(
+                    result_id=task_id,
+                    strategy_name=req.strategy,
+                    config={
+                        "universe": req.universe,
+                        "start": req.start,
+                        "end": req.end,
+                        "initial_cash": req.initial_cash,
+                        "rebalance_freq": req.rebalance_freq,
+                    },
+                    sharpe=result.sharpe,
+                    max_drawdown=result.max_drawdown,
+                    total_return=result.total_return,
+                    annual_return=result.annual_return,
+                    detail={
+                        "sortino": result.sortino,
+                        "calmar": result.calmar,
+                        "volatility": result.volatility,
+                        "total_trades": result.total_trades,
+                        "win_rate": result.win_rate,
+                        "total_commission": result.total_commission,
+                    },
+                )
+            except Exception:
+                logger.debug("Failed to persist backtest result %s", task_id, exc_info=True)
         except Exception as e:
             logger.exception("Backtest %s failed", task_id)
             with state.backtest_lock:
@@ -117,6 +149,19 @@ async def submit_backtest(request: Request, req: BacktestRequest, api_key: str =
         status="running",
         strategy_name=req.strategy,
     )
+
+
+@router.get("/history", response_model=BacktestHistoryResponse)
+async def get_backtest_history(
+    strategy: str | None = None,
+    limit: int = 50,
+    api_key: str = Depends(verify_api_key),
+) -> BacktestHistoryResponse:
+    """查詢歷史回測記錄（從 SQLite 讀取）。"""
+    store = DataStore()
+    rows = store.load_backtest_history(strategy_name=strategy, limit=min(limit, 200))
+    items = [BacktestHistoryItem(**r) for r in rows]
+    return BacktestHistoryResponse(items=items)
 
 
 @router.get("/{task_id}", response_model=BacktestSummaryResponse)

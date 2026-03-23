@@ -4,6 +4,7 @@ FastAPI Application — 量化交易系統的 API 入口。
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
@@ -76,7 +77,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=config.allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
@@ -133,16 +134,37 @@ def create_app() -> FastAPI:
             config.env, config.mode,
         )
         from src.api.state import get_app_state
+        from src.strategy.registry import list_strategies
         state = get_app_state()
         state.strategies = {
-            "momentum_12_1": {"status": "stopped", "pnl": 0.0},
-            "mean_reversion": {"status": "stopped", "pnl": 0.0},
+            name: {"status": "stopped", "pnl": 0.0}
+            for name in list_strategies()
         }
         _seed_admin(config)
+
+        # 背景 Kill Switch 監控（每 5 秒檢查一次）
+        async def _kill_switch_monitor() -> None:
+            while True:
+                await asyncio.sleep(5)
+                try:
+                    if state.risk_engine.kill_switch(state.portfolio):
+                        for name in state.strategies:
+                            state.strategies[name]["status"] = "stopped"
+                        state.oms.cancel_all()
+                        await ws_manager.broadcast("alerts", {
+                            "type": "kill_switch",
+                            "message": "Kill switch triggered — all strategies stopped",
+                        })
+                except Exception:
+                    logger.debug("Kill switch monitor error", exc_info=True)
+
+        app.state.kill_switch_task = asyncio.create_task(_kill_switch_monitor())
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
         logger.info("Quant Trading System shutting down...")
+        if hasattr(app.state, "kill_switch_task"):
+            app.state.kill_switch_task.cancel()
         await ws_manager.close_all()
 
     return app

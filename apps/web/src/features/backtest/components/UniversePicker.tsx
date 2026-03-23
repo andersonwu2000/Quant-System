@@ -69,7 +69,7 @@ export function UniversePicker({ value, onChange }: UniversePickerProps) {
         </button>
       </div>
 
-      <Modal open={open} onClose={handleClose} title={t.backtest.universePickerTitle}>
+      <Modal open={open} onClose={handleClose} title={t.backtest.universePickerTitle} closeLabel={t.common.close}>
         <div className="space-y-3">
           <input
             autoFocus

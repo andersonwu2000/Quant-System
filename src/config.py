@@ -32,7 +32,7 @@ class TradingConfig(BaseSettings):
     mode: Literal["backtest", "paper", "live"] = "backtest"
 
     # ── 數據庫 ──
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/quant"
+    database_url: str = "sqlite:///data/quant.db"
 
     # ── 數據源 ──
     data_source: Literal["yahoo", "fubon", "twse"] = "yahoo"

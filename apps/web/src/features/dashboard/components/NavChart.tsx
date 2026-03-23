@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { useT } from "@core/i18n";
 import { useTheme } from "@core/theme";
@@ -7,7 +8,7 @@ interface Props {
   data: { time: string; nav: number }[];
 }
 
-export function NavChart({ data }: Props) {
+export const NavChart = memo(function NavChart({ data }: Props) {
   const { t } = useT();
   const { isDark } = useTheme();
   const c = getChartColors(isDark);
@@ -20,9 +21,9 @@ export function NavChart({ data }: Props) {
           <XAxis dataKey="time" tick={{ fill: c.tick, fontSize: 12 }} />
           <YAxis tick={{ fill: c.tick, fontSize: 12 }} domain={["auto", "auto"]} />
           <Tooltip contentStyle={{ background: c.tooltip.bg, border: `1px solid ${c.tooltip.border}`, borderRadius: 8 }} />
-          <Line type="monotone" dataKey="nav" stroke="#3b82f6" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="nav" stroke="#3b82f6" strokeWidth={2} dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
-}
+});

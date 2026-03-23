@@ -1,4 +1,4 @@
-import { MetricCard, ErrorAlert, MetricCardSkeleton, TableSkeleton, Skeleton } from "@shared/ui";
+import { MetricCard, ErrorAlert, MetricCardSkeleton, TableSkeleton, Skeleton, ConnectionBanner } from "@shared/ui";
 import { fmtCurrency, fmtPct, pnlColor } from "@core/utils";
 import { useT } from "@core/i18n";
 import { useDashboard } from "./hooks/useDashboard";
@@ -8,7 +8,7 @@ import { PositionTable } from "./components/PositionTable";
 
 export function DashboardPage() {
   const { t } = useT();
-  const { pf, error, refresh, navHistory, running } = useDashboard();
+  const { pf, error, refresh, navHistory, running, connected } = useDashboard();
 
   if (error) return <ErrorAlert message={error} onRetry={refresh} />;
   if (!pf) return (
@@ -23,6 +23,7 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <ConnectionBanner connected={connected} label={t.common.connectionLost} />
       <MarketTicker />
       <h2 className="text-2xl font-bold">{t.dashboard.title}</h2>
 

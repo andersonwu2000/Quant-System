@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useT } from "@core/i18n";
-import type { NavPoint } from "@quant/shared";
+import type { NavPoint } from "@core/api";
 
 interface MonthlyReturn {
   year: number;

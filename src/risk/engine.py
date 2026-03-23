@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Callable
 
 from src.domain.models import (
     Order,
@@ -24,9 +25,14 @@ class RiskEngine:
     風控引擎：依序執行所有規則，第一個 REJECT 即終止。
     """
 
-    def __init__(self, rules: list[RiskRule] | None = None):
+    def __init__(
+        self,
+        rules: list[RiskRule] | None = None,
+        persist_fn: Callable[[RiskAlert], None] | None = None,
+    ):
         self.rules = rules if rules is not None else default_rules()
         self._alerts: list[RiskAlert] = []
+        self._persist_fn = persist_fn
 
     def check_order(
         self,
@@ -141,14 +147,18 @@ class RiskEngine:
     def _record_alert(self, rule: str, message: str, severity: Severity) -> None:
         if len(self._alerts) >= self._MAX_ALERTS:
             self._alerts = self._alerts[-self._MAX_ALERTS // 2 :]
-        self._alerts.append(
-            RiskAlert(
-                timestamp=datetime.now(timezone.utc),
-                rule_name=rule,
-                severity=severity,
-                metric_value=0,
-                threshold=0,
-                action_taken="reject",
-                message=message,
-            )
+        alert = RiskAlert(
+            timestamp=datetime.now(timezone.utc),
+            rule_name=rule,
+            severity=severity,
+            metric_value=0,
+            threshold=0,
+            action_taken="reject",
+            message=message,
         )
+        self._alerts.append(alert)
+        if self._persist_fn:
+            try:
+                self._persist_fn(alert)
+            except Exception:
+                logger.debug("Failed to persist risk event", exc_info=True)

@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "@test/helpers";
 import { DashboardPage } from "./DashboardPage";
-import type { Portfolio } from "@quant/shared";
+import type { Portfolio } from "@core/api";
 import { useDashboard } from "./hooks/useDashboard";
 
 // Mock the useDashboard hook since it combines multiple API calls + WS
@@ -55,6 +55,7 @@ describe("DashboardPage", () => {
       refresh: vi.fn(),
       navHistory: [],
       running: 0,
+      connected: true,
     });
 
     const { container } = renderWithProviders(<DashboardPage />);
@@ -68,6 +69,7 @@ describe("DashboardPage", () => {
       refresh: vi.fn(),
       navHistory: [],
       running: 2,
+      connected: true,
     });
 
     renderWithProviders(<DashboardPage />);
@@ -88,6 +90,7 @@ describe("DashboardPage", () => {
       refresh,
       navHistory: [],
       running: 0,
+      connected: true,
     });
 
     renderWithProviders(<DashboardPage />);
@@ -102,6 +105,7 @@ describe("DashboardPage", () => {
       refresh: vi.fn(),
       navHistory: [],
       running: 0,
+      connected: true,
     });
 
     renderWithProviders(<DashboardPage />);
@@ -115,6 +119,7 @@ describe("DashboardPage", () => {
       refresh: vi.fn(),
       navHistory: [],
       running: 0,
+      connected: true,
     });
 
     renderWithProviders(<DashboardPage />);

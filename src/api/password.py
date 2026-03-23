@@ -7,6 +7,22 @@ import hmac
 import secrets
 
 _ITERATIONS = 600_000  # OWASP 2024 建議值
+_MIN_PASSWORD_LENGTH = 8
+_PASSWORD_PATTERN = r"^[a-zA-Z0-9]+$"
+
+
+def validate_password(password: str) -> str | None:
+    """驗證密碼強度，回傳錯誤訊息或 None。"""
+    import re
+    if len(password) < _MIN_PASSWORD_LENGTH:
+        return f"Password must be at least {_MIN_PASSWORD_LENGTH} characters"
+    if not re.match(_PASSWORD_PATTERN, password):
+        return "Password must contain only letters and numbers"
+    if password.isalpha():
+        return "Password must contain at least one number"
+    if password.isdigit():
+        return "Password must contain at least one letter"
+    return None
 
 
 def hash_password(password: str) -> tuple[str, str]:
