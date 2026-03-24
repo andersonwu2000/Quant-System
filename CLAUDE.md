@@ -2,28 +2,52 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Maintenance Rules
+
+After completing any feature addition, bug fix, refactoring, architecture change, or dependency update, **update `docs/dev/SYSTEM_STATUS_REPORT.md`** to reflect the changes. Sections to check and update:
+- **Module inventory** (§3–§5): file counts, LOC, new/removed modules
+- **Strategy list** (§6): if strategies were added/removed
+- **Test coverage** (§8): new test files, updated test counts
+- **CI/CD** (§9): pipeline changes
+- **Known defects** (§11): resolved or newly discovered issues
+- **Feature matrix** (§12): completion status changes
+- **Gap analysis** (§13–§14): items that have been addressed
+
+Keep updates minimal — only touch sections affected by the change.
+
 ## Project Overview
 
-Quantitative trading system — monorepo containing Python backend + React web + React Native mobile. Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
+Quantitative trading system focused on building real alpha research and live trading capabilities. Long-term goal: platform for individual investors and family asset management. Current priority: alpha research layer + real broker integration (not commercialization).
+
+Monorepo: Python backend + React web + React Native mobile. Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
 
 **Monorepo structure:**
-- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (root level)
-- `apps/web/` — React 18 + Vite + Tailwind dashboard
-- `apps/mobile/` — React Native + Expo 52 mobile app
+- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (67 files, ~7,300 LOC)
+- `apps/web/` — React 18 + Vite + Tailwind dashboard (~107 files, ~7,000 LOC)
+- `apps/mobile/` — React Native + Expo 52 mobile app (~40 files, ~3,000 LOC)
 - `apps/shared/` — `@quant/shared` TypeScript package (types, API client, WS manager, format utils)
 
 Frontend workspace managed by bun (`apps/package.json` workspaces).
+
+**Documentation:**
+- `docs/dev/SYSTEM_STATUS_REPORT.md` — System status report (module inventory, feature matrix, gap analysis)
+- `docs/dev/DEVELOPMENT_PLAN.md` — Development plan (alpha research layer → live trading → commercialization)
+- `docs/dev/Project Requirements (Archived).md` — Archived project requirements
+- `docs/api-reference-zh.md` — API reference (Traditional Chinese)
+- `docs/developer-guide-zh.md` — Developer guide (Traditional Chinese)
+- `docs/user-guide-zh.md` — User guide (Traditional Chinese)
 
 ## Commands
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v
+make test                    # pytest tests/ -v (325 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
 make backtest ARGS="--strategy momentum -u AAPL -u MSFT --start 2023-01-01 --end 2024-12-31"
 make migrate                 # alembic upgrade head
+make seed                    # python scripts/seed_data.py
 
 # Single test
 pytest tests/unit/test_risk.py -v
@@ -41,6 +65,7 @@ make web                     # web dev server (port 3000)
 make mobile                  # expo dev server
 make web-build               # production build
 make web-typecheck           # tsc --noEmit
+make web-test                # vitest
 make mobile-typecheck        # tsc --noEmit
 
 # === Full stack ===
@@ -64,16 +89,22 @@ Key design decisions:
 - **Timezone handling**: All DatetimeIndex data is normalized to tz-naive UTC. Both `HistoricalFeed.load()` and `YahooFeed._download()` strip timezone info.
 
 **Module boundaries**:
+- `src/alpha/` — Alpha research layer. `pipeline.py` orchestrates end-to-end: universe filtering → factor computation → neutralization (market/industry/size) → orthogonalization (sequential/symmetric) → composite signal → quantile backtest → cost-aware portfolio construction. `AlphaStrategy` adapter in `strategy.py` wraps the pipeline as a standard `Strategy` subclass. Key modules: `universe.py` (stock pool filtering), `neutralize.py` (winsorize + standardize + 4 neutralization methods), `cross_section.py` (quantile portfolios, monotonicity, long-short), `turnover.py` (cost drag, breakeven cost, net IC), `orthogonalize.py` (Gram-Schmidt + PCA/ZCA), `construction.py` (turnover penalty, max turnover constraint, alpha decay blending). Configured via `AlphaConfig` dataclass.
 - `src/domain/models.py` — Frozen value objects (Instrument, Bar) + mutable aggregates (Position, Order, Portfolio, Trade). Portfolio supports T+N settlement (`pending_settlements`, `settled_cash`).
 - `src/domain/repository.py` — `PortfolioRepository` for persisted portfolio CRUD (SQLAlchemy, single JOIN queries).
-- `src/strategy/` — Strategy ABC (`on_bar()` → weights), factor library (pure functions including fundamental factors `value_pe`, `value_pb`, `quality_roe`), optimizers (equal_weight, signal_weight, risk_parity)
-- `src/risk/` — RiskEngine executes declarative rules; `check_order()` for singles, `check_orders()` for batch filtering, `kill_switch()` at 5% daily drawdown (integrated into backtest loop)
-- `src/execution/` — SimBroker (fixed/sqrt slippage models, commission/tax, price limits, volume checks, T+N settlement), `apply_trades()` updates Portfolio from Trade list
+- `src/strategy/` — Strategy ABC (`on_bar()` → weights), factor library (pure functions including fundamental factors `value_pe`, `value_pb`, `quality_roe`), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay, factor combination).
+- `src/risk/` — RiskEngine executes declarative rules; `check_order()` for singles, `check_orders()` for batch filtering, `kill_switch()` at 5% daily drawdown (integrated into backtest loop). RiskMonitor tracks metrics and alerts on threshold breaches.
+- `src/execution/` — SimBroker (fixed/sqrt slippage models, commission/tax, price limits, volume checks, T+N settlement), OMS (order lifecycle with partial fills), `apply_trades()` updates Portfolio from Trade list.
 - `src/backtest/engine.py` — Orchestrates: download data → iterate trading dates → call strategy → risk check → execute → update portfolio. Engine `run()` delegates to 7 helper methods (`_refresh_bar_cache`, `_process_settlements`, `_execute_pending_orders`, `_execute_kill_switch`, `_inject_dividends_impl`, `_do_rebalance`, `_snap_nav`). Supports execution delay, dividend simulation, ffill limit.
+- `src/backtest/analytics.py` — 40+ performance metrics: Sharpe, Sortino, Calmar, max drawdown, win rate, VaR, CVaR, Hurst exponent.
+- `src/backtest/report.py` — HTML reports, benchmark comparisons, CSV exports, equity curves, return attribution.
 - `src/backtest/walk_forward.py` — Walk-forward analysis with rolling train/test windows.
 - `src/backtest/validation.py` — Causality, determinism, and sensitivity checks for backtest quality verification.
 - `src/data/sources/` — `YahooFeed`, `FinMindFeed` (TW stocks), factory `create_feed()`. Shared `ParquetDiskCache` for disk caching. `FinMindFundamentals` provides PE/PB/ROE/revenue/dividends/sector.
 - `src/data/fundamentals.py` — `FundamentalsProvider` ABC for fundamental data.
+- `src/data/store.py` — `HistoricalFeed`: OHLCV loading, time causality enforcement, ffill limit.
+- `src/data/user_store.py` — `UserDataStore`: local SQLite persistence for user-uploaded CSV data.
+- `src/data/quality.py` — Data quality checks: NaN detection, OHLC logic validation, volume consistency.
 - `src/notifications/` — Multi-channel notifications (Discord, LINE, Telegram) with trade/rebalance/alert formatting.
 - `src/scheduler/` — APScheduler-based job scheduling for daily snapshots and weekly rebalance checks.
 - `src/api/` — FastAPI REST + WebSocket. `AppState` singleton holds runtime state. JWT auth with role hierarchy (viewer < researcher < trader < risk_manager < admin). Prometheus metrics via `prometheus-fastapi-instrumentator`.
@@ -87,30 +118,39 @@ Key design decisions:
 **Routes** (`src/api/routes/`): auth, admin, portfolio, strategies, orders, backtest, risk, system — all mounted under `/api/v1`.
 
 **Key endpoints**:
+- `POST /api/v1/auth/login` — JWT token issuance
+- `POST /api/v1/auth/register` — User registration
 - `POST /api/v1/backtest` — Run backtest
 - `POST /api/v1/backtest/walk-forward` — Walk-forward analysis
 - `GET/POST/DELETE /api/v1/portfolio/saved` — Persisted portfolio CRUD
 - `POST /api/v1/portfolio/saved/{id}/rebalance-preview` — Suggested trades via `weights_to_orders()`
 - `GET /api/v1/portfolio/saved/{id}/trades` — Trade history
+- `GET /api/v1/strategies` — List available strategies
+- `POST /api/v1/orders` — Create order
+- `GET /api/v1/risk/rules` — Risk rule status
+- `POST /api/v1/risk/kill-switch` — Kill switch control
+- `GET /api/v1/system/health` — Health check
 
 **Middleware & cross-cutting concerns**:
 - `src/api/middleware.py` — AuditMiddleware logs all mutation requests (POST/PUT/DELETE) with user, path, status, duration
 - `src/api/auth.py` — JWT token issuance + API key verification; role hierarchy enforcement
+- `src/api/password.py` — PBKDF2-SHA256 password hashing (standard library, zero deps)
 - Rate limiting via slowapi (60 requests/minute default, 10/minute for backtest)
 - CORS configured via `QUANT_ALLOWED_ORIGINS`
 - Prometheus metrics via `/metrics` endpoint
 
-**WebSocket** (`src/api/ws.py`): channels — `portfolio`, `alerts`, `orders`, `market`. Token-based auth (optional in dev mode). Ping/pong keep-alive. Broadcast uses `asyncio.gather` with 5s timeout and dead connection cleanup.
+**WebSocket** (`src/api/ws.py`): channels — `portfolio`, `alerts`, `orders`, `market`. Token-based auth (optional in dev mode). Ping/pong keep-alive. Broadcast uses `asyncio.gather` with 5s timeout and dead connection cleanup. Note: `market` channel not yet connected to real-time data feed (TODO).
 
 **Logging** (`src/logging_config.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`.
 
 ## Frontend Architecture
 
 **Shared package** (`apps/shared/`):
-- `src/types/` — TypeScript interfaces matching backend Pydantic schemas
+- `src/types/` — TypeScript interfaces matching backend Pydantic schemas (UserRole hierarchy, Portfolio, BacktestResult, etc.)
 - `src/api/client.ts` — Platform-agnostic HTTP client with `ClientAdapter` injection (each platform provides its own auth/storage)
 - `src/api/ws.ts` — `WSManager` with auto-reconnect and exponential backoff; URL builder injected via `initWs()`
-- `src/api/endpoints.ts` — Typed API endpoint definitions (1:1 with backend routes)
+- `src/api/endpoints.ts` — Typed API endpoint definitions (25+ endpoints, 1:1 with backend routes)
+- `src/hooks/pollBacktestResult.ts` — Backtest result polling utility
 - `src/utils/format.ts` — Number/currency/date formatters
 
 **Platform adapters** (keep platform-specific code out of shared):
@@ -120,41 +160,105 @@ Key design decisions:
 
 **Key pattern**: Web and mobile barrel files (`@core/api/index.ts`, etc.) re-export from `@quant/shared`. Feature code imports from `@core/*` — never directly from `@quant/shared`. This keeps feature code platform-unaware while allowing platform-specific extensions.
 
+**Web pages** (8 feature pages):
+- Dashboard (`/`) — MarketTicker, NavChart, PositionTable (WebSocket real-time)
+- Backtest (`/backtest`) — UniversePicker, ParamsEditor, ResultChart, MonthlyHeatmap, CompareTable/Chart, HistoryPanel
+- Portfolio (`/portfolio`) — CRUD + rebalance preview
+- Orders (`/orders`) — OrderForm + order history
+- Strategies (`/strategies`) — List + start/stop controls
+- Risk (`/risk`) — Rules, alerts, kill switch
+- Settings (`/settings`) — API key, password change, SystemMetrics
+- Admin (`/admin`) — User CRUD, audit logs, configuration
+
 **Web UI patterns**:
 - Shared `<Card>` component for consistent card styling across all pages
 - JWT role extracted from token (not localStorage) via `extractRoleFromJwt()`
 - `PageSkeleton` for loading states
+- `DataTable` with TanStack React Virtual for virtual scrolling
+- `Toast` notification system
+- `ErrorBoundary` + `RouteErrorBoundary` for error handling
+- Path aliases: `@core`, `@feat`, `@shared`, `@test`
 
 **Mobile patterns**:
 - Role-based access control via `useAuth` hook (`role`, `hasRole()`)
 - `OrderForm` component with Alert confirmation dialog
 - Role-gated features: Kill Switch (risk_manager), rule toggles (risk_manager)
+- Victory Native for charts (NavChart, BacktestChart, PositionPieChart)
+- `OfflineBanner` with expo-network detection
+- Hooks: `useAuth`, `usePortfolio`, `useOrders`, `useBacktest`, `useAlerts`, `useRealtimeData`
 
-**Web frontend tests**: Vitest with jsdom (`apps/web/vitest.config.ts`). Test files colocated (e.g. `BacktestPage.test.tsx`, `RiskPage.test.tsx`, `AdminPage.test.tsx`).
+**Internationalization**: English + Traditional Chinese (en/zh). Context-based i18n with `useT` hook. Language preference persisted to localStorage (web) / SecureStore (mobile).
+
+**Web frontend tests**: Vitest with jsdom (`apps/web/vitest.config.ts`). Test files colocated (e.g. `BacktestPage.test.tsx`, `RiskPage.test.tsx`, `AdminPage.test.tsx`). E2E tests via Playwright (`apps/web/e2e/`).
+
+**Mobile tests**: Jest with React Native preset. Component tests in `src/components/__tests__/`, hook tests in `src/hooks/__tests__/`.
+
+## Strategies
+
+7 built-in strategies in `strategies/`:
+
+| Strategy | File | Logic |
+|----------|------|-------|
+| Momentum | `momentum.py` | Price trend-following |
+| MA Crossover | `ma_crossover.py` | Fast/slow MA crossover signals |
+| Mean Reversion | `mean_reversion.py` | Buy oversold, sell overbought |
+| RSI Oversold | `rsi_oversold.py` | Buy when RSI < 30 |
+| Multi-Factor | `multi_factor.py` | Momentum + value + quality, risk-parity weighted |
+| Pairs Trading | `pairs_trading.py` | Statistical arbitrage on correlated instruments |
+| Sector Rotation | `sector_rotation.py` | Rotate capital by relative momentum across sectors |
 
 ## Infrastructure
 
 **Database**: PostgreSQL 16 (SQLite for development). Migrations managed by Alembic (`migrations/`). 4 migrations: initial schema, users, token revocation, portfolio persistence.
 
-**Docker**: Multi-stage Dockerfile (Python 3.12-slim, non-root user). `docker-compose.yml` runs `api` + `db` services with health checks and persistent volumes.
+**Docker**: Multi-stage Dockerfile (Python 3.12-slim, non-root user `appuser`). `docker-compose.yml` runs `api` (Uvicorn 2 workers) + `db` (PostgreSQL 16 Alpine) services with health checks and persistent volumes (`pg_data`, `cache_data`).
 
-**CI/CD** (`.github/workflows/ci.yml`):
+**CI/CD** (`.github/workflows/ci.yml`) — 9 jobs:
 - `backend-lint` — ruff check + mypy strict
-- `backend-test` — pytest (349 tests)
+- `backend-test` — pytest (325 tests)
 - `web-typecheck` — tsc --noEmit
-- `web-build` — vite build (depends on typecheck)
+- `web-test` — vitest (depends on web-typecheck)
+- `web-build` — vite build (depends on web-typecheck)
+- `shared-test` — vitest for @quant/shared
 - `mobile-typecheck` — tsc --noEmit
+- `mobile-test` — jest
+- `e2e-test` — Playwright chromium
+
+**Scripts**:
+- `scripts/benchmark.py` — Performance benchmarking for backtests (quick/full modes)
+- `scripts/start.bat` — Windows one-click launcher (backend + web)
 
 ## Configuration
 
 All config via `QUANT_` prefixed env vars or `.env` file (see `.env.example`). Defined in `src/config.py` as Pydantic Settings. Access via `get_config()` singleton; use `override_config()` in tests.
 
-Key config additions:
+Key config:
+- `mode`: `"backtest"` (default), `"paper"`, or `"live"` — operating mode
 - `data_source`: `"yahoo"` (default) or `"finmind"` — selects data feed
 - `data_cache_size`: LRU cache size for in-memory bar data (default 128)
 - `finmind_token`: FinMind API token (optional, increases rate limit)
 - `tw_lot_size`: Taiwan stock lot size (default 1000 for round lots, set 1 for odd lots)
 - `settlement_days`: T+N settlement simulation (default 0 = disabled)
 - `max_ffill_days`: Forward-fill limit for missing data (default 5)
+- `commission_rate`: Trading commission rate (default 0.001425)
+- `default_slippage_bps`: Default slippage in basis points (default 5.0)
+- `max_position_pct`: Max single position percentage (default 0.05)
+- `max_daily_drawdown_pct`: Max daily drawdown percentage (default 0.03)
 - `scheduler_enabled`, `rebalance_cron`: APScheduler config
+- `api_key`, `jwt_secret`: Authentication secrets
+- `allowed_origins`: CORS origins
+- `max_failed_logins` (default 5), `lockout_minutes` (default 15): Account security
 - Notification config: `discord_webhook_url`, `line_notify_token`, `telegram_bot_token`, `telegram_chat_id`
+- `log_level`, `log_format`: Logging configuration
+
+## Security
+
+- **Authentication**: JWT (HS256) + API Key dual-mode
+- **Authorization**: 5-level role hierarchy (viewer < researcher < trader < risk_manager < admin)
+- **Password**: PBKDF2-SHA256 hashing
+- **Token revocation**: `valid_after` timestamp per user
+- **Account lockout**: Configurable failed login limit + lockout duration
+- **Rate limiting**: slowapi (memory-backed)
+- **Audit**: AuditMiddleware logs all mutations
+- **Container**: Non-root Docker user
+- **Mobile**: Expo SecureStore for credentials

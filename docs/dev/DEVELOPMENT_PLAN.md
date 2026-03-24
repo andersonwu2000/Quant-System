@@ -1,214 +1,741 @@
-# 開發計畫書 v2.1
+# 開發計畫書
 
-**日期**: 2026-03-24（最後更新）
-**目標**: 從「回測研究平台」進化為「個人可用的投資輔助工具」
-**資料源決策**: FinMind（免費，未來可擴充 EODHD/TEJ）
-**參考文件**: `PERSONAL_USE_GAP_REPORT.md`, `PLAN_VS_REALITY.md`, `DATA_SOURCE_EVALUATION.md`
+> **版本**: v1.1
+> **日期**: 2026-03-24
+> **對應追蹤報告**: `docs/dev/SYSTEM_STATUS_REPORT.md` v1.1
+> **目標**: 建立真實的 Alpha 研究能力與實盤交易能力
+> **第一階段狀態**: ✅ 已完成 (2026-03-24) — 8 模組, ~1,300 LOC, 73 測試全部通過
 
 ---
 
-## 總覽與進度
+## 目錄
+
+1. [開發策略](#1-開發策略)
+2. [第一階段：Alpha 研究層](#2-第一階段alpha-研究層)
+3. [第二階段：實盤交易能力](#3-第二階段實盤交易能力)
+4. [第三階段：穩固與商業化](#4-第三階段穩固與商業化)
+5. [技術規格](#5-技術規格)
+6. [風險與決策紀錄](#6-風險與決策紀錄)
+
+---
+
+## 1. 開發策略
+
+### 1.1 核心原則
+
+**先有 Alpha → 再有實盤 → 最後商業化。**
+
+系統需要先能系統化地發現有效因子、驗證其在扣除交易成本後仍然有效，才有實盤的意義。實盤交易能力是第二步，商業化是遠期目標。
+
+### 1.2 現有基礎
+
+系統已具備完整的回測 + 策略 + 風控框架，以及初步的因子研究工具：
+
+| 已有能力 | 位置 | 說明 |
+|---------|------|------|
+| 因子函式庫 | `src/strategy/factors.py` | 6 技術因子 + 4 基本面因子，皆為純函式 |
+| IC 分析 | `src/strategy/research.py` | Spearman/Pearson IC、IC 時序、hit rate |
+| 因子衰減 | `src/strategy/research.py` | 多週期 IC 對比 (1/5/10/20/40/60 日) |
+| 因子合成 | `src/strategy/research.py` | 等權 / IC 加權，含橫截面 Z-score |
+| 因子註冊表 | `src/strategy/research.py` | `FACTOR_REGISTRY`，6 因子可插拔 |
+| 組合最佳化 | `src/strategy/optimizer.py` | 等權重 / 信號加權 / 風險平價 |
+| 基本面數據 | `src/data/sources/finmind_fundamentals.py` | PE/PB/ROE/營收/股利/產業分類 |
+| 回測引擎 | `src/backtest/engine.py` | 完整回測循環 + 40+ 績效指標 |
+
+### 1.3 缺失環節
+
+| 缺失 | 影響 |
+|------|------|
+| 無因子中性化 | 因子收益可能來自市場/行業/規模暴露而非真正的 Alpha |
+| 無分位數回測 | 無法驗證因子的單調性和多空價差 — 這是因子有效性的金標準 |
+| 無換手率分析 | 不知道因子換手率多高、交易成本會吃掉多少 Alpha |
+| 無成本感知最佳化 | 現有 optimizer 追求信號最大化，不考慮換倉成本 |
+| 無股票池篩選 | 回測可能包含不可交易的標的（流動性不足、剛上市等） |
+| 無因子正交化 | 多因子合成時可能重複計算相同信息 |
+
+---
+
+## 2. 第一階段：Alpha 研究層
+
+### 2.1 總覽
+
+在 `src/alpha/` 建立 7 個模組 + 1 個策略適配器，形成從因子發現到組合建構的完整 pipeline。
+
+**依賴關係圖：**
 
 ```
-Phase 0  回測可信度修復        ─── ✅ 已完成
-Phase 1  FinMind 整合          ─── ✅ 已完成
-Phase 2  回測引擎強化          ─── ✅ 大致完成（漲跌幅/價格升降單位待做）
-Phase 3  實用化基礎設施        ─── ✅ 已完成
-Phase 4  進階功能              ─── 🔲 未開始
-```
-
-✅ Phase 0-3 已完成：回測可信、支援基本面策略、系統可產生交易建議、推播通知、持倉持久化。
-
----
-
-## Phase 0 — 回測可信度修復 ✅ 已完成
-
-### 0-1. 次日開盤價成交 ✅
-- `BacktestConfig.execution_delay: int = 1`
-- 主迴圈: Day N 產生訊號 → `pending_orders` → Day N+1 開盤價執行
-- `SimBroker.execute()` 支援 open 價成交
-- `_open_matrix` 已建立
-
-### 0-2. 滑價模型升級 ✅
-- `SimConfig.impact_model: Literal["fixed", "sqrt"] = "sqrt"`
-- `_calc_slippage()` 實作 square-root impact model
-- `slippage_bps = base_bps + impact_coeff × sqrt(order_qty / adv)`
-
-### 0-3. Kill Switch 串接回測 ✅
-- 回測主迴圈每日呼叫 `risk_engine.kill_switch(portfolio)`
-- Kill switch 觸發 → 清空持倉 → 停止交易直到月底
-- `BacktestConfig.enable_kill_switch: bool = True`
-
-### 0-4. 拒單記錄與報告 ✅
-- `SimBroker.rejected_log: list[Order]`
-- `BacktestResult.rejected_orders` / `rejected_notional`
-
-### 0-5. 成交量為零不可交易 ✅
-- `execute()` 中 volume == 0 → REJECT
-
----
-
-## Phase 1 — FinMind 整合 ✅ 已完成
-
-### 1-1. FinMind 資料源（OHLCV）✅
-- `src/data/sources/finmind.py` — `FinMindFeed` 實作 `DataFeed` ABC
-- 雙層快取：LRU 記憶體 + Parquet 磁碟（`ParquetDiskCache`）
-- .TW/.TWO 後綴自動轉換（`finmind_common.py`）
-
-### 1-2. 基本面資料介面 ✅
-- `src/data/fundamentals.py` — `FundamentalsProvider` ABC
-- 方法: `get_financials()`, `get_sector()`, `get_revenue()`, `get_dividends()`
-
-### 1-3. FinMind 基本面實作 ✅
-- `src/data/sources/finmind_fundamentals.py` — `FinMindFundamentals`
-- PE/PB (TaiwanStockPER), EPS/ROE (TaiwanStockFinancialStatement)
-- 月營收 + YoY (TaiwanStockMonthRevenue)
-- 股利歷史 (TaiwanStockDividend)
-- 產業分類: 一次下載全表快取 (`_populate_sector_cache()`)
-- 快取 TTL: 7 天
-
-### 1-4. 策略升級：真實基本面因子 ✅
-- `Context` 新增 `fundamentals()`, `sector()` 方法
-- `strategies/multi_factor.py`: 真實 PE/PB/ROE 因子
-- `strategies/sector_rotation.py`: 真實產業分類
-- `src/strategy/factors.py`: `value_pe()`, `value_pb()`, `quality_roe()`
-
-### 1-5. 資料源切換機制 ✅
-- `src/data/sources/__init__.py` — `create_feed()` 工廠函式
-- `config.data_source` 支援 `"yahoo"` / `"finmind"`
-
----
-
-## Phase 2 — 回測引擎強化 ✅ 大致完成
-
-### 2-1. 回測引擎單元測試 ✅
-- `tests/unit/test_backtest_engine.py` — 完整引擎核心測試
-
-### 2-2. 回測品質驗證模組 ✅
-- `src/backtest/validation.py` — `check_causality()`, `check_determinism()`, `check_sensitivity()`
-- `tests/unit/test_validation.py`
-
-### 2-3. 台股整股交易單位 ✅
-- `weights_to_orders()` 根據 `.TW`/`.TWO` 後綴自動設 `lot_size=1000`
-- `config.tw_lot_size` 可配置（零股模式設 1）
-- `tests/unit/test_weights_to_orders.py`
-
-### 2-4. 台股漲跌幅限制模擬 🔲 待做
-- `SimConfig.price_limit_pct` 規劃中
-
-### 2-5. T+2 交割模擬 ✅
-- `Portfolio.settled_cash`, `Portfolio.pending_settlements`
-- `BacktestConfig.settlement_days: int = 0`
-- 主迴圈每日結算到期的 pending settlements
-
-### 2-6. 前向填充上限 ✅
-- `BacktestConfig.max_ffill_days: int = 5`
-- `_build_matrices()` 使用 `ffill(limit=...)`
-
-### 2-7. 股利模擬 ✅
-- `BacktestConfig.enable_dividends: bool = False`
-- 回測日迴圈中依 ex-date + 持倉量注入現金
-- `tests/unit/test_backtest_dividends.py`
-
----
-
-## Phase 3 — 實用化基礎設施 ✅ 已完成
-
-### 3-1. Portfolio 持久化 ✅
-- `migrations/versions/004_portfolio_persistence.py` — portfolios + position_snapshots 表
-- `src/domain/repository.py` — `PortfolioRepository` CRUD（single JOIN queries）
-
-### 3-2. 「建議交易」API ✅
-- `POST /api/v1/portfolio/saved/{id}/rebalance-preview`
-- 使用真正的 `weights_to_orders()` 而非重新實作
-- 含預估手續費、交易稅
-
-### 3-3. 交易通知 ✅
-- `src/notifications/` — Discord, LINE, Telegram
-- `src/notifications/formatter.py` — 交易/再平衡/警報格式化
-- `src/notifications/factory.py` — 根據 config 自動建立通知管道
-
-### 3-4. 策略排程 ✅
-- `src/scheduler/` — APScheduler
-- `src/scheduler/jobs.py` — 每日 portfolio snapshot + 每週 rebalance check
-- `config.scheduler_enabled`, `config.rebalance_cron`
-
-### 3-5. Walk-Forward Analysis ✅
-- `src/backtest/walk_forward.py` — `WalkForwardAnalyzer`
-- `POST /api/v1/backtest/walk-forward`
-- Rolling train/test windows
-
-### 3-6. Prometheus 指標 ✅
-- `prometheus-fastapi-instrumentator` 整合
-- 自訂 metrics: backtest_duration, active_ws
-
-### 3-7. WebSocket 廣播優化 ✅
-- `broadcast()` 改用 `asyncio.gather` + 5 秒 timeout + 死連線清理
-
----
-
-## Phase 4 — 進階功能 🔲 未開始
-
-> **目的**: 提升使用體驗，接近半自動化投資。
-
-### 4-1. 實際績效追蹤
-- 新增 `actual_trades` 表：記錄在券商實際執行的交易
-- 手動輸入 API: `POST /api/v1/portfolio/{id}/actual-trades`
-- 績效比較: 回測建議 vs 實際執行的差異分析
-
-### 4-2. 手動交易記錄
-- Web UI: 在 OrdersPage 新增「記錄已執行交易」功能
-- Mobile: OrderForm 增加「記錄模式」
-
-### 4-3. 券商 API 介接（Shioaji 首選）
-- 新增 `src/execution/shioaji.py` 實作 `BrokerAdapter`
-- 支援查詢持倉、下單、撤單、模擬交易
-- 詳見 `BROKER_API_EVALUATION.md`
-
-### 4-4. 台股漲跌幅限制
-- `SimConfig.price_limit_pct: float = 0.10`
-- 成交價超出限制 → REJECT
-
-### 4-5. PaperBroker 實作
-- 使用即時行情模擬成交（對接 Shioaji simulation mode）
-
----
-
-## 依賴關係
-
-```
-Phase 0-1~0-5 ─── ✅ 全部完成
-Phase 1-1~1-5 ─── ✅ 全部完成
-Phase 2-1~2-3, 2-5~2-7 ─── ✅ 完成
-Phase 2-4 (漲跌幅) ─── 🔲 獨立可做
-Phase 3-1~3-7 ─── ✅ 全部完成
-
-Phase 4 依賴:
-  Phase 3-1 (持久化) → Phase 4-1 (績效追蹤)
-  Phase 3-3 (通知) → Phase 4-3 (券商介接)
+                         ┌────────────────────┐
+                         │  #1 universe.py    │  (無依賴，首先開發)
+                         │  股票池篩選         │
+                         └────────┬───────────┘
+                                  │
+                         ┌────────▼───────────┐
+                         │  #2 neutralize.py  │
+                         │  因子中性化         │
+                         └──┬─────┬────────┬──┘
+                            │     │        │
+                   ┌────────▼─┐ ┌─▼──────┐ ┌▼────────────┐
+                   │#3 cross_ │ │#4 turn-│ │#5 orthog-   │
+                   │section.py│ │over.py │ │onalize.py   │
+                   │分位數回測 │ │換手率   │ │因子正交化    │
+                   └──────────┘ └───┬────┘ └─────────────┘
+                                    │
+                           ┌────────▼────────┐
+                           │#6 construction. │
+                           │py               │
+                           │成本感知組合建構   │
+                           └────────┬────────┘
+                                    │
+                           ┌────────▼────────┐
+                           │ #7 pipeline.py  │
+                           │ Alpha Pipeline  │
+                           └────────┬────────┘
+                                    │
+                           ┌────────▼────────┐
+                           │ #8 Alpha        │
+                           │ Strategy 適配器  │
+                           └─────────────────┘
 ```
 
 ---
 
-## 測試覆蓋
+### Task 1: 股票池篩選框架
 
-| 類別 | 測試檔數 | 測試數 |
-|:----:|:--------:|:------:|
-| 後端 unit | 25 | ~300 |
-| 後端 integration | 2 | ~40 |
-| Web frontend | 多個 | ~40 |
-| Mobile | 多個 | ~70 |
-| E2E (Playwright) | 4 | ~20 |
-| **合計** | | **~349+ backend, ~110+ frontend** |
+**檔案**: `src/alpha/universe.py`
+**依賴**: 無（第一個開發）
+
+**目的**: 定義可投資股票池，排除不可交易或不適合量化策略的標的。沒有乾淨的股票池，所有後續分析的結論都不可靠。
+
+**介面設計**:
+
+```python
+@dataclass
+class UniverseConfig:
+    min_market_cap: float | None = None        # 最低市值（元）
+    min_avg_volume: float | None = None        # 最低日均成交量（股）
+    min_avg_turnover: float | None = None      # 最低日均成交額（元）
+    min_listing_days: int = 252                 # 最少上市天數
+    exclude_sectors: list[str] = field(...)     # 排除的產業
+    volume_lookback: int = 60                   # 流動性計算的回望天數
+    max_missing_pct: float = 0.1               # 最大允許缺值比例
+
+class UniverseFilter:
+    def __init__(self, config: UniverseConfig): ...
+
+    def filter(
+        self,
+        data: dict[str, pd.DataFrame],
+        date: pd.Timestamp,
+        fundamentals: FundamentalsProvider | None = None,
+    ) -> list[str]:
+        """回傳在指定日期通過所有篩選條件的標的列表。"""
+
+    def filter_timeseries(
+        self,
+        data: dict[str, pd.DataFrame],
+        dates: list[pd.Timestamp],
+        fundamentals: FundamentalsProvider | None = None,
+    ) -> dict[pd.Timestamp, list[str]]:
+        """回傳每個日期的可投資標的，用於回測。"""
+```
+
+**篩選規則**:
+1. 流動性篩選：日均成交量 / 日均成交額低於閾值 → 排除
+2. 上市天數篩選：上市未滿 N 天 → 排除（避免 IPO 異常波動）
+3. 數據完整性：缺值比例超過閾值 → 排除
+4. 產業篩選：可排除特定產業（如金融、ETF）
+5. 市值篩選：市值低於閾值 → 排除（需基本面數據）
+
+**測試要點**:
+- 空數據 / 單一標的 / 大量標的
+- 邊界條件：剛好在閾值上
+- 時序篩選的結果隨日期變化（標的進出股票池）
 
 ---
 
-## 里程碑
+### Task 2: 因子中性化
 
-| 里程碑 | 狀態 | 說明 |
-|--------|:----:|------|
-| **M1: 可信回測** | ✅ | 次日成交、sqrt 滑價、kill switch、拒單記錄、零量檢查 |
-| **M2: 基本面策略** | ✅ | FinMind PE/PB/ROE/產業分類，multi_factor + sector_rotation 升級 |
-| **M3: 台股精確模擬** | ⚠️ | 整股交易、T+2、ffill limit 完成；漲跌停待做 |
-| **M4: 投資輔助工具** | ✅ | 持久化、建議交易、通知（Discord/LINE/Telegram）、排程 |
-| **M5: 半自動化** | 🔲 | 績效追蹤、券商介接待做 |
+**檔案**: `src/alpha/neutralize.py`
+**依賴**: Task 1 (股票池篩選)
+
+**目的**: 從原始因子值中移除市場、行業、規模等系統性暴露，隔離出純 Alpha 信號。
+
+一個「看起來有效」的動量因子，可能 80% 的收益來自做多大盤——中性化後才能看到它是否真的能選股。
+
+**介面設計**:
+
+```python
+class NeutralizeMethod(Enum):
+    MARKET = "market"          # 去市場均值
+    INDUSTRY = "industry"      # 行業內去均值
+    SIZE = "size"              # 回歸去規模暴露
+    INDUSTRY_SIZE = "ind_size" # 行業 + 規模雙重中性化
+
+def neutralize(
+    factor_values: pd.DataFrame,         # index=date, columns=symbols
+    method: NeutralizeMethod,
+    industry_map: dict[str, str] | None = None,  # symbol → 行業
+    market_caps: pd.DataFrame | None = None,     # index=date, columns=symbols
+) -> pd.DataFrame:
+    """回傳中性化後的因子值，同形狀的 DataFrame。"""
+
+def winsorize(
+    factor_values: pd.DataFrame,
+    lower: float = 0.01,        # 下界百分位
+    upper: float = 0.99,        # 上界百分位
+) -> pd.DataFrame:
+    """極端值處理：截尾到指定百分位。"""
+
+def standardize(
+    factor_values: pd.DataFrame,
+    method: str = "zscore",     # "zscore" | "rank" | "rank_zscore"
+) -> pd.DataFrame:
+    """橫截面標準化。"""
+```
+
+**中性化方法**:
+
+| 方法 | 數學 | 用途 |
+|------|------|------|
+| 市場中性 | `f_i - mean(f)` | 去除因子的市場平均暴露 |
+| 行業中性 | `f_i - mean(f_industry)` | 去除行業效應，只看業內選股能力 |
+| 規模中性 | `residual(f ~ log_cap)` | 回歸去除規模暴露 |
+| 行業+規模 | 行業 dummy + log_cap 回歸殘差 | 最嚴格的中性化 |
+
+**處理流程**: 原始因子 → winsorize (去極端值) → standardize (Z-score) → neutralize (去暴露) → 輸出
+
+**測試要點**:
+- 中性化後因子的行業/規模暴露應接近 0
+- winsorize 正確截尾
+- 單一行業 / 少量標的不會崩潰
+
+---
+
+### Task 3: 分位數組合回測
+
+**檔案**: `src/alpha/cross_section.py`
+**依賴**: Task 2 (中性化後的因子)
+
+**目的**: 因子有效性的金標準測試。按因子值排序分組，觀察各組收益是否呈現單調遞增/遞減。如果 Q1（最低分位）到 Q5（最高分位）的收益沒有明顯的單調關係，這個因子就不值得用。
+
+**介面設計**:
+
+```python
+@dataclass
+class QuantileResult:
+    factor_name: str
+    n_quantiles: int
+    quantile_returns: pd.DataFrame    # index=date, columns=Q1..Qn
+    mean_returns: pd.Series           # 各分位的平均報酬
+    long_short_return: pd.Series      # Qn - Q1 (多空組合) 時序
+    long_short_sharpe: float
+    monotonicity_score: float         # Spearman rank corr(分位序號, 平均報酬)
+    turnover_by_quantile: pd.Series   # 各分位的平均換手率
+
+def quantile_backtest(
+    factor_values: pd.DataFrame,    # 中性化後的因子值
+    forward_returns: pd.DataFrame,  # 未來 N 天報酬
+    n_quantiles: int = 5,           # 分位數 (5=五分位, 10=十分位)
+    holding_period: int = 5,        # 持倉週期 (天)
+    weight: str = "equal",          # "equal" | "factor"
+) -> QuantileResult:
+    """執行分位數組合回測。"""
+
+def long_short_analysis(
+    result: QuantileResult,
+) -> dict:
+    """多空組合深入分析：年化報酬、Sharpe、最大回撤、勝率。"""
+```
+
+**分析輸出**:
+- 各分位數的累積收益曲線
+- 多空組合 (Q5 - Q1) 的績效指標
+- 單調性分數 (monotonicity)：分位序號 vs 平均報酬的 Spearman 相關
+- 各分位的換手率（預備 Task 4）
+
+**驗收標準**: 對已知有效的動量因子跑分位數回測，Q5 應明顯優於 Q1，monotonicity > 0.8。
+
+---
+
+### Task 4: 換手率分析
+
+**檔案**: `src/alpha/turnover.py`
+**依賴**: Task 2 (中性化因子)
+
+**目的**: 一個因子即使 IC 很高，如果換手率太高，交易成本會吃掉大部分 Alpha。這個模組量化「因子信號的穩定性」和「交易成本的侵蝕程度」。
+
+**介面設計**:
+
+```python
+@dataclass
+class TurnoverResult:
+    factor_name: str
+    avg_turnover: float                  # 平均單邊換手率 (0~1)
+    turnover_series: pd.Series           # 每期換手率時序
+    cost_drag: float                     # 年化成本侵蝕 (bps)
+    net_ic: float                        # 成本調整後的 IC
+    breakeven_cost: float                # 盈虧平衡交易成本 (bps)
+
+def compute_turnover(
+    weights_t: pd.DataFrame,     # index=date, columns=symbols, values=weight
+    weights_t1: pd.DataFrame,    # 下一期權重
+) -> pd.Series:
+    """逐期計算單邊換手率 = sum(|w_new - w_old|) / 2。"""
+
+def analyze_factor_turnover(
+    factor_values: pd.DataFrame,
+    n_quantiles: int = 5,
+    holding_period: int = 5,
+    cost_bps: float = 30.0,      # 單邊交易成本 (bps)，台股預設含手續費+稅
+) -> TurnoverResult:
+    """完整的因子換手率分析。"""
+
+def cost_adjusted_returns(
+    gross_returns: pd.Series,
+    turnover: pd.Series,
+    cost_bps: float = 30.0,
+) -> pd.Series:
+    """從毛報酬扣除交易成本，得到淨報酬。"""
+```
+
+**關鍵指標**:
+- **平均換手率**: 低頻因子 (如價值) 通常 < 20%/月，高頻因子 (如短期反轉) 可能 > 80%/月
+- **成本侵蝕**: `avg_turnover × cost_bps × 12 × 2`（年化、雙邊）
+- **盈虧平衡成本**: IC 為 0 時的成本，`gross_alpha / (turnover × 12 × 2)`
+- **淨 IC**: 扣除成本後的因子信息係數
+
+**台股預設成本模型**: 買入手續費 0.1425% + 賣出手續費 0.1425% + 證交稅 0.3% = 單邊約 30 bps
+
+---
+
+### Task 5: 因子正交化
+
+**檔案**: `src/alpha/orthogonalize.py`
+**依賴**: Task 2 (中性化因子)
+
+**目的**: 多因子合成時，如果動量和 RSI 高度相關 (ρ=0.7)，等權合成就相當於動量加倍權重。正交化確保每個因子帶來獨立的信息。
+
+**介面設計**:
+
+```python
+def orthogonalize_sequential(
+    factor_dict: dict[str, pd.DataFrame],
+    priority: list[str] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """
+    逐步正交化（改良 Gram-Schmidt）。
+
+    按 priority 順序，每個因子回歸去除前面所有因子的影響，保留殘差。
+    priority[0] 保持原樣，priority[1] 去除 [0] 的影響，以此類推。
+    """
+
+def orthogonalize_symmetric(
+    factor_dict: dict[str, pd.DataFrame],
+) -> dict[str, pd.DataFrame]:
+    """
+    對稱正交化（PCA 旋轉）。
+
+    對所有因子做 PCA，旋轉回原空間，使因子兩兩正交但保持可解釋性。
+    """
+
+def factor_correlation_matrix(
+    factor_dict: dict[str, pd.DataFrame],
+    method: str = "spearman",
+) -> pd.DataFrame:
+    """計算因子間的平均橫截面相關矩陣（用於診斷共線性）。"""
+```
+
+**方法選擇指引**:
+- **逐步正交化**: 當你有明確的因子優先級時（例如動量是核心因子，其他是輔助）
+- **對稱正交化**: 當所有因子地位平等時
+
+---
+
+### Task 6: 成本感知組合建構
+
+**檔案**: `src/alpha/construction.py`
+**依賴**: Task 4 (換手率分析)
+
+**目的**: 現有 `optimizer.py` 的 3 個最佳化器只看信號強度，不考慮換倉成本。本模組建立一個在 Alpha 信號和交易成本之間取得平衡的組合建構器。
+
+**介面設計**:
+
+```python
+@dataclass
+class ConstructionConfig:
+    max_weight: float = 0.05              # 單一標的上限
+    max_total_weight: float = 0.95        # 總投資比例上限
+    min_weight: float = 0.001             # 低於此歸零
+    long_only: bool = True
+    turnover_penalty: float = 0.0005      # 換手率懲罰係數 (越高越傾向不換倉)
+    max_turnover: float | None = None     # 單期最大換手率上限
+    cost_bps: float = 30.0               # 單邊成本 (bps)
+    half_life: int | None = None          # Alpha 衰減半衰期（天），用於混合新舊信號
+
+def construct_portfolio(
+    alpha_signal: pd.Series,              # 當期 Alpha 信號 (symbol → score)
+    current_weights: pd.Series | None,    # 當前持倉權重 (None = 空倉)
+    config: ConstructionConfig | None = None,
+    volatilities: dict[str, float] | None = None,  # 用於風險預算
+) -> pd.Series:
+    """
+    回傳目標權重。
+
+    最佳化目標：max(alpha_exposure - turnover_penalty × turnover)
+    約束：權重上限、投資比例、換手率上限
+    """
+
+def blend_with_decay(
+    new_signal: pd.Series,
+    old_signal: pd.Series,
+    half_life: int,
+) -> pd.Series:
+    """以指數衰減混合新舊信號，減少不必要的換倉。"""
+```
+
+**與現有 optimizer 的關係**:
+- `optimizer.py` 的 `equal_weight`, `signal_weight`, `risk_parity` 保留作為簡單場景使用
+- `construction.py` 作為 Alpha 策略的專用建構器，取代 optimizer 成為 Alpha Pipeline 的默認選擇
+- 兩者產出相同格式 (`dict[str, float]`)，對下游完全相容
+
+---
+
+### Task 7: Alpha Pipeline
+
+**檔案**: `src/alpha/pipeline.py`
+**依賴**: Task 1–6 (所有前置模組)
+
+**目的**: 端到端的 Alpha 研究流水線。用一個配置檔定義完整的因子策略，自動串接所有步驟。
+
+**介面設計**:
+
+```python
+@dataclass
+class AlphaConfig:
+    """Alpha Pipeline 配置。"""
+    # 股票池
+    universe: UniverseConfig
+
+    # 因子定義
+    factors: list[FactorSpec]         # 使用哪些因子 + 參數
+
+    # 處理流程
+    winsorize_bounds: tuple[float, float] = (0.01, 0.99)
+    standardize_method: str = "zscore"
+    neutralize_method: NeutralizeMethod = NeutralizeMethod.INDUSTRY_SIZE
+    orthogonalize: bool = True
+    orthogonalize_method: str = "sequential"  # "sequential" | "symmetric"
+
+    # 合成
+    combine_method: str = "ic"          # "equal" | "ic" | "custom"
+    combine_weights: dict[str, float] | None = None  # custom 時使用
+    ic_lookback: int = 60               # IC 加權的滾動窗口
+
+    # 組合建構
+    construction: ConstructionConfig = field(default_factory=ConstructionConfig)
+
+    # 回測
+    holding_period: int = 5             # 持倉週期 (天)
+    rebalance_freq: str = "weekly"      # "daily" | "weekly" | "monthly"
+
+@dataclass
+class FactorSpec:
+    """單因子規格。"""
+    name: str                           # 因子名稱 (對應 FACTOR_REGISTRY)
+    direction: int = 1                  # 1=越大越好, -1=越小越好
+    kwargs: dict = field(default_factory=dict)  # 因子參數覆寫
+
+@dataclass
+class AlphaReport:
+    """Alpha Pipeline 完整報告。"""
+    config: AlphaConfig
+    # 單因子分析
+    factor_ics: dict[str, ICResult]
+    factor_decays: dict[str, DecayResult]
+    factor_turnovers: dict[str, TurnoverResult]
+    factor_correlations: pd.DataFrame
+    # 分位數回測
+    quantile_results: dict[str, QuantileResult]
+    # 合成 Alpha
+    composite_ic: ICResult
+    composite_quantile: QuantileResult
+    # 組合績效
+    backtest_result: BacktestResult      # 復用現有 BacktestResult
+
+class AlphaPipeline:
+    def __init__(self, config: AlphaConfig): ...
+
+    def research(
+        self,
+        data: dict[str, pd.DataFrame],
+        fundamentals: FundamentalsProvider | None = None,
+    ) -> AlphaReport:
+        """
+        執行完整的 Alpha 研究流程（不進入回測引擎）：
+        1. 股票池篩選
+        2. 逐因子計算 + 中性化
+        3. 單因子分析 (IC, 衰減, 分位數, 換手率)
+        4. 因子正交化
+        5. 因子合成
+        6. 合成因子的分位數回測
+        7. 成本感知組合建構 + 績效統計
+        """
+
+    def generate_weights(
+        self,
+        data: dict[str, pd.DataFrame],
+        current_date: pd.Timestamp,
+        current_weights: pd.Series | None = None,
+        fundamentals: FundamentalsProvider | None = None,
+    ) -> dict[str, float]:
+        """
+        生產模式：給定當前數據和日期，產出目標權重。
+        供 AlphaStrategy.on_bar() 調用。
+        """
+```
+
+**Pipeline 執行流程**:
+
+```
+AlphaConfig
+    │
+    ▼
+[1] UniverseFilter.filter_timeseries()     → 每日可投資標的
+    │
+    ▼
+[2] compute_factor_values() × N factors     → 原始因子矩陣
+    │
+    ▼
+[3] winsorize() → standardize()             → 清洗後因子
+    │
+    ▼
+[4] neutralize()                            → 中性化因子
+    │
+    ▼
+[5] 單因子分析:
+    ├── compute_ic()                        → IC / ICIR
+    ├── factor_decay()                      → 衰減曲線
+    ├── quantile_backtest()                 → 分位數收益
+    └── analyze_factor_turnover()           → 換手率 + 成本侵蝕
+    │
+    ▼
+[6] orthogonalize_sequential/symmetric()    → 正交化因子
+    │
+    ▼
+[7] combine_factors() (IC 加權)             → 合成 Alpha 信號
+    │
+    ▼
+[8] quantile_backtest(composite)            → 合成因子驗證
+    │
+    ▼
+[9] construct_portfolio()                   → 成本感知的目標權重
+    │
+    ▼
+[10] compute_analytics()                    → 績效報告
+```
+
+---
+
+### Task 8: AlphaStrategy 適配器
+
+**檔案**: `src/alpha/__init__.py` 中或獨立檔案
+**依賴**: Task 7 (Pipeline)
+
+**目的**: 將 AlphaPipeline 包裝為標準的 `Strategy` 子類，使其能直接被現有回測引擎和 API 執行。
+
+**介面設計**:
+
+```python
+class AlphaStrategy(Strategy):
+    """
+    Alpha Pipeline 的 Strategy 適配器。
+
+    使 AlphaPipeline 產出的權重能直接接入：
+    - BacktestEngine.run() 回測
+    - API /backtest 端點
+    - 未來的 Paper/Live Trading
+    """
+
+    def __init__(self, config: AlphaConfig):
+        self._pipeline = AlphaPipeline(config)
+        self._current_weights: pd.Series | None = None
+
+    def name(self) -> str:
+        factor_names = [f.name for f in self._pipeline.config.factors]
+        return f"alpha_{'_'.join(factor_names)}"
+
+    def on_bar(self, ctx: Context) -> dict[str, float]:
+        data = {sym: ctx.bars(sym) for sym in ctx.universe()}
+        weights = self._pipeline.generate_weights(
+            data=data,
+            current_date=pd.Timestamp(ctx.now()),
+            current_weights=self._current_weights,
+            fundamentals=...,
+        )
+        self._current_weights = pd.Series(weights)
+        return weights
+```
+
+**註冊方式**: 在 `src/strategy/registry.py` 中加入 `alpha` 策略類型，接受 `AlphaConfig` 作為參數。
+
+**驗收標準**: 能用以下方式執行 Alpha 策略回測：
+```bash
+# CLI
+python -m src.cli.main backtest --strategy alpha --config alpha_config.yaml
+
+# API
+POST /api/v1/backtest { "strategy": "alpha", "config": { ... } }
+```
+
+---
+
+## 3. 第二階段：實盤交易能力
+
+**前置條件**: 第一階段完成，已有經過驗證的 Alpha 策略。
+
+### Task 9: 券商 API 對接
+
+**目標**: 實作 `Broker` 介面 (`src/execution/broker.py`)，對接至少一家台灣券商。
+
+**候選券商**:
+
+| 券商 | API | 優缺點 |
+|------|-----|--------|
+| 永豐 Shioaji | `shioaji` Python SDK | 社群最活躍，文件完整，支援期貨 |
+| 元大 | 非官方 API | 市佔率高但 API 支援差 |
+| 富邦 | fugle-trade SDK | 官方 SDK，但功能較少 |
+
+**建議**: 以永豐 Shioaji 為首選。
+
+**實作範圍**:
+- `ShioajiBroker(Broker)`: 實作 `submit_order()`, `cancel_order()`, `get_positions()`, `get_account_info()`
+- 斷線重連機制
+- 下單前的風控攔截（復用現有 RiskEngine）
+- 成交回報推送至 WebSocket `orders` 頻道
+
+### Task 10: 即時行情串流
+
+**目標**: 接入即時報價，填補 WebSocket `market` 頻道。
+
+**實作方式**:
+- 券商 API 通常附帶即時行情（Shioaji 支援 tick/quote 訂閱）
+- 實作 `RealtimeFeed(DataFeed)` 介面，在 `market` WebSocket 頻道廣播
+- 前端 `MarketTicker` 元件已就位，只需接入數據
+
+### Task 11: Paper Trading
+
+**目標**: 完整的紙上交易循環。
+
+**流程**:
+1. 排程器定時觸發（如每日 9:00）
+2. 取得最新行情 → 呼叫 Alpha Strategy → 產出目標權重
+3. `weights_to_orders()` → RiskEngine 檢查 → 模擬執行（SimBroker + 即時價格）
+4. 更新 Portfolio → 推送通知 → 記錄交易日誌
+5. 前端即時顯示持倉變化
+
+**與 Live Trading 的差異**: 使用 SimBroker 而非真實券商，但數據和信號流程完全一致。
+
+### Task 12: 通知事件串接
+
+**目標**: 將交易/再平衡/風控事件接入已建好的通知系統。
+
+**事件觸發點**:
+- 策略產出新權重 → 通知「再平衡建議」
+- 訂單成交 → 通知「成交回報」
+- Kill Switch 觸發 → 通知「熔斷告警」
+- 每日收盤 → 通知「持倉快照」
+
+### Task 13: HTTPS + 安全
+
+**目標**: 生產環境安全配置。
+
+**內容**:
+- Nginx/Caddy 反向代理 + Let's Encrypt TLS
+- docker-compose 增加 proxy 服務
+- CSP 標頭配置
+
+---
+
+## 4. 第三階段：穩固與商業化
+
+遠期任務，視第一、二階段完成後的需求調整。
+
+| 任務 | 說明 |
+|------|------|
+| 測試覆蓋率 | pytest-cov + istanbul，Alpha 層需 >80% 覆蓋 |
+| Alpha 研究前端 | IC 時序圖、分位數收益圖、因子相關矩陣、Pipeline 配置 UI |
+| 多帳戶 | 家族資產管理的帳戶隔離 |
+| PDF 報表 | 商業級 Alpha 研究 + 績效報表 |
+| 訂閱授權 | 用戶方案管理 |
+| 合規 | 使用條款、免責聲明 |
+
+---
+
+## 5. 技術規格
+
+### 5.1 Alpha 層設計原則
+
+| 原則 | 說明 |
+|------|------|
+| 純函式優先 | 中性化、正交化、標準化皆為無狀態純函式，方便測試和組合 |
+| DataFrame in / DataFrame out | 所有分析函式的輸入輸出統一為 `pd.DataFrame(index=date, columns=symbols)` |
+| 橫截面操作 | 所有變換在每個日期的橫截面上獨立執行，保證時間因果性 |
+| 配置驅動 | AlphaConfig dataclass 定義完整 Pipeline，可序列化為 YAML/JSON |
+| 向後相容 | AlphaStrategy 產出 `dict[str, float]`，對回測引擎和 API 透明 |
+
+### 5.2 數據格式約定
+
+```
+因子值 / 報酬 / 權重：
+    pd.DataFrame
+    index  = pd.DatetimeIndex (tz-naive, 交易日)
+    columns = str (symbol)
+    values  = float
+
+行業映射：
+    dict[str, str]  # symbol → industry
+
+市值：
+    pd.DataFrame (同因子值格式)
+```
+
+### 5.3 測試策略
+
+每個 Alpha 模組需要：
+1. **單元測試**: 純函式的數學正確性（已知輸入 → 預期輸出）
+2. **性質測試**: 中性化後市場暴露 ≈ 0、正交化後相關 ≈ 0
+3. **整合測試**: Pipeline 端到端跑通
+4. **回歸測試**: 固定數據集上的結果不變（防止重構引入 bug）
+
+### 5.4 效能考量
+
+| 場景 | 預估規模 | 策略 |
+|------|---------|------|
+| 台股全市場 | ~1,800 標的 × 5 年 × 5 因子 | 向量化 pandas 操作，避免逐行迴圈 |
+| IC 計算 | ~1,200 交易日 × 1,800 標的 | `DataFrame.rank()` + `corr()`，不手動排序 |
+| 最佳化 | 單期 ~200 標的 | scipy.optimize 足夠，不需 CVXPY |
+
+---
+
+## 6. 風險與決策紀錄
+
+### 6.1 技術風險
+
+| 風險 | 影響 | 緩解 |
+|------|------|------|
+| 台股基本面數據不完整 | 行業/市值中性化效果打折 | FinMindFundamentals 已有產業分類，市值可從股價×股數估算 |
+| 因子在台股樣本太少 | 橫截面標的不夠（vs 美股 3000+） | 放寬分位數到 5 組（非 10 組），使用 Spearman 而非 Pearson |
+| 存活者偏差 | 回測只看到活下來的股票 | UniverseFilter 按日期篩選，不使用未來股票池 |
+| 前瞻偏差 | 基本面數據可能有發佈延遲 | FinMindFundamentals 的 point-in-time 查詢已考慮發佈日 |
+
+### 6.2 架構決策紀錄
+
+| 日期 | 決策 | 原因 | 替代方案 |
+|------|------|------|---------|
+| 2026-03-24 | Alpha 層建為 `src/alpha/`，不合併入 `src/strategy/` | Alpha 研究是獨立關注點，不應污染策略引擎的簡潔性 | 擴展 `src/strategy/research.py` — 否決，因為 research.py 會膨脹到不可維護 |
+| 2026-03-24 | 保留現有 `optimizer.py`，新增 `construction.py` | 簡單策略仍可用等權重/信號加權，不強制所有策略走 Alpha Pipeline | 替換 optimizer — 否決，避免破壞現有策略 |
+| 2026-03-24 | AlphaStrategy 作為 Strategy 的子類 | 零成本接入現有回測/API/風控 | 獨立的 Alpha 回測引擎 — 否決，重複造輪子 |
+
+---
+
+> **文件維護說明**: 本計畫書隨開發進展更新。每完成一個 Task，標注完成日期並記錄實際與計畫的差異。
