@@ -42,7 +42,7 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v (498 tests)
+make test                    # pytest tests/ -v (526 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
@@ -94,6 +94,7 @@ Key design decisions:
 - `src/instrument/` — `InstrumentRegistry` (get/get_or_create/search/by_market/by_asset_class). Re-exports Instrument from domain. `_infer_instrument()` auto-detects asset type from symbol pattern. Cost templates (TW_STOCK_DEFAULTS, US_FUTURES_DEFAULTS, etc.).
 - `src/alpha/` — Alpha research layer (within-asset selection). `pipeline.py` orchestrates end-to-end: universe filtering → factor computation → neutralization → orthogonalization → composite signal → quantile backtest → cost-aware portfolio construction. `AlphaStrategy` adapter wraps pipeline as `Strategy`. `regime.py` classifies market regimes (shared with allocation layer).
 - `src/allocation/` — Tactical asset allocation (between-asset selection). `macro_factors.py`: 4 macro factors (growth/inflation/rates/credit) from FRED z-scores. `cross_asset.py`: momentum/volatility/value per AssetClass. `tactical.py`: TacticalEngine combines strategic weights + macro + cross-asset + regime → `dict[AssetClass, float]`. API: `POST /api/v1/allocation`.
+- `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 6 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
 - `src/strategy/` — Strategy ABC (`on_bar()` → weights), factor library (pure functions), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
 - `src/risk/` — RiskEngine executes declarative rules; `kill_switch()` at 5% daily drawdown. RiskMonitor tracks metrics.
 - `src/execution/` — SimBroker (slippage, per-instrument commission/tax, T+N settlement), OMS (order lifecycle).
