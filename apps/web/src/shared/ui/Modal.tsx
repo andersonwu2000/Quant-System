@@ -66,7 +66,7 @@ export function Modal({ open, onClose, title, closeLabel, children }: ModalProps
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="bg-white dark:bg-surface rounded-xl p-6 w-full max-w-lg mx-4 shadow-xl"
+        className="bg-white dark:bg-surface rounded-xl p-6 w-full max-w-lg mx-4 shadow-xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">

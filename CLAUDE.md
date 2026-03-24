@@ -17,21 +17,22 @@ Keep updates minimal — only touch sections affected by the change.
 
 ## Project Overview
 
-Quantitative trading system focused on building real alpha research and live trading capabilities. Long-term goal: platform for individual investors and family asset management. Current priority: alpha research layer + real broker integration (not commercialization).
+Multi-asset portfolio research and optimization system covering TW stocks, US stocks, ETFs (incl. bond/commodity ETF proxies), TW futures, US futures. Bond/commodity exposure via ETFs, not direct trading. No retail FX (Taiwan regulatory restriction). Current stage: equity alpha research layer complete, expanding to multi-asset architecture. Long-term goal: platform for individual investors and family asset management.
 
 Monorepo: Python backend + React web + React Native mobile. Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
 
 **Monorepo structure:**
-- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (67 files, ~7,300 LOC)
-- `apps/web/` — React 18 + Vite + Tailwind dashboard (~107 files, ~7,000 LOC)
-- `apps/mobile/` — React Native + Expo 52 mobile app (~40 files, ~3,000 LOC)
+- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (79 files, ~12,200 LOC)
+- `apps/web/` — React 18 + Vite + Tailwind dashboard (incl. Alpha Research page)
+- `apps/mobile/` — React Native + Expo 52 mobile app (incl. Alpha tab)
 - `apps/shared/` — `@quant/shared` TypeScript package (types, API client, WS manager, format utils)
 
 Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 **Documentation:**
 - `docs/dev/SYSTEM_STATUS_REPORT.md` — System status report (module inventory, feature matrix, gap analysis)
-- `docs/dev/DEVELOPMENT_PLAN.md` — Development plan (alpha research layer → live trading → commercialization)
+- `docs/dev/DEVELOPMENT_PLAN.md` — Development plan (Phase A~E: multi-asset infra → cross-asset alpha → optimizer → backtest → live)
+- `docs/dev/MULTI_ASSET_ARCHITECTURE.md` — Multi-asset architecture design (instrument registry, allocation layer, portfolio optimizer)
 - `docs/dev/Project Requirements (Archived).md` — Archived project requirements
 - `docs/api-reference-zh.md` — API reference (Traditional Chinese)
 - `docs/developer-guide-zh.md` — Developer guide (Traditional Chinese)

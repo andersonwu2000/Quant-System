@@ -220,6 +220,9 @@ def compute_factor_values(
     """
     對多檔標的在多個日期計算因子值。
 
+    使用逐標的向量化策略：對每個標的只遍歷一次其價格序列，
+    而非原本的逐日×逐標的雙層迴圈。
+
     Args:
         data: {symbol: OHLCV DataFrame}
         factor_name: 已註冊的因子名稱
@@ -245,33 +248,55 @@ def compute_factor_values(
         fn_kwargs["market_returns"] = compute_market_returns(data)
 
     if dates is None:
-        # 取所有標的的共有日期
         all_dates: set[pd.Timestamp] | None = None
         for sym in symbols:
             sym_dates = set(data[sym].index)
             all_dates = sym_dates if all_dates is None else all_dates & sym_dates
         dates = sorted(all_dates or set())
 
-    # 只保留有足夠前置數據的日期
-    result_rows: list[dict[str, float | pd.Timestamp]] = []
-    for dt in dates:
-        row: dict[str, float | pd.Timestamp] = {"date": dt}
-        for sym in symbols:
-            df = data[sym]
-            mask = df.index <= dt
-            bars = df.loc[mask].iloc[-max(min_bars * 2, 300) :]
+    if not dates:
+        return pd.DataFrame()
+
+    dates_set = set(dates)
+    window = max(min_bars * 2, 300)
+
+    # 逐標的計算（外層迴圈是 symbol，內層用 searchsorted 快速定位）
+    # 這樣每個標的只需一次 index 對齊，避免 N_dates × N_symbols 的雙層迴圈
+    col_results: dict[str, pd.Series] = {}
+
+    for sym in symbols:
+        df = data[sym]
+        idx = df.index
+        if len(idx) < min_bars:
+            continue
+
+        # 找出此標的在 dates 中有數據的日期
+        sym_dates = [dt for dt in dates if dt in idx or (len(idx) > 0 and idx[0] <= dt)]
+
+        values: dict[pd.Timestamp, float] = {}
+        # 使用 searchsorted 批量定位，避免逐日 boolean mask
+        idx_arr = idx.values
+        for dt in sym_dates:
+            pos = idx.searchsorted(dt, side="right")
+            if pos < min_bars:
+                continue
+            start = max(0, pos - window)
+            bars = df.iloc[start:pos]
             if len(bars) < min_bars:
                 continue
             val = fn(bars, **fn_kwargs)
             if not val.empty:
-                row[sym] = float(val[key])
-        if len(row) > 1:  # 至少有一個 symbol
-            result_rows.append(row)
+                values[dt] = float(val[key])
 
-    if not result_rows:
+        if values:
+            col_results[sym] = pd.Series(values)
+
+    if not col_results:
         return pd.DataFrame()
 
-    result_df = pd.DataFrame(result_rows).set_index("date")
+    result_df = pd.DataFrame(col_results)
+    # 只保留請求的日期，且至少有一個標的有值
+    result_df = result_df.reindex(dates).dropna(how="all")
     return result_df
 
 
@@ -281,7 +306,7 @@ def compute_forward_returns(
     dates: list[pd.Timestamp] | None = None,
 ) -> pd.DataFrame:
     """
-    計算未來 N 天報酬。
+    計算未來 N 天報酬（向量化實作）。
 
     Returns:
         DataFrame，index=date，columns=symbols，values=forward return
@@ -295,25 +320,37 @@ def compute_forward_returns(
             all_dates = sym_dates if all_dates is None else all_dates & sym_dates
         dates = sorted(all_dates or set())
 
-    result_rows: list[dict[str, float | pd.Timestamp]] = []
-    for dt in dates:
-        row: dict[str, float | pd.Timestamp] = {"date": dt}
-        for sym in symbols:
-            df = data[sym]
-            future = df.loc[df.index > dt]
-            current = df.loc[df.index <= dt]
-            if current.empty or len(future) < horizon:
-                continue
-            price_now = float(current["close"].iloc[-1])
-            price_future = float(future["close"].iloc[horizon - 1])
-            if price_now > 0:
-                row[sym] = price_future / price_now - 1
-        if len(row) > 1:
-            result_rows.append(row)
-
-    if not result_rows:
+    if not dates:
         return pd.DataFrame()
-    return pd.DataFrame(result_rows).set_index("date")
+
+    # 逐標的向量化計算 forward return
+    col_results: dict[str, pd.Series] = {}
+
+    for sym in symbols:
+        df = data[sym]
+        close = df["close"]
+        idx = df.index
+
+        if len(close) <= horizon:
+            continue
+
+        # 用 shift 向量化計算：future_price = close.shift(-horizon)
+        future_price = close.shift(-horizon)
+        fwd_ret = future_price / close - 1
+
+        # 只保留在 dates 中的日期
+        common = fwd_ret.index.intersection(dates)
+        if not common.empty:
+            valid = fwd_ret.loc[common].dropna()
+            if not valid.empty:
+                col_results[sym] = valid
+
+    if not col_results:
+        return pd.DataFrame()
+
+    result_df = pd.DataFrame(col_results)
+    result_df = result_df.reindex(dates).dropna(how="all")
+    return result_df
 
 
 def compute_ic(

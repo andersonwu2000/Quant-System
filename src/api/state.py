@@ -31,6 +31,7 @@ class AppState:
     risk_engine: RiskEngine = field(default_factory=_make_risk_engine)
     strategies: dict[str, dict[str, Any]] = field(default_factory=dict)
     backtest_tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
+    alpha_tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     # 保護 portfolio mutation 的非同步鎖
     mutation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # 保護 backtest_tasks 跨執行緒存取
