@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">量化交易</string>
+    <string name="app_version">v1.0.0</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">儀表板</string>
+    <string name="nav_trading">交易</string>
+    <string name="nav_strategies">策略</string>
+    <string name="nav_research">研究</string>
+    <string name="nav_risk">風控</string>
+    <string name="nav_guide">使用指南</string>
+    <string name="nav_settings">設定</string>
+    <string name="nav_admin">管理</string>
+
+    <!-- Trading tabs -->
+    <string name="tab_portfolio">投資組合</string>
+    <string name="tab_orders">訂單</string>
+    <string name="tab_paper_trading">模擬交易</string>
+
+    <!-- Research tabs -->
+    <string name="tab_backtest">回測</string>
+    <string name="tab_alpha">Alpha 研究</string>
+    <string name="tab_allocation">資產配置</string>
+
+    <!-- Login -->
+    <string name="login_title">連線至伺服器</string>
+    <string name="login_server_url">伺服器網址</string>
+    <string name="login_server_hint">http://192.168.1.100:8000</string>
+    <string name="login_api_key">API 金鑰</string>
+    <string name="login_username">使用者名稱</string>
+    <string name="login_password">密碼</string>
+    <string name="login_button">登入</string>
+    <string name="login_error">登入失敗</string>
+    <string name="login_mode_apikey">API 金鑰</string>
+    <string name="login_mode_password">帳號密碼</string>
+
+    <!-- Common -->
+    <string name="loading">載入中…</string>
+    <string name="error_title">發生錯誤</string>
+    <string name="retry">重試</string>
+    <string name="cancel">取消</string>
+    <string name="confirm">確認</string>
+    <string name="save">儲存</string>
+    <string name="delete">刪除</string>
+    <string name="close">關閉</string>
+    <string name="logout">登出</string>
+    <string name="no_data">無資料</string>
+    <string name="connected">已連線</string>
+    <string name="disconnected">已斷線</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_nav">淨值</string>
+    <string name="dashboard_cash">現金</string>
+    <string name="dashboard_daily_pnl">今日損益</string>
+    <string name="dashboard_positions">持倉</string>
+    <string name="dashboard_exposure">曝險</string>
+
+    <!-- Portfolio -->
+    <string name="portfolio_saved">已保存組合</string>
+    <string name="portfolio_create">建立組合</string>
+    <string name="portfolio_name">組合名稱</string>
+    <string name="portfolio_initial_cash">初始資金</string>
+    <string name="portfolio_strategy">策略</string>
+    <string name="portfolio_rebalance">再平衡</string>
+    <string name="portfolio_trades">交易紀錄</string>
+    <string name="portfolio_delete_confirm">確定刪除此組合？</string>
+
+    <!-- Orders -->
+    <string name="order_symbol">股票代碼</string>
+    <string name="order_side">方向</string>
+    <string name="order_buy">買入</string>
+    <string name="order_sell">賣出</string>
+    <string name="order_quantity">數量</string>
+    <string name="order_price">價格（留空=市價）</string>
+    <string name="order_submit">送出訂單</string>
+    <string name="order_confirm">確定送出此訂單？</string>
+    <string name="order_filter_all">全部</string>
+    <string name="order_filter_open">未成交</string>
+    <string name="order_filter_filled">已成交</string>
+
+    <!-- Paper Trading -->
+    <string name="paper_status">模擬交易狀態</string>
+    <string name="paper_market_hours">市場時段</string>
+    <string name="paper_reconcile">對帳</string>
+    <string name="paper_queued">排隊訂單</string>
+    <string name="paper_auto_correct">自動修正</string>
+
+    <!-- Strategies -->
+    <string name="strategy_start">啟動</string>
+    <string name="strategy_stop">停止</string>
+    <string name="strategy_running">執行中</string>
+    <string name="strategy_stopped">已停止</string>
+
+    <!-- Backtest -->
+    <string name="backtest_strategy">策略</string>
+    <string name="backtest_universe">投資範圍</string>
+    <string name="backtest_start_date">開始日期</string>
+    <string name="backtest_end_date">結束日期</string>
+    <string name="backtest_run">執行回測</string>
+    <string name="backtest_running">執行中…</string>
+    <string name="backtest_total_return">總報酬</string>
+    <string name="backtest_annual_return">年化報酬</string>
+    <string name="backtest_sharpe">夏普比率</string>
+    <string name="backtest_max_dd">最大回撤</string>
+    <string name="backtest_trades">交易次數</string>
+    <string name="backtest_win_rate">勝率</string>
+
+    <!-- Alpha -->
+    <string name="alpha_factors">因子</string>
+    <string name="alpha_run">執行 Alpha 研究</string>
+    <string name="alpha_ic">IC</string>
+    <string name="alpha_icir">ICIR</string>
+    <string name="alpha_sharpe">多空夏普</string>
+
+    <!-- Allocation -->
+    <string name="allocation_compute">計算配置</string>
+    <string name="allocation_regime">市場狀態</string>
+    <string name="allocation_macro">宏觀訊號</string>
+
+    <!-- Risk -->
+    <string name="risk_rules">風控規則</string>
+    <string name="risk_alerts">告警</string>
+    <string name="risk_kill_switch">緊急停止</string>
+    <string name="risk_kill_confirm">確定啟動緊急停止？這將停止所有策略並取消待處理訂單。</string>
+
+    <!-- Settings -->
+    <string name="settings_language">語言</string>
+    <string name="settings_theme">主題</string>
+    <string name="settings_theme_light">淺色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_theme_system">跟隨系統</string>
+    <string name="settings_change_password">變更密碼</string>
+    <string name="settings_current_password">目前密碼</string>
+    <string name="settings_new_password">新密碼</string>
+    <string name="settings_system_metrics">系統指標</string>
+    <string name="settings_server_url">伺服器網址</string>
+
+    <!-- Admin -->
+    <string name="admin_users">使用者</string>
+    <string name="admin_create_user">建立使用者</string>
+    <string name="admin_audit_logs">審計日誌</string>
+    <string name="admin_reset_password">重設密碼</string>
+
+    <!-- Guide -->
+    <string name="guide_title">使用指南</string>
+    <string name="guide_overview">總覽</string>
+    <string name="guide_backtest">回測指南</string>
+    <string name="guide_alpha">Alpha 研究指南</string>
+    <string name="guide_allocation">資產配置指南</string>
+    <string name="guide_risk">風控管理指南</string>
+    <string name="guide_paper_trading">模擬交易指南</string>
+    <string name="guide_faq">常見問題</string>
+</resources>

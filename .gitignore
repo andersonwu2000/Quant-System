@@ -20,3 +20,8 @@ apps/*/dist/
 apps/web/dist/
 bun.lockb
 /data/
+apps/android/local.properties
+
+apps/android/.gradle/
+apps/android/app/build/
+apps/android/build/

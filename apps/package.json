@@ -2,7 +2,7 @@
   "name": "quant-apps",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["shared", "web", "mobile"],
+  "workspaces": ["shared", "web"],
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

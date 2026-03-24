@@ -62,24 +62,18 @@ jobs:
       - run: cd apps && bun install
       - run: cd apps/shared && bun run test
 
-  mobile-typecheck:
+  android-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: cd apps && bun install
-      - run: cd apps/mobile && bun run typecheck
-
-  mobile-test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: cd mobile && bun run test
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Build debug APK
+        run: cd apps/android && ./gradlew assembleDebug --no-daemon
 
   e2e-test:
     runs-on: ubuntu-latest
