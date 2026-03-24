@@ -8,6 +8,7 @@ export const en = {
     strategies: "Strategies",
     orders: "Orders",
     backtest: "Backtest",
+    alpha: "Alpha",
     risk: "Risk",
     settings: "Settings",
   },
@@ -118,6 +119,23 @@ export const en = {
     winRate: "Win Rate",
     totalTrades: "Total Trades",
     navCurve: "NAV Curve",
+  },
+
+  // alpha
+  alpha: {
+    title: "Alpha Research",
+    noResult: "Run an analysis to see results",
+    factorSummary: "Factor Summary",
+    factor: "Factor",
+    icMean: "IC",
+    icir: "ICIR",
+    hitRate: "Hit%",
+    lsRatio: "L/S Sharpe",
+    monotonicity: "Mono",
+    compositeAlpha: "Composite Alpha",
+    universeSize: "Universe",
+    paperComingSoon: "Paper Trading — coming soon",
+    liveComingSoon: "Live Trading — coming soon",
   },
 
   // risk

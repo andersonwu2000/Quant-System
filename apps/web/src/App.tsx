@@ -12,6 +12,7 @@ const PortfolioPage = lazy(() => import("@feat/portfolio").then(m => ({ default:
 const StrategiesPage = lazy(() => import("@feat/strategies").then(m => ({ default: m.StrategiesPage })));
 const OrdersPage = lazy(() => import("@feat/orders").then(m => ({ default: m.OrdersPage })));
 const BacktestPage = lazy(() => import("@feat/backtest").then(m => ({ default: m.BacktestPage })));
+const AlphaPage = lazy(() => import("@feat/alpha").then(m => ({ default: m.AlphaPage })));
 const RiskPage = lazy(() => import("@feat/risk").then(m => ({ default: m.RiskPage })));
 const SettingsPage = lazy(() => import("@feat/settings").then(m => ({ default: m.SettingsPage })));
 const AdminPage = lazy(() => import("@feat/admin").then(m => ({ default: m.AdminPage })));
@@ -65,6 +66,7 @@ function AppContent() {
               <Route path="/strategies" element={<RequireKey><StrategiesPage /></RequireKey>} />
               <Route path="/orders" element={<RequireKey><OrdersPage /></RequireKey>} />
               <Route path="/backtest" element={<RequireKey><BacktestPage /></RequireKey>} />
+              <Route path="/alpha" element={<RequireKey><AlphaPage /></RequireKey>} />
               <Route path="/risk" element={<RequireKey><RiskPage /></RequireKey>} />
               <Route path="/admin" element={<RequireKey><AdminPage /></RequireKey>} />
               <Route path="*" element={<NotFoundPage />} />

@@ -152,6 +152,87 @@ export interface HealthCheck {
   version: string;
 }
 
+// ── Alpha Research types ──────────────────────────────────────────────────────
+// Provisional: alpha layer is under code review and may change.
+// These types reflect the expected API contract, not the Python dataclasses.
+
+/** Known factor names from FACTOR_REGISTRY. String allows future additions. */
+export type FactorName =
+  | "momentum"
+  | "mean_reversion"
+  | "volatility"
+  | "rsi"
+  | "pe_ratio"
+  | "pb_ratio"
+  | "roe"
+  | "revenue_growth"
+  | (string & {});
+
+export interface AlphaFactorSpec {
+  name: FactorName;
+  /** 1 = higher is better, -1 = lower is better */
+  direction: 1 | -1;
+}
+
+export interface AlphaRunRequest {
+  factors: AlphaFactorSpec[];
+  universe: string[];
+  start: string;
+  end: string;
+  neutralize_method?: "market" | "industry" | "size" | "industry_size";
+  n_quantiles?: number;
+  holding_period?: number;
+}
+
+export interface AlphaSummary {
+  task_id: string;
+  status: "running" | "completed" | "failed";
+  progress_current: number | null;
+  progress_total: number | null;
+  error: string | null;
+}
+
+export interface ICResult {
+  ic_mean: number;
+  ic_std: number;
+  icir: number;
+  hit_rate: number;
+  ic_series?: { date: string; ic: number }[];
+}
+
+export interface AlphaTurnoverResult {
+  avg_turnover: number;
+  cost_drag_annual_bps: number;
+  breakeven_cost_bps: number;
+}
+
+export interface QuantileReturn {
+  quantile: number;
+  mean_return: number;
+  annual_return: number;
+}
+
+export interface FactorReport {
+  name: string;
+  direction: number;
+  ic: ICResult;
+  turnover: AlphaTurnoverResult;
+  quantile_returns: QuantileReturn[];
+  long_short_sharpe: number;
+  monotonicity_score: number;
+}
+
+export interface AlphaReport {
+  task_id: string;
+  factors: FactorReport[];
+  composite_ic?: ICResult;
+  composite_long_short_sharpe?: number;
+  composite_quantile_returns?: QuantileReturn[];
+  universe_size: number;
+  start_date: string;
+  end_date: string;
+}
+
 export interface SystemMetrics {
   uptime_seconds: number;
   total_requests: number;

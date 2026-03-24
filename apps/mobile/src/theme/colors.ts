@@ -24,4 +24,5 @@ export const danger = "#EF4444";
 export const dangerDark = "#DC2626";
 export const dangerLight = "#FCA5A5";
 export const warning = "#F59E0B";
+export const warningAlpha = "rgba(245, 158, 11, 0.15)";
 export const info = blue;

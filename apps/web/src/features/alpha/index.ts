@@ -1,0 +1,1 @@
+export { AlphaPage } from "./AlphaPage";

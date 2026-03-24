@@ -10,6 +10,7 @@ export const zh: Translations = {
     strategies: "策略",
     orders: "訂單",
     backtest: "回測",
+    alpha: "Alpha",
     risk: "風控",
     settings: "設定",
   },
@@ -120,6 +121,23 @@ export const zh: Translations = {
     winRate: "勝率",
     totalTrades: "總交易數",
     navCurve: "淨值曲線",
+  },
+
+  // alpha
+  alpha: {
+    title: "Alpha 研究",
+    noResult: "執行分析以查看結果",
+    factorSummary: "因子摘要",
+    factor: "因子",
+    icMean: "IC",
+    icir: "ICIR",
+    hitRate: "命中率",
+    lsRatio: "多空 Sharpe",
+    monotonicity: "單調性",
+    compositeAlpha: "合成 Alpha",
+    universeSize: "股票池",
+    paperComingSoon: "模擬交易 — 即將推出",
+    liveComingSoon: "實盤交易 — 即將推出",
   },
 
   // risk

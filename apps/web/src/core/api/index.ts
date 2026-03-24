@@ -7,6 +7,7 @@ export {
   system as systemEndpoints,
   risk as riskEndpoints,
   portfolio as portfolioEndpoints,
+  alpha as alphaEndpoints,
   pollBacktestResult,
 } from "@quant/shared";
 export type { Channel } from "@quant/shared";
@@ -25,4 +26,11 @@ export type {
   TradeRecord,
   UserInfo,
   UserRole,
+  AlphaRunRequest,
+  AlphaSummary,
+  AlphaReport,
+  AlphaFactorSpec,
+  FactorReport,
+  ICResult,
+  QuantileReturn,
 } from "@quant/shared";

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Briefcase, Brain, FlaskConical,
-  ShieldAlert, Settings, ListOrdered, LogOut,
+  Microscope, ShieldAlert, Settings, ListOrdered, LogOut,
   ChevronLeft, ChevronRight, Users,
 } from "lucide-react";
 import { useT } from "@core/i18n";
@@ -27,6 +27,7 @@ export function Sidebar({ onLogout }: { onLogout?: () => void }) {
     { to: "/strategies", icon: Brain, label: t.nav.strategies },
     { to: "/orders", icon: ListOrdered, label: t.nav.orders },
     { to: "/backtest", icon: FlaskConical, label: t.nav.backtest },
+    { to: "/alpha", icon: Microscope, label: t.nav.alpha },
     { to: "/risk", icon: ShieldAlert, label: t.nav.risk },
     ...(hasRole("admin") ? [{ to: "/admin", icon: Users, label: t.nav.admin }] : []),
     { to: "/settings", icon: Settings, label: t.nav.settings },

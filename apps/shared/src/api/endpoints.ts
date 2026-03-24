@@ -17,6 +17,9 @@ import type {
   SystemStatus,
   SystemMetrics,
   HealthCheck,
+  AlphaRunRequest,
+  AlphaSummary,
+  AlphaReport,
 } from "../types";
 
 export const auth = {
@@ -69,6 +72,15 @@ export const backtest = {
     get<BacktestSummary>(`/api/v1/backtest/${taskId}`),
   result: (taskId: string) =>
     get<BacktestResult>(`/api/v1/backtest/${taskId}/result`),
+};
+
+export const alpha = {
+  run: (req: AlphaRunRequest) =>
+    post<AlphaSummary>("/api/v1/alpha", req),
+  status: (taskId: string) =>
+    get<AlphaSummary>(`/api/v1/alpha/${taskId}`),
+  result: (taskId: string) =>
+    get<AlphaReport>(`/api/v1/alpha/${taskId}/result`),
 };
 
 export const risk = {
