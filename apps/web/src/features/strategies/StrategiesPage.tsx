@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useApi } from "@core/hooks";
 import { fmtCurrency, pnlColor, translateApiError } from "@core/utils";
-import { Card, StatusBadge, ErrorAlert, InfoTooltip, Skeleton } from "@shared/ui";
+import { Card, StatusBadge, ErrorAlert, Skeleton, EmptyState, ConfirmModal } from "@shared/ui";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
 import type { StrategyInfo } from "@core/api";
@@ -42,28 +42,32 @@ export function StrategiesPage() {
   const [toggling, setToggling] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; variant: "danger" | "warning"; onConfirm: () => void } | null>(null);
 
-  // suppress unused import warning — InfoTooltip used indirectly via re-export test
-  void InfoTooltip;
-
-  const handleToggle = async (name: string, current: string) => {
+  const handleToggle = (name: string, current: string) => {
     const action = current === "running" ? t.strategies.stop : t.strategies.start;
-    if (!window.confirm(`${action} "${name}"?`)) return;
-
-    setToggling(name);
-    setToggleError(null);
-    try {
-      if (current === "running") {
-        await strategiesApi.stop(name);
-      } else {
-        await strategiesApi.start(name);
-      }
-      refresh();
-    } catch (err) {
-      setToggleError(translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
-    } finally {
-      setToggling(null);
-    }
+    setConfirmAction({
+      title: action,
+      message: `${action} "${name}"?`,
+      variant: "warning",
+      onConfirm: async () => {
+        setConfirmAction(null);
+        setToggling(name);
+        setToggleError(null);
+        try {
+          if (current === "running") {
+            await strategiesApi.stop(name);
+          } else {
+            await strategiesApi.start(name);
+          }
+          refresh();
+        } catch (err) {
+          setToggleError(translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
+        } finally {
+          setToggling(null);
+        }
+      },
+    });
   };
 
   if (error) return <ErrorAlert message={error} onRetry={refresh} />;
@@ -86,7 +90,7 @@ export function StrategiesPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl mx-auto">
       <h2 className="text-2xl font-bold">{t.strategies.title}</h2>
 
       {toggleError && <ErrorAlert message={toggleError} />}
@@ -149,9 +153,18 @@ export function StrategiesPage() {
           );
         })}
         {(!strats || strats.length === 0) && (
-          <p className="text-slate-500 text-center py-8">{t.strategies.noStrategies}</p>
+          <EmptyState message={t.strategies.noStrategies} />
         )}
       </div>
+
+      <ConfirmModal
+        open={!!confirmAction}
+        title={confirmAction?.title ?? ""}
+        message={confirmAction?.message ?? ""}
+        variant={confirmAction?.variant ?? "default"}
+        onConfirm={confirmAction?.onConfirm ?? (() => {})}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

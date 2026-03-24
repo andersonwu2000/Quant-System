@@ -2,7 +2,7 @@
  * Typed API endpoints — maps 1:1 to backend routes.
  */
 
-import { get, post, put } from "./client";
+import { get, post, put, del } from "./client";
 import type {
   Portfolio,
   Position,
@@ -22,6 +22,17 @@ import type {
   AlphaReport,
   TacticalRequest,
   TacticalResponse,
+  ExecutionStatus,
+  PaperTradingStatus,
+  MarketHoursStatus,
+  ReconcileResult,
+  QueuedOrdersResponse,
+  PortfolioListItem,
+  SavedPortfolio,
+  PortfolioCreateRequest,
+  RebalancePreviewRequest,
+  RebalancePreviewResponse,
+  TradeRecord,
 } from "../types";
 
 export const auth = {
@@ -44,6 +55,23 @@ export const system = {
 export const portfolio = {
   get: () => get<Portfolio>("/api/v1/portfolio"),
   positions: () => get<Position[]>("/api/v1/portfolio/positions"),
+  listSaved: () =>
+    get<{ portfolios: PortfolioListItem[] }>("/api/v1/portfolio/saved").then(
+      (r) => r.portfolios,
+    ),
+  createSaved: (req: PortfolioCreateRequest) =>
+    post<SavedPortfolio>("/api/v1/portfolio/saved", req),
+  getSaved: (id: string) =>
+    get<SavedPortfolio>(`/api/v1/portfolio/saved/${id}`),
+  deleteSaved: (id: string) =>
+    del<{ message: string }>(`/api/v1/portfolio/saved/${id}`),
+  trades: (id: string) =>
+    get<TradeRecord[]>(`/api/v1/portfolio/saved/${id}/trades`),
+  rebalancePreview: (id: string, req: RebalancePreviewRequest) =>
+    post<RebalancePreviewResponse>(
+      `/api/v1/portfolio/saved/${id}/rebalance-preview`,
+      req,
+    ),
 };
 
 export const strategies = {
@@ -88,6 +116,15 @@ export const alpha = {
 export const allocation = {
   compute: (req: TacticalRequest) =>
     post<TacticalResponse>("/api/v1/allocation", req),
+};
+
+export const execution = {
+  status: () => get<ExecutionStatus>("/api/v1/execution/status"),
+  paperTradingStatus: () => get<PaperTradingStatus>("/api/v1/execution/paper-trading/status"),
+  marketHours: () => get<MarketHoursStatus>("/api/v1/execution/market-hours"),
+  reconcile: () => post<ReconcileResult>("/api/v1/execution/reconcile"),
+  autoCorrect: () => post<{ corrections: string[]; count: number }>("/api/v1/execution/reconcile/auto-correct"),
+  queuedOrders: () => get<QueuedOrdersResponse>("/api/v1/execution/queued-orders"),
 };
 
 export const risk = {

@@ -1,27 +1,28 @@
 import { useState } from "react";
 import { Microscope } from "lucide-react";
 import { useT } from "@core/i18n";
-import { MetricCard, MetricCardSkeleton, ErrorAlert } from "@shared/ui";
+import { MetricCard, MetricCardSkeleton, ErrorAlert, HelpTip, TabBar } from "@shared/ui";
 import { fmtNum, fmtPct } from "@quant/shared";
 import { useAlphaResearch } from "./hooks/useAlphaResearch";
 import { AlphaConfigForm } from "./components/AlphaConfigForm";
 import { FactorSummaryTable } from "./components/FactorSummaryTable";
 import { FactorICChart } from "./components/FactorICChart";
 import { QuantileReturnChart } from "./components/QuantileReturnChart";
-import { TradingModePlaceholder } from "./components/TradingModePlaceholder";
+import { AllocationPage } from "@feat/allocation";
+import { BacktestPage } from "@feat/backtest";
 
-type Tab = "research" | "paper" | "live";
+type Tab = "backtest" | "research" | "allocation";
 
 export function AlphaPage() {
   const { t } = useT();
-  const [tab, setTab] = useState<Tab>("research");
+  const [tab, setTab] = useState<Tab>("backtest");
   const [selectedFactor, setSelectedFactor] = useState<string | null>(null);
   const { running, result, error, progress, submit } = useAlphaResearch();
 
-  const tabs: { id: Tab; label: string; comingSoon?: boolean }[] = [
-    { id: "research", label: t.alpha.tabResearch },
-    { id: "paper",    label: t.alpha.tabPaper,  comingSoon: true },
-    { id: "live",     label: t.alpha.tabLive,   comingSoon: true },
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "backtest",   label: t.nav.backtest },
+    { id: "research",   label: t.alpha.tabResearch },
+    { id: "allocation", label: t.alpha.tabAllocation },
   ];
 
   const detailFactor = result?.factors.find((f) => f.name === selectedFactor) ?? result?.factors[0] ?? null;
@@ -35,26 +36,7 @@ export function AlphaPage() {
       </div>
 
       {/* Mode tabs */}
-      <div className="flex gap-1 bg-slate-100 dark:bg-surface-light p-1 rounded-lg w-fit">
-        {tabs.map(({ id, label, comingSoon }) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              tab === id
-                ? "bg-white dark:bg-surface-dark text-slate-900 dark:text-slate-100 shadow-sm"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-            }`}
-          >
-            {label}
-            {comingSoon && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-semibold leading-none">
-                {t.alpha.comingSoon}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      <TabBar tabs={tabs} active={tab} onChange={setTab} />
 
       {/* Research tab */}
       {tab === "research" && (
@@ -97,10 +79,12 @@ export function AlphaPage() {
                     <MetricCard
                       label={`${t.alpha.compositeAlpha} IC`}
                       value={(result.composite_ic.ic_mean > 0 ? "+" : "") + fmtNum(result.composite_ic.ic_mean, 4)}
+                      help={<HelpTip term="ic_mean" />}
                     />
                     <MetricCard
                       label={`${t.alpha.compositeAlpha} ICIR`}
                       value={(result.composite_ic.icir > 0 ? "+" : "") + fmtNum(result.composite_ic.icir, 2)}
+                      help={<HelpTip term="icir" />}
                     />
                   </>
                 )}
@@ -109,7 +93,7 @@ export function AlphaPage() {
               {/* Factor summary table */}
               <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-xl shadow-sm p-5 space-y-3">
                 <h2 className="font-semibold text-slate-800 dark:text-slate-100">{t.alpha.factorSummary}</h2>
-                <p className="text-xs text-slate-400">Click a row to inspect charts</p>
+                <p className="text-xs text-slate-400">{t.alpha.clickRowHint}</p>
                 <FactorSummaryTable
                   factors={result.factors}
                   selected={selectedFactor ?? result.factors[0]?.name ?? null}
@@ -123,7 +107,8 @@ export function AlphaPage() {
                   <h2 className="font-semibold text-slate-800 dark:text-slate-100">
                     {(t.alpha.factorNames as Record<string, string>)[detailFactor.name] ?? detailFactor.name}
                     <span className="ml-2 text-sm font-normal text-slate-400">
-                      Breakeven cost: {fmtNum(detailFactor.turnover.breakeven_cost_bps, 0)} bps
+                      {t.alpha.breakevenCost}: {fmtNum(detailFactor.turnover.breakeven_cost_bps, 0)} bps
+                      <HelpTip term="breakeven_cost" />
                     </span>
                   </h2>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -159,23 +144,12 @@ export function AlphaPage() {
         </div>
       )}
 
-      {/* Paper Trading tab */}
-      {tab === "paper" && (
-        <TradingModePlaceholder
-          title={t.alpha.tabPaper}
-          description={t.alpha.paperDesc}
-          requires={t.alpha.paperRequires}
-        />
-      )}
+      {/* Backtest tab */}
+      {tab === "backtest" && <BacktestPage />}
 
-      {/* Live Trading tab */}
-      {tab === "live" && (
-        <TradingModePlaceholder
-          title={t.alpha.tabLive}
-          description={t.alpha.liveDesc}
-          requires={t.alpha.liveRequires}
-        />
-      )}
+      {/* Allocation tab */}
+      {tab === "allocation" && <AllocationPage />}
+
     </div>
   );
 }

@@ -9,6 +9,7 @@ export {
   portfolio as portfolioEndpoints,
   alpha as alphaEndpoints,
   allocation,
+  execution as executionEndpoints,
   pollBacktestResult,
 } from "@quant/shared";
 export type { Channel } from "@quant/shared";
@@ -39,4 +40,16 @@ export type {
   TacticalResponse,
   TacticalWeightItem,
   MacroSignalItem,
+  ExecutionStatus,
+  PaperTradingStatus,
+  MarketHoursStatus,
+  ReconcileResult,
+  ReconcileDiff,
+  QueuedOrdersResponse,
+  PortfolioListItem,
+  SavedPortfolio,
+  PortfolioCreateRequest,
+  RebalancePreviewRequest,
+  SuggestedTrade,
+  RebalancePreviewResponse,
 } from "@quant/shared";

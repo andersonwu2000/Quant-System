@@ -12,6 +12,7 @@ import { translateApiError, isValidPassword } from "@core/utils";
 import { systemApi } from "./api";
 import { SystemMetrics } from "./components/SystemMetrics";
 
+
 function CollapsibleSection({ title, children }: { title: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
@@ -107,7 +108,7 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
     newPassword === confirmNewPassword;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-w-2xl mx-auto">
       <h2 className="text-2xl font-bold mb-3">{t.settings.title}</h2>
 
       {!isAuthenticated() && (
@@ -116,7 +117,6 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         </div>
       )}
 
-      {/* 登入 */}
       <CollapsibleSection title={loginMode === "password" ? t.admin.loginWithPassword : t.settings.apiKey}>
         {loginMode === "password" ? (
           <div className="space-y-3">
@@ -170,7 +170,6 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         )}
       </CollapsibleSection>
 
-      {/* 修改密碼 */}
       {isAuthenticated() && (
         <CollapsibleSection title={t.settings.changePassword}>
           <div className="space-y-3">
@@ -229,7 +228,6 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         </CollapsibleSection>
       )}
 
-      {/* 語言 */}
       <CollapsibleSection title={t.settings.language}>
         <div className="flex gap-2">
           {(Object.entries(langLabels) as [Lang, string][]).map(([code, label]) => (
@@ -248,7 +246,6 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         </div>
       </CollapsibleSection>
 
-      {/* 主題 */}
       <CollapsibleSection title={t.settings.theme}>
         <div className="flex gap-2">
           {(["light", "dark", "system"] as Theme[]).map((option) => {
@@ -274,7 +271,6 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         </div>
       </CollapsibleSection>
 
-      {/* 系統狀態 */}
       <CollapsibleSection title={t.settings.systemStatus}>
         <SystemMetrics />
       </CollapsibleSection>

@@ -155,13 +155,6 @@ export default function AlphaScreen() {
         </View>
       )}
 
-      {/* Coming soon banners */}
-      <View style={s.banner}>
-        <Text style={s.bannerText}>{t.alpha.paperComingSoon}</Text>
-      </View>
-      <View style={s.banner}>
-        <Text style={s.bannerText}>{t.alpha.liveComingSoon}</Text>
-      </View>
     </ScrollView>
   );
 }

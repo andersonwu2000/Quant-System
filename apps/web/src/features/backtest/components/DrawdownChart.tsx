@@ -35,15 +35,18 @@ export function DrawdownChart({ data }: { data: NavPoint[] }) {
           <XAxis
             dataKey="date"
             tick={{ fill: c.tick, fontSize: 11 }}
-            tickFormatter={(v: string) => v.slice(5)}
+            tickFormatter={(v: string) => v.slice(0, 10)}
+            minTickGap={40}
           />
           <YAxis
-            tick={{ fill: c.tick, fontSize: 12 }}
+            tick={{ fill: c.tick, fontSize: 11 }}
             domain={["auto", 0]}
             tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+            width={45}
           />
           <Tooltip
             contentStyle={{ background: c.tooltip.bg, border: `1px solid ${c.tooltip.border}`, borderRadius: 8 }}
+            labelFormatter={(v: string) => v.slice(0, 10)}
             formatter={(value: number) => [`${value.toFixed(2)}%`, t.backtest.drawdown]}
           />
           <Area

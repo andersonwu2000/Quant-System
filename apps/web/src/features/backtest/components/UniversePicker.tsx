@@ -76,19 +76,19 @@ export function UniversePicker({ value, onChange }: UniversePickerProps) {
   };
 
   return (
-    <label className="space-y-1">
+    <div className="space-y-1">
       <span className="text-sm text-slate-500 dark:text-slate-400">
         {t.backtest.universe}
       </span>
       {/* Trigger area */}
-      <div className="flex gap-2">
-        <div
-          onClick={() => setOpen(true)}
-          className="flex-1 bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors min-h-[38px] flex items-center gap-1 flex-wrap"
-        >
+      <div
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 flex-wrap bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors min-h-[38px]"
+      >
+        <div className="flex-1 flex items-center gap-1 flex-wrap">
           {value.length === 0 ? (
             <span className="text-slate-400">{t.backtest.universeSearch}</span>
-          ) : value.length <= 6 ? (
+          ) : value.length <= 5 ? (
             value.map((v) => (
               <span
                 key={v}
@@ -108,13 +108,7 @@ export function UniversePicker({ value, onChange }: UniversePickerProps) {
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="px-3 py-2 bg-slate-100 dark:bg-surface-light hover:bg-slate-200 dark:hover:bg-surface-light/80 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors shrink-0"
-        >
-          <ListChecks size={16} />
-        </button>
+        <ListChecks size={15} className="text-slate-400 shrink-0" />
       </div>
 
       {/* Fullscreen-ish modal */}
@@ -262,6 +256,6 @@ export function UniversePicker({ value, onChange }: UniversePickerProps) {
         </div>,
         document.body,
       )}
-    </label>
+    </div>
   );
 }

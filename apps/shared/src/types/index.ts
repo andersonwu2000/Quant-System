@@ -276,3 +276,114 @@ export interface TacticalResponse {
   regime: string;
   cross_asset_signals: Record<string, number>;
 }
+
+// ── Execution / Paper Trading types ─────────────────────────────────────────
+
+export interface ExecutionStatus {
+  mode: string;
+  connected: boolean;
+  broker_type: string;
+  simulation: boolean;
+  queued_orders: number;
+}
+
+export interface PaperTradingStatus {
+  active: boolean;
+  mode: string;
+  broker_connected: boolean;
+  portfolio_nav: number;
+  open_orders: number;
+  queued_orders: number;
+}
+
+export interface MarketHoursStatus {
+  session: string;
+  is_tradable: boolean;
+  is_odd_lot: boolean;
+  next_open: string;
+}
+
+export interface ReconcileResult {
+  is_clean: boolean;
+  matched: number;
+  mismatched: number;
+  system_only: number;
+  broker_only: number;
+  details: ReconcileDiff[];
+  summary: string;
+}
+
+export interface ReconcileDiff {
+  symbol: string;
+  system_qty: number;
+  broker_qty: number;
+  diff_qty: number;
+  diff_pct: number;
+}
+
+export interface QueuedOrdersResponse {
+  orders: { symbol: string; timestamp: string }[];
+  count: number;
+}
+
+// ── Saved Portfolio types ───────────────────────────────────────────────────
+
+export interface PortfolioListItem {
+  id: string;
+  name: string;
+  cash: number;
+  initial_cash: number;
+  strategy_name: string;
+  position_count: number;
+  created_at: string;
+}
+
+export interface SavedPortfolio {
+  id: string;
+  name: string;
+  cash: number;
+  initial_cash: number;
+  strategy_name: string;
+  positions: {
+    symbol: string;
+    quantity: number;
+    avg_cost: number;
+    market_price: number;
+    market_value: number;
+    unrealized_pnl: number;
+  }[];
+  nav: number;
+  created_at: string;
+}
+
+export interface PortfolioCreateRequest {
+  name: string;
+  initial_cash?: number;
+  strategy_name?: string;
+}
+
+export interface RebalancePreviewRequest {
+  strategy: string;
+  universes: string[];
+  params?: Record<string, unknown>;
+  slippage_bps?: number;
+  commission_rate?: number;
+  tax_rate?: number;
+}
+
+export interface SuggestedTrade {
+  symbol: string;
+  side: string;
+  quantity: number;
+  estimated_price: number;
+  estimated_cost: number;
+}
+
+export interface RebalancePreviewResponse {
+  strategy: string;
+  target_weights: Record<string, number>;
+  current_weights: Record<string, number>;
+  suggested_trades: SuggestedTrade[];
+  estimated_total_commission: number;
+  estimated_total_tax: number;
+}

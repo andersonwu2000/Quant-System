@@ -55,6 +55,7 @@ describe("DashboardPage", () => {
       refresh: vi.fn(),
       navHistory: [],
       running: 0,
+      runningStrats: [],
       connected: true,
     });
 
@@ -69,6 +70,7 @@ describe("DashboardPage", () => {
       refresh: vi.fn(),
       navHistory: [],
       running: 2,
+      runningStrats: [{ name: "momentum", status: "running", pnl: 100 } as any, { name: "rsi", status: "running", pnl: 50 } as any],
       connected: true,
     });
 
@@ -90,6 +92,7 @@ describe("DashboardPage", () => {
       refresh,
       navHistory: [],
       running: 0,
+      runningStrats: [],
       connected: true,
     });
 
@@ -105,6 +108,7 @@ describe("DashboardPage", () => {
       refresh: vi.fn(),
       navHistory: [],
       running: 0,
+      runningStrats: [],
       connected: true,
     });
 
@@ -119,6 +123,7 @@ describe("DashboardPage", () => {
       refresh: vi.fn(),
       navHistory: [],
       running: 0,
+      runningStrats: [],
       connected: true,
     });
 

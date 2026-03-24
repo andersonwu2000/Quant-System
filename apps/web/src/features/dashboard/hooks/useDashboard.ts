@@ -32,7 +32,8 @@ export function useDashboard() {
     });
   }, [setPf]));
 
-  const running = strats?.filter((s) => s.status === "running").length ?? 0;
+  const runningStrats = strats?.filter((s) => s.status === "running") ?? [];
+  const running = runningStrats.length;
 
-  return { pf, error, refresh, navHistory, running, connected };
+  return { pf, error, refresh, navHistory, running, runningStrats, connected };
 }

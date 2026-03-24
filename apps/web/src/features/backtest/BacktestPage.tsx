@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
-import { ChevronDown } from "lucide-react";
-import { Card, MetricCard } from "@shared/ui";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { Card, MetricCard, ErrorAlert, HelpTip } from "@shared/ui";
 import { fmtPct, fmtNum, fmtCurrency } from "@core/utils";
 import { useT } from "@core/i18n";
 import { useApi } from "@core/hooks";
@@ -20,7 +20,7 @@ import { HistoryPanel } from "./components/HistoryPanel";
 import { CompareTable } from "./components/CompareTable";
 import { CompareChart } from "./components/CompareChart";
 
-type AnalysisTab = "nav" | "drawdown" | "monthly" | "trades";
+type AnalysisTab = "drawdown" | "monthly" | "trades";
 
 function createDefaultForm(): BacktestRequest {
   return {
@@ -43,7 +43,8 @@ export function BacktestPage() {
   const { running, result, error, progress, submit } = useBacktest();
   const { history, addEntry, removeEntry, clearHistory } = useBacktestHistory();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [analysisTab, setAnalysisTab] = useState<AnalysisTab>("nav");
+  const [analysisTab, setAnalysisTab] = useState<AnalysisTab>("drawdown");
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const { data: strategies } = useApi<StrategyInfo[]>(() => strategiesApi.list());
   const effectiveStrategyOptions = useMemo(() => {
@@ -111,7 +112,7 @@ export function BacktestPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <h2 className="text-2xl font-bold">{t.backtest.title}</h2>
 
       <Card className="overflow-hidden">
@@ -186,56 +187,78 @@ export function BacktestPage() {
         </form>
       </Card>
 
-      {error && <div aria-live="polite" className="bg-red-500/10 text-red-400 rounded-xl p-4 text-sm">{error}</div>}
+      {error && <ErrorAlert message={error} />}
 
       {result && (
         <>
+          {/* Core metrics — always visible */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <MetricCard label={t.backtest.totalReturn} value={fmtPct(result.total_return)} />
-            <MetricCard label={t.backtest.annualReturn} value={fmtPct(result.annual_return)} />
-            <MetricCard label={t.backtest.sharpe} value={fmtNum(result.sharpe)} />
-            <MetricCard label={t.backtest.maxDrawdown} value={fmtPct(result.max_drawdown)} />
-            <MetricCard label={t.backtest.sortino} value={fmtNum(result.sortino)} />
-            <MetricCard label={t.backtest.calmar} value={fmtNum(result.calmar)} />
-            <MetricCard label={t.backtest.winRate} value={fmtPct(result.win_rate)} />
-            <MetricCard label={t.backtest.totalTrades} value={String(result.total_trades)} sub={`Comm: ${fmtCurrency(result.total_commission)}`} />
+            <MetricCard label={t.backtest.totalReturn} value={fmtPct(result.total_return)} help={<HelpTip term="total_return" />} />
+            <MetricCard label={t.backtest.annualReturn} value={fmtPct(result.annual_return)} help={<HelpTip term="annual_return" />} />
+            <MetricCard label={t.backtest.sharpe} value={fmtNum(result.sharpe)} help={<HelpTip term="sharpe" />} />
+            <MetricCard label={t.backtest.maxDrawdown} value={fmtPct(result.max_drawdown)} help={<HelpTip term="max_drawdown" />} />
           </div>
 
+          {/* NAV curve — always visible */}
           {result.nav_series && result.nav_series.length > 0 && (
-            <>
-              <div className="flex gap-1 bg-slate-200 dark:bg-surface rounded-xl p-1">
-                {(
-                  [
-                    { key: "nav", label: t.backtest.navCurve },
-                    { key: "drawdown", label: t.backtest.drawdown },
-                    { key: "monthly", label: t.backtest.monthlyReturns },
-                    { key: "trades", label: t.backtest.tradeDetail },
-                  ] as const
-                ).map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setAnalysisTab(tab.key)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      analysisTab === tab.key
-                        ? "bg-blue-600 text-white"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-300 dark:hover:bg-surface-light"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {analysisTab === "nav" && <ResultChart data={result.nav_series} />}
-              {analysisTab === "drawdown" && <DrawdownChart data={result.nav_series} />}
-              {analysisTab === "monthly" && <MonthlyHeatmap data={result.nav_series} />}
-              {analysisTab === "trades" && (
-                result.trades
-                  ? <TradeTable trades={result.trades} />
-                  : <Card className="p-5 text-sm text-slate-500 dark:text-slate-400">{t.common.noData}</Card>
-              )}
-            </>
+            <ResultChart data={result.nav_series} />
           )}
+
+          {/* Advanced metrics — collapsible */}
+          <Card className="overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setDetailOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 dark:hover:bg-surface-light/30 transition-colors"
+            >
+              <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{t.backtest.metric}</span>
+              {detailOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+            </button>
+            {detailOpen && (
+              <div className="px-5 pb-5 space-y-5 border-t border-slate-200 dark:border-surface-light/40">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+                  <MetricCard label={t.backtest.sortino} value={fmtNum(result.sortino)} help={<HelpTip term="sortino" />} />
+                  <MetricCard label={t.backtest.calmar} value={fmtNum(result.calmar)} help={<HelpTip term="calmar" />} />
+                  <MetricCard label={t.backtest.winRate} value={fmtPct(result.win_rate)} help={<HelpTip term="win_rate" />} />
+                  <MetricCard label={t.backtest.totalTrades} value={String(result.total_trades)} sub={`Comm: ${fmtCurrency(result.total_commission)}`} />
+                </div>
+
+                {result.nav_series && result.nav_series.length > 0 && (
+                  <>
+                    <div className="flex gap-1 bg-slate-200 dark:bg-surface rounded-xl p-1">
+                      {(
+                        [
+                          { key: "drawdown", label: t.backtest.drawdown },
+                          { key: "monthly", label: t.backtest.monthlyReturns },
+                          { key: "trades", label: t.backtest.tradeDetail },
+                        ] as const
+                      ).map((tab) => (
+                        <button
+                          key={tab.key}
+                          onClick={() => setAnalysisTab(tab.key)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            analysisTab === tab.key
+                              ? "bg-blue-600 text-white"
+                              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-300 dark:hover:bg-surface-light"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {analysisTab === "drawdown" && <DrawdownChart data={result.nav_series} />}
+                    {analysisTab === "monthly" && <MonthlyHeatmap data={result.nav_series} />}
+                    {analysisTab === "trades" && (
+                      result.trades
+                        ? <TradeTable trades={result.trades} />
+                        : <Card className="p-5 text-sm text-slate-500 dark:text-slate-400">{t.common.noData}</Card>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </Card>
         </>
       )}
 

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useApi, useWs } from "@core/hooks";
 import { fmtCurrency, fmtPrice, fmtDate, fmtTime } from "@core/utils";
-import { Card, StatusBadge, ErrorAlert, TableSkeleton, ConnectionBanner } from "@shared/ui";
+import { Card, StatusBadge, ErrorAlert, TableSkeleton, ConnectionBanner, EmptyState } from "@shared/ui";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
 import { ordersApi } from "./api";
@@ -144,7 +144,11 @@ export function OrdersPage() {
             </tbody>
           </table>
           {(!orderList || orderList.length === 0) && (
-            <p className="text-center text-slate-500 py-8">{t.orders.noOrders}</p>
+            <EmptyState
+              message={t.orders.noOrders}
+              actionLabel={canTrade ? t.orders.newOrder : undefined}
+              onAction={canTrade ? () => setShowForm(true) : undefined}
+            />
           )}
         </Card>
       )}

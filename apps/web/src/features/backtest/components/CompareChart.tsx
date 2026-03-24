@@ -46,7 +46,7 @@ export function CompareChart({ entries }: Props) {
       <p className="text-base font-semibold text-slate-500 dark:text-slate-400 mb-3">{t.backtest.navComparison}</p>
       <ResponsiveContainer width="100%" height={320}>
         <LineChart data={data}>
-          <XAxis dataKey="date" tick={{ fontSize: 11, fill: c.tick }} tickFormatter={(v) => v.slice(5)} />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: c.tick }} tickFormatter={(v: string) => v.slice(0, 10)} minTickGap={40} />
           <YAxis tick={{ fontSize: 11, fill: c.tick }} tickFormatter={(v: number) => `${v.toFixed(0)}%`} />
           <Tooltip
             contentStyle={{ backgroundColor: c.tooltip.bg, border: `1px solid ${c.tooltip.border}`, borderRadius: "8px", fontSize: 12 }}

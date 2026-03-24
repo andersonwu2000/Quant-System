@@ -90,52 +90,42 @@ export function AlphaConfigForm({ onSubmit, running }: Props) {
       </button>
 
       {open && (
-        <form onSubmit={handleSubmit} className="px-5 pb-5 space-y-5 border-t border-slate-100 dark:border-surface-light pt-4">
+        <form onSubmit={handleSubmit} className="px-5 pb-5 space-y-6 border-t border-slate-100 dark:border-surface-light pt-4">
 
-          {/* Factor checkboxes */}
-          <div className="space-y-2">
-            <p className="text-sm text-slate-500 dark:text-slate-400">{t.alpha.factors}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {FACTORS.map(({ name, defaultDirection }) => {
-                const checked = name in selectedFactors;
-                const dir = selectedFactors[name] ?? defaultDirection;
-                return (
-                  <div
-                    key={name}
-                    className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
-                      checked
-                        ? "bg-blue-50 dark:bg-blue-500/10 border-blue-300 dark:border-blue-500/40"
-                        : "bg-slate-50 dark:bg-surface-light border-slate-200 dark:border-surface-light"
-                    }`}
-                    onClick={() => toggleFactor(name, defaultDirection)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {}}
-                        className="accent-blue-500"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {(t.alpha.factorNames as Record<string, string>)[name] ?? name}
-                      </span>
-                    </div>
-                    {checked && (
-                      <button
-                        type="button"
-                        title={dir === 1 ? t.alpha.directionUp : t.alpha.directionDown}
-                        onClick={(e) => { e.stopPropagation(); flipDirection(name); }}
-                        className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors"
-                      >
-                        {dir === 1 ? "↑" : "↓"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          {/* Factor chips */}
+          <div className="flex flex-wrap gap-2">
+            {FACTORS.map(({ name, defaultDirection }) => {
+              const checked = name in selectedFactors;
+              const dir = selectedFactors[name] ?? defaultDirection;
+              const label = (t.alpha.factorNames as Record<string, string>)[name] ?? name;
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => toggleFactor(name, defaultDirection)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                    checked
+                      ? "bg-blue-50 dark:bg-blue-500/10 border-blue-300 dark:border-blue-500/40 text-blue-700 dark:text-blue-300"
+                      : "bg-slate-50 dark:bg-surface-light border-slate-200 dark:border-surface-light text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-500"
+                  }`}
+                >
+                  {label}
+                  {checked && (
+                    <span
+                      role="button"
+                      title={dir === 1 ? t.alpha.directionUp : t.alpha.directionDown}
+                      onClick={(e) => { e.stopPropagation(); flipDirection(name); }}
+                      className="text-xs px-1 py-0.5 rounded bg-blue-200/60 dark:bg-blue-500/20 hover:bg-blue-300/60 dark:hover:bg-blue-500/30 transition-colors"
+                    >
+                      {dir === 1 ? "↑" : "↓"}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
+
+          <hr className="border-slate-100 dark:border-surface-light" />
 
           {/* Universe */}
           <UniversePicker value={universe} onChange={setUniverse} />

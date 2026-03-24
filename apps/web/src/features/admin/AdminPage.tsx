@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useApi } from "@core/hooks";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
-import { DataTable, Modal, useToast } from "@shared/ui";
+import { DataTable, Modal, ErrorAlert, useToast, ConfirmModal } from "@shared/ui";
 import type { Column } from "@shared/ui";
 import type { UserInfo, UserRole } from "@core/api";
 import { fmtDate } from "@core/utils";
@@ -36,6 +36,8 @@ export function AdminPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; variant: "danger" | "warning"; onConfirm: () => void } | null>(null);
 
   const roleDescriptions = t.admin.roleDescriptions as Record<string, string>;
 
@@ -97,7 +99,7 @@ export function AdminPage() {
     }
   };
 
-  const handleDelete = async (user: UserInfo) => {
+  const handleDelete = (user: UserInfo) => {
     // Prevent deleting the last active admin
     if (user.role === "admin" && user.is_active) {
       const activeAdmins = users?.filter((u) => u.role === "admin" && u.is_active) ?? [];
@@ -106,14 +108,21 @@ export function AdminPage() {
         return;
       }
     }
-    if (!window.confirm(t.admin.deleteConfirm)) return;
-    try {
-      await adminApi.deleteUser(user.id);
-      toast("success", t.admin.userDeleted);
-      refresh();
-    } catch (err) {
-      toast("error", translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
-    }
+    setConfirmAction({
+      title: t.admin.deleteUser,
+      message: t.admin.deleteConfirm,
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmAction(null);
+        try {
+          await adminApi.deleteUser(user.id);
+          toast("success", t.admin.userDeleted);
+          refresh();
+        } catch (err) {
+          toast("error", translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
+        }
+      },
+    });
   };
 
   const handleToggleActive = async (user: UserInfo) => {
@@ -167,7 +176,7 @@ export function AdminPage() {
     },
     {
       key: "status",
-      label: "Status",
+      label: t.admin.status,
       render: (row) => (
         <button
           onClick={() => handleToggleActive(row)}
@@ -221,17 +230,15 @@ export function AdminPage() {
 
   if (error) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 max-w-7xl mx-auto">
         <h2 className="text-2xl font-bold">{t.admin.title}</h2>
-        <div className="bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl p-4 text-sm">
-          {error}
-        </div>
+        <ErrorAlert message={error} onRetry={refresh} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">{t.admin.title}</h2>
         <button
@@ -397,6 +404,15 @@ export function AdminPage() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={!!confirmAction}
+        title={confirmAction?.title ?? ""}
+        message={confirmAction?.message ?? ""}
+        variant={confirmAction?.variant ?? "default"}
+        onConfirm={confirmAction?.onConfirm ?? (() => {})}
+        onCancel={() => setConfirmAction(null)}
+      />
 
       {/* Reset Password Modal */}
       <Modal open={!!resetUser} onClose={() => setResetUser(null)} title={t.admin.resetPassword} closeLabel={t.common.close}>

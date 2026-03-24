@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useApi, useWs } from "@core/hooks";
 import { fmtDate, fmtTime, fmtNum, translateApiError } from "@core/utils";
-import { Card, StatusBadge, ErrorAlert, InfoTooltip, useToast } from "@shared/ui";
+import { Card, StatusBadge, ErrorAlert, InfoTooltip, useToast, Skeleton, ConfirmModal } from "@shared/ui";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
 import { ShieldOff } from "lucide-react";
@@ -37,6 +37,7 @@ export function RiskPage() {
   const [killMsg, setKillMsg] = useState<string | null>(null);
   const [killLoading, setKillLoading] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; variant: "danger" | "warning"; onConfirm: () => void } | null>(null);
 
   useWs("alerts", useCallback((msg: unknown) => {
     const a = msg as RiskAlert;
@@ -45,38 +46,51 @@ export function RiskPage() {
     }
   }, [setAlerts]));
 
-  const handleToggle = async (name: string, enabled: boolean) => {
+  const handleToggle = (name: string, enabled: boolean) => {
     const action = enabled ? t.risk.disableRule : t.risk.enableRule;
-    if (!window.confirm(`${action}: ${name}?`)) return;
-
-    setToggling(name);
-    try {
-      await riskApi.toggleRule(name, !enabled);
-      refreshRules();
-      toast("success", t.toast.ruleSaved);
-    } catch {
-      toast("error", t.common.requestFailed);
-    } finally {
-      setToggling(null);
-    }
+    setConfirmAction({
+      title: action,
+      message: `${action}: ${name}?`,
+      variant: "warning",
+      onConfirm: async () => {
+        setConfirmAction(null);
+        setToggling(name);
+        try {
+          await riskApi.toggleRule(name, !enabled);
+          refreshRules();
+          toast("success", t.toast.ruleSaved);
+        } catch {
+          toast("error", t.common.requestFailed);
+        } finally {
+          setToggling(null);
+        }
+      },
+    });
   };
 
-  const handleKill = async () => {
-    if (!confirm(t.risk.killConfirm)) return;
-    setKillLoading(true);
-    try {
-      const resp = await riskApi.killSwitch();
-      setKillMsg(resp.message);
-      toast("success", t.toast.killSwitchActivated);
-    } catch (err) {
-      setKillMsg(translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
-    } finally {
-      setKillLoading(false);
-    }
+  const handleKill = () => {
+    setConfirmAction({
+      title: t.risk.killSwitch,
+      message: t.risk.killConfirm,
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmAction(null);
+        setKillLoading(true);
+        try {
+          const resp = await riskApi.killSwitch();
+          setKillMsg(resp.message);
+          toast("success", t.toast.killSwitchActivated);
+        } catch (err) {
+          setKillMsg(translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
+        } finally {
+          setKillLoading(false);
+        }
+      },
+    });
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">{t.risk.title}</h2>
         {canManageRisk && (
@@ -89,14 +103,22 @@ export function RiskPage() {
         )}
       </div>
 
-      {killMsg && <div className="bg-red-500/10 text-red-400 rounded-xl p-4 text-sm">{killMsg}</div>}
+      {killMsg && <ErrorAlert message={killMsg} />}
 
       {rulesError && <ErrorAlert message={rulesError} onRetry={refreshRules} />}
-      {!rulesError && (
+      {!rulesError && !rules && (
+        <Card className="p-5 space-y-3">
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </Card>
+      )}
+      {!rulesError && rules && (
         <Card className="p-5">
           <p className="text-base font-semibold text-slate-500 dark:text-slate-400 mb-3">{t.risk.riskRules}</p>
           <div className="space-y-2">
-            {rules?.map((r) => {
+            {rules.map((r) => {
               const descKey = getRuleDescKey(r.name);
               const description = descKey ? t.risk.ruleDescriptions[descKey] : null;
               return (
@@ -174,6 +196,14 @@ export function RiskPage() {
           </div>
         </Card>
       )}
+      <ConfirmModal
+        open={!!confirmAction}
+        title={confirmAction?.title ?? ""}
+        message={confirmAction?.message ?? ""}
+        variant={confirmAction?.variant ?? "default"}
+        onConfirm={confirmAction?.onConfirm ?? (() => {})}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

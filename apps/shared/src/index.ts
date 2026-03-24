@@ -31,6 +31,18 @@ export type {
   TacticalResponse,
   TacticalWeightItem,
   MacroSignalItem,
+  ExecutionStatus,
+  PaperTradingStatus,
+  MarketHoursStatus,
+  ReconcileResult,
+  ReconcileDiff,
+  QueuedOrdersResponse,
+  PortfolioListItem,
+  SavedPortfolio,
+  PortfolioCreateRequest,
+  RebalancePreviewRequest,
+  SuggestedTrade,
+  RebalancePreviewResponse,
 } from "./types";
 
 // API client
@@ -43,7 +55,7 @@ export { WSManager, initWs } from "./api/ws";
 export type { Channel } from "./api/ws";
 
 // Endpoints
-export { auth, system, portfolio, strategies, orders, backtest, risk, alpha, allocation } from "./api/endpoints";
+export { auth, system, portfolio, strategies, orders, backtest, risk, alpha, allocation, execution } from "./api/endpoints";
 
 // Hooks / utilities
 export { pollBacktestResult } from "./hooks/pollBacktestResult";
