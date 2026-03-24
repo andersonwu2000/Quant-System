@@ -453,12 +453,12 @@ class BacktestEngine:
         else:
             return portfolio, approved, bool(approved)
 
-    @staticmethod
-    def _snap_nav(portfolio: Portfolio, bar_date: datetime) -> dict[str, Any]:
+    def _snap_nav(self, portfolio: Portfolio, bar_date: datetime) -> dict[str, Any]:
         """Create a NAV history record."""
+        nav = portfolio.nav_in_base(self._fx_rates) if self._fx_rates else portfolio.nav
         return {
             "date": bar_date,
-            "nav": float(portfolio.nav),
+            "nav": float(nav),
             "cash": float(portfolio.cash),
             "positions_count": len(portfolio.positions),
             "gross_exposure": float(portfolio.gross_exposure),

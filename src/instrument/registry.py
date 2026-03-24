@@ -207,7 +207,6 @@ def _dict_to_instrument(d: dict[str, Any]) -> Instrument:
         tick_size=Decimal(str(d.get("tick_size", "0.01"))),
         lot_size=int(d.get("lot_size", 1)),
         margin_rate=Decimal(str(d["margin_rate"])) if d.get("margin_rate") else None,
-        expiry=None,
         commission_rate=Decimal(str(d.get("commission_rate", "0.001425"))),
         tax_rate=Decimal(str(d.get("tax_rate", "0"))),
         sector=d.get("sector", ""),
