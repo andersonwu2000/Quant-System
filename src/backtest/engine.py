@@ -18,10 +18,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable, Literal
 
-
-class BacktestCancelled(Exception):
-    """Raised when a backtest is cancelled via cancel_event."""
-
 import numpy as np
 import pandas as pd
 
@@ -33,11 +29,15 @@ from src.data.sources import create_feed, create_fundamentals
 from src.domain.models import Instrument, Order, Portfolio, Side
 from src.execution.oms import apply_trades
 from src.execution.sim import SimBroker, SimConfig
+from src.instrument.registry import InstrumentRegistry
 from src.risk.engine import RiskEngine
 from src.risk.rules import MarketState
 from src.strategy.base import Context, Strategy
-from src.instrument.registry import InstrumentRegistry
 from src.strategy.engine import weights_to_orders
+
+
+class BacktestCancelled(Exception):
+    """Raised when a backtest is cancelled via cancel_event."""
 
 logger = logging.getLogger(__name__)
 
