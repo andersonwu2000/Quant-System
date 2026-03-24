@@ -1,0 +1,4 @@
+[install]
+# Use file copies instead of symlinks
+# Fixes Windows ninja/CMake build issues with Bun's symlink structure
+backend = "copyfile"

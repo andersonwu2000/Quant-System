@@ -10,3 +10,8 @@ dist/
 web-build/
 .env
 .env.local
+
+# Native build artifacts (expo prebuild)
+android/
+ios/
+.expo-native/
