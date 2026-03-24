@@ -30,6 +30,7 @@ export type {
   AlphaSummary,
   AlphaReport,
   AlphaFactorSpec,
+  FactorName,
   FactorReport,
   ICResult,
   QuantileReturn,

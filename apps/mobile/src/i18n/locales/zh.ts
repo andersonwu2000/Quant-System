@@ -126,6 +126,11 @@ export const zh: Translations = {
   // alpha
   alpha: {
     title: "Alpha 研究",
+    factors: "因子",
+    run: "執行分析",
+    running: "分析中…",
+    timedOut: "分析逾時，請再試一次。",
+    failed: "分析失敗。",
     noResult: "執行分析以查看結果",
     factorSummary: "因子摘要",
     factor: "因子",

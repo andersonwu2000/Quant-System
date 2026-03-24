@@ -124,6 +124,11 @@ export const en = {
   // alpha
   alpha: {
     title: "Alpha Research",
+    factors: "Factors",
+    run: "Run Analysis",
+    running: "Running…",
+    timedOut: "Analysis timed out. Please try again.",
+    failed: "Analysis failed.",
     noResult: "Run an analysis to see results",
     factorSummary: "Factor Summary",
     factor: "Factor",

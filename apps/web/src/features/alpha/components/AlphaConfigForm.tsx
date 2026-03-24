@@ -24,7 +24,7 @@ interface Props {
 export function AlphaConfigForm({ onSubmit, running }: Props) {
   const { t } = useT();
   const [open, setOpen] = useState(true);
-  const [selectedFactors, setSelectedFactors] = useState<Record<FactorName, 1 | -1>>({
+  const [selectedFactors, setSelectedFactors] = useState<Partial<Record<FactorName, 1 | -1>>>({
     momentum: 1,
     mean_reversion: -1,
   });
@@ -61,9 +61,9 @@ export function AlphaConfigForm({ onSubmit, running }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-    const factors: AlphaFactorSpec[] = Object.entries(selectedFactors).map(
-      ([name, direction]) => ({ name: name as FactorName, direction })
-    );
+    const factors: AlphaFactorSpec[] = (
+      Object.entries(selectedFactors) as [FactorName, 1 | -1][]
+    ).map(([name, direction]) => ({ name, direction }));
     onSubmit({ factors, universe, start, end, neutralize_method: neutralize, n_quantiles: nQuantiles, holding_period: holdingPeriod });
     setOpen(false);
   };
