@@ -6,7 +6,6 @@ from decimal import Decimal
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.portfolio.currency import CurrencyHedger, HedgeConfig, HedgeRecommendation
 from src.portfolio.optimizer import (

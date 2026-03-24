@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.allocation.cross_asset import CrossAssetConfig, CrossAssetSignals
 from src.allocation.macro_factors import MacroFactorConfig, MacroFactorModel, MacroSignals
@@ -235,10 +234,7 @@ class TestTacticalEngine:
             cross_asset_signals={ac: 3.0 for ac in strategic},
             regime=MarketRegime.BULL,
         )
-        for ac, w in result.items():
-            base = strategic.get(ac, 0.0)
-            # After normalization the absolute deviation may shift slightly,
-            # but pre-normalization the deviation is clamped
+        for w in result.values():
             assert w > 0  # min_weight enforced
 
     def test_min_weight_enforced(self):
