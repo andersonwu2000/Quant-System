@@ -1,10 +1,10 @@
 # 開發計畫書
 
-> **版本**: v1.1
+> **版本**: v1.2
 > **日期**: 2026-03-24
-> **對應追蹤報告**: `docs/dev/SYSTEM_STATUS_REPORT.md` v1.1
+> **對應追蹤報告**: `docs/dev/SYSTEM_STATUS_REPORT.md` v1.2
 > **目標**: 建立真實的 Alpha 研究能力與實盤交易能力
-> **第一階段狀態**: ✅ 已完成 (2026-03-24) — 8 模組, ~1,300 LOC, 73 測試全部通過
+> **第一階段狀態**: ⚠️ 部分完成 — Tasks 1–6 完整通過 (56 測試)；Tasks 7–8 因 `attribution.py` / `regime.py` 尚未實作導致 import 失敗，pipeline 測試無法執行；Tasks 9–10 為新增待辦
 
 ---
 
@@ -16,6 +16,9 @@
 4. [第三階段：穩固與商業化](#4-第三階段穩固與商業化)
 5. [技術規格](#5-技術規格)
 6. [風險與決策紀錄](#6-風險與決策紀錄)
+   - 6.1 技術風險
+   - 6.2 已知架構缺陷
+   - 6.3 架構決策紀錄
 
 ---
 
@@ -59,41 +62,65 @@
 
 ### 2.1 總覽
 
-在 `src/alpha/` 建立 7 個模組 + 1 個策略適配器，形成從因子發現到組合建構的完整 pipeline。
+在 `src/alpha/` 建立 10 個模組（原計劃 8 個 + 擴充 2 個），形成從因子發現到組合建構的完整 pipeline。
+
+**完成狀態**:
+
+| Task | 模組 | 狀態 | 測試 |
+|------|------|------|------|
+| 1 | `universe.py` | ✅ 完成 | 8 通過 |
+| 2 | `neutralize.py` | ✅ 完成 | 9 通過 |
+| 3 | `cross_section.py` | ✅ 完成 | 7 通過 |
+| 4 | `turnover.py` | ✅ 完成 | 10 通過 |
+| 5 | `orthogonalize.py` | ✅ 完成 | 9 通過 |
+| 6 | `construction.py` | ✅ 完成 | 11 通過 |
+| 7 | `pipeline.py` | ⚠️ import 失敗 | 18 無法收集 |
+| 8 | `strategy.py` | ⚠️ import 失敗（依賴 pipeline） | — |
+| 9 | `regime.py` | ❌ 尚未實作 | — |
+| 10 | `attribution.py` | ❌ 尚未實作 | — |
+
+> **根本原因**: `pipeline.py` 在頂層引用了 `src.alpha.regime` 與 `src.alpha.attribution`，但這兩個模組尚未建立，導致整個 pipeline import 鏈斷裂。`AlphaStrategy` 與 `registry.py` 中的 `"alpha"` 策略在呼叫時同樣會崩潰。
 
 **依賴關係圖：**
 
 ```
                          ┌────────────────────┐
-                         │  #1 universe.py    │  (無依賴，首先開發)
+                         │  #1 universe.py    │  ✅
                          │  股票池篩選         │
                          └────────┬───────────┘
                                   │
                          ┌────────▼───────────┐
-                         │  #2 neutralize.py  │
+                         │  #2 neutralize.py  │  ✅
                          │  因子中性化         │
                          └──┬─────┬────────┬──┘
                             │     │        │
                    ┌────────▼─┐ ┌─▼──────┐ ┌▼────────────┐
                    │#3 cross_ │ │#4 turn-│ │#5 orthog-   │
-                   │section.py│ │over.py │ │onalize.py   │
+                   │section.py│ │over.py │ │onalize.py   │  ✅✅✅
                    │分位數回測 │ │換手率   │ │因子正交化    │
                    └──────────┘ └───┬────┘ └─────────────┘
                                     │
                            ┌────────▼────────┐
-                           │#6 construction. │
-                           │py               │
-                           │成本感知組合建構   │
+                           │#6 construction. │  ✅
+                           │py 成本感知建構   │
                            └────────┬────────┘
                                     │
+               ┌────────────────────┼────────────────────┐
+               │                    │                    │
+      ┌────────▼────────┐  ┌────────▼────────┐          │
+      │ #9 regime.py    │  │ #10 attribution │  ❌ 待實作
+      │ 市場狀態分類     │  │ .py 因子歸因     │
+      └────────┬────────┘  └────────┬────────┘
+               └────────────────────┘
+                                    │
                            ┌────────▼────────┐
-                           │ #7 pipeline.py  │
+                           │ #7 pipeline.py  │  ⚠️ 依賴缺失
                            │ Alpha Pipeline  │
                            └────────┬────────┘
                                     │
                            ┌────────▼────────┐
-                           │ #8 Alpha        │
-                           │ Strategy 適配器  │
+                           │ #8 strategy.py  │  ⚠️ 依賴缺失
+                           │ AlphaStrategy   │
                            └─────────────────┘
 ```
 
@@ -587,65 +614,159 @@ python -m src.cli.main backtest --strategy alpha --config alpha_config.yaml
 POST /api/v1/backtest { "strategy": "alpha", "config": { ... } }
 ```
 
+**已知缺陷**: `on_bar()` 第 75 行直接存取 `ctx._fundamentals`（私有屬性），應改為公開 API `ctx.sector(sym)`。
+
+---
+
+### Task 9: 市場狀態分類（Regime Detection）
+
+**檔案**: `src/alpha/regime.py`
+**狀態**: ❌ 待實作（`pipeline.py` 已引用，必須先建立才能修復 import）
+**依賴**: Task 2（中性化因子）、Task 3（分位數回測）
+
+**目的**: 分析因子在不同市場狀態（多頭/空頭/震盪）下的表現差異。同一個因子在牛市和熊市的 IC 可能截然不同，Regime 分析幫助判斷何時應增減倉位。
+
+**介面設計**:
+
+```python
+from enum import Enum
+
+class MarketRegime(Enum):
+    BULL = "bull"        # 多頭（月報酬 > 閾值）
+    BEAR = "bear"        # 空頭（月報酬 < -閾值）
+    SIDEWAYS = "sideways"  # 震盪
+
+@dataclass
+class RegimeICResult:
+    factor_name: str
+    ic_by_regime: dict[MarketRegime, ICResult]  # 各狀態的 IC
+    regime_counts: dict[MarketRegime, int]      # 各狀態的樣本數
+
+def classify_regimes(
+    market_returns: pd.Series,       # 市場指數日報酬
+    bull_threshold: float = 0.03,    # 月報酬 > 3% = 多頭
+    bear_threshold: float = -0.03,   # 月報酬 < -3% = 空頭
+) -> pd.Series:
+    """回傳每日的市場狀態 (MarketRegime)。"""
+
+def compute_regime_ic(
+    factor_values: pd.DataFrame,
+    forward_returns: pd.DataFrame,
+    regime_series: pd.Series,
+) -> RegimeICResult:
+    """計算每個市場狀態下的條件 IC。"""
+```
+
+**測試要點**:
+- Regime 分類邊界條件
+- 空 Regime 時不崩潰
+- IC 計算與無 Regime 版本一致
+
+---
+
+### Task 10: 因子報酬歸因（Factor Attribution）
+
+**檔案**: `src/alpha/attribution.py`
+**狀態**: ❌ 待實作（`pipeline.py` 已引用，必須先建立才能修復 import）
+**依賴**: Task 3（分位數回測）、Task 6（組合建構）
+
+**目的**: 分解組合報酬中各因子的貢獻度。當組合持有多個因子時，需要知道哪個因子貢獻了多少報酬，哪個因子在拖累績效。
+
+**介面設計**:
+
+```python
+@dataclass
+class AttributionResult:
+    factor_contributions: dict[str, float]  # 各因子的報酬貢獻
+    residual_return: float                  # 無法被因子解釋的殘差
+    total_return: float                     # 組合總報酬
+
+def attribute_returns(
+    portfolio_returns: pd.Series,           # 組合日報酬
+    factor_returns: dict[str, pd.Series],   # 各因子的日報酬
+) -> AttributionResult:
+    """以 OLS 回歸分解組合報酬至各因子貢獻。"""
+```
+
+**測試要點**:
+- 各因子貢獻加上殘差 = 總報酬（數值精度）
+- 單因子情況下驗證正確性
+- 高共線因子不崩潰
+
 ---
 
 ## 3. 第二階段：實盤交易能力
 
-**前置條件**: 第一階段完成，已有經過驗證的 Alpha 策略。
+**前置條件**: 第一階段全部完成（Tasks 1–10 通過），已有經過驗證的 Alpha 策略。
 
-### Task 9: 券商 API 對接
+> **券商評估**: 詳細的券商 API 比較請參閱 `docs/dev/BROKER_API_EVALUATION.md`（2026-03-24 更新，涵蓋 10 家券商含台新證券）。
 
-**目標**: 實作 `Broker` 介面 (`src/execution/broker.py`)，對接至少一家台灣券商。
+### Task 11: 券商 API 對接
 
-**候選券商**:
+**目標**: 實作 `BrokerAdapter` 介面 (`src/execution/broker.py`)，對接至少一家台灣券商。
 
-| 券商 | API | 優缺點 |
-|------|-----|--------|
-| 永豐 Shioaji | `shioaji` Python SDK | 社群最活躍，文件完整，支援期貨 |
-| 元大 | 非官方 API | 市佔率高但 API 支援差 |
-| 富邦 | fugle-trade SDK | 官方 SDK，但功能較少 |
+**候選券商評估摘要**:
 
-**建議**: 以永豐 Shioaji 為首選。
+| 券商 | API | Python | 跨平台 | 模擬 | 整合難度 |
+|------|-----|:------:|:------:|:----:|:-------:|
+| **永豐 Shioaji** | `pip install shioaji` | ✅ 原生 | ✅ Win/Linux/Mac | ✅ `simulation=True` | 低 |
+| **富邦 Neo API** | .whl 下載 | ✅ 原生 | ✅ Win/Linux/Mac | ❓ | 中 |
+| 元富 MasterLink | 官網下載 | ✅ 原生 | ❌ Win only | ✅ | 中高 |
+| 元大 Yuanta | COM/DLL | ⚠️ COM | ❌ Win only | ❓ | 高 |
+| 台新 TSSCO | DLL | ❌ 無 | ❌ Win only | ❌ | 極高 |
+
+**決定**: 以**永豐金 Shioaji** 為第一優先，富邦 Neo 作為備援。
+
+**前置作業（需人工完成）**:
+1. 開立永豐金證券帳戶
+2. 線上簽署「API 服務申請暨委託交易風險預告書」
+3. 匯出 CA 電子憑證（.pfx 格式）
+4. `pip install shioaji`，`simulation=True` 確認連線
 
 **實作範圍**:
-- `ShioajiBroker(Broker)`: 實作 `submit_order()`, `cancel_order()`, `get_positions()`, `get_account_info()`
+- `ShioajiBroker(BrokerAdapter)`: 實作 `submit_order()`, `cancel_order()`, `query_positions()`, `query_account()`, `is_connected()`
+- Shioaji callback 接入 Order 狀態機（SUBMITTED → FILLED/REJECTED）
+- `AppState` 加入 mode-aware 路由（`QUANT_MODE=paper` → ShioajiBroker with `simulation=True`，`QUANT_MODE=live` → ShioajiBroker with `simulation=False`）
 - 斷線重連機制
-- 下單前的風控攔截（復用現有 RiskEngine）
 - 成交回報推送至 WebSocket `orders` 頻道
 
-### Task 10: 即時行情串流
+### Task 12: 即時行情串流
 
-**目標**: 接入即時報價，填補 WebSocket `market` 頻道。
+**目標**: 接入即時報價，填補 WebSocket `market` 頻道（目前為空殼，`ws.py:80` 有 TODO 標記）。
 
 **實作方式**:
-- 券商 API 通常附帶即時行情（Shioaji 支援 tick/quote 訂閱）
+- Shioaji `api.quote.subscribe()` 訂閱 tick/quote
 - 實作 `RealtimeFeed(DataFeed)` 介面，在 `market` WebSocket 頻道廣播
 - 前端 `MarketTicker` 元件已就位，只需接入數據
 
-### Task 11: Paper Trading
+**依賴**: Task 11（需要 Shioaji 連線）
 
-**目標**: 完整的紙上交易循環。
+### Task 13: Paper Trading
+
+**目標**: 完整的紙上交易循環，使用真實行情 + 模擬撮合。
 
 **流程**:
-1. 排程器定時觸發（如每日 9:00）
+1. 排程器定時觸發（每日 08:55，台股開盤前）
 2. 取得最新行情 → 呼叫 Alpha Strategy → 產出目標權重
-3. `weights_to_orders()` → RiskEngine 檢查 → 模擬執行（SimBroker + 即時價格）
+3. `weights_to_orders()` → RiskEngine 檢查 → SimBroker 模擬執行（使用即時價格）
 4. 更新 Portfolio → 推送通知 → 記錄交易日誌
 5. 前端即時顯示持倉變化
 
-**與 Live Trading 的差異**: 使用 SimBroker 而非真實券商，但數據和信號流程完全一致。
+**與 Live Trading 的差異**: `QUANT_MODE=paper` 使用 `ShioajiBroker(simulation=True)`，數據和信號流程與 live 完全一致。
 
-### Task 12: 通知事件串接
+**驗收標準**: 連跑 4 週 paper trading，持倉正確、NAV 追蹤無誤、通知正常發送。
 
-**目標**: 將交易/再平衡/風控事件接入已建好的通知系統。
+### Task 14: 通知事件串接
+
+**目標**: 將交易/再平衡/風控事件接入已建好的通知系統（Discord/LINE/Telegram 已實作，尚未與事件串接）。
 
 **事件觸發點**:
 - 策略產出新權重 → 通知「再平衡建議」
 - 訂單成交 → 通知「成交回報」
 - Kill Switch 觸發 → 通知「熔斷告警」
-- 每日收盤 → 通知「持倉快照」
+- 每日收盤 → 通知「持倉快照 + 日損益」
 
-### Task 13: HTTPS + 安全
+### Task 15: HTTPS + 安全
 
 **目標**: 生產環境安全配置。
 
@@ -728,13 +849,23 @@ POST /api/v1/backtest { "strategy": "alpha", "config": { ... } }
 | 存活者偏差 | 回測只看到活下來的股票 | UniverseFilter 按日期篩選，不使用未來股票池 |
 | 前瞻偏差 | 基本面數據可能有發佈延遲 | FinMindFundamentals 的 point-in-time 查詢已考慮發佈日 |
 
-### 6.2 架構決策紀錄
+### 6.2 已知架構缺陷
+
+| 位置 | 問題 | 嚴重度 | 修法 |
+|------|------|:------:|------|
+| `src/alpha/pipeline.py:15–19` | import `attribution` / `regime` 但模組未建立，整條 pipeline import 鏈斷裂 | 🔴 P0 | 先實作 Task 9/10，再解鎖 Task 7/8 |
+| `src/alpha/strategy.py:75` | `ctx._fundamentals` 直接存取私有屬性，繞過 Context 公開介面 | 🟡 P2 | 改為 `ctx.sector(sym)` 公開 API |
+| `src/api/ws.py:80` | `market` 頻道 TODO 標記，無任何即時資料輸入 | 🔴 P0 | Task 12 實作後解決 |
+
+### 6.3 架構決策紀錄
 
 | 日期 | 決策 | 原因 | 替代方案 |
 |------|------|------|---------|
 | 2026-03-24 | Alpha 層建為 `src/alpha/`，不合併入 `src/strategy/` | Alpha 研究是獨立關注點，不應污染策略引擎的簡潔性 | 擴展 `src/strategy/research.py` — 否決，因為 research.py 會膨脹到不可維護 |
 | 2026-03-24 | 保留現有 `optimizer.py`，新增 `construction.py` | 簡單策略仍可用等權重/信號加權，不強制所有策略走 Alpha Pipeline | 替換 optimizer — 否決，避免破壞現有策略 |
 | 2026-03-24 | AlphaStrategy 作為 Strategy 的子類 | 零成本接入現有回測/API/風控 | 獨立的 Alpha 回測引擎 — 否決，重複造輪子 |
+| 2026-03-24 | 券商首選永豐金 Shioaji | Python 原生 SDK、跨平台、simulation=True 無縫切換、社群最活躍；詳見 `BROKER_API_EVALUATION.md` | 富邦 Neo — 保留為備援 |
+| 2026-03-24 | Paper Trading 使用 `ShioajiBroker(simulation=True)` 而非 SimBroker | 與 live 流程完全一致，僅切換 simulation flag，減少「模擬環境通過但實盤出問題」的風險 | SimBroker paper — 否決，流程分歧過大 |
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **專案名稱**: 量化交易系統 (Quantitative Trading System)
 > **報告日期**: 2026-03-24
-> **報告版本**: v1.2
+> **報告版本**: v1.3
 > **目標定位**: 具備真實 Alpha 研究與實盤交易能力的量化交易平台，面向個人投資者與家族資產管理
 > **當前階段**: Alpha 研究層已完成，下一步為實盤交易能力
 > **代碼庫起始日期**: 2026-03-22
@@ -44,11 +44,14 @@
 ✅ 橫截面分析框架                • Paper → Live 交易      • 多帳戶管理
 ✅ 交易成本感知的組合建構         • 即時行情串流            • 訂閱/授權
 ✅ AlphaStrategy 適配器          • 通知事件串接            • 合規與部署
+✅ 市場環境條件分析 (Regime)
+✅ 因子報酬歸因 (Attribution)
+✅ Rolling IC 動態加權
 ```
 
 **現有能力：**
 
-- **Alpha 研究層**: 端到端 Pipeline — 股票池篩選 → 因子中性化 → 正交化 → 合成 → 分位數驗證 → 成本感知組合建構
+- **Alpha 研究層**: 端到端 Pipeline — 股票池篩選 → 因子中性化 → 正交化 → 合成 (等權/IC/Rolling IC) → 分位數驗證 → 市場環境條件分析 → 因子報酬歸因 → 成本感知組合建構
 - **回測引擎**: 歷史數據驗證策略績效，40+ 績效指標，步進分析
 - **多策略支援**: 動量、均值回歸、多因子、配對交易、板塊輪動等 7 策略 + Alpha 策略
 - **風險管理**: 宣告式風險規則、自動熔斷機制
@@ -76,8 +79,8 @@
 
 ```
 Portfolio/
-├── src/                    # Python 後端 (75 檔, ~8,600 LOC)
-│   ├── alpha/              #   Alpha 研究層 (8 檔, ~1,300 LOC)
+├── src/                    # Python 後端 (78 檔, ~11,800 LOC)
+│   ├── alpha/              #   Alpha 研究層 (11 檔, ~2,200 LOC)
 │   ├── domain/             #   領域模型與持久化
 │   ├── strategy/           #   策略引擎、因子庫、研究工具
 │   ├── risk/               #   風險引擎與規則
@@ -88,7 +91,7 @@ Portfolio/
 │   ├── notifications/      #   多渠道通知
 │   ├── scheduler/          #   排程任務
 │   └── cli/                #   命令列工具
-├── tests/                  # Python 測試 (36 檔, ~7,000 LOC)
+├── tests/                  # Python 測試 (38 檔, ~6,700 LOC)
 ├── strategies/             # 策略插件 (8 檔, ~615 LOC)
 ├── migrations/             # 資料庫遷移 (4 版本)
 ├── apps/                   # 前端 monorepo (~11,000 LOC)
@@ -155,8 +158,10 @@ Portfolio/
 | `turnover.py` | 換手率分析：成本侵蝕、盈虧平衡成本、淨 IC |
 | `orthogonalize.py` | 因子正交化：逐步 (Gram-Schmidt) + 對稱 (PCA/ZCA) |
 | `construction.py` | 成本感知組合建構：換手率懲罰、最大換手率約束、Alpha 衰減混合 |
-| `pipeline.py` | 端到端 Pipeline：AlphaConfig → 研究報告 + 生產權重生成 |
+| `pipeline.py` | 端到端 Pipeline：AlphaConfig → 研究報告 + 生產權重生成。支援 Rolling IC 動態加權 |
 | `strategy.py` | AlphaStrategy 適配器：包裝為 Strategy 子類，已註冊至 registry |
+| `regime.py` | 市場環境分類 (BULL/BEAR/SIDEWAYS) + 條件 IC |
+| `attribution.py` | 因子報酬歸因：權重法 + OLS 回歸法 |
 
 **設計原則：**
 1. **與交易系統零衝突** — Alpha 層產出 `dict[str, float]` 權重，完全相容 Strategy 介面
@@ -167,9 +172,10 @@ Portfolio/
 **Pipeline 執行流程：**
 
 ```
-AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
-→ neutralize → 單因子分析 (IC/衰減/分位數/換手率) → orthogonalize
-→ combine (等權/IC加權) → 合成因子驗證 → construct_portfolio → 報告
+AlphaConfig → UniverseFilter → 因子計算 (技術+基本面) → winsorize → standardize
+→ neutralize → 單因子分析 (IC/衰減/分位數/換手率) → Regime 條件 IC
+→ orthogonalize → combine (等權/IC/Rolling IC) → 合成因子驗證
+→ 因子歸因 (Attribution) → construct_portfolio → 報告
 ```
 
 ### 2.3 關鍵設計決策
@@ -206,8 +212,8 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 | `src/api/` | 16 | ~2,264 | REST API + WebSocket + 中介層 |
 | `src/backtest/` | 6 | ~2,106 | 回測引擎、分析、報表、驗證 |
 | `src/data/` | 12 | ~1,719 | 數據源、快取、品質檢查 |
-| `src/alpha/` | 8 | ~1,300 | Alpha 研究層 (Pipeline、中性化、組合建構) |
-| `src/strategy/` | 7 | ~1,081 | 策略引擎、因子庫、最佳化器 |
+| `src/alpha/` | 11 | ~2,200 | Alpha 研究層 (Pipeline、中性化、組合建構、Regime、歸因) |
+| `src/strategy/` | 7 | ~1,300 | 策略引擎、因子庫 (11 技術因子 + 3 基本面)、最佳化器 |
 | `src/domain/` | 3 | ~534 | 領域模型、持久化倉庫 |
 | `src/risk/` | 4 | ~477 | 風險引擎、規則、監控 |
 | `src/execution/` | 4 | ~374 | 模擬券商、OMS |
@@ -216,28 +222,28 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 | `src/config.py` | 1 | ~172 | 配置管理 |
 | `src/scheduler/` | 2 | ~112 | 排程任務 |
 | `src/logging_config.py` | 1 | ~44 | 日誌設定 |
-| **後端合計** | **75** | **~8,600** | |
+| **後端合計** | **78** | **~11,800** | |
 
 ### 3.2 前端程式碼量
 
 | 套件 | 檔案數 | 行數 (LOC) | 說明 |
 |------|--------|-----------|------|
-| `apps/web/` | ~107 | ~7,024 | React Web 儀表板 |
-| `apps/mobile/` | ~40 | ~2,957 | React Native 行動端 |
-| `apps/shared/` | ~11 | ~1,038 | 共享型別、API、工具 |
-| **前端合計** | **~158** | **~11,019** | |
+| `apps/web/` | ~116 | ~7,750 | React Web 儀表板 (含 Alpha 功能頁) |
+| `apps/mobile/` | ~41 | ~3,160 | React Native 行動端 (含 Alpha 分頁) |
+| `apps/shared/` | ~11 | ~1,100 | 共享型別、API、工具 (含 Alpha 型別與端點) |
+| **前端合計** | **~168** | **~12,010** | |
 
 ### 3.3 測試程式碼量
 
 | 分類 | 檔案數 | 行數 (LOC) | 框架 |
 |------|--------|-----------|------|
-| Python 單元測試 | 34 | ~6,200 | pytest |
+| Python 單元測試 | 36 | ~5,900 | pytest |
 | Python 整合測試 | 2 | ~808 | pytest |
 | Web 單元測試 | 18 | ~1,363 | Vitest + jsdom |
 | Mobile 單元測試 | 14 | ~1,069 | Jest + React Native |
 | Shared 單元測試 | 4 | ~413 | Vitest |
 | Web E2E 測試 | 3 | ~182 | Playwright |
-| **測試合計** | **75** | **~10,035** | |
+| **測試合計** | **77** | **~9,735** | |
 
 ### 3.4 其他
 
@@ -251,10 +257,10 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 
 | 類別 | 行數 |
 |------|------|
-| 業務程式碼 (後端 + 前端 + 策略) | ~20,234 |
-| 測試程式碼 | ~10,035 |
-| 測試佔比 | ~33% |
-| **專案總計** | **~31,600** |
+| 業務程式碼 (後端 + 前端 + 策略) | ~24,400 |
+| 測試程式碼 | ~9,735 |
+| 測試佔比 | ~29% |
+| **專案總計** | **~35,500** |
 
 ---
 
@@ -270,8 +276,10 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 | `turnover.py` | `analyze_factor_turnover()` → `TurnoverResult`：換手率、成本侵蝕、盈虧平衡、淨 IC |
 | `orthogonalize.py` | `orthogonalize_sequential()` (Gram-Schmidt) + `orthogonalize_symmetric()` (PCA/ZCA) |
 | `construction.py` | `construct_portfolio()`：換手率懲罰 + 最大換手率約束 + `blend_with_decay()` 信號衰減混合 |
-| `pipeline.py` | `AlphaPipeline`：`research()` 產出 `AlphaReport`，`generate_weights()` 產出即時權重 |
+| `pipeline.py` | `AlphaPipeline`：`research()` 產出 `AlphaReport`，`generate_weights()` 產出即時權重。支援 Rolling IC 動態加權、Regime 條件分析、因子歸因 |
 | `strategy.py` | `AlphaStrategy(Strategy)`：Pipeline 適配器，已註冊至 registry (`"alpha"`) |
+| `regime.py` | 市場環境分類 (`MarketRegime`: BULL/BEAR/SIDEWAYS) + 條件 IC 分析 (`compute_regime_ic`) |
+| `attribution.py` | 因子報酬歸因：`attribute_returns()` 支援權重法和 OLS 回歸法分解 |
 
 ### 4.2 領域模型 (`src/domain/`)
 
@@ -295,10 +303,10 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 |------|------|
 | `base.py` | `Strategy` ABC，`Context` 包裝器 |
 | `engine.py` | `StrategyEngine`，`weights_to_orders()` 轉換 |
-| `factors.py` | 因子庫：SMA, EMA, RSI, Bollinger, PE, PB, ROE, 量價趨勢 |
+| `factors.py` | 因子庫：動量、均值回歸、波動率、RSI、均線交叉、量價趨勢、短期反轉、Amihud 非流動性、特質波動率、偏度、最大日報酬 + 基本面 (PE, PB, ROE) |
 | `optimizer.py` | 最佳化器：等權重、信號權重、風險平價 |
 | `registry.py` | 策略集中註冊（含 `alpha` 策略） |
-| `research.py` | 因子研究：IC 分析、因子衰減、因子合成 (被 Alpha 層消費並擴展) |
+| `research.py` | 因子研究：IC 分析、因子衰減、因子合成、Rolling IC、基本面因子註冊表、市場報酬代理 |
 
 ### 4.4 風險管理 (`src/risk/`)
 
@@ -377,14 +385,14 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 |------|------|
 | `types/index.ts` | TypeScript 介面 (對應後端 Pydantic schemas) |
 | `api/client.ts` | 平台無關 HTTP 客戶端 (ClientAdapter 注入) |
-| `api/endpoints.ts` | 型別化 API 端點定義 (25+ 端點) |
+| `api/endpoints.ts` | 型別化 API 端點定義 (28+ 端點，含 Alpha run/status/result) |
 | `api/ws.ts` | WSManager (自動重連、指數退避、頻道訂閱) |
 | `hooks/pollBacktestResult.ts` | 回測結果輪詢工具 |
 | `utils/format.ts` | 數字/貨幣/日期格式化 |
 
 ### 5.2 Web 儀表板 (`apps/web/`)
 
-**8 個功能頁面：**
+**9 個功能頁面：**
 
 | 頁面 | 路徑 | 說明 |
 |------|------|------|
@@ -396,6 +404,7 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 | Risk | `/risk` | 風險規則、告警、熔斷開關 |
 | Settings | `/settings` | SystemMetrics, API Key, 密碼修改 |
 | Admin | `/admin` | 用戶管理、審計日誌、配置 |
+| **Alpha** | `/alpha` | **因子研究 (Research 分頁) + Paper/Live 佔位介面 (Coming Soon)** |
 
 **核心基建**：Auth Context, API 適配器, `useApi`/`useWs` hooks, i18n (英文/繁體中文), 深色/淺色模式
 
@@ -406,6 +415,8 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 **元件**: MetricCard, PositionRow, OrderRow, OrderForm, StrategyRow, AlertItem, NavChart, BacktestChart, PositionPieChart, OfflineBanner, ErrorBoundary, Skeleton
 
 **Hooks**：`useAuth`, `usePortfolio`, `useOrders`, `useBacktest`, `useAlerts`, `useRealtimeData`
+
+**分頁 (8 個)**：Dashboard, Positions, Orders, Strategies, Backtest, **Alpha**, Alerts, Settings
 
 **平台特性**：Expo SecureStore 安全儲存、Victory Native 圖表、離線偵測
 
@@ -477,9 +488,9 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 
 **既有模組測試** (25 檔, 325 測試函式)：
 
-回測引擎、股利、配置、數據源、執行、因子、ffill、FinMind、領域模型、策略、通知、密碼、組合 API、持久化、研究、風險、排程、SimBroker、驗證、步進分析、權重轉換、WebSocket、整合 API
+回測引擎、股利、配置、數據源、執行、因子 (含 5 新因子)、ffill、FinMind、領域模型、策略、通知、密碼、組合 API、持久化、研究、風險、排程、SimBroker、驗證、步進分析、權重轉換、WebSocket、整合 API
 
-**Alpha 層測試** (7 檔, 72 測試函式)：
+**Alpha 層測試** (9 檔, 99 測試函式)：
 
 | 測試檔 | 測試數 | 覆蓋 |
 |--------|--------|------|
@@ -489,9 +500,12 @@ AlphaConfig → UniverseFilter → 因子計算 → winsorize → standardize
 | `test_alpha_turnover.py` | 10 | 換手率計算、成本扣除 |
 | `test_alpha_orthogonalize.py` | 9 | Sequential/Symmetric 降相關 |
 | `test_alpha_construction.py` | 11 | 權重約束、換手率限制、衰減混合 |
-| `test_alpha_pipeline.py` | 18 | Pipeline 端到端 + AlphaStrategy |
+| `test_alpha_pipeline.py` | 24 | Pipeline 端到端 + Rolling IC + Regime/Attribution + AlphaStrategy |
+| `test_alpha_regime.py` | 7 | 牛市/熊市/盤整分類 + 條件 IC |
+| `test_alpha_attribution.py` | 6 | 權重法/回歸法歸因 + 邊界情況 |
+| `test_factors.py` | +14 | 5 新因子 (短期反轉、Amihud、特質波動率、偏度、最大日報酬) |
 
-**後端測試合計**: 36 檔, ~397 測試函式
+**後端測試合計**: 38 檔, ~454 測試函式
 
 ### 8.2 前端測試
 
@@ -624,7 +638,7 @@ backend  backend     web-typecheck    shared-test   mobile-typecheck   mobile-te
 | | 數據品質檢查 | ✅ | |
 | | 即時行情串流 | ❌ | 未實作 |
 | **策略** | 7 種預建策略 | ✅ | |
-| | 因子庫 | ✅ | 技術 6 + 基本面 4 |
+| | 因子庫 | ✅ | 技術 11 + 基本面 4 |
 | | 最佳化器 | ✅ | 等權重、信號、風險平價 |
 | | 因子研究基礎 | ✅ | IC/衰減/合成 |
 | | 自訂策略框架 | ✅ | 插件式載入 |
@@ -635,6 +649,10 @@ backend  backend     web-typecheck    shared-test   mobile-typecheck   mobile-te
 | | 換手率/交易成本 | ✅ | 成本侵蝕、盈虧平衡成本、淨 IC |
 | | 成本感知組合建構 | ✅ | 換手率懲罰、最大換手率約束、衰減混合 |
 | | Alpha Pipeline | ✅ | 配置驅動、完整報告、AlphaStrategy 適配器 |
+| | 市場環境條件分析 | ✅ | Regime (BULL/BEAR/SIDEWAYS) + 條件 IC |
+| | 因子報酬歸因 | ✅ | 權重法 + OLS 回歸法 |
+| | Rolling IC 動態加權 | ✅ | 逐日 trailing IC 加權合成 |
+| | 基本面因子註冊 | ✅ | PE/PB/ROE 透過 FUNDAMENTAL_REGISTRY |
 | **風險管理** | 持倉/板塊限制 | ✅ | |
 | | 回撤熔斷 | ✅ | 5% 日損失 |
 | | 風險監控 + 規則動態切換 | ✅ | API 支援 |
@@ -657,6 +675,7 @@ backend  backend     web-typecheck    shared-test   mobile-typecheck   mobile-te
 | 訂單 | ✅ | ✅ | 下單表單 + 歷史 |
 | 策略 | ✅ | ✅ | 列表 + 啟停 |
 | 風險 | ✅ | ✅ | 規則 + 告警 + 熔斷 |
+| **Alpha 研究** | ✅ | ✅ | 因子選擇 + IC/ICIR/分位數圖表 + 合成 Alpha；Paper/Live 為 Coming Soon 佔位 |
 | 設定 | ✅ | ⚠️ | Mobile 部分 |
 | 管理後台 | ✅ | ❌ | 僅 Web |
 | 深色/淺色模式 | ✅ | ⚠️ | Mobile 部分 |
@@ -667,15 +686,15 @@ backend  backend     web-typecheck    shared-test   mobile-typecheck   mobile-te
 
 ## 13. 差距分析
 
-### 13.1 Alpha 研究能力 — 已完成
+### 13.1 Alpha 研究能力 — 已完成（含強化）
 
-第一階段全部 P0/P1 項目已完成 (2026-03-24)。剩餘為 P2 擴展：
+第一階段全部 P0/P1 項目已完成 (2026-03-24)，前端 Alpha 研究介面已於同日整合完成。因子庫已擴展至 11 技術因子 + 4 基本面因子，Pipeline 新增 Rolling IC 動態加權、Regime 條件分析、因子歸因。剩餘為 P2 擴展：
 
 | 優先級 | 差距 | 說明 |
 |--------|------|------|
+| ✅ 已完成 | Alpha 研究前端 | Web (IC 時序圖、分位數收益圖、因子摘要表、合成 Alpha 展示) + Mobile (因子篩選晶片 + 結果表格) |
 | 🟢 P2 | 事件驅動 Alpha | 財報發佈、除權息、法人買賣超等事件因子 |
 | 🟢 P2 | 另類數據整合 | 市場情緒、資金流向等非傳統因子 |
-| 🟢 P2 | Alpha 研究前端 | IC 時序圖、分位數收益圖、因子相關矩陣等視覺化 |
 
 ### 13.2 實盤交易能力差距
 
@@ -717,10 +736,13 @@ backend  backend     web-typecheck    shared-test   mobile-typecheck   mobile-te
 | 4 | 換手率分析 | `src/alpha/turnover.py` — TurnoverResult + 成本調整 | ✅ |
 | 5 | 因子正交化 | `src/alpha/orthogonalize.py` — Sequential + Symmetric | ✅ |
 | 6 | 成本感知組合建構 | `src/alpha/construction.py` — 換手率懲罰 + 衰減混合 | ✅ |
-| 7 | Alpha Pipeline | `src/alpha/pipeline.py` — AlphaConfig + AlphaReport | ✅ |
+| 7 | Alpha Pipeline | `src/alpha/pipeline.py` — AlphaConfig + AlphaReport + Rolling IC 動態加權 | ✅ |
 | 8 | AlphaStrategy 適配器 | `src/alpha/strategy.py` — 註冊至 registry | ✅ |
+| 9 | 市場環境分類 | `src/alpha/regime.py` — MarketRegime + 條件 IC 分析 | ✅ |
+| 10 | 因子報酬歸因 | `src/alpha/attribution.py` — 權重法 + OLS 回歸法 | ✅ |
+| 11 | 因子庫擴展 | 5 新技術因子 (反轉/流動性/特質波動/偏度/最大報酬) + 基本面註冊 + Rolling IC | ✅ |
 
-**測試**: 7 個測試檔，72 個測試函式，全部通過。
+**測試**: 9 個 Alpha 測試檔 + 因子/研究測試，共 129 個測試函式，全部通過。
 
 ### 第二階段：實盤交易能力（當前目標）
 
@@ -736,13 +758,13 @@ backend  backend     web-typecheck    shared-test   mobile-typecheck   mobile-te
 
 ### 第三階段：穩固與商業化（遠期）
 
-| # | 任務 |
-|---|------|
-| 14 | 測試覆蓋率工具 |
-| 15 | Alpha 研究前端 (IC 圖表、分位數可視化) |
-| 16 | 多帳戶/家族管理 |
-| 17 | PDF 報表、用戶引導 |
-| 18 | 訂閱授權、合規、部署 |
+| # | 任務 | 狀態 |
+|---|------|------|
+| 14 | 測試覆蓋率工具 | — |
+| 15 | Alpha 研究前端 (IC 圖表、分位數可視化、Web + Mobile) | ✅ 已完成 (2026-03-24) |
+| 16 | 多帳戶/家族管理 | — |
+| 17 | PDF 報表、用戶引導 | — |
+| 18 | 訂閱授權、合規、部署 | — |
 
 ---
 

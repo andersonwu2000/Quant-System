@@ -7,12 +7,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from src.data.fundamentals import FundamentalsProvider
 from src.strategy import factors as flib
 
 logger = logging.getLogger(__name__)
@@ -56,7 +58,101 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"lookback": 20},
         "min_bars": 21,
     },
+    "reversal": {
+        "fn": flib.short_term_reversal,
+        "key": "reversal",
+        "default_kwargs": {"lookback": 5},
+        "min_bars": 6,
+    },
+    "illiquidity": {
+        "fn": flib.amihud_illiquidity,
+        "key": "illiquidity",
+        "default_kwargs": {"lookback": 20},
+        "min_bars": 21,
+    },
+    "ivol": {
+        "fn": flib.idiosyncratic_vol,
+        "key": "ivol",
+        "default_kwargs": {"lookback": 60},
+        "min_bars": 61,
+    },
+    "skewness": {
+        "fn": flib.skewness,
+        "key": "skew",
+        "default_kwargs": {"lookback": 60},
+        "min_bars": 61,
+    },
+    "max_ret": {
+        "fn": flib.max_return,
+        "key": "max_ret",
+        "default_kwargs": {"lookback": 20},
+        "min_bars": 21,
+    },
 }
+
+
+def compute_market_returns(data: dict[str, pd.DataFrame]) -> pd.Series:
+    """計算等權市場報酬代理。"""
+    all_close = pd.DataFrame({s: data[s]["close"] for s in sorted(data.keys())})
+    return all_close.pct_change().mean(axis=1).dropna()
+
+
+# ── 基本面因子註冊表 ────────────────────────────────────────────────
+
+
+@dataclass
+class FundamentalFactorDef:
+    """基本面因子定義。"""
+
+    name: str
+    fn: Callable[..., float]
+    metric_key: str  # get_financials() 回傳 dict 中的 key
+
+
+FUNDAMENTAL_REGISTRY: dict[str, FundamentalFactorDef] = {
+    "value_pe": FundamentalFactorDef(name="value_pe", fn=flib.value_pe, metric_key="pe_ratio"),
+    "value_pb": FundamentalFactorDef(name="value_pb", fn=flib.value_pb, metric_key="pb_ratio"),
+    "quality_roe": FundamentalFactorDef(name="quality_roe", fn=flib.quality_roe, metric_key="roe"),
+}
+
+
+def compute_fundamental_factor_values(
+    symbols: list[str],
+    factor_name: str,
+    provider: FundamentalsProvider,
+    dates: list[pd.Timestamp],
+) -> pd.DataFrame:
+    """
+    透過 FundamentalsProvider 計算基本面因子值。
+
+    Returns:
+        DataFrame，index=date，columns=symbols，values=factor values
+    """
+    if factor_name not in FUNDAMENTAL_REGISTRY:
+        raise ValueError(f"Unknown fundamental factor: {factor_name}. Available: {list(FUNDAMENTAL_REGISTRY.keys())}")
+
+    fdef = FUNDAMENTAL_REGISTRY[factor_name]
+
+    result_rows: list[dict[str, float | pd.Timestamp]] = []
+    for dt in dates:
+        row: dict[str, float | pd.Timestamp] = {"date": dt}
+        date_str = str(dt.date()) if hasattr(dt, "date") else str(dt)
+        for sym in symbols:
+            try:
+                financials = provider.get_financials(sym, date_str)
+            except Exception:
+                logger.debug("Failed to get financials for %s on %s", sym, date_str, exc_info=True)
+                continue
+            metric_val = financials.get(fdef.metric_key)
+            if metric_val is not None:
+                row[sym] = fdef.fn(metric_val)
+        if len(row) > 1:
+            result_rows.append(row)
+
+    if not result_rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(result_rows).set_index("date")
 
 
 # ── 結果資料結構 ─────────────────────────────────────────────────
@@ -143,6 +239,10 @@ def compute_factor_values(
     fn_kwargs = {**reg["default_kwargs"], **kwargs}
 
     symbols = sorted(data.keys())
+
+    # ivol 需要市場報酬代理（等權平均）
+    if factor_name == "ivol" and "market_returns" not in fn_kwargs:
+        fn_kwargs["market_returns"] = compute_market_returns(data)
 
     if dates is None:
         # 取所有標的的共有日期
@@ -315,6 +415,49 @@ def factor_decay(
         horizons=horizons,
         ic_by_horizon=ic_by_horizon,
     )
+
+
+def compute_rolling_ic(
+    factor_values: pd.DataFrame,
+    forward_returns: pd.DataFrame,
+    window: int = 60,
+    method: str = "rank",
+) -> pd.Series:
+    """
+    計算滾動 IC：在每個日期上取過去 window 期的平均 IC。
+
+    Returns:
+        Series, index=date, values=trailing average IC
+    """
+    common_dates = sorted(factor_values.index.intersection(forward_returns.index))
+    common_symbols = factor_values.columns.intersection(forward_returns.columns)
+
+    if len(common_dates) < window or len(common_symbols) < 3:
+        return pd.Series(dtype=float)
+
+    # 逐日計算橫截面 IC
+    daily_ic: list[float] = []
+    daily_dates: list[pd.Timestamp] = []
+    for dt in common_dates:
+        fv = factor_values.loc[dt, common_symbols].dropna()
+        fr = forward_returns.loc[dt, common_symbols].dropna()
+        common = fv.index.intersection(fr.index)
+        if len(common) < 3:
+            daily_ic.append(np.nan)
+            daily_dates.append(dt)
+            continue
+
+        if method == "rank":
+            corr = pd.Series(fv[common].rank()).corr(pd.Series(fr[common].rank()))
+        else:
+            corr = pd.Series(fv[common]).corr(pd.Series(fr[common]))
+
+        daily_ic.append(float(corr) if not np.isnan(corr) else np.nan)
+        daily_dates.append(dt)
+
+    ic_series = pd.Series(daily_ic, index=daily_dates)
+    rolling_mean = ic_series.rolling(window, min_periods=max(window // 2, 10)).mean()
+    return rolling_mean.dropna()
 
 
 def combine_factors(

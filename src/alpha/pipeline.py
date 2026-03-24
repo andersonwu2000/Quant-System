@@ -12,22 +12,26 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from src.alpha.attribution import AttributionResult, attribute_returns
 from src.alpha.construction import ConstructionConfig, construct_portfolio, blend_with_decay
 from src.alpha.cross_section import QuantileResult, quantile_backtest
 from src.alpha.neutralize import NeutralizeMethod, neutralize, standardize, winsorize
+from src.alpha.regime import RegimeICResult, classify_regimes, compute_regime_ic
 from src.alpha.orthogonalize import factor_correlation_matrix, orthogonalize_sequential, orthogonalize_symmetric
 from src.alpha.turnover import TurnoverResult, analyze_factor_turnover
 from src.alpha.universe import UniverseConfig, UniverseFilter
 from src.data.fundamentals import FundamentalsProvider
 from src.strategy.research import (
     FACTOR_REGISTRY,
-    CompositeResult,
+    FUNDAMENTAL_REGISTRY,
     DecayResult,
     ICResult,
-    combine_factors,
     compute_factor_values,
     compute_forward_returns,
+    compute_fundamental_factor_values,
     compute_ic,
+    compute_market_returns,
+    compute_rolling_ic,
     factor_decay,
 )
 
@@ -40,7 +44,7 @@ class FactorSpec:
 
     name: str  # 因子名稱 (對應 FACTOR_REGISTRY)
     direction: int = 1  # 1=越大越好, -1=越小越好
-    kwargs: dict = field(default_factory=dict)  # 因子參數覆寫
+    kwargs: dict[str, object] = field(default_factory=dict)  # 因子參數覆寫
 
 
 @dataclass
@@ -61,7 +65,7 @@ class AlphaConfig:
     orthogonalize_method: str = "sequential"  # "sequential" | "symmetric"
 
     # 合成
-    combine_method: str = "equal"  # "equal" | "ic" | "custom"
+    combine_method: str = "equal"  # "equal" | "ic" | "rolling_ic" | "custom"
     combine_weights: dict[str, float] | None = None
     ic_lookback: int = 60
 
@@ -90,6 +94,11 @@ class AlphaReport:
     composite_ic: ICResult | None = None
     composite_quantile: QuantileResult | None = None
     composite_weights: dict[str, float] = field(default_factory=dict)
+    # Regime 條件分析
+    regime_ics: dict[str, RegimeICResult] = field(default_factory=dict)
+    regime_series: pd.Series = field(default_factory=pd.Series)
+    # 因子歸因
+    attribution: AttributionResult | None = None
 
     def summary(self) -> str:
         lines = [
@@ -135,6 +144,26 @@ class AlphaReport:
             if self.composite_weights:
                 lines.append(f"  Weights: {self.composite_weights}")
 
+        # Regime IC
+        if self.regime_ics:
+            lines.append("")
+            lines.append("── Regime-Conditional IC ──")
+            for name, ric in self.regime_ics.items():
+                parts = []
+                for regime, ic in ric.ic_by_regime.items():
+                    count = ric.regime_counts.get(regime, 0)
+                    parts.append(f"{regime.value}={ic.ic_mean:+.4f}(n={count})")
+                lines.append(f"  {name}: {', '.join(parts)}")
+
+        # Attribution
+        if self.attribution:
+            lines.append("")
+            lines.append("── Factor Attribution ──")
+            for fname, contrib in self.attribution.factor_contributions.items():
+                lines.append(f"  {fname}: {contrib:+.4f}")
+            lines.append(f"  residual: {self.attribution.residual_return:+.4f}")
+            lines.append(f"  total: {self.attribution.total_return:+.4f}")
+
         return "\n".join(lines)
 
 
@@ -146,6 +175,7 @@ class AlphaPipeline:
         self._universe_filter = UniverseFilter(config.universe)
         self._prev_signal: pd.Series | None = None
         self._prev_weights: pd.Series | None = None
+        self._rolling_ic_weights: dict[str, float] | None = None
 
     def research(
         self,
@@ -183,10 +213,14 @@ class AlphaPipeline:
         # [2] 逐因子計算
         raw_factors: dict[str, pd.DataFrame] = {}
         for spec in cfg.factors:
-            if spec.name not in FACTOR_REGISTRY:
-                logger.warning("Unknown factor: %s, skipping", spec.name)
+            if spec.name in FACTOR_REGISTRY:
+                fv = compute_factor_values(data, spec.name, dates=all_dates, **spec.kwargs)
+            elif spec.name in FUNDAMENTAL_REGISTRY and fundamentals is not None:
+                symbols = sorted(data.keys())
+                fv = compute_fundamental_factor_values(symbols, spec.name, fundamentals, all_dates)
+            else:
+                logger.warning("Unknown factor: %s (or no fundamentals provider), skipping", spec.name)
                 continue
-            fv = compute_factor_values(data, spec.name, dates=all_dates, **spec.kwargs)
             if not fv.empty:
                 if spec.direction == -1:
                     fv = -fv
@@ -219,9 +253,18 @@ class AlphaPipeline:
         factor_turnovers: dict[str, TurnoverResult] = {}
         quantile_results: dict[str, QuantileResult] = {}
 
+        # 預先計算共用的 forward returns（避免重複計算）
+        fwd_cache: dict[str, pd.DataFrame] = {}
+
         for name, fv in neutralized.items():
+            dates_key = str(fv.index[0]) + "_" + str(fv.index[-1]) + "_" + str(len(fv))
+            if dates_key not in fwd_cache:
+                fwd_cache[dates_key] = compute_forward_returns(
+                    data, horizon=cfg.holding_period, dates=list(fv.index)
+                )
+            fwd = fwd_cache[dates_key]
+
             # IC
-            fwd = compute_forward_returns(data, horizon=cfg.holding_period, dates=list(fv.index))
             ic = compute_ic(fv, fwd)
             ic.factor_name = name
             factor_ics[name] = ic
@@ -244,6 +287,24 @@ class AlphaPipeline:
                 factor_name=name,
             )
             factor_turnovers[name] = to
+
+        # [5b] Regime 條件分析
+        regime_ics: dict[str, RegimeICResult] = {}
+        regime_series = pd.Series(dtype=object)
+        try:
+            mkt_ret = compute_market_returns(data)
+            regime_series = classify_regimes(mkt_ret)
+
+            if not regime_series.empty:
+                for name, fv in neutralized.items():
+                    dates_key = str(fv.index[0]) + "_" + str(fv.index[-1]) + "_" + str(len(fv))
+                    fwd = fwd_cache.get(dates_key) or compute_forward_returns(
+                        data, horizon=cfg.holding_period, dates=list(fv.index)
+                    )
+                    ric = compute_regime_ic(fv, fwd, regime_series, factor_name=name)
+                    regime_ics[name] = ric
+        except Exception:
+            logger.warning("Regime analysis failed, skipping", exc_info=True)
 
         # 因子相關矩陣
         corr_matrix = factor_correlation_matrix(neutralized)
@@ -273,6 +334,24 @@ class AlphaPipeline:
                 composite_fv, fwd, n_quantiles=cfg.n_quantiles, factor_name="composite"
             )
 
+        # [9] 因子歸因
+        attribution: AttributionResult | None = None
+        if composite_quantile is not None and composite_weights and len(quantile_results) > 1:
+            try:
+                factor_ls_returns = {
+                    name: qr.long_short_return
+                    for name, qr in quantile_results.items()
+                    if not qr.long_short_return.empty
+                }
+                if factor_ls_returns:
+                    attribution = attribute_returns(
+                        composite_returns=composite_quantile.long_short_return,
+                        factor_returns=factor_ls_returns,
+                        composite_weights=composite_weights,
+                    )
+            except Exception:
+                logger.warning("Attribution analysis failed, skipping", exc_info=True)
+
         return AlphaReport(
             config=cfg,
             universe_counts=universe_counts,
@@ -284,6 +363,9 @@ class AlphaPipeline:
             composite_ic=composite_ic,
             composite_quantile=composite_quantile,
             composite_weights=composite_weights,
+            regime_ics=regime_ics,
+            regime_series=regime_series,
+            attribution=attribution,
         )
 
     def generate_weights(
@@ -309,9 +391,13 @@ class AlphaPipeline:
         # 計算因子值
         factor_values: dict[str, pd.Series] = {}
         for spec in cfg.factors:
-            if spec.name not in FACTOR_REGISTRY:
+            if spec.name in FACTOR_REGISTRY:
+                fv = compute_factor_values(data, spec.name, dates=[current_date], **spec.kwargs)
+            elif spec.name in FUNDAMENTAL_REGISTRY and fundamentals is not None:
+                symbols = sorted(data.keys())
+                fv = compute_fundamental_factor_values(symbols, spec.name, fundamentals, [current_date])
+            else:
                 continue
-            fv = compute_factor_values(data, spec.name, dates=[current_date], **spec.kwargs)
             if not fv.empty:
                 row = fv.iloc[0].dropna()
                 if spec.direction == -1:
@@ -361,29 +447,22 @@ class AlphaPipeline:
         if cfg.combine_method == "custom" and cfg.combine_weights:
             weights = cfg.combine_weights
         elif cfg.combine_method == "ic":
-            # IC 加權
+            # IC 加權（全樣本）
             total_abs_ic = sum(abs(factor_ics[n].ic_mean) for n in names if n in factor_ics)
             if total_abs_ic > 0:
                 weights = {n: abs(factor_ics[n].ic_mean) / total_abs_ic for n in names if n in factor_ics}
             else:
                 weights = {n: 1.0 / len(names) for n in names}
+        elif cfg.combine_method == "rolling_ic":
+            # Rolling IC 動態加權 — 逐日根據 trailing IC 加權
+            return self._combine_rolling_ic(factor_dict, data)
         else:
             weights = {n: 1.0 / len(names) for n in names}
 
         # 加權合成
-        common_dates: set | None = None
-        common_symbols: set | None = None
-        for fv in factor_dict.values():
-            d = set(fv.index)
-            s = set(fv.columns)
-            common_dates = d if common_dates is None else common_dates & d
-            common_symbols = s if common_symbols is None else common_symbols & s
-
-        if not common_dates or not common_symbols:
+        sorted_dates, sorted_symbols = _intersect_factor_frames(factor_dict)
+        if not sorted_dates or not sorted_symbols:
             return None, weights
-
-        sorted_dates = sorted(common_dates)
-        sorted_symbols = sorted(common_symbols)
 
         composite = pd.DataFrame(0.0, index=sorted_dates, columns=sorted_symbols)
         for name, fv in factor_dict.items():
@@ -391,6 +470,64 @@ class AlphaPipeline:
             composite += fv.reindex(index=sorted_dates, columns=sorted_symbols).fillna(0) * w
 
         return composite, weights
+
+    def _combine_rolling_ic(
+        self,
+        factor_dict: dict[str, pd.DataFrame],
+        data: dict[str, pd.DataFrame],
+    ) -> tuple[pd.DataFrame | None, dict[str, float]]:
+        """Rolling IC 動態加權合成。"""
+        cfg = self.config
+        names = list(factor_dict.keys())
+
+        sorted_dates, sorted_symbols = _intersect_factor_frames(factor_dict)
+        if not sorted_dates or not sorted_symbols:
+            return None, {}
+
+        fwd = compute_forward_returns(data, horizon=cfg.holding_period, dates=sorted_dates)
+
+        # 計算每個因子的 rolling IC
+        rolling_ics: dict[str, pd.Series] = {}
+        for name, fv in factor_dict.items():
+            ric = compute_rolling_ic(fv, fwd, window=cfg.ic_lookback)
+            if not ric.empty:
+                rolling_ics[name] = ric
+
+        equal_weights = {n: 1.0 / len(names) for n in names}
+
+        if not rolling_ics:
+            # 退化為等權
+            composite = pd.DataFrame(0.0, index=sorted_dates, columns=sorted_symbols)
+            for name, fv in factor_dict.items():
+                composite += fv.reindex(index=sorted_dates, columns=sorted_symbols).fillna(0) * equal_weights[name]
+            self._rolling_ic_weights = equal_weights
+            return composite, equal_weights
+
+        # 建構每日權重矩陣（向量化）
+        ic_df = pd.DataFrame(rolling_ics).reindex(sorted_dates).abs()
+        ic_totals = ic_df.sum(axis=1)
+        # 有 IC 的日期按 |IC| 正規化，無 IC 的日期用等權
+        weight_df = ic_df.div(ic_totals, axis=0)
+        equal_fill = pd.DataFrame(
+            {n: [equal_weights[n]] * len(sorted_dates) for n in names},
+            index=sorted_dates,
+        )
+        weight_df = weight_df.fillna(equal_fill)
+        # 未出現在 rolling_ics 中的因子填等權
+        for n in names:
+            if n not in weight_df.columns:
+                weight_df[n] = equal_weights[n]
+
+        # 向量化加權合成
+        composite = pd.DataFrame(0.0, index=sorted_dates, columns=sorted_symbols)
+        for name, fv in factor_dict.items():
+            aligned = fv.reindex(index=sorted_dates, columns=sorted_symbols).fillna(0)
+            w_series = weight_df[name] if name in weight_df.columns else equal_weights[name]
+            composite += aligned.mul(w_series, axis=0)
+
+        avg_weights = {n: float(weight_df[n].mean()) for n in names}
+        self._rolling_ic_weights = avg_weights
+        return composite, avg_weights
 
     def _combine_signals(self, factor_values: dict[str, pd.Series]) -> pd.Series:
         """合成單期信號（用於 generate_weights）。"""
@@ -402,6 +539,8 @@ class AlphaPipeline:
 
         if cfg.combine_method == "custom" and cfg.combine_weights:
             weights = cfg.combine_weights
+        elif cfg.combine_method == "rolling_ic" and self._rolling_ic_weights:
+            weights = self._rolling_ic_weights
         else:
             # 等權
             weights = {n: 1.0 / len(names) for n in names}
@@ -433,3 +572,19 @@ def _get_common_dates(data: dict[str, pd.DataFrame]) -> list[pd.Timestamp]:
         sym_dates = set(df.index)
         all_dates = sym_dates if all_dates is None else all_dates & sym_dates
     return sorted(all_dates or set())
+
+
+def _intersect_factor_frames(
+    factor_dict: dict[str, pd.DataFrame],
+) -> tuple[list[pd.Timestamp], list[str]]:
+    """取所有因子 DataFrame 的共有日期和標的。"""
+    common_dates: set[pd.Timestamp] | None = None
+    common_symbols: set[str] | None = None
+    for fv in factor_dict.values():
+        d = set(fv.index)
+        s = set(fv.columns)
+        common_dates = d if common_dates is None else common_dates & d
+        common_symbols = s if common_symbols is None else common_symbols & s
+    return sorted(common_dates or set()), sorted(common_symbols or set())
+
+

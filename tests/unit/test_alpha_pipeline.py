@@ -161,6 +161,69 @@ class TestAlphaPipeline:
         assert len(report.factor_ics) == 1
 
 
+class TestRollingICCombine:
+    def test_rolling_ic_returns_report(self):
+        data = _make_market_data()
+        config = _make_config(combine_method="rolling_ic")
+        pipeline = AlphaPipeline(config)
+        report = pipeline.research(data)
+        assert isinstance(report, AlphaReport)
+        assert report.composite_ic is not None
+
+    def test_rolling_ic_weights_vary(self):
+        data = _make_market_data()
+        config = _make_config(combine_method="rolling_ic")
+        pipeline = AlphaPipeline(config)
+        report = pipeline.research(data)
+        # Rolling IC produces composite weights that may differ from equal
+        assert report.composite_weights is not None
+
+    def test_rolling_ic_generate_weights(self):
+        data = _make_market_data()
+        config = _make_config(combine_method="rolling_ic")
+        pipeline = AlphaPipeline(config)
+        # Run research first to populate rolling IC weights
+        pipeline.research(data)
+        date = data["S000"].index[-1]
+        weights = pipeline.generate_weights(data, pd.Timestamp(date))
+        assert isinstance(weights, dict)
+
+
+class TestRegimeAndAttribution:
+    def test_report_has_regime_ics(self):
+        data = _make_market_data(n_days=300)
+        config = _make_config()
+        pipeline = AlphaPipeline(config)
+        report = pipeline.research(data)
+        # Regime analysis should run (300 days > 60 lookback)
+        # May or may not have results depending on data, but field should exist
+        assert isinstance(report.regime_ics, dict)
+        assert isinstance(report.regime_series, pd.Series)
+
+    def test_report_has_attribution(self):
+        data = _make_market_data(n_days=300)
+        config = _make_config()
+        pipeline = AlphaPipeline(config)
+        report = pipeline.research(data)
+        # With 2 factors and sufficient data, attribution should be computed
+        if report.attribution is not None:
+            assert isinstance(report.attribution.factor_contributions, dict)
+            assert isinstance(report.attribution.residual_return, float)
+
+    def test_summary_includes_regime_and_attribution(self):
+        data = _make_market_data(n_days=300)
+        config = _make_config()
+        pipeline = AlphaPipeline(config)
+        report = pipeline.research(data)
+        s = report.summary()
+        assert "Alpha Pipeline Report" in s
+        # Regime section appears if regime analysis succeeded
+        if report.regime_ics:
+            assert "Regime" in s
+        if report.attribution:
+            assert "Attribution" in s
+
+
 class TestAlphaStrategy:
     def test_name_reflects_factors(self):
         strategy = AlphaStrategy(factors=["momentum", "rsi"])

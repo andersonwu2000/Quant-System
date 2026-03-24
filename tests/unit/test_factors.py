@@ -4,10 +4,15 @@ import numpy as np
 import pandas as pd
 
 from src.strategy.factors import (
+    amihud_illiquidity,
+    idiosyncratic_vol,
+    max_return,
     mean_reversion,
     momentum,
     moving_average_crossover,
     rsi,
+    short_term_reversal,
+    skewness,
     volatility,
 )
 
@@ -106,3 +111,101 @@ class TestMACrossover:
         bars = _make_bars([100, 101])
         result = moving_average_crossover(bars, fast=10, slow=50)
         assert result.empty
+
+
+class TestShortTermReversal:
+    def test_positive_reversal_after_drop(self):
+        # 價格下跌 → 負報酬 → reversal = -(-ret) > 0
+        prices = [100.0] * 10 + [90.0]
+        bars = _make_bars(prices)
+        result = short_term_reversal(bars, lookback=5)
+        assert result["reversal"] > 0
+
+    def test_negative_reversal_after_rise(self):
+        prices = [100.0] * 10 + [110.0]
+        bars = _make_bars(prices)
+        result = short_term_reversal(bars, lookback=5)
+        assert result["reversal"] < 0
+
+    def test_insufficient_data(self):
+        bars = _make_bars([100.0, 101.0])
+        result = short_term_reversal(bars, lookback=5)
+        assert result.empty
+
+
+class TestAmihudIlliquidity:
+    def test_positive_illiquidity(self):
+        prices = list(np.random.RandomState(42).normal(100, 2, 30))
+        bars = _make_bars(prices)
+        result = amihud_illiquidity(bars, lookback=20)
+        assert result["illiquidity"] > 0
+
+    def test_insufficient_data(self):
+        bars = _make_bars([100.0, 101.0])
+        result = amihud_illiquidity(bars, lookback=20)
+        assert result.empty
+
+    def test_zero_volume(self):
+        prices = [100.0] * 25
+        bars = _make_bars(prices)
+        bars["volume"] = 0
+        result = amihud_illiquidity(bars, lookback=20)
+        assert result["illiquidity"] == 0.0
+
+
+class TestIdiosyncraticVol:
+    def test_without_market(self):
+        prices = list(np.random.RandomState(42).normal(100, 2, 70))
+        bars = _make_bars(prices)
+        result = idiosyncratic_vol(bars, lookback=60)
+        assert result["ivol"] > 0
+
+    def test_with_market_returns(self):
+        prices = list(np.random.RandomState(42).normal(100, 2, 70))
+        bars = _make_bars(prices)
+        mkt = pd.Series(
+            np.random.RandomState(99).normal(0, 0.01, len(bars)),
+            index=bars.index,
+        )
+        result = idiosyncratic_vol(bars, lookback=60, market_returns=mkt)
+        assert result["ivol"] > 0
+
+    def test_insufficient_data(self):
+        bars = _make_bars([100.0] * 10)
+        result = idiosyncratic_vol(bars, lookback=60)
+        assert result.empty
+
+
+class TestSkewness:
+    def test_returns_skew_value(self):
+        prices = list(np.random.RandomState(42).normal(100, 2, 70))
+        bars = _make_bars(prices)
+        result = skewness(bars, lookback=60)
+        assert "skew" in result
+        assert isinstance(result["skew"], float)
+
+    def test_insufficient_data(self):
+        bars = _make_bars([100.0] * 10)
+        result = skewness(bars, lookback=60)
+        assert result.empty
+
+
+class TestMaxReturn:
+    def test_positive_max_return(self):
+        prices = list(np.linspace(100, 120, 30))
+        bars = _make_bars(prices)
+        result = max_return(bars, lookback=20)
+        assert result["max_ret"] > 0
+
+    def test_insufficient_data(self):
+        bars = _make_bars([100.0] * 5)
+        result = max_return(bars, lookback=20)
+        assert result.empty
+
+    def test_spike_detected(self):
+        # 穩定價格中有一天大漲
+        prices = [100.0] * 25
+        prices[-5] = 110.0  # 10% spike
+        bars = _make_bars(prices)
+        result = max_return(bars, lookback=20)
+        assert result["max_ret"] >= 0.09  # ~10% spike

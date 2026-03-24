@@ -156,6 +156,104 @@ def revenue_momentum(revenues: pd.Series, periods: int = 3) -> float:
     return float(growths.mean())
 
 
+def short_term_reversal(prices: pd.DataFrame, lookback: int = 5) -> pd.Series:
+    """
+    短期反轉因子：過去 lookback 天報酬的負值。
+    短期漲幅越大→預期反轉越強 (Jegadeesh 1990)。
+    """
+    close = prices["close"]
+    if len(close) < lookback + 1:
+        return pd.Series(dtype=float)
+
+    ret = close.iloc[-1] / close.iloc[-lookback - 1] - 1
+    return pd.Series({"reversal": float(-ret)})
+
+
+def amihud_illiquidity(prices: pd.DataFrame, lookback: int = 20) -> pd.Series:
+    """
+    Amihud 非流動性因子：avg(|日報酬| / 成交金額) (Amihud 2002)。
+    高值 = 低流動性 = 預期溢價。
+    """
+    if len(prices) < lookback + 1:
+        return pd.Series(dtype=float)
+
+    recent = prices.iloc[-(lookback + 1) :]
+    ret = recent["close"].pct_change().dropna().abs()
+    dollar_vol = (recent["close"] * recent["volume"]).iloc[1:]
+
+    # 避免除以零
+    valid = dollar_vol > 0
+    if valid.sum() == 0:
+        return pd.Series({"illiquidity": 0.0})
+
+    ratio = ret[valid] / dollar_vol[valid]
+    return pd.Series({"illiquidity": float(ratio.mean())})
+
+
+def idiosyncratic_vol(
+    prices: pd.DataFrame,
+    lookback: int = 60,
+    market_returns: pd.Series | None = None,
+) -> pd.Series:
+    """
+    特質波動率因子：去除市場 beta 後的殘差波動率 (Ang et al. 2006)。
+    低特質波動率 → 預期超額報酬。
+    """
+    close = prices["close"]
+    if len(close) < lookback + 1:
+        return pd.Series(dtype=float)
+
+    stock_ret = close.pct_change().dropna().iloc[-lookback:]
+
+    if market_returns is None or market_returns.empty:
+        # 無市場代理時退化為普通波動率
+        ivol = float(stock_ret.std() * np.sqrt(252))
+        return pd.Series({"ivol": ivol})
+
+    # 對齊日期
+    common = stock_ret.index.intersection(market_returns.index)
+    if len(common) < 20:
+        return pd.Series(dtype=float)
+
+    y = np.array(stock_ret.loc[common].values, dtype=np.float64)
+    x = np.array(market_returns.loc[common].values, dtype=np.float64)
+
+    # OLS: y = alpha + beta * x + epsilon
+    x_with_const = np.column_stack([np.ones(len(x)), x])
+    result = np.linalg.lstsq(x_with_const, y, rcond=None)
+    residuals = y - x_with_const @ result[0]
+    ivol = float(np.std(residuals, ddof=1) * np.sqrt(252))
+    return pd.Series({"ivol": ivol})
+
+
+def skewness(prices: pd.DataFrame, lookback: int = 60) -> pd.Series:
+    """
+    報酬偏度因子 (Bali et al. 2011)。
+    高正偏度（彩票效應）→ 預期報酬較低。
+    """
+    close = prices["close"]
+    if len(close) < lookback + 1:
+        return pd.Series(dtype=float)
+
+    ret = close.pct_change().dropna().iloc[-lookback:]
+    raw_skew: float = float(ret.skew())  # type: ignore[arg-type]
+    skew_val = raw_skew if not np.isnan(raw_skew) else 0.0
+    return pd.Series({"skew": skew_val})
+
+
+def max_return(prices: pd.DataFrame, lookback: int = 20) -> pd.Series:
+    """
+    最大日報酬因子 (Bali et al. 2011)。
+    過去 lookback 天的最大單日報酬。高值 → 預期報酬較低。
+    """
+    close = prices["close"]
+    if len(close) < lookback + 1:
+        return pd.Series(dtype=float)
+
+    ret = close.pct_change().dropna().iloc[-lookback:]
+    return pd.Series({"max_ret": float(ret.max())})
+
+
 def volume_price_trend(prices: pd.DataFrame, lookback: int = 20) -> pd.Series:
     """
     量價趨勢因子：價格上漲且成交量放大 = 正信號。

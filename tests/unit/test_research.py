@@ -53,7 +53,10 @@ def _make_multi_stock_data(
 
 class TestFactorRegistry:
     def test_known_factors(self):
-        expected = {"momentum", "mean_reversion", "volatility", "rsi", "ma_cross", "vpt"}
+        expected = {
+            "momentum", "mean_reversion", "volatility", "rsi", "ma_cross", "vpt",
+            "reversal", "illiquidity", "ivol", "skewness", "max_ret",
+        }
         assert expected == set(FACTOR_REGISTRY.keys())
 
     def test_entries_have_required_keys(self):

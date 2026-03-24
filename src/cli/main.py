@@ -211,6 +211,22 @@ def factors(
     if not mac.empty:
         table.add_row("MA Cross (10/50)", f"{mac['ma_cross']:.4f}")
 
+    rev = f.short_term_reversal(bars, lookback=5)
+    if not rev.empty:
+        table.add_row("Reversal (5d)", f"{rev['reversal']:.4f}")
+
+    illiq = f.amihud_illiquidity(bars, lookback=20)
+    if not illiq.empty:
+        table.add_row("Illiquidity (Amihud)", f"{illiq['illiquidity']:.6e}")
+
+    skew = f.skewness(bars, lookback=60)
+    if not skew.empty:
+        table.add_row("Skewness (60d)", f"{skew['skew']:.4f}")
+
+    maxr = f.max_return(bars, lookback=20)
+    if not maxr.empty:
+        table.add_row("Max Return (20d)", f"{maxr['max_ret']:.4f}")
+
     console.print(table)
     console.print(f"\nData: {len(bars)} bars, last: {bars.index[-1]}")
 
