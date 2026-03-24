@@ -20,6 +20,8 @@ import type {
   AlphaRunRequest,
   AlphaSummary,
   AlphaReport,
+  TacticalRequest,
+  TacticalResponse,
 } from "../types";
 
 export const auth = {
@@ -81,6 +83,11 @@ export const alpha = {
     get<AlphaSummary>(`/api/v1/alpha/${taskId}`),
   result: (taskId: string) =>
     get<AlphaReport>(`/api/v1/alpha/${taskId}/result`),
+};
+
+export const allocation = {
+  compute: (req: TacticalRequest) =>
+    post<TacticalResponse>("/api/v1/allocation", req),
 };
 
 export const risk = {

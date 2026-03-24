@@ -240,3 +240,36 @@ export interface SystemMetrics {
   strategies_running: number;
   active_backtests: number;
 }
+
+// ── Tactical Allocation types ───────────────────────────────────────────────
+
+export type AssetClassName = "EQUITY" | "ETF" | "FUTURE";
+
+export interface TacticalRequest {
+  strategic_weights?: Record<AssetClassName, number>;
+  start?: string;
+  end?: string;
+  macro_weight?: number;
+  cross_asset_weight?: number;
+  regime_weight?: number;
+  max_deviation?: number;
+}
+
+export interface TacticalWeightItem {
+  asset_class: string;
+  strategic_weight: number;
+  tactical_weight: number;
+  deviation: number;
+}
+
+export interface MacroSignalItem {
+  name: string;
+  value: number;
+}
+
+export interface TacticalResponse {
+  weights: TacticalWeightItem[];
+  macro_signals: MacroSignalItem[];
+  regime: string;
+  cross_asset_signals: Record<string, number>;
+}
