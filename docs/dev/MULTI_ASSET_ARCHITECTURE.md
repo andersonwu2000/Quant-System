@@ -80,51 +80,56 @@
 ✅ **已完成**：統一 Instrument 定義在 `src/domain/models.py`，`src/instrument/` 提供 Registry + 預設模板。
 
 ```python
-@dataclass(frozen=True)
-class Instrument:
-    symbol: str                         # 唯一識別碼 (e.g., "2330.TW", "ES=F", "TLT")
-    name: str
-    asset_class: AssetClass             # EQUITY, ETF, FUTURES
-    sub_class: str                      # "stock", "etf_equity", "etf_bond", "etf_commodity", "future"
-    market: Market                      # TW, US
-    currency: Currency                  # TWD, USD
-
-    # 合約規格（期貨專用，股票/ETF 可忽略）
-    contract_size: Decimal = Decimal(1) # 期貨合約乘數
-    tick_size: Decimal = Decimal("0.01")
-    margin_rate: Decimal | None = None  # 保證金比率（期貨）
-    expiry: date | None = None          # 到期日（期貨）
-    lot_size: int = 1                   # 最小交易單位
-
-    # 交易成本
-    commission_rate: Decimal = Decimal("0.001425")
-    tax_rate: Decimal = Decimal("0.003")  # 賣出稅（台股）
-    slippage_model: str = "fixed"       # "fixed", "sqrt", "percentage"
+# src/domain/models.py（唯一定義，src/instrument/model.py 只做 re-export）
 
 class AssetClass(Enum):
     EQUITY = "equity"           # 個股
     ETF = "etf"                 # ETF（含債券/商品 ETF 代理）
-    FUTURES = "futures"         # 期貨
+    FUTURE = "future"           # 期貨（注意：FUTURE 非 FUTURES）
+    OPTION = "option"
+
+class SubClass(Enum):
+    STOCK = "stock"
+    ETF_EQUITY = "etf_equity"
+    ETF_BOND = "etf_bond"
+    ETF_COMMODITY = "etf_commodity"
+    ETF_MIXED = "etf_mixed"
+    FUTURE = "future"
 
 class Market(Enum):
     TW = "tw"
     US = "us"
 
-class Currency(Enum):
-    TWD = "TWD"
-    USD = "USD"
+# currency 為 str（"TWD" / "USD"），不是 enum
+
+@dataclass(frozen=True)
+class Instrument:
+    symbol: str                              # 唯一識別碼 (e.g., "2330.TW", "ES=F", "TLT")
+    name: str = ""
+    asset_class: AssetClass = AssetClass.EQUITY
+    sub_class: SubClass = SubClass.STOCK
+    market: Market = Market.US
+    currency: str = "USD"                    # "TWD" | "USD"（string，非 enum）
+    multiplier: Decimal = Decimal("1")       # 期貨合約乘數（股票/ETF 為 1）
+    tick_size: Decimal = Decimal("0.01")
+    lot_size: int = 1
+    margin_rate: Decimal | None = None       # 保證金比率（期貨專用）
+    commission_rate: Decimal = Decimal("0.001425")
+    tax_rate: Decimal = Decimal("0")
+    sector: str = ""
 ```
 
 **InstrumentRegistry** — 集中管理所有可交易標的的 metadata：
 
 ```python
 class InstrumentRegistry:
-    def get(self, symbol: str) -> Instrument
+    def get(self, symbol: str) -> Instrument | None
+    def get_or_create(self, symbol: str) -> Instrument   # 自動推斷 symbol pattern
     def search(self, query: str, asset_class: AssetClass | None) -> list[Instrument]
     def by_market(self, market: Market) -> list[Instrument]
     def by_asset_class(self, cls: AssetClass) -> list[Instrument]
     def register(self, instrument: Instrument) -> None
-    def load_from_config(self, path: str) -> None  # YAML/JSON 配置檔
+    def load_from_yaml(self, path: str) -> None          # YAML 配置檔
 ```
 
 #### Multi-Market DataFeed (`src/data/`)
@@ -133,18 +138,22 @@ class InstrumentRegistry:
 
 ```python
 class DataFeed(ABC):
-    """通用數據介面 — 所有市場共用。"""
+    """通用數據介面 — 所有市場共用。（實際介面在 src/data/feed.py）"""
+
     @abstractmethod
-    def get_ohlcv(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+    def get_bars(self, symbol: str, start: str | None, end: str | None) -> pd.DataFrame:
         """OHLCV 數據（所有資產皆有）。"""
 
-    def get_futures_chain(self, root: str, date: str) -> list[FuturesContract]:
-        """期貨合約鏈。"""
-        raise NotImplementedError
+    @abstractmethod
+    def get_latest_price(self, symbol: str) -> Decimal: ...
 
-    def get_fx_rate(self, base: str, quote: str, date: str) -> Decimal:
-        """匯率（TWD/USD 轉換）。"""
-        raise NotImplementedError
+    def get_fx_rate(self, base: str, quote: str, date: str | None = None) -> Decimal:
+        """匯率（預設實作：下載 {base}{quote}=X）。"""
+        ...
+
+    def get_futures_chain(self, root_symbol: str) -> list[str]:
+        """期貨合約鏈（預設回傳空 list）。"""
+        ...
 ```
 
 **新增數據源**：
@@ -179,13 +188,15 @@ class DataFeed(ABC):
 ```
 src/allocation/                        # 戰術資產配置
 ├── macro_factors.py                   # 宏觀因子：成長、通膨、利率、信用
-├── regime.py                          # 市場狀態識別（擴展現有 src/alpha/regime.py）
-├── cross_asset_signals.py             # 跨資產信號：動量、利差、波動率
-├── views.py                           # 投資觀點生成 (Black-Litterman 的 views)
-├── strategic.py                       # 戰略配置（長期目標比例）
-├── tactical.py                        # 戰術配置（短期偏離）
+├── cross_asset.py                     # 跨資產信號：動量、carry、value、波動率
+├── tactical.py                        # 戰術配置引擎（輸出 dict[AssetClass, float]）
 └── __init__.py
 ```
+
+> **注意**：
+> - **市場狀態識別 (regime)** 保留在 `src/alpha/regime.py`（唯一一份），`allocation` 模組直接 import 使用，不重複實作。
+> - **戰略配置**（長期目標比例，如股 60%/債 30%）是靜態設定值，透過 `AlphaConfig` 或 YAML 設定檔管理，不單獨建立 `strategic.py` 模組。
+> - **Black-Litterman views** 在 Phase C 實作時併入 `src/portfolio/optimizer.py`，與最佳化器緊密耦合，不在 allocation 層單獨放 `views.py`。
 
 **宏觀因子模型**：
 
@@ -212,35 +223,42 @@ src/allocation/                        # 戰術資產配置
 
 ```
 src/portfolio/                         # 多資產組合管理（新增）
-├── optimizer.py                       # 跨資產最佳化器
+├── optimizer.py                       # 跨資產最佳化器（MVO/Risk Parity/BL/HRP）
 ├── risk_model.py                      # 多資產風險模型（相關矩陣、因子風險）
 ├── currency.py                        # 幣別暴露管理、對沖決策
-├── constraints.py                     # 約束：槓桿、保證金、流動性、監管限制
-├── rebalance.py                       # 再平衡觸發邏輯（閾值、日曆、信號驅動）
 └── __init__.py
 ```
 
-**組合建構流程**：
+> **邊界說明**：
+> - **約束 (constraints)**：「拒絕/批准」型的執行期約束（槓桿上限、保證金不足）擴展到 `src/risk/rules.py`；最佳化器的「軟約束」（目標函數懲罰項）內嵌在 `optimizer.py`，不另建 `constraints.py`。
+> - **再平衡邏輯**：觸發邏輯（閾值、日曆）保留在 `src/backtest/engine.py`（`_is_rebalance_day`），實盤時由 Scheduler 觸發，不另建 `rebalance.py`。
+
+**組合建構流程與層間資料契約**：
 
 ```
-第一步：戰略配置 (Strategic Asset Allocation)
-    長期目標比例：股票 60% / 債券 30% / 商品 10%
+第一步：戰略配置（靜態設定）
+    輸入：YAML / AlphaConfig
+    輸出：strategic_weights: dict[AssetClass, float]
+          e.g. {EQUITY: 0.60, ETF: 0.30, FUTURE: 0.10}
     ↓
-第二步：戰術偏離 (Tactical Overlay)
-    宏觀信號 → 短期調整：股票 50% / 債券 35% / 商品 15%
+第二步：戰術偏離（tactical.py）
+    輸入：strategic_weights + macro_signals: dict[str, float]
+    輸出：tactical_weights: dict[AssetClass, float]
+          e.g. {EQUITY: 0.50, ETF: 0.35, FUTURE: 0.15}
     ↓
-第三步：資產內選擇 (Within-Asset Selection)
-    股票 50% 中 → Alpha Pipeline 選出具體個股權重
-    債券ETF 35% 中 → TLT/IEF/LQD/HYG 配比
-    商品 15% 中 → GLD/期貨 動量/基差選擇
+第三步：資產內選擇（alpha/pipeline.py，per asset class）
+    輸入：tactical_weights[cls] + universe_per_class: list[str]
+    輸出：symbol_weights: dict[str, float]  ← 各 symbol 的最終分配比例
+          e.g. {"AAPL": 0.12, "MSFT": 0.08, "TLT": 0.20, "GC=F": 0.10, ...}
     ↓
-第四步：組合最佳化 (Portfolio Optimization)
-    • 合併所有標的權重
-    • 幣別對沖決策
-    • 槓桿/保證金檢查
-    • 交易成本最佳化
-    • 最終目標持倉
+第四步：組合最佳化（portfolio/optimizer.py）
+    輸入：symbol_weights + covariance_matrix + fx_rates + constraints
+    輸出：final_weights: dict[str, float]  ← 送進 weights_to_orders()
 ```
+
+> **宏觀資料頻率問題**：CPI/GDP/PMI 為月度/季度發布，與每日 Alpha 信號頻率不符。
+> 處理策略：以**最新發布值前向填補（forward-fill）**到每日，填補上限 66 個交易日（約 3 個月）。
+> 宏觀信號的再計算頻率建議設為月度（`rebalance_freq="monthly"`），而非每日。
 
 **最佳化方法**：
 
@@ -257,29 +275,27 @@ src/portfolio/                         # 多資產組合管理（新增）
 #### Portfolio (`src/domain/models.py`)
 
 ```python
-@dataclass
-class Position:
-    instrument: Instrument              # 替代原本的 symbol: str
-    quantity: Decimal
-    avg_cost: Decimal
-    currency: Currency                  # 持倉幣別
-    margin_used: Decimal = Decimal(0)   # 佔用保證金
+# 現狀（src/domain/models.py，已實作）
 
 @dataclass
 class Portfolio:
     positions: dict[str, Position]
-    cash: dict[Currency, Decimal]       # 多幣別現金（替代單一 cash）
-    base_currency: Currency = Currency.TWD
+    cash: Decimal                           # 主幣別現金（向後相容）
+    cash_by_currency: dict[str, Decimal]    # 多幣別現金 {"TWD": ..., "USD": ...}
+    base_currency: str = "TWD"             # str，非 enum
 
     @property
     def nav(self) -> Decimal:
-        """計算 NAV 需要即時匯率。"""
+        """單幣別 NAV（向後相容）。"""
 
-    def currency_exposure(self) -> dict[Currency, Decimal]:
-        """各幣別暴露（用於對沖決策）。"""
+    def nav_in_base(self, fx_rates: dict[tuple[str,str], Decimal] | None) -> Decimal:
+        """多幣別 NAV，以 base_currency 計價（回測 _snap_nav 使用此方法）。"""
 
-    def asset_class_weights(self) -> dict[AssetClass, float]:
-        """各資產類別的權重。"""
+    def currency_exposure(self) -> dict[str, Decimal]: ...
+    def asset_class_weights(self) -> dict[AssetClass, float]: ...
+    def total_cash(self, fx_rates: ...) -> Decimal: ...
+
+# Phase D 待擴展：Position 加入 margin_used 欄位（期貨保證金追蹤）
 ```
 
 #### RiskEngine (`src/risk/`)
@@ -396,18 +412,17 @@ src/
 │
 ├── allocation/              # [NEW] 資產間 Alpha（戰術配置）
 │   ├── macro_factors.py     #   宏觀因子模型
-│   ├── regime.py            #   市場狀態 (擴展自 alpha/regime.py)
 │   ├── cross_asset.py       #   跨資產動量/carry/value 信號
-│   ├── views.py             #   Black-Litterman 觀點
-│   ├── strategic.py         #   戰略配置 (長期目標)
-│   └── tactical.py          #   戰術配置 (短期偏離)
+│   └── tactical.py          #   戰術配置引擎 (輸出 dict[AssetClass, float])
+│   # regime.py 不在此：直接 import src/alpha/regime.py（唯一一份）
+│   # strategic 配置不建模組：改用 AlphaConfig / YAML 設定
 │
 ├── portfolio/               # [NEW] 多資產組合管理
 │   ├── optimizer.py         #   Risk Parity, BL, HRP, MVO
 │   ├── risk_model.py        #   因子風險模型 + 相關矩陣
-│   ├── currency.py          #   幣別暴露 + 對沖決策
-│   ├── constraints.py       #   槓桿/保證金/流動性約束
-│   └── rebalance.py         #   再平衡邏輯
+│   └── currency.py          #   幣別暴露 + 對沖決策
+│   # constraints → 擴展 src/risk/rules.py（不另建模組）
+│   # rebalance → 保留在 backtest/engine.py + scheduler（不另建模組）
 │
 ├── strategy/                # [KEEP] 策略引擎 + 因子庫
 │   ├── factors.py           #   (擴展期貨因子)
@@ -434,4 +449,4 @@ src/
 | Alpha 研究層需要重做嗎？ | **不需要。** 保留並擴展。它做的「橫截面因子選股」在多資產中仍是資產內選擇的核心能力 |
 | 最大的架構變更是什麼？ | **新增 Instrument Registry + Allocation 層 + Portfolio Optimizer**。這三者構成多資產的骨幹 |
 | 現有哪些模組完全不用改？ | neutralize, orthogonalize, cross_section, turnover — 這些是純數學操作 |
-| 開發順序建議？ | 先做 Instrument Registry 和多幣別 Portfolio（基礎設施），再做 Allocation（Alpha 能力），最後做 Optimizer（組合建構） |
+| 開發順序建議？ | ✅ Phase A 已完成基礎設施，Phase B 做 Allocation（宏觀因子 + 跨資產信號），Phase C 做 Portfolio Optimizer |
