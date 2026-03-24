@@ -72,6 +72,16 @@ def weights_to_orders(
     if portfolio.nav <= 0:
         return []
 
+    # 驗證總權重不超過合理上限
+    total_weight = sum(target_weights.values())
+    if total_weight > 1.5:
+        logger.warning(
+            "Total target weight %.2f exceeds 1.5 — possible leverage or bug. "
+            "Capping to normalized weights.",
+            total_weight,
+        )
+        target_weights = {k: v / total_weight for k, v in target_weights.items()}
+
     orders: list[Order] = []
     nav = portfolio.nav
 

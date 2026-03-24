@@ -98,7 +98,7 @@ class FredDataSource:
         if not result:
             return pd.DataFrame()
         df = pd.DataFrame(result)
-        df = df.sort_index().ffill()  # 前填（月度數據填到日度）
+        df = df.sort_index().ffill(limit=66)  # 前填（月度→日度，上限 66 交易日 ≈ 3 個月）
         return df
 
     # ── 內部方法 ─────────────────────────────────────────

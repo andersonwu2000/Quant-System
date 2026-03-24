@@ -139,14 +139,27 @@ class BacktestEngine:
         currencies = {getattr(self._instruments[s], "currency", "TWD") for s in self._instruments}
         self._is_multi_currency = len(currencies) > 1
         self._fx_rates: dict[tuple[str, str], Decimal] = {}
+        self._fx_series: pd.Series | None = None  # FX 時序（per-bar 更新用）
 
         if self._is_multi_currency:
             logger.info("Multi-currency universe detected: %s", currencies)
-            # 預載入 FX 時序（如 USD→TWD）
             try:
-                fx_pair = feed.get_fx_rate("USD", "TWD")
-                if fx_pair and fx_pair != Decimal("1"):
-                    self._fx_rates[("USD", "TWD")] = fx_pair
+                # 載入完整 FX 時序而非單一值
+                fx_bars = feed.get_bars(
+                    "USDTWD=X",
+                    start=config.start_date if hasattr(config, "start_date") else None,
+                    end=config.end_date if hasattr(config, "end_date") else None,
+                )
+                if not fx_bars.empty and "close" in fx_bars.columns:
+                    self._fx_series = fx_bars["close"]
+                    # 用最新值作為 fallback
+                    latest = Decimal(str(round(float(fx_bars["close"].iloc[-1]), 4)))
+                    self._fx_rates[("USD", "TWD")] = latest
+                    logger.info("Loaded FX series USDTWD: %d bars", len(fx_bars))
+                else:
+                    fx_scalar = feed.get_fx_rate("USD", "TWD")
+                    if fx_scalar and fx_scalar != Decimal("1"):
+                        self._fx_rates[("USD", "TWD")] = fx_scalar
             except Exception:
                 logger.debug("FX rate load failed, using 1:1", exc_info=True)
 
@@ -455,7 +468,8 @@ class BacktestEngine:
 
     def _snap_nav(self, portfolio: Portfolio, bar_date: datetime) -> dict[str, Any]:
         """Create a NAV history record."""
-        nav = portfolio.nav_in_base(self._fx_rates) if self._fx_rates else portfolio.nav
+        fx = self._get_fx_rates_for_date(bar_date)
+        nav = portfolio.nav_in_base(fx) if fx else portfolio.nav
         return {
             "date": bar_date,
             "nav": float(nav),
@@ -463,6 +477,24 @@ class BacktestEngine:
             "positions_count": len(portfolio.positions),
             "gross_exposure": float(portfolio.gross_exposure),
         }
+
+    def _get_fx_rates_for_date(
+        self, bar_date: datetime,
+    ) -> dict[tuple[str, str], Decimal]:
+        """取得指定日期的 FX rates（從時序查找，fallback 到靜態值）。"""
+        if not self._fx_rates:
+            return {}
+
+        if self._fx_series is not None and not self._fx_series.empty:
+            ts = pd.Timestamp(bar_date)
+            # 查找 <= bar_date 的最近 FX rate
+            mask = self._fx_series.index <= ts
+            if mask.any():
+                rate = float(self._fx_series.loc[mask].iloc[-1])
+                return {("USD", "TWD"): Decimal(str(round(rate, 4)))}
+
+        # fallback: 使用初始載入的靜態值
+        return dict(self._fx_rates)
 
     # ──────────────────────────────────────────────────────
     # Static / utility helpers
