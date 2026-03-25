@@ -111,6 +111,10 @@ class HistoricalFeed(DataFeed):
 
         df = self._data[symbol]
 
+        # 確保 index 是 DatetimeIndex，避免 numpy.ndarray vs Timestamp 比較錯誤
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+
         # 因果性保證：截斷到 current_date
         if self._current_date is not None:
             df = df[df.index <= pd.Timestamp(self._current_date)]

@@ -55,6 +55,10 @@ class Context:
         if df.empty:
             return df
 
+        # 確保 index 是 DatetimeIndex，避免 numpy.ndarray vs Timestamp 比較錯誤
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+
         # 如果有 current_time，截斷未來數據
         if self._current_time is not None:
             df = df[df.index <= pd.Timestamp(self._current_time)]

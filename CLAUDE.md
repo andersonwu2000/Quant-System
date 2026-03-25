@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Release Rules
+
+- **GitHub Release 必須包含 APK**：每次建立 GitHub Release 時，一定要建置 Android debug APK (`apps/android` → `./gradlew.bat assembleDebug`) 並上傳為 release asset，命名格式為 `quant-trading-v{VERSION}.apk`。
+
 ## Maintenance Rules
 
 After completing any feature addition, bug fix, refactoring, architecture change, or dependency update, **update `docs/dev/SYSTEM_STATUS_REPORT.md`** to reflect the changes. Sections to check and update:
