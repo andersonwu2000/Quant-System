@@ -1,90 +1,144 @@
 # 開發計畫書
 
-> **version**: v6.1
+> **version**: v7.0
 > **date**: 2026-03-26
 
 ---
 
 ## 1. 專案現況
 
-多資產投資組合研究與優化系統，涵蓋台股、美股、ETF（含債券/商品 ETF 代理）、期貨。Python 後端 + React Web + Android Native 單體倉庫。後端 128 檔案、22.5K LOC、1,006 tests。具備 14 種組合最佳化方法、14 個 Alpha 因子、10 條風控規則、71 個 API 端點。回測引擎與策略框架已成熟，自動化 Alpha 排程系統已實作。Phase A~H 全部完成。
+多資產投資組合研究與優化系統。Python 後端 + React Web + Android Native。
+128 後端檔案、22.5K LOC、1,006 tests。14 種組合最佳化方法、14 個 Alpha 因子、10 條風控規則、71 個 API 端點。Phase A~H 全部完成。
 
-**主要阻塞**：永豐金 Shioaji API Key 尚在審核中。所有券商整合程式碼均已完成（含 83 個 mock 測試），但從未對接真實券商 API 進行驗證。
-
----
-
-## 2. 已完成階段總覽
-
-| 階段 | 完成日 | 摘要 |
-|------|--------|------|
-| A 基礎設施 | 2026-03-24 | InstrumentRegistry、多幣別 Portfolio、DataFeed 擴展、FRED 數據源 |
-| B 跨資產 Alpha | 2026-03-24 | 宏觀因子模型、跨資產信號、戰術配置引擎、Allocation API |
-| C 組合最佳化 | 2026-03-24 | 6 種最佳化器 (EW/IV/RP/MVO/BL/HRP)、Ledoit-Wolf 風險模型、幣別對沖 |
-| D 系統整合 | 2026-03-25 | MultiAssetStrategy、跨資產風控、AllocationPage 前端、5 新 Alpha 因子 |
-| E 實盤交易 | 2026-03-25 | SinopacBroker、ExecutionService、即時行情架構、Scanner、觸價委託、83 tests |
-| F 自動化 Alpha | 2026-03-26 | 排程引擎 (7 jobs)、因子篩選、Regime 調適、動態因子池、安全熔斷、10 API 端點 |
-| G 學術基準升級 | 2026-03-26 | +7 最佳化方法、GARCH/PCA 共變異數、VaR/CVaR、PBO/Randomized/Stress Test |
-| H 實用精煉 | 2026-03-26 | Deflated Sharpe Ratio + MinBTL、Semi-Variance 最佳化、Kalman Filter Pairs Trading |
+**主要阻塞**：永豐金 Shioaji API Key 審核中。券商整合程式碼已完成（含 mock 測試），但尚未對接真實 API。
 
 ---
 
-## 3. 當前阻塞與待辦
+## 2. 已完成階段
 
-### 3.1 阻塞項（需外部條件）
-
-| 項目 | 阻塞原因 | 解除後工作 |
-|------|---------|-----------|
-| Shioaji 整合測試 | 等待 API Key 核發 | 真實環境 login/下單/行情驗證 |
-| E2 即時行情 broadcast | 需 API Key 取得 tick 資料 | WS `market` 頻道接 SinopacQuoteManager |
-| E3 Paper Trading 循環 | 需 API Key 跑 simulation=True | 排程→下單→回報→對帳→通知 完整驗證 |
-
-### 3.2 已解決的孤島（v6.1 整合完成）
-
-| 模組 | 整合方式 |
-|------|---------|
-| G3 回測工具 (Randomized/PBO/Stress) | ✅ 已新增 3 個 API 端點 (`/backtest/randomized`, `/pbo`, `/stress-test`) |
-| F4 DynamicFactorPool | ✅ 已整合至 `AlphaDecisionEngine.decide()` + `AlphaScheduler.run_full_cycle()` |
-| F3b WS auto-alpha 頻道 | ✅ 已完成 |
-| F3c Auto-Alpha Dashboard | ✅ 已完成 |
-
-### 3.3 低優先級待辦
-
-| 項目 | 優先級 | 說明 |
-|------|--------|------|
-| F2d Alembic migration | 🟢 P2 | AlphaStore 目前使用 JSON 檔案，正式部署時需 DB migration |
-| FastAPI lifespan handler | 🟢 P2 | 替換 deprecated `on_event` (DeprecationWarning) |
+| 階段 | 日期 | 摘要 |
+|------|------|------|
+| A~D | 03-24~25 | 基礎設施 + 跨資產 Alpha + 組合最佳化 + 系統整合 |
+| E | 03-25 | SinopacBroker + ExecutionService + Scanner + 觸價 + 對帳 |
+| F | 03-26 | 自動化 Alpha 排程引擎 + 動態因子池 + 安全熔斷 + Dashboard |
+| G | 03-26 | 學術升級：+8 最佳化方法、GARCH/PCA、VaR/CVaR、PBO、Stress Test |
+| H | 03-26 | Deflated Sharpe、Semi-Variance、Kalman Filter Pairs |
 
 ---
 
-## 4. Phase H：實用精煉 ✅ (2026-03-26 完成)
+## 3. 阻塞項
 
-| 項目 | 說明 | 論文依據 |
-|------|------|---------|
-| H1 ✅ | `deflated_sharpe()` + `min_backtest_length()` — 多重測試校正 | Bailey & López de Prado (2014) |
-| H2 ✅ | `OptimizationMethod.SEMI_VARIANCE` — 下行風險最佳化（第 14 個方法） | Markowitz downside framework |
-| H3 ✅ | `KalmanHedgeRatio` + `PairsTradingStrategy(method="kalman")` | Kalman Filter state-space model |
-
----
-
-## 5. 未來方向（不排入開發計畫）
-
-以下項目有潛在價值，但目前不具備實施條件或優先度不足：
-
-- **IB 美股對接** — 等台股 Paper Trading 跑穩、確認架構可行後再擴展
-- **期貨/選擇權交易** — InstrumentRegistry 已支援，但需先驗證股票交易流程
-- **MVSK / 非高斯建模** (Tyler's M-estimator, skewed-t) — 學術性大於實用性，現有 Ledoit-Wolf + GARCH 已足夠
-- **HERC / NCO** — HRP 已夠用，等出現明確需求再實作
-- **EVaR / 非線性收縮 (RMT)** — 實作複雜度高，邊際改善有限
+| 項目 | 阻塞 | 解除後 |
+|------|------|--------|
+| Shioaji 整合測試 | API Key 審核 | login/下單/行情驗證 |
+| Paper Trading 完整循環 | 同上 | 排程→下單→回報→對帳→通知 |
+| 即時行情 WS broadcast | 同上 | SinopacQuoteManager → market 頻道 |
 
 ---
 
-## 6. 里程碑時間線
+## 4. Phase I：Alpha 因子庫擴展（論文驅動）
+
+> 論文來源：`docs/ref/papers/alpha/`（10 篇）
+> 差距分析：`docs/dev/SYSTEM_STATUS_REPORT.md` §11.7
+
+### 動機
+
+系統現有 14 個因子（11 價格 + 3 基本面），但與學術文獻比對後發現：
+- **Fama-French 5-factor 不完整**：缺 SMB (size)、CMA (investment)
+- **Gross Profitability 完全缺失**：Novy-Marx (2013) 證明預測力與 HML 相當
+- **101 Formulaic Alphas 只覆蓋 14/101**：Kakushadze (2016) 提供可直接轉為程式碼的公式
+- **因子篩選閾值過寬**：Harvey et al. (2016) 建議 t-stat > 3.0，系統目前 ICIR > 0.3
+
+### I1: Fama-French 因子補齊（🔴 P0）
+
+| 因子 | 定義 | 論文 | 數據需求 |
+|------|------|------|---------|
+| `size` (SMB) | log(market_cap) | Fama-French (1993) | FinMind 市值數據 |
+| `investment` (CMA) | YoY total asset growth | Fama-French (2015) | FinMind 財報 |
+| `gross_profitability` | (Revenue - COGS) / Assets | Novy-Marx (2013) | FinMind 財報 |
+
+**實作**：`src/strategy/factors.py` 新增 3 個基本面因子 + `FUNDAMENTAL_REGISTRY` 註冊。
+**價值**：補齊學術標準因子庫，使系統可復現經典研究。
+
+### I2: Kakushadze 101 精選（🟡 P1）
+
+從 101 個公式中挑選 **10~15 個低相關、高 Sharpe** 的因子。論文特性：
+- 平均持有期 0.6~6.4 天（適合短天期 alpha）
+- 平均配對相關性僅 15.9%（分散化好）
+- 全部為 price-volume 公式，不需基本面數據
+
+**實作**：`src/strategy/factors.py` 新增選定的公式因子。
+**篩選標準**：先用台股回測 IC > 0.02 + 低與現有因子的相關性。
+
+### I3: 因子篩選閾值校正（🔴 P0）
+
+| 現況 | 論文依據 | 修正 |
+|------|---------|------|
+| `min_icir = 0.3` | Harvey (2016): t > 3.0 | 提高至 `0.5` |
+| 無 post-publication decay 調整 | McLean & Pontiff (2016): OOS alpha ≈ 0.42× IS | `DynamicFactorPool` 加入 IS→OOS 衰減係數 |
+| 無 1/N benchmark | DeMiguel (2009): N>25 T<500 時 1/N 難以打敗 | `AlphaReport` 新增 vs-1/N Sharpe t-test |
+
+**實作**：修改 `src/alpha/auto/config.py` 和 `decision.py`。
+
+### I4: Momentum Crash 防護（🟡 P1）
+
+Daniel & Moskowitz (2016) 發現 momentum crash 在恐慌狀態後發生，可預測。
+
+**實作**：
+- `SafetyChecker` 新增 momentum crash 偵測（市場跌幅 > 20% + 高波動率）
+- `REGIME_FACTOR_BIAS[BEAR]["momentum"]` 從 0.5 降至 0.1
+- 可選：volatility-scaling `w_mom × (σ_target / σ_realized_20d)`
+
+**位置**：`src/alpha/auto/safety.py` + `decision.py`。
+
+---
+
+## 5. Phase J：Alpha 自動化擴展至跨資產
+
+> 目標：從「台股個股選股」擴展至「ETF 配置 + 跨市場」
+
+### J1: ETF Alpha Pipeline（🟡 P1）
+
+Asness et al. (2013) 證明 value + momentum 在**股票、債券、外匯、商品**中普遍有效。
+
+**實作**：
+- `AlphaConfig` 新增 `asset_type: Literal["stock", "etf", "mixed"]`
+- ETF 因子：momentum + value (yield/PE) + volatility + carry
+- Universe：台灣 ETF（0050/0056/00878/00713 等）+ 美國 ETF（SPY/QQQ/TLT/GLD 等）
+- 整合至 `AutoAlphaScheduler`，可分別跑「股票池」和「ETF 池」
+
+### J2: 兩層自動化整合（🟢 P2）
+
+將 auto-alpha（個股）與 TacticalEngine（資產配置）串接：
+```
+每日流水線（擴展版）：
+1. TacticalEngine → 資產類別權重 (股票 60% / 債券 ETF 25% / 商品 ETF 15%)
+2. 股票部位 → AutoAlpha 個股選股（現有流程）
+3. 債券/商品部位 → ETF Alpha Pipeline（J1）
+4. 合併 → PortfolioOptimizer → 最終權重
+```
+
+---
+
+## 6. 未來方向（不排入開發計畫）
+
+- **IB 美股對接** — 等台股 Paper Trading 跑穩後
+- **期貨/選擇權交易** — 等股票流程驗證後
+- **ML 因子模型** (Gu-Kelly-Xiu 2020) — trees/NN 翻倍 Sharpe，但 OOS R² < 0.4%，穩定性存疑
+- **MVSK / 非高斯建模** — 學術性 > 實用性
+
+---
+
+## 7. 里程碑
 
 | 日期 | 里程碑 |
 |------|--------|
-| 2026-03-22~23 | 股票交易系統（回測 + 7 策略 + 風控 + API + Web + Mobile） |
-| 2026-03-24 | Phase A~C（基礎設施 + 跨資產 Alpha + 組合最佳化） |
-| 2026-03-25 | Phase D~E（系統整合 + 實盤交易架構） |
-| 2026-03-26 | Phase F~H（自動化 Alpha + 學術升級 + 實用精煉），1,006 tests |
-| TBD | Shioaji API Key 取得 → 整合測試 → Paper Trading 驗證 |
-| TBD | Alpha 自動化擴展至 ETF / 跨資產配置（下一階段） |
+| 2026-03-22~25 | Phase A~E（核心系統 + 交易架構） |
+| 2026-03-26 | Phase F~H（自動化 + 學術升級 + 精煉），1,006 tests |
+| TBD | Shioaji API Key → 整合測試 → Paper Trading |
+| TBD | I1: Fama-French 因子補齊 (size/investment/gross_profitability) |
+| TBD | I3: 因子篩選閾值校正 (Harvey t>3.0 + McLean-Pontiff OOS decay) |
+| TBD | I2: Kakushadze 101 精選 (10~15 個低相關公式因子) |
+| TBD | I4: Momentum Crash 防護 |
+| TBD | J1: ETF Alpha Pipeline |
+| TBD | J2: 兩層自動化整合（個股 + ETF + 配置） |
