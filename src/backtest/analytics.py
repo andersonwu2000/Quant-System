@@ -9,9 +9,120 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 from src.domain.models import Order, Trade
 from src.portfolio.risk_model import RiskModel
+
+
+# ── Deflated Sharpe Ratio (Bailey & López de Prado, 2014) ──────────
+
+_EULER_MASCHERONI = 0.5772156649015329
+
+
+def deflated_sharpe(
+    observed_sharpe: float,
+    n_trials: int,
+    T: int,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+) -> float:
+    """Deflated Sharpe Ratio — probability that observed SR is not a false positive.
+
+    Accounts for multiple testing (n_trials), non-normality (skewness, kurtosis),
+    and sample length (T). All Sharpe ratio values are annualized (daily × √252).
+
+    Based on Bailey & López de Prado (2014). Internally converts to
+    per-observation scale for the E[max SR] computation.
+
+    Args:
+        observed_sharpe: The observed annualized Sharpe ratio.
+        n_trials: Number of strategy trials / backtests conducted.
+        T: Number of return observations (trading days).
+        skewness: Skewness of returns (0 for normal).
+        kurtosis: Kurtosis of returns (3 for normal).
+
+    Returns:
+        Probability (0 to 1) that the observed SR is not due to chance.
+        DSR < 0.05 means likely overfit.
+    """
+    if T <= 1 or n_trials < 1:
+        return 0.0
+
+    N = max(n_trials, 1)
+
+    # Convert annualized SR to per-observation SR for internal calculations
+    sr = observed_sharpe / np.sqrt(252)
+
+    # Expected maximum per-observation SR under the null (all strategies SR=0)
+    # E[max SR] ≈ (1 - γ) × Φ⁻¹(1 - 1/N) + γ × Φ⁻¹(1 - 1/(N·e))
+    # This gives the expected max of N i.i.d. standard normal draws,
+    # scaled by SE of SR estimator (1/√T).
+    if N == 1:
+        e_max_sr = 0.0
+    else:
+        e_max_sr = float(
+            (1.0 - _EULER_MASCHERONI) * norm.ppf(1.0 - 1.0 / N)
+            + _EULER_MASCHERONI * norm.ppf(1.0 - 1.0 / (N * np.e))
+        ) * (1.0 / np.sqrt(T))
+
+    # Standard error of SR (accounting for non-normality)
+    # Lo (2002): Var(SR) ≈ (1 + 0.5·SR² - skew·SR + (kurt-3)/4·SR²) / (T-1)
+    se = float(np.sqrt(
+        (1.0 + 0.5 * sr**2 - skewness * sr + (kurtosis - 3.0) / 4.0 * sr**2)
+        / (T - 1)
+    ))
+
+    if se <= 0:
+        return 0.0
+
+    # DSR = Φ((observed_SR - E[max SR]) / SE)
+    z = (sr - e_max_sr) / se
+    return float(norm.cdf(z))
+
+
+def min_backtest_length(
+    n_trials: int,
+    target_sharpe: float = 1.0,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+    significance: float = 0.05,
+) -> int:
+    """Minimum Backtest Length — smallest T for SR to be statistically significant.
+
+    Given N trials, find the minimum number of observations T such that
+    DSR(observed=target_sharpe, N, T) >= (1 - significance).
+
+    Args:
+        n_trials: Number of strategy trials conducted.
+        target_sharpe: The Sharpe ratio we want to validate.
+        skewness: Skewness of returns.
+        kurtosis: Kurtosis of returns.
+        significance: Significance level (default 0.05).
+
+    Returns:
+        Minimum T (number of trading days).
+    """
+    if n_trials < 1 or target_sharpe <= 0:
+        return 2
+
+    threshold = 1.0 - significance
+
+    # Binary search for T
+    lo, hi = 2, 100000
+    # First check if even hi is not enough
+    if deflated_sharpe(target_sharpe, n_trials, hi, skewness, kurtosis) < threshold:
+        return hi
+
+    while lo < hi:
+        mid = (lo + hi) // 2
+        dsr = deflated_sharpe(target_sharpe, n_trials, mid, skewness, kurtosis)
+        if dsr >= threshold:
+            hi = mid
+        else:
+            lo = mid + 1
+
+    return lo
 
 
 @dataclass
@@ -53,6 +164,9 @@ class BacktestResult:
     # ── 拒絕訂單統計 ──
     rejected_orders: int = 0
     rejected_notional: float = 0.0
+
+    # ── Deflated Sharpe Ratio ──
+    deflated_sharpe_ratio: float = 0.0    # DSR (computed when n_trials provided)
 
     # ── 回測防禦警告 ──
     survivorship_warnings: list[str] = field(default_factory=list)
@@ -116,6 +230,7 @@ class BacktestResult:
             "rejected_notional": self.rejected_notional,
             "omega_ratio": self.omega_ratio,
             "rolling_sharpe": self.rolling_sharpe,
+            "deflated_sharpe_ratio": self.deflated_sharpe_ratio,
             "survivorship_warnings": self.survivorship_warnings,
             "price_warnings": self.price_warnings,
         }

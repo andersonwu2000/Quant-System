@@ -24,6 +24,7 @@
 | E 實盤交易 | 2026-03-25 | SinopacBroker、ExecutionService、即時行情架構、Scanner、觸價委託、83 tests |
 | F 自動化 Alpha | 2026-03-26 | 排程引擎 (7 jobs)、因子篩選、Regime 調適、動態因子池、安全熔斷、10 API 端點 |
 | G 學術基準升級 | 2026-03-26 | +7 最佳化方法、GARCH/PCA 共變異數、VaR/CVaR、PBO/Randomized/Stress Test |
+| H 實用精煉 | 2026-03-26 | Deflated Sharpe Ratio + MinBTL、Semi-Variance 最佳化、Kalman Filter Pairs Trading |
 
 ---
 
@@ -109,8 +110,6 @@
 | 2026-03-24 | Phase A~C（基礎設施 + 跨資產 Alpha + 組合最佳化） |
 | 2026-03-25 | Phase D~E（系統整合 + 實盤交易架構） |
 | 2026-03-26 | Phase F~G（自動化 Alpha + 學術基準升級） |
+| 2026-03-26 | Phase H（實用精煉：H1 DSR+MinBTL, H2 Semi-Variance, H3 Kalman Pairs） |
 | TBD | Shioaji API Key 取得 → 整合測試 |
 | TBD | Paper Trading 完整循環驗證 |
-| TBD | H1: Deflated Sharpe Ratio + MinBTL |
-| TBD | H2: Downside Risk 最佳化 |
-| TBD | H3: Kalman Filter Pairs Trading |

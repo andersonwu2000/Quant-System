@@ -45,6 +45,7 @@ class OptimizationMethod(Enum):
     GLOBAL_MIN_VARIANCE = "global_min_variance"
     MAX_SHARPE = "max_sharpe"
     INDEX_TRACKING = "index_tracking"
+    SEMI_VARIANCE = "semi_variance"
 
 
 @dataclass
@@ -171,6 +172,8 @@ class PortfolioOptimizer:
             raw = self._optimize_max_sharpe(mu, cov, symbols)
         elif cfg.method == OptimizationMethod.INDEX_TRACKING:
             raw = self._optimize_index_tracking(returns, symbols)
+        elif cfg.method == OptimizationMethod.SEMI_VARIANCE:
+            raw = self._optimize_semi_variance(returns, symbols)
         else:
             raw = self._equal_weight(symbols)
 
@@ -827,6 +830,67 @@ class PortfolioOptimizer:
             return self._equal_weight(symbols)
 
         return {symbols[i]: float(best_w[i]) for i in range(n)}
+
+    # ── H2: Semi-Variance (Downside Risk) 最佳化 ──────────
+
+    def _optimize_semi_variance(
+        self,
+        returns: pd.DataFrame,
+        symbols: list[str],
+    ) -> dict[str, float]:
+        """Semi-variance optimization — only penalizes downside co-movements.
+
+        Computes semi-covariance matrix:
+            Σ_down[i,j] = E[min(r_i - μ_i, 0) × min(r_j - μ_j, 0)]
+        Minimizes w'Σ_down w subject to sum(w)=1, bounds.
+        """
+        cfg = self.config
+        n = len(symbols)
+        r = returns[symbols].dropna().values  # (T, n)
+        T = r.shape[0]
+
+        if T < 10:
+            return self._equal_weight(symbols)
+
+        # Compute semi-covariance matrix
+        mu = r.mean(axis=0)
+        downside = np.minimum(r - mu, 0.0)  # (T, n)
+        semi_cov: npt.NDArray[np.float64] = np.asarray(
+            (downside.T @ downside) / T, dtype=np.float64,
+        )
+
+        # Regularize to ensure positive semi-definite
+        semi_cov += np.eye(n) * 1e-8
+
+        def semi_var_objective(w: npt.NDArray[np.floating[Any]]) -> float:
+            return float(w @ semi_cov @ w)
+
+        w0 = np.ones(n) / n
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+        lb = 0.0 if cfg.long_only else -cfg.max_weight
+        bounds = [(lb, cfg.max_weight)] * n
+
+        try:
+            result = scipy_minimize(
+                semi_var_objective,
+                w0,
+                method="SLSQP",
+                bounds=bounds,
+                constraints=constraints,
+                options={"maxiter": 500, "ftol": 1e-12},
+            )
+            if result.success:
+                w = result.x
+                if cfg.long_only:
+                    w = np.maximum(w, 0.0)
+                total = w.sum()
+                if total > 0:
+                    w = w / total
+                return {symbols[i]: float(w[i]) for i in range(n)}
+        except Exception:
+            logger.warning("Semi-variance optimization failed, falling back to equal weight")
+
+        return self._equal_weight(symbols)
 
     # ── 約束 ─────────────────────────────────────────────
 

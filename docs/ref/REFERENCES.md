@@ -10,7 +10,6 @@
 | 檔案 | 書名 | 說明 |
 |------|------|------|
 | `portfolio-optimization-book.pdf` | Portfolio Optimization: Theory and Application (Palomar) | 608 頁，15 章，本系統差距分析的基準 |
-| `投資組合最佳化.pdf` | 投資組合最佳化（中文版） | 同上書中文版 |
 
 ---
 

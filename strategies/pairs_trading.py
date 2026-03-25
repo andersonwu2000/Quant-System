@@ -67,6 +67,38 @@ def _test_cointegration(
         return False, 1.0
 
 
+class KalmanHedgeRatio:
+    """Online Kalman Filter for dynamic hedge ratio estimation.
+
+    State space model: price_a = intercept + beta * price_b + noise
+    State vector: [intercept, hedge_ratio]
+    """
+
+    def __init__(self, delta: float = 1e-4, ve: float = 1e-3):
+        self.delta = delta  # transition covariance multiplier
+        self.ve = ve        # observation noise variance
+        self.beta: npt.NDArray[np.float64] = np.zeros(2, dtype=np.float64)  # state
+        self.P: npt.NDArray[np.float64] = np.eye(2, dtype=np.float64)      # state cov
+
+    def update(self, price_a: float, price_b: float) -> float:
+        """Update filter with new price pair, return current hedge ratio."""
+        x = np.array([1.0, price_b], dtype=np.float64)  # observation vector
+
+        # Prediction
+        Q = self.delta * self.P  # process noise
+        P_pred = self.P + Q
+
+        # Update
+        y = price_a - float(x @ self.beta)  # innovation
+        S = float(x @ P_pred @ x) + self.ve  # innovation covariance
+        K = (P_pred @ x) / S  # Kalman gain
+
+        self.beta = self.beta + K * y
+        self.P = P_pred - np.outer(K, x) @ P_pred
+
+        return float(self.beta[1])  # hedge ratio
+
+
 class PairsTradingStrategy(Strategy):
     """
     配對交易策略：
@@ -76,6 +108,10 @@ class PairsTradingStrategy(Strategy):
     - 當 Z-score > 閾值時，買入相對弱勢的那一方
     - 因為 long_only 限制，只做買入被低估的標的
     - 使用等權重配置
+
+    Supports two methods:
+    - "cointegration" (default): Engle-Granger two-step with OLS hedge ratio
+    - "kalman": Dynamic hedge ratio via Kalman Filter
     """
 
     def __init__(
@@ -84,11 +120,19 @@ class PairsTradingStrategy(Strategy):
         z_threshold: float = 1.5,
         coint_pvalue: float = 0.05,
         corr_fallback_threshold: float = 0.7,
+        method: str = "cointegration",
+        kalman_delta: float = 1e-4,
+        kalman_ve: float = 1e-3,
     ):
         self.lookback = lookback
         self.z_threshold = z_threshold
         self.coint_pvalue = coint_pvalue
         self.corr_fallback_threshold = corr_fallback_threshold
+        self.method = method
+        self.kalman_delta = kalman_delta
+        self.kalman_ve = kalman_ve
+        # Cache of Kalman filters per pair (key: tuple of sorted symbols)
+        self._kalman_filters: dict[tuple[str, str], KalmanHedgeRatio] = {}
 
     def name(self) -> str:
         return "pairs_trading"
@@ -129,48 +173,76 @@ class PairsTradingStrategy(Strategy):
             if np.any(prices_b == 0) or np.any(prices_a == 0):
                 continue
 
-            # 嘗試共整合檢驗
-            is_coint, p_value = self._test_cointegration(prices_a, prices_b)
+            if self.method == "kalman":
+                # Kalman Filter 模式：動態 hedge ratio
+                pair_key = (min(sym_a, sym_b), max(sym_a, sym_b))
+                if pair_key not in self._kalman_filters:
+                    self._kalman_filters[pair_key] = KalmanHedgeRatio(
+                        delta=self.kalman_delta, ve=self.kalman_ve,
+                    )
+                kf = self._kalman_filters[pair_key]
 
-            if is_coint:
-                # 共整合模式：使用 OLS hedge ratio 計算 spread
-                beta = _ols_hedge_ratio(prices_a, prices_b)
-                spread = prices_a - beta * prices_b
-                spread_mean = np.mean(spread)
-                spread_std = np.std(spread)
+                # Feed all prices to Kalman filter to get dynamic hedge ratio
+                spreads = np.zeros(len(prices_a))
+                for i in range(len(prices_a)):
+                    beta_k = kf.update(float(prices_a[i]), float(prices_b[i]))
+                    spreads[i] = float(prices_a[i]) - beta_k * float(prices_b[i])
 
+                # Z-score of spread
+                spread_mean = np.mean(spreads)
+                spread_std = np.std(spreads)
                 if spread_std == 0:
                     continue
 
-                z = (spread[-1] - spread_mean) / spread_std
+                z = (spreads[-1] - spread_mean) / spread_std
 
-                # Z > threshold: spread 偏高 → A 相對偏貴，買入 B
                 if z > self.z_threshold:
                     signals[sym_b] = signals.get(sym_b, 0.0) + abs(z)
-                # Z < -threshold: spread 偏低 → B 相對偏貴，買入 A
                 elif z < -self.z_threshold:
                     signals[sym_a] = signals.get(sym_a, 0.0) + abs(z)
             else:
-                # 後備模式：簡單價格比率（僅當相關性夠高時）
-                corr = float(np.corrcoef(prices_a, prices_b)[0, 1])
-                if abs(corr) < self.corr_fallback_threshold:
-                    continue
+                # 嘗試共整合檢驗
+                is_coint, p_value = self._test_cointegration(prices_a, prices_b)
 
-                ratio = prices_a / prices_b
-                ratio_mean = np.mean(ratio)
-                ratio_std = np.std(ratio)
+                if is_coint:
+                    # 共整合模式：使用 OLS hedge ratio 計算 spread
+                    beta = _ols_hedge_ratio(prices_a, prices_b)
+                    spread = prices_a - beta * prices_b
+                    spread_mean = np.mean(spread)
+                    spread_std = np.std(spread)
 
-                if ratio_std == 0:
-                    continue
+                    if spread_std == 0:
+                        continue
 
-                z = (ratio[-1] - ratio_mean) / ratio_std
+                    z = (spread[-1] - spread_mean) / spread_std
 
-                # Z > threshold: A 相對 B 偏高，買入 B（被低估方）
-                if z > self.z_threshold:
-                    signals[sym_b] = signals.get(sym_b, 0.0) + abs(z)
-                # Z < -threshold: B 相對 A 偏高，買入 A（被低估方）
-                elif z < -self.z_threshold:
-                    signals[sym_a] = signals.get(sym_a, 0.0) + abs(z)
+                    # Z > threshold: spread 偏高 → A 相對偏貴，買入 B
+                    if z > self.z_threshold:
+                        signals[sym_b] = signals.get(sym_b, 0.0) + abs(z)
+                    # Z < -threshold: spread 偏低 → B 相對偏貴，買入 A
+                    elif z < -self.z_threshold:
+                        signals[sym_a] = signals.get(sym_a, 0.0) + abs(z)
+                else:
+                    # 後備模式：簡單價格比率（僅當相關性夠高時）
+                    corr = float(np.corrcoef(prices_a, prices_b)[0, 1])
+                    if abs(corr) < self.corr_fallback_threshold:
+                        continue
+
+                    ratio = prices_a / prices_b
+                    ratio_mean = np.mean(ratio)
+                    ratio_std = np.std(ratio)
+
+                    if ratio_std == 0:
+                        continue
+
+                    z = (ratio[-1] - ratio_mean) / ratio_std
+
+                    # Z > threshold: A 相對 B 偏高，買入 B（被低估方）
+                    if z > self.z_threshold:
+                        signals[sym_b] = signals.get(sym_b, 0.0) + abs(z)
+                    # Z < -threshold: B 相對 A 偏高，買入 A（被低估方）
+                    elif z < -self.z_threshold:
+                        signals[sym_a] = signals.get(sym_a, 0.0) + abs(z)
 
         return equal_weight(
             signals,
