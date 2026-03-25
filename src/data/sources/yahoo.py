@@ -104,9 +104,11 @@ class YahooFeed(DataFeed):
                 time.sleep(0.5)
                 ticker = yf.Ticker(symbol)
                 # auto_adjust=True: close 已含除權除息調整，回測用調整後價格
+                start_str = start.strftime("%Y-%m-%d") if isinstance(start, datetime) else (str(start)[:10] if start else "2015-01-01")
+                end_str = end.strftime("%Y-%m-%d") if isinstance(end, datetime) else (str(end)[:10] if end else None)
                 df = ticker.history(
-                    start=str(start) if start else "2015-01-01",
-                    end=str(end) if end else None,
+                    start=start_str,
+                    end=end_str,
                     interval=interval,
                     auto_adjust=True,
                 )

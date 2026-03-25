@@ -88,6 +88,66 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"lookback": 20},
         "min_bars": 21,
     },
+    "alpha_2": {
+        "fn": flib.kakushadze_alpha_2,
+        "key": "alpha_2",
+        "default_kwargs": {},
+        "min_bars": 10,
+    },
+    "alpha_3": {
+        "fn": flib.kakushadze_alpha_3,
+        "key": "alpha_3",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_6": {
+        "fn": flib.kakushadze_alpha_6,
+        "key": "alpha_6",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_12": {
+        "fn": flib.kakushadze_alpha_12,
+        "key": "alpha_12",
+        "default_kwargs": {},
+        "min_bars": 3,
+    },
+    "alpha_33": {
+        "fn": flib.kakushadze_alpha_33,
+        "key": "alpha_33",
+        "default_kwargs": {},
+        "min_bars": 2,
+    },
+    "alpha_34": {
+        "fn": flib.kakushadze_alpha_34,
+        "key": "alpha_34",
+        "default_kwargs": {},
+        "min_bars": 8,
+    },
+    "alpha_38": {
+        "fn": flib.kakushadze_alpha_38,
+        "key": "alpha_38",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_44": {
+        "fn": flib.kakushadze_alpha_44,
+        "key": "alpha_44",
+        "default_kwargs": {},
+        "min_bars": 8,
+    },
+    "alpha_53": {
+        "fn": flib.kakushadze_alpha_53,
+        "key": "alpha_53",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_101": {
+        "fn": flib.kakushadze_alpha_101,
+        "key": "alpha_101",
+        "default_kwargs": {},
+        "min_bars": 1,
+    },
 }
 
 
@@ -102,17 +162,57 @@ def compute_market_returns(data: dict[str, pd.DataFrame]) -> pd.Series:
 
 @dataclass
 class FundamentalFactorDef:
-    """基本面因子定義。"""
+    """基本面因子定義。
+
+    Single-metric factors use ``metric_key`` (e.g. value_pe).
+    Multi-metric factors use ``metric_keys`` — the values are passed
+    positionally to ``fn`` in the order listed.
+    """
 
     name: str
     fn: Callable[..., float]
-    metric_key: str  # get_financials() 回傳 dict 中的 key
+    metric_key: str = ""  # get_financials() 回傳 dict 中的 key (single-metric)
+    metric_keys: list[str] = field(default_factory=list)  # multi-metric
+
+    def compute(self, financials: dict[str, float]) -> float | None:
+        """Compute factor value from a financials dict.
+
+        Returns None if required metrics are missing.
+        """
+        if self.metric_keys:
+            vals: list[float] = []
+            for k in self.metric_keys:
+                v = financials.get(k)
+                if v is None:
+                    return None
+                vals.append(v)
+            return self.fn(*vals)
+        # Single metric
+        metric_val = financials.get(self.metric_key)
+        if metric_val is None:
+            return None
+        return self.fn(metric_val)
 
 
 FUNDAMENTAL_REGISTRY: dict[str, FundamentalFactorDef] = {
     "value_pe": FundamentalFactorDef(name="value_pe", fn=flib.value_pe, metric_key="pe_ratio"),
     "value_pb": FundamentalFactorDef(name="value_pb", fn=flib.value_pb, metric_key="pb_ratio"),
     "quality_roe": FundamentalFactorDef(name="quality_roe", fn=flib.quality_roe, metric_key="roe"),
+    "size": FundamentalFactorDef(
+        name="size",
+        fn=lambda market_cap: -np.log(market_cap) if market_cap > 0 else 0.0,
+        metric_key="market_cap",
+    ),
+    "investment": FundamentalFactorDef(
+        name="investment",
+        fn=flib.investment_factor,
+        metric_keys=["total_assets_current", "total_assets_prev"],
+    ),
+    "gross_profit": FundamentalFactorDef(
+        name="gross_profit",
+        fn=flib.gross_profitability_factor,
+        metric_keys=["revenue", "cogs", "total_assets"],
+    ),
 }
 
 
@@ -143,9 +243,9 @@ def compute_fundamental_factor_values(
             except Exception:
                 logger.debug("Failed to get financials for %s on %s", sym, date_str, exc_info=True)
                 continue
-            metric_val = financials.get(fdef.metric_key)
-            if metric_val is not None:
-                row[sym] = fdef.fn(metric_val)
+            val = fdef.compute(financials)
+            if val is not None:
+                row[sym] = val
         if len(row) > 1:
             result_rows.append(row)
 
@@ -283,7 +383,9 @@ def compute_factor_values(
             if len(bars) < min_bars:
                 continue
             val = fn(bars, **fn_kwargs)
-            if not val.empty:
+            if isinstance(val, dict):
+                val = pd.Series(val)
+            if not val.empty and key in val.index:
                 values[dt] = float(val[key])
 
         if values:

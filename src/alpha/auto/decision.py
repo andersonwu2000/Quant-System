@@ -6,6 +6,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+import pandas as pd
+
 from src.alpha.auto.config import AutoAlphaConfig, FactorScore, ResearchSnapshot
 from src.alpha.auto.dynamic_pool import DynamicFactorPool
 from src.alpha.auto.factor_tracker import FactorPerformanceTracker
@@ -27,7 +30,7 @@ REGIME_FACTOR_BIAS: dict[MarketRegime, dict[str, float]] = {
     MarketRegime.BEAR: {
         "volatility": 1.5,
         "value_pe": 1.3,
-        "momentum": 0.5,
+        "momentum": 0.1,
         "max_ret": 1.2,
     },
     MarketRegime.SIDEWAYS: {
@@ -65,6 +68,7 @@ class AlphaDecisionEngine:
         snapshot: ResearchSnapshot,
         current_weights: dict[str, float] | None = None,
         store: AlphaStore | None = None,
+        market_returns: pd.Series | None = None,
     ) -> DecisionResult:
         """Produce a DecisionResult from a ResearchSnapshot.
 
@@ -79,6 +83,8 @@ class AlphaDecisionEngine:
             store contains >= 5 snapshots, ``FactorPerformanceTracker`` and
             ``DynamicFactorPool`` are used to pre-filter factors before the
             ICIR / hit-rate checks.
+        market_returns:
+            Optional daily market returns series for volatility scaling.
         """
         cfg = self._config
 
@@ -137,6 +143,20 @@ class AlphaDecisionEngine:
             for name in eligible:
                 multiplier = bias_map.get(name, 1.0)
                 raw_weights[name] = raw_weights[name] * multiplier
+
+        # Step 2b — volatility scaling for momentum (Daniel & Moskowitz 2016)
+        if (
+            cfg.volatility_scaling_enabled
+            and market_returns is not None
+            and len(market_returns) >= 20
+            and "momentum" in raw_weights
+        ):
+            realized_vol_20d = float(
+                market_returns.iloc[-20:].std() * np.sqrt(252)
+            )
+            if realized_vol_20d > 0:
+                scale = cfg.volatility_scaling_target / realized_vol_20d
+                raw_weights["momentum"] *= min(scale, 2.0)
 
         # Step 3 — normalise
         total = sum(raw_weights.values())

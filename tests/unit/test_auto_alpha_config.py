@@ -21,7 +21,7 @@ class TestDecisionConfig:
 
     def test_defaults(self) -> None:
         cfg = DecisionConfig()
-        assert cfg.min_icir == 0.3
+        assert cfg.min_icir == 0.5
         assert cfg.min_hit_rate == 0.52
         assert cfg.max_cost_drag == 200.0
         assert cfg.use_rolling_ic is True
@@ -62,7 +62,7 @@ class TestAutoAlphaConfig:
     def test_decision_config_nested(self) -> None:
         cfg = AutoAlphaConfig()
         assert isinstance(cfg.decision, DecisionConfig)
-        assert cfg.decision.min_icir == 0.3
+        assert cfg.decision.min_icir == 0.5
 
     def test_convenience_properties(self) -> None:
         """Property accessors should delegate to nested DecisionConfig."""

@@ -72,7 +72,7 @@ async def test_get_config(client: AsyncClient):
     assert data["universe_count"] == 150
     assert data["lookback"] == 252
     assert "decision" in data
-    assert data["decision"]["min_icir"] == 0.3
+    assert data["decision"]["min_icir"] == 0.5
 
 
 # ── PUT /config ──────────────────────────────────────────────

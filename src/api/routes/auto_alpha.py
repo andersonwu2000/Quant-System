@@ -371,15 +371,48 @@ async def run_now(
     task_id = str(uuid.uuid4())
 
     def _run_cycle() -> None:
+        from src.alpha.auto.researcher import AlphaResearcher
         from src.alpha.auto.scheduler import AlphaScheduler
+        from src.alpha.auto.store import AlphaStore
 
         try:
             with _tasks_lock:
                 _run_now_tasks[task_id] = {"status": "running", "started": datetime.now().isoformat()}
 
-            scheduler = AlphaScheduler(config=state.auto_alpha_config)
+            cfg = state.auto_alpha_config
+
+            # Pre-fetch data for default universe when scanner is unavailable
+            default_universe = [
+                "2330.TW", "2317.TW", "2454.TW", "2308.TW", "2382.TW",
+                "2881.TW", "2882.TW", "2891.TW", "2886.TW", "2884.TW",
+                "2303.TW", "3711.TW", "2412.TW", "1301.TW", "1303.TW",
+                "2002.TW", "1216.TW", "2207.TW", "3008.TW", "2357.TW",
+            ]
+            from src.data.sources import create_feed
+            from datetime import timedelta
+
+            feed = create_feed("yahoo", default_universe)
+            end_dt = datetime.now()
+            start_dt = end_dt - timedelta(days=int(cfg.lookback * 1.5))
+            data: dict[str, Any] = {}
+            for sym in default_universe:
+                try:
+                    bars = feed.get_bars(sym, start=start_dt, end=end_dt)
+                    if not bars.empty and len(bars) >= 60:
+                        data[sym] = bars
+                except Exception:
+                    pass
+
+            researcher = AlphaResearcher(cfg)
+            store = AlphaStore()
+
+            scheduler = AlphaScheduler(
+                config=cfg,
+                researcher=researcher,
+                store=store,
+            )
             result = scheduler.run_full_cycle(
-                data={},
+                data=data,
                 portfolio=state.portfolio,
                 execution_service=state.execution_service,
                 risk_engine=state.risk_engine,

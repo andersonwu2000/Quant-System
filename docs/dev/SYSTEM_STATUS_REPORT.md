@@ -4,7 +4,7 @@
 > **版本**: v5.0
 > **當前階段**: Phase A~H 全部完成，待 Shioaji API Key 進行整合測試
 > **代碼庫**: 2026-03-22 起始，master 分支
-> **架構設計**: `docs/dev/MULTI_ASSET_ARCHITECTURE.md`
+> **架構設計**: `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md`
 > **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v6.1
 
 ---
@@ -44,9 +44,9 @@
 |------|------|
 | 後端 Python 檔案 (src/ + strategies/) | 128 (120 src + 8 strategies) |
 | 後端 Python LOC | ~22,500 (21,807 + 714) |
-| 測試檔案 | 79 |
-| 測試 LOC | ~15,200 |
-| 測試數量 (pytest collected) | **1006** |
+| 測試檔案 | 82 |
+| 測試 LOC | ~15,700 |
+| 測試數量 (pytest collected) | **1054** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -60,10 +60,10 @@
 |------|--------|-----|----------|
 | `src/api/` | 22 | ~3,300 | REST API (14 路由, 54 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
-| `src/alpha/` | 23 | ~4,000 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool)** |
+| `src/alpha/` | 23 | ~4,100 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool, OOS decay 校正)** |
 | `src/backtest/` | 10 | ~3,500 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL |
 | `src/execution/` | 10 | ~2,000 | SinopacBroker + SimBroker (含融券借券成本) + ExecutionService + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 |
-| `src/strategy/` | 8 | 1,401 | 策略 ABC + 因子庫 (14) + 最佳化器 (3) + 研究工具 + Registry + MultiAssetStrategy |
+| `src/strategy/` | 8 | ~1,800 | 策略 ABC + 因子庫 (27: 11 價格 + 10 Kakushadze 101 + 6 基本面) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef) + Registry + MultiAssetStrategy |
 | `src/portfolio/` | 4 | ~1,260 | 組合最佳化 (14 方法: EW/InvVol/RP/MVO/BL/HRP/Robust/Resampled/CVaR/MaxDD/GMV/MaxSharpe/IndexTracking/SemiVariance) + 風險模型 (LW/GARCH/Factor Model Cov + VaR/CVaR 歷史+參數法) + James-Stein 均值收縮 + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
 | `src/domain/` | 3 | 653 | 領域模型：Instrument + Portfolio (多幣別) + Order (融資融券/零股) + Trade + RiskAlert |
@@ -93,7 +93,7 @@
 | 8 | Alpha Pipeline | `src/alpha/strategy.py` | 可配置因子管線 (中性化→正交化→IC 加權→建構) | 管線型 |
 | 9 | Multi-Asset | `src/strategy/multi_asset.py` | 兩層配置：戰術 → 資產內 Alpha → 組合最佳化 | 管線型 |
 
-### 4.2 Alpha 因子庫（14 因子）
+### 4.2 Alpha 因子庫（27 因子）
 
 **價格因子 (11)**:
 
@@ -111,13 +111,31 @@
 | skewness | `skewness()` | 負：負偏態溢酬 |
 | max_ret | `max_return()` | 負：彩券效應 |
 
-**基本面因子 (3)**:
+**Kakushadze 101 精選 (10)** — Phase I2:
 
-| 因子 | 訊號 | 數據源 |
-|------|------|--------|
-| value_pe | 低 P/E | FinMind |
-| value_pb | 低 P/B | FinMind |
-| quality_roe | 高 ROE | FinMind |
+| 因子 | 函數 | 類型 |
+|------|------|------|
+| alpha_2 | `kakushadze_alpha_2()` | volume-price 相關 |
+| alpha_3 | `kakushadze_alpha_3()` | volume-price 相關 |
+| alpha_6 | `kakushadze_alpha_6()` | volume-price 相關 |
+| alpha_12 | `kakushadze_alpha_12()` | 量價反轉 |
+| alpha_33 | `kakushadze_alpha_33()` | 日內動量 |
+| alpha_34 | `kakushadze_alpha_34()` | 波動率 regime |
+| alpha_38 | `kakushadze_alpha_38()` | 均值回歸 |
+| alpha_44 | `kakushadze_alpha_44()` | volume-price 相關 |
+| alpha_53 | `kakushadze_alpha_53()` | Williams %R 變體 |
+| alpha_101 | `kakushadze_alpha_101()` | 日內動量 |
+
+**基本面因子 (6)** — 含 Phase I1 Fama-French 補齊:
+
+| 因子 | 訊號 | 數據源 | 論文 |
+|------|------|--------|------|
+| value_pe | 低 P/E | FinMind | — |
+| value_pb | 低 P/B | FinMind | — |
+| quality_roe | 高 ROE | FinMind | — |
+| size | -log(market_cap)，小市值溢酬 | FinMind `market_cap` | Fama-French (1993) SMB |
+| investment | 負資產成長，保守投資溢酬 | FinMind `total_assets` | Fama-French (2015) CMA |
+| gross_profit | (Revenue - COGS) / Total Assets | FinMind 財報 | Novy-Marx (2013) |
 
 ### 4.3 數據源
 
@@ -285,12 +303,12 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 
 ## 7. 測試覆蓋
 
-### 7.1 後端測試（1,006 tests）
+### 7.1 後端測試（1,054 tests）
 
 | 分類 | 檔案數 | 測試數 | 說明 |
 |------|--------|--------|------|
 | Execution 層 | 7 | ~170 | SinopacBroker, QuoteManager, ExecutionService, MarketHours, Reconcile, StopOrder, ShioajiFeed |
-| Alpha 層 | 15 | ~163 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety)** |
+| Alpha 層 | 18 | ~211 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety, OOS decay)**, Kakushadze 101, Momentum Crash, **Fundamental Factors (size/investment/gross_profit)** |
 | 策略 + 回測 | 12 | ~147 | 各策略, 引擎, 分析, Walk-forward, Randomized, PBO, K-Fold, StressTest |
 | 風控 | 3 | ~60 | 規則, Kill Switch, Monitor |
 | API + 整合 | 6 | ~100 | REST 端點, Portfolio API, Auth, WebSocket |
@@ -382,7 +400,7 @@ volumes:
 | 回測引擎 | ✅ 完成 | 多資產/多幣別/FX 時序/40+ 指標/Walk-forward/Randomized/PBO(CSCV)/K-Fold/StressTest |
 | 策略框架 | ✅ 完成 | 9 策略 + Strategy ABC + Registry |
 | 數據源 | ✅ 完成 | Yahoo + FinMind + FRED + Shioaji (kbars/ticks/snapshot) |
-| Alpha 研究 | ✅ 完成 | 14 因子/中性化/正交化/Rolling IC/Pipeline/Regime/Attribution |
+| Alpha 研究 | ✅ 完成 | 24 因子 (含 10 Kakushadze 101)/中性化/正交化/Rolling IC/Pipeline/Regime/Attribution/Momentum Crash 防護 |
 | 戰術配置 | ✅ 完成 | 宏觀四因子 + 跨資產信號 + TacticalEngine |
 | 組合最佳化 | ✅ 完成 | 14 方法 (含 CVaR/MaxDD/Robust/Resampled/GMV/MaxSharpe/IndexTracking/SemiVariance) + LW/GARCH/Factor Cov + VaR/CVaR + James-Stein + 風險貢獻 |
 | 幣別對沖 | ✅ 完成 | 分級對沖 + HedgeRecommendation |
@@ -609,6 +627,57 @@ volumes:
 | 🟢 P2 | **HERC / NCO** | 書 Ch.12 | ❌ HRP 擴展 | 中 |
 | 🟢 P2 | **非線性收縮** | **Ledoit & Wolf (2014)**: d(λ)=α/(λ\|s(λ)\|^2) via Marcenko-Pastur, N=500 T=120 OOS -10~20% | ❌ Python: `analytical_shrinkage` 可整合 | 中 |
 | 🔵 P3 | Deep Learning Portfolios | 書 Ch.16 | ❌ 學術實驗階段 | 高 |
+
+### 11.7 Alpha 因子研究差距分析（論文驅動）
+
+> 參考論文（已下載至 `docs/ref/papers/alpha/`）：10 篇
+
+#### 11.7.1 因子庫完整性
+
+| 論文 | 系統現有因子 | 缺少的因子 | 影響 |
+|------|------------|-----------|------|
+| **Fama & French (1993)** 3-factor | ✅ market (隱含), value_pe/pb (≈HML) | ❌ SMB (市值因子) — 系統無獨立 size factor | 中 |
+| **Fama & French (2015)** 5-factor | ✅ quality_roe (≈RMW), ✅ investment (CMA), ✅ size (SMB) | — Phase I1 完成 | **已完成** |
+| **Novy-Marx (2013)** gross profitability | ✅ gross_profit | — Phase I1 完成 | **已完成** |
+| **Kakushadze (2016)** 101 Alphas | 14/101 | ❌ 87 個公式可直接轉為 `factors.py` 函式。多數為 price-volume 因子，平均持有期 0.6-6.4 天，平均相關性僅 15.9%。 | **高** |
+
+**建議新增因子**（按影響力排序）：
+1. ~~`gross_profitability`~~ ✅ Phase I1 完成
+2. ~~`investment`~~ ✅ Phase I1 完成
+3. ~~`size`~~ ✅ Phase I1 完成
+4. 從 Kakushadze 101 中挑選低相關、高 Sharpe 的 10-20 個公式
+
+#### 11.7.2 因子篩選閾值
+
+| 論文 | 發現 | 系統影響 |
+|------|------|---------|
+| **Harvey et al. (2016)** | 審查 316 因子，多數為 data mining。建議 t-stat > **3.0**（非傳統 2.0）才算顯著。 | ✅ Phase I3：`DecisionConfig.min_icir` 從 0.3 提高至 **0.5**。 |
+| **McLean & Pontiff (2016)** | 學術發表後因子報酬**衰減 58%**。post-publication 平均 OOS alpha = 0.42 × in-sample alpha。 | ✅ Phase I3：`AlphaResearcher._report_to_scores()` 現在以 `icir * oos_decay_factor (0.42)` 作為 eligibility 判斷依據。 |
+| **DeMiguel et al. (2009)** | N>25 T<500 時 1/N 幾乎無法被最佳化打敗。 | ✅ Phase I3：`AlphaReport.vs_equal_weight_sharpe` 報告 composite L/S 與 EW 的 Sharpe 差異。 |
+
+#### 11.7.3 動態因子配置（Regime-aware）
+
+| 論文 | 發現 | 系統影響 |
+|------|------|---------|
+| **Asness et al. (2013)** Value+Momentum Everywhere | Value 和 momentum 在股票、債券、外匯、商品期貨中**普遍有效**，且兩者負相關（組合 Sharpe 更高）。 | `REGIME_FACTOR_BIAS` 中 momentum + value 應作為**核心組合**，跨資產 Alpha (`cross_asset.py`) 已有但未與 auto-alpha 整合。 |
+| **Daniel & Moskowitz (2016)** Momentum Crashes | Momentum crash 在**恐慌狀態**（市場下跌 + 高波動率）後發生，loser 組合有 option-like 凸性報酬。動態策略：σ_target / σ_realized 調整曝險，可**翻倍** Sharpe。 | `SafetyChecker` 應新增 **momentum crash 偵測**：(1) 市場跌幅 > 20% + VIX > 30 → 暫停 momentum 因子；(2) `REGIME_FACTOR_BIAS[BEAR]["momentum"]` 應從 0.5 降至 **0.2** 或 0。(3) 考慮 volatility-scaling：w_mom × (σ_target / σ_realized_20d)。 |
+
+#### 11.7.4 ML 方法（進階）
+
+| 論文 | 發現 | 系統影響 |
+|------|------|---------|
+| **Gu, Kelly, Xiu (2020)** ML Asset Pricing | Trees + Neural Nets **翻倍** 傳統方法的 Sharpe (1.35 vs ~0.6)。關鍵：非線性交互效應。Top 預測因子：momentum variants + liquidity + volatility。920+ 特徵，但主要信號集中在少數。 | 系統的 `AlphaDecisionEngine` 用線性 ICIR 加權。論文顯示**非線性方法大幅優於線性**。長期可考慮 gradient boosting 替代 IC 加權。但**短期內穩定性存疑**——論文的 OOS R² 僅 0.16-0.40%，且 top 特徵與系統已有因子高度重疊。 |
+
+#### 11.7.5 Alpha 研究論文收藏統計
+
+| 子領域 | 已下載 | 待下載 | 說明 |
+|--------|--------|--------|------|
+| 因子理論基礎 | 4/4 | 0 | Fama-French 93/15, Harvey 16, McLean-Pontiff 16 |
+| 因子組合與權重 | 3/3 | 0 | DeMiguel 09, Asness 13, Novy-Marx 13 |
+| IC 分析與公式 | 1/2 | 1 | Kakushadze 101 ✅; 缺 Kakushadze 4000 |
+| Regime 與動態 | 1/2 | 1 | Momentum Crashes ✅; 缺 Ang-Bekaert 04 (HMM) |
+| ML 方法 | 1/1 | 0 | Gu-Kelly-Xiu 20 ✅ |
+| 書籍 | 0/3 | 3 | Qian/Grinold-Kahn/López de Prado (教科書，非論文) |
 
 ---
 
