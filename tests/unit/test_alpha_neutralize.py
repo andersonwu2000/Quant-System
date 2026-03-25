@@ -104,12 +104,26 @@ class TestNeutralize:
         result = neutralize(df, NeutralizeMethod.INDUSTRY_SIZE, industry_map=industry_map, market_caps=caps)
         assert result.shape == df.shape
 
-    def test_industry_without_map_raises(self):
+    def test_industry_without_map_falls_back_to_market(self):
+        """缺少 industry_map 時應自動退化為 MARKET 中性化，而非拋出錯誤。"""
         df = _make_factor_df()
-        with pytest.raises(ValueError, match="industry_map"):
-            neutralize(df, NeutralizeMethod.INDUSTRY)
+        result = neutralize(df, NeutralizeMethod.INDUSTRY)
+        # 退化為 MARKET → 每期均值為 0
+        for dt in result.index:
+            row = result.loc[dt].dropna()
+            assert abs(row.mean()) < 1e-10
 
-    def test_size_without_caps_raises(self):
+    def test_size_without_caps_falls_back_to_market(self):
+        """缺少 market_caps 時應自動退化為 MARKET 中性化。"""
         df = _make_factor_df()
-        with pytest.raises(ValueError, match="market_caps"):
-            neutralize(df, NeutralizeMethod.SIZE)
+        result = neutralize(df, NeutralizeMethod.SIZE)
+        for dt in result.index:
+            row = result.loc[dt].dropna()
+            assert abs(row.mean()) < 1e-10
+
+    def test_industry_size_partial_fallback(self):
+        """有 industry_map 但無 market_caps，退化為 INDUSTRY 中性化。"""
+        df = _make_factor_df()
+        industry_map = {"A": "tech", "B": "tech", "C": "fin", "D": "fin", "E": "fin"}
+        result = neutralize(df, NeutralizeMethod.INDUSTRY_SIZE, industry_map=industry_map)
+        assert result.shape == df.shape

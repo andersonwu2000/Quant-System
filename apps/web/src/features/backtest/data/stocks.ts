@@ -1,7 +1,7 @@
 export interface StockEntry {
   ticker: string;
   name: string;
-  market: "US" | "TW" | "ETF";
+  market: "US" | "TW" | "ETF" | "Futures";
   sector?: string;
 }
 
@@ -279,7 +279,30 @@ const ETF_STOCKS: StockEntry[] = [
   { ticker: "00940.TW", name: "元大台灣價值高息", market: "ETF", sector: "台股ETF" },
 ];
 
-export const STOCK_LIST: StockEntry[] = [...US_STOCKS, ...TW_STOCKS, ...ETF_STOCKS];
+// ── 期貨 (常用指數 / 商品 / 利率期貨) ──────────────────────────
+
+const FUTURES: StockEntry[] = [
+  // US Index Futures
+  { ticker: "ES=F", name: "E-mini S&P 500", market: "Futures", sector: "US Index" },
+  { ticker: "NQ=F", name: "E-mini Nasdaq 100", market: "Futures", sector: "US Index" },
+  { ticker: "YM=F", name: "E-mini Dow Jones", market: "Futures", sector: "US Index" },
+  { ticker: "RTY=F", name: "E-mini Russell 2000", market: "Futures", sector: "US Index" },
+  // Metals
+  { ticker: "GC=F", name: "Gold Futures", market: "Futures", sector: "Metals" },
+  { ticker: "SI=F", name: "Silver Futures", market: "Futures", sector: "Metals" },
+  // Energy
+  { ticker: "CL=F", name: "Crude Oil (WTI)", market: "Futures", sector: "Energy" },
+  { ticker: "NG=F", name: "Natural Gas", market: "Futures", sector: "Energy" },
+  // US Treasury
+  { ticker: "ZB=F", name: "US Treasury Bond", market: "Futures", sector: "Treasury" },
+  { ticker: "ZN=F", name: "10-Year T-Note", market: "Futures", sector: "Treasury" },
+  { ticker: "ZF=F", name: "5-Year T-Note", market: "Futures", sector: "Treasury" },
+  // TW Futures
+  { ticker: "TXF=F", name: "TAIEX Futures (TX)", market: "Futures", sector: "TW Futures" },
+  { ticker: "MXF=F", name: "Mini-TAIEX Futures (MTX)", market: "Futures", sector: "TW Futures" },
+];
+
+export const STOCK_LIST: StockEntry[] = [...US_STOCKS, ...TW_STOCKS, ...ETF_STOCKS, ...FUTURES];
 
 // ── 預設組合 ────────────────────────────────────────────────
 
@@ -292,7 +315,7 @@ export interface Preset {
   tickers: string[];
 }
 
-const byMarketSector = (market: "US" | "TW" | "ETF", sector?: string) =>
+const byMarketSector = (market: "US" | "TW" | "ETF" | "Futures", sector?: string) =>
   STOCK_LIST.filter((s) => s.market === market && (!sector || s.sector === sector)).map((s) => s.ticker);
 
 export const PRESETS: Preset[] = [
@@ -316,4 +339,10 @@ export const PRESETS: Preset[] = [
   { key: "etf_global", label: "Global Allocation", labelZh: "全球資產配置", tickers: ["SPY", "EFA", "EEM", "TLT", "GLD", "USO"] },
   { key: "etf_tw", label: "TW ETF", labelZh: "台股 ETF", tickers: byMarketSector("ETF", "台股ETF") },
   { key: "etf_bond", label: "Bond ETF", labelZh: "債券 ETF", tickers: byMarketSector("ETF", "債券") },
+  // Futures
+  { key: "futures_all", label: "Futures All", labelZh: "期貨全部", tickers: byMarketSector("Futures") },
+  { key: "futures_us_index", label: "US Index Futures", labelZh: "美股指數期貨", tickers: byMarketSector("Futures", "US Index") },
+  { key: "futures_metals", label: "Metal Futures", labelZh: "金屬期貨", tickers: byMarketSector("Futures", "Metals") },
+  { key: "futures_energy", label: "Energy Futures", labelZh: "能源期貨", tickers: byMarketSector("Futures", "Energy") },
+  { key: "futures_tw", label: "TW Futures", labelZh: "台指期貨", tickers: byMarketSector("Futures", "TW Futures") },
 ];

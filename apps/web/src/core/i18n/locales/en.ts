@@ -263,6 +263,11 @@ export const en = {
     universeDone: "Done",
   },
 
+  // universe
+  universe: {
+    futures: "Futures",
+  },
+
   // alpha research
   alpha: {
     title: "Alpha Research",
@@ -277,6 +282,7 @@ export const en = {
     neutralizeIndustry: "Industry",
     neutralizeSize: "Size",
     neutralizeIndustrySize: "Industry + Size",
+    neutralizeWarning: "Industry/Size neutralization is only effective for stocks. Non-stock assets use Market neutralization.",
     nQuantiles: "Quantiles",
     holdingPeriod: "Holding Period (days)",
     run: "Run Analysis",
@@ -301,6 +307,13 @@ export const en = {
     icTimeSeries: "IC Time Series",
     quantileReturns: "Quantile Returns",
     universeSize: "Universe",
+    instruments: "instruments",
+    stocks: "stocks",
+    etfs: "ETFs",
+    futures: "futures",
+    advancedParams: "Advanced Parameters",
+    minListingDays: "Min Listing Days",
+    minAvgVolume: "Min Avg Volume",
     factorNames: {
       momentum: "Momentum",
       mean_reversion: "Mean Reversion",

@@ -265,6 +265,11 @@ export const zh: Translations = {
     universeDone: "完成",
   },
 
+  // universe
+  universe: {
+    futures: "期貨",
+  },
+
   // alpha research
   alpha: {
     title: "Alpha 研究",
@@ -279,6 +284,7 @@ export const zh: Translations = {
     neutralizeIndustry: "行業",
     neutralizeSize: "規模",
     neutralizeIndustrySize: "行業 + 規模",
+    neutralizeWarning: "產業/規模中性化僅適用於個股。非個股資產將使用市場中性化。",
     nQuantiles: "分位數",
     holdingPeriod: "持倉週期（天）",
     run: "執行分析",
@@ -303,6 +309,13 @@ export const zh: Translations = {
     icTimeSeries: "IC 時序",
     quantileReturns: "分位數收益",
     universeSize: "股票池",
+    instruments: "標的",
+    stocks: "個股",
+    etfs: "ETF",
+    futures: "期貨",
+    advancedParams: "進階參數",
+    minListingDays: "最低上市天數",
+    minAvgVolume: "最低平均成交量",
     factorNames: {
       momentum: "動量",
       mean_reversion: "均值回歸",

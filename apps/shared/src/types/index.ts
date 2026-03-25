@@ -185,6 +185,8 @@ export interface AlphaRunRequest {
   neutralize_method?: "market" | "industry" | "size" | "industry_size";
   n_quantiles?: number;
   holding_period?: number;
+  min_listing_days?: number;
+  min_avg_volume?: number;
 }
 
 export interface AlphaSummary {
@@ -234,6 +236,10 @@ export interface AlphaReport {
   universe_size: number;
   start_date: string;
   end_date: string;
+  /** Original universe symbols (echoed back from request for UI display) */
+  universe?: string[];
+  /** Market regime detected during analysis period */
+  regime?: string;
 }
 
 export interface SystemMetrics {

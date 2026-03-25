@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useMemo } from "react";
+import { ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { useT } from "@core/i18n";
 import { UniversePicker } from "@feat/backtest/components/UniversePicker";
 import { AnimatedSelect } from "@feat/backtest/components/AnimatedSelect";
@@ -18,6 +18,27 @@ const FACTORS: { name: FactorName; defaultDirection: 1 | -1 }[] = [
   { name: "skewness",        defaultDirection: -1 },
   { name: "max_ret",         defaultDirection: -1 },
 ];
+
+/** Known ETF tickers (US-listed) that are not suffixed */
+const KNOWN_ETF_TICKERS = new Set([
+  "SPY","QQQ","IWM","DIA","VOO","VTI",
+  "XLK","XLF","XLV","XLE","XLY","XLP","XLI","XLU","XLB","XLRE","SMH",
+  "EFA","EEM","VWO","FXI","EWJ","EWT",
+  "TLT","IEF","SHY","LQD","HYG","AGG",
+  "GLD","SLV","USO","DBA",
+]);
+
+/** Check whether a symbol is a non-stock asset (ETF or futures) */
+function isNonStock(symbol: string): boolean {
+  // Futures: ends with =F
+  if (symbol.endsWith("=F")) return true;
+  // TW ETFs: ticker part (before .TW) starts with "0" or "00"
+  const base = symbol.replace(".TW", "");
+  if (symbol.endsWith(".TW") && /^0/.test(base)) return true;
+  // Known US ETFs
+  if (KNOWN_ETF_TICKERS.has(symbol)) return true;
+  return false;
+}
 
 interface Props {
   onSubmit: (req: AlphaRunRequest) => void;
@@ -38,6 +59,14 @@ export function AlphaConfigForm({ onSubmit, running }: Props) {
   const [nQuantiles, setNQuantiles] = useState(5);
   const [holdingPeriod, setHoldingPeriod] = useState(5);
   const [errors, setErrors] = useState<string[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [minListingDays, setMinListingDays] = useState(252);
+  const [minAvgVolume, setMinAvgVolume] = useState(100000);
+
+  const hasNonStockAssets = useMemo(
+    () => universe.some(isNonStock),
+    [universe],
+  );
 
   const toggleFactor = (name: FactorName, def: 1 | -1) => {
     setSelectedFactors((prev) => {
@@ -67,9 +96,21 @@ export function AlphaConfigForm({ onSubmit, running }: Props) {
     const factors: AlphaFactorSpec[] = (
       Object.entries(selectedFactors) as [FactorName, 1 | -1][]
     ).map(([name, direction]) => ({ name, direction }));
-    onSubmit({ factors, universe, start, end, neutralize_method: neutralize, n_quantiles: nQuantiles, holding_period: holdingPeriod });
+    onSubmit({
+      factors,
+      universe,
+      start,
+      end,
+      neutralize_method: neutralize,
+      n_quantiles: nQuantiles,
+      holding_period: holdingPeriod,
+      ...(showAdvanced ? { min_listing_days: minListingDays, min_avg_volume: minAvgVolume } : {}),
+    } as AlphaRunRequest);
     setOpen(false);
   };
+
+  const needsWarning = (value: string) =>
+    hasNonStockAssets && (value === "industry" || value === "industry_size");
 
   const neutralizeOptions = [
     { value: "market",         label: t.alpha.neutralizeMarket },
@@ -147,7 +188,17 @@ export function AlphaConfigForm({ onSubmit, running }: Props) {
           {/* Advanced options */}
           <div className="grid grid-cols-3 gap-3">
             <label className="space-y-1">
-              <span className="text-sm text-slate-500 dark:text-slate-400">{t.alpha.neutralize}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-slate-500 dark:text-slate-400">{t.alpha.neutralize}</span>
+                {needsWarning(neutralize ?? "market") && (
+                  <span className="relative group">
+                    <AlertTriangle size={14} className="text-amber-500" />
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-64 px-3 py-2 bg-slate-800 dark:bg-slate-900 text-white text-xs rounded-lg shadow-lg z-20 leading-relaxed">
+                      {t.alpha.neutralizeWarning}
+                    </span>
+                  </span>
+                )}
+              </div>
               <AnimatedSelect
                 value={neutralize ?? "market"}
                 options={neutralizeOptions}
@@ -164,6 +215,32 @@ export function AlphaConfigForm({ onSubmit, running }: Props) {
               <input type="number" min={1} max={60} value={holdingPeriod} onChange={(e) => setHoldingPeriod(Number(e.target.value))}
                 className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
             </label>
+          </div>
+
+          {/* Collapsible advanced parameters */}
+          <div className="border border-slate-200 dark:border-surface-light rounded-lg">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-left text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-surface-light rounded-lg transition-colors"
+            >
+              <span>{t.alpha.advancedParams}</span>
+              {showAdvanced ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+            </button>
+            {showAdvanced && (
+              <div className="px-4 pb-4 pt-1 grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-surface-light">
+                <label className="space-y-1">
+                  <span className="text-sm text-slate-500 dark:text-slate-400">{t.alpha.minListingDays}</span>
+                  <input type="number" min={0} max={1000} value={minListingDays} onChange={(e) => setMinListingDays(Number(e.target.value))}
+                    className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-sm text-slate-500 dark:text-slate-400">{t.alpha.minAvgVolume}</span>
+                  <input type="number" min={0} step={10000} value={minAvgVolume} onChange={(e) => setMinAvgVolume(Number(e.target.value))}
+                    className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-surface-light rounded-lg px-3 py-2 text-sm" />
+                </label>
+              </div>
+            )}
           </div>
 
           {errors.length > 0 && (

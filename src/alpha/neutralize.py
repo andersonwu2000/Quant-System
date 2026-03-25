@@ -8,10 +8,13 @@
 
 from __future__ import annotations
 
+import logging
 from enum import Enum
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class NeutralizeMethod(Enum):
@@ -85,18 +88,33 @@ def neutralize(
         return _neutralize_market(factor_values)
 
     if method == NeutralizeMethod.INDUSTRY:
-        if industry_map is None:
-            raise ValueError("industry_map required for INDUSTRY neutralization")
+        if not industry_map:
+            logger.info(
+                "Industry map unavailable (non-stock universe?), falling back to MARKET neutralization"
+            )
+            return _neutralize_market(factor_values)
         return _neutralize_industry(factor_values, industry_map)
 
     if method == NeutralizeMethod.SIZE:
-        if market_caps is None:
-            raise ValueError("market_caps required for SIZE neutralization")
+        if market_caps is None or market_caps.empty:
+            logger.info(
+                "Market caps unavailable (non-stock universe?), falling back to MARKET neutralization"
+            )
+            return _neutralize_market(factor_values)
         return _neutralize_size(factor_values, market_caps)
 
     if method == NeutralizeMethod.INDUSTRY_SIZE:
-        if industry_map is None or market_caps is None:
-            raise ValueError("industry_map and market_caps required for INDUSTRY_SIZE neutralization")
+        if not industry_map and (market_caps is None or market_caps.empty):
+            logger.info(
+                "Industry map and market caps unavailable, falling back to MARKET neutralization"
+            )
+            return _neutralize_market(factor_values)
+        if not industry_map:
+            logger.info("Industry map unavailable, falling back to SIZE neutralization")
+            return _neutralize_size(factor_values, market_caps)  # type: ignore[arg-type]
+        if market_caps is None or market_caps.empty:
+            logger.info("Market caps unavailable, falling back to INDUSTRY neutralization")
+            return _neutralize_industry(factor_values, industry_map)
         return _neutralize_industry_size(factor_values, industry_map, market_caps)
 
     raise ValueError(f"Unknown method: {method}")

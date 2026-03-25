@@ -106,7 +106,7 @@ class AlphaReport:
             "         Alpha Pipeline Report         ",
             "═══════════════════════════════════════",
             "",
-            f"Universe: avg {self.universe_counts.get('avg', 0)} stocks "
+            f"Universe: avg {self.universe_counts.get('avg', 0)} instruments "
             f"(min {self.universe_counts.get('min', 0)}, max {self.universe_counts.get('max', 0)})",
             f"Factors: {len(self.config.factors)}",
             "",
@@ -208,7 +208,7 @@ class AlphaPipeline:
             "max": max(counts) if counts else 0,
         }
 
-        logger.info("Universe: avg=%d stocks across %d dates", universe_counts["avg"], len(all_dates))
+        logger.info("Universe: avg=%d instruments across %d dates", universe_counts["avg"], len(all_dates))
 
         # [2] 逐因子計算
         raw_factors: dict[str, pd.DataFrame] = {}

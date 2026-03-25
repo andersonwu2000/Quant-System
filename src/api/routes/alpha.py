@@ -37,6 +37,10 @@ class AlphaRunRequest(BaseModel):
     neutralize_method: str = "market"
     n_quantiles: int = Field(default=5, ge=3, le=10)
     holding_period: int = Field(default=5, ge=1, le=60)
+    # 多資產支援 — 可選參數
+    min_listing_days: int = Field(default=60, ge=0)
+    min_avg_volume: float | None = None
+    asset_classes: list[str] = Field(default_factory=list)
 
 
 class AlphaSummaryResponse(BaseModel):
@@ -98,13 +102,17 @@ async def submit_alpha_research(
             neutralize = method_map.get(req.neutralize_method, NeutralizeMethod.MARKET)
 
             alpha_config = AlphaConfig(
-                universe=UniverseConfig(min_listing_days=60, min_avg_volume=1000),
+                universe=UniverseConfig(
+                    min_listing_days=req.min_listing_days,
+                    min_avg_volume=req.min_avg_volume,
+                    asset_classes=req.asset_classes,
+                ),
                 factors=factor_specs,
                 neutralize_method=neutralize,
                 n_quantiles=req.n_quantiles,
                 holding_period=req.holding_period,
                 construction=ConstructionConfig(
-                    cost_bps=config.commission_rate * 10000 + 30,  # 手續費 + 稅
+                    cost_bps=config.commission_rate * 10000 + config.tax_rate * 10000,
                 ),
             )
 

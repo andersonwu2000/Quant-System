@@ -17,15 +17,22 @@ from src.data.fundamentals import FundamentalsProvider
 
 @dataclass
 class UniverseConfig:
-    """股票池篩選配置。"""
+    """投資標的池篩選配置。
 
-    min_avg_volume: float | None = None  # 最低日均成交量（股）
+    支援多資產類別（個股、ETF、期貨）。
+    基本面相關篩選（市值、產業）僅在 fundamentals provider 可用時生效，
+    非個股資產（ETF、期貨）會自動跳過這些篩選條件。
+    """
+
+    min_avg_volume: float | None = None  # 最低日均成交量（股/口）
     min_avg_turnover: float | None = None  # 最低日均成交額（元）
-    min_market_cap: float | None = None  # 最低市值（元）
-    min_listing_days: int = 252  # 最少上市天數
-    exclude_sectors: list[str] = field(default_factory=list)  # 排除的產業
+    min_market_cap: float | None = None  # 最低市值（元）— 僅個股
+    min_listing_days: int = 252  # 最少上市/上架天數
+    exclude_sectors: list[str] = field(default_factory=list)  # 排除的產業 — 僅個股
     volume_lookback: int = 60  # 流動性計算回望天數
     max_missing_pct: float = 0.1  # 最大允許缺值比例
+    asset_classes: list[str] = field(default_factory=list)  # 限定資產類別 (空=全部)
+    exclude_asset_classes: list[str] = field(default_factory=list)  # 排除的資產類別
 
 
 class UniverseFilter:
@@ -102,18 +109,24 @@ class UniverseFilter:
             if np.isnan(turnover) or turnover < c.min_avg_turnover:
                 return False
 
-        # 產業篩選
+        # 產業篩選 — 僅在 fundamentals 可用且有產業資料時生效
         if c.exclude_sectors and fundamentals is not None:
-            sector = fundamentals.get_sector(symbol)
-            if sector in c.exclude_sectors:
-                return False
+            try:
+                sector = fundamentals.get_sector(symbol)
+                if sector and sector in c.exclude_sectors:
+                    return False
+            except Exception:
+                pass  # 非個股資產可能無產業資料，跳過
 
-        # 市值篩選
+        # 市值篩選 — 僅在 fundamentals 可用且有市值資料時生效
         if c.min_market_cap is not None and fundamentals is not None:
-            date_str = date.strftime("%Y-%m-%d") if hasattr(date, "strftime") else str(date)
-            financials = fundamentals.get_financials(symbol, date_str)
-            market_cap = financials.get("market_cap", 0.0)
-            if market_cap < c.min_market_cap:
-                return False
+            try:
+                date_str = date.strftime("%Y-%m-%d") if hasattr(date, "strftime") else str(date)
+                financials = fundamentals.get_financials(symbol, date_str)
+                market_cap = financials.get("market_cap", 0.0)
+                if market_cap and market_cap < c.min_market_cap:
+                    return False
+            except Exception:
+                pass  # 非個股資產可能無財報資料，跳過
 
         return True

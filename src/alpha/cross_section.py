@@ -129,9 +129,17 @@ def quantile_backtest(
 
     quantile_returns = pd.DataFrame(quantile_returns_rows, index=common_dates[: len(quantile_returns_rows)])
 
-    # 平均報酬（年化，假設持倉週期的報酬，乘以 252/holding 近似）
+    # 平均報酬（年化 — 從實際交易日數推算，非硬編碼 252）
     mean_returns = quantile_returns.mean()
-    periods_per_year = 252 / max(len(common_dates) / max(len(quantile_returns_rows), 1), 1)
+    if len(common_dates) >= 2:
+        calendar_days = (common_dates[-1] - common_dates[0]).days
+        periods_per_year = (
+            len(common_dates) / (calendar_days / 365.25)
+            if calendar_days > 0
+            else 252.0
+        )
+    else:
+        periods_per_year = 252.0
     mean_annual = mean_returns * periods_per_year
 
     # 多空組合

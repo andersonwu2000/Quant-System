@@ -9,7 +9,7 @@ interface UniversePickerProps {
   onChange: (v: string[]) => void;
 }
 
-type MarketTab = "US" | "TW" | "ETF";
+type MarketTab = "US" | "TW" | "ETF" | "Futures";
 
 export function UniversePicker({ value, onChange }: UniversePickerProps) {
   const { t, lang } = useT();
@@ -67,12 +67,14 @@ export function UniversePicker({ value, onChange }: UniversePickerProps) {
     US: STOCK_LIST.filter((s) => s.market === "US").length,
     TW: STOCK_LIST.filter((s) => s.market === "TW").length,
     ETF: STOCK_LIST.filter((s) => s.market === "ETF").length,
+    Futures: STOCK_LIST.filter((s) => s.market === "Futures").length,
   };
 
   const tabLabels: Record<MarketTab, [string, string]> = {
     US: ["美股", "US"],
     TW: ["台股", "TW"],
     ETF: ["ETF", "ETF"],
+    Futures: ["期貨", "Futures"],
   };
 
   return (
@@ -133,7 +135,7 @@ export function UniversePicker({ value, onChange }: UniversePickerProps) {
             <div className="px-5 pb-3 space-y-2.5 border-b border-slate-100 dark:border-slate-700">
               {/* Market tabs */}
               <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
-                {(["US", "TW", "ETF"] as MarketTab[]).map((tab) => {
+                {(["US", "TW", "ETF", "Futures"] as MarketTab[]).map((tab) => {
                   const [zh, en] = tabLabels[tab];
                   return (
                     <button
