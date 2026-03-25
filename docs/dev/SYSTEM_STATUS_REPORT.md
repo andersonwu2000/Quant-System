@@ -44,9 +44,9 @@
 |------|------|
 | 後端 Python 檔案 (src/ + strategies/) | 128 (120 src + 8 strategies) |
 | 後端 Python LOC | ~22,500 (21,807 + 714) |
-| 測試檔案 | 82 |
-| 測試 LOC | ~15,700 |
-| 測試數量 (pytest collected) | **1054** |
+| 測試檔案 | 83 |
+| 測試 LOC | ~15,850 |
+| 測試數量 (pytest collected) | **1060** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -63,7 +63,7 @@
 | `src/alpha/` | 23 | ~4,100 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool, OOS decay 校正)** |
 | `src/backtest/` | 10 | ~3,500 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL |
 | `src/execution/` | 10 | ~2,000 | SinopacBroker + SimBroker (含融券借券成本) + ExecutionService + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 |
-| `src/strategy/` | 8 | ~1,800 | 策略 ABC + 因子庫 (27: 11 價格 + 10 Kakushadze 101 + 6 基本面) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef) + Registry + MultiAssetStrategy |
+| `src/strategy/` | 8 | ~2,000 | 策略 ABC + 因子庫 (27: 11 價格 + 10 Kakushadze 101 + 6 基本面) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
 | `src/portfolio/` | 4 | ~1,260 | 組合最佳化 (14 方法: EW/InvVol/RP/MVO/BL/HRP/Robust/Resampled/CVaR/MaxDD/GMV/MaxSharpe/IndexTracking/SemiVariance) + 風險模型 (LW/GARCH/Factor Model Cov + VaR/CVaR 歷史+參數法) + James-Stein 均值收縮 + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
 | `src/domain/` | 3 | 653 | 領域模型：Instrument + Portfolio (多幣別) + Order (融資融券/零股) + Trade + RiskAlert |
