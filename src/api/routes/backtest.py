@@ -239,7 +239,7 @@ async def get_backtest_result(task_id: str, api_key: str = Depends(verify_api_ke
             date=str(t.timestamp),
             symbol=t.symbol,
             side=t.side.value,
-            quantity=float(t.quantity),
+            quantity=int(t.quantity),
             price=float(t.price),
             commission=float(t.commission),
         )

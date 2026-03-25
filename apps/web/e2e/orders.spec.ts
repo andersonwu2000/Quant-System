@@ -8,14 +8,20 @@ async function loginAndSetup(page: import("@playwright/test").Page) {
     localStorage.setItem("quant_authenticated", "true");
     localStorage.setItem("quant_user_role", "admin");
   });
-  await page.goto("/orders");
+  // /orders redirects to /trading which defaults to Portfolio tab
+  // Navigate to /trading, then click Orders tab
+  await page.goto("/trading");
 }
 
 test.describe("Orders page", () => {
-  test("navigate to orders → see order table", async ({ page }) => {
+  test("navigate to orders tab → see order table", async ({ page }) => {
     await loginAndSetup(page);
 
-    // Page heading
+    // TradingPage defaults to Portfolio tab; click Orders tab
+    const ordersTab = page.locator("button", { hasText: /order/i });
+    await ordersTab.click();
+
+    // Page heading inside Orders tab
     await expect(page.locator("h2")).toHaveText(/order/i, { timeout: 10_000 });
 
     // Table should be visible with header columns
@@ -30,6 +36,11 @@ test.describe("Orders page", () => {
     page,
   }) => {
     await loginAndSetup(page);
+
+    // Switch to Orders tab first
+    const ordersTab = page.locator("button", { hasText: /order/i });
+    await ordersTab.click();
+    await expect(page.locator("h2")).toHaveText(/order/i, { timeout: 10_000 });
 
     // Open the order form — click "New Order" button
     const newOrderBtn = page.locator("button", { hasText: /new order/i });

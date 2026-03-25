@@ -141,7 +141,7 @@ class TradeRecordResponse(BaseModel):
     date: str
     symbol: str
     side: str
-    quantity: float
+    quantity: int
     price: float
     commission: float
 

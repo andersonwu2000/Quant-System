@@ -87,15 +87,23 @@ jobs:
 
   e2e-test:
     runs-on: ubuntu-latest
+    needs: web-build
     defaults:
       run:
         working-directory: apps
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
+      - run: bun install
       - run: cd web && npx playwright install --with-deps chromium
       - run: cd web && bun run e2e
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
 
   # ── Release ────────────────────────────────────────────────────────────────
   # 只在 push 到 master 且所有 CI 通過後才執行

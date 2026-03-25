@@ -316,7 +316,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 | `web-build` | vite build | web-typecheck |
 | `shared-test` | vitest (@quant/shared) | — |
 | `android-build` | assembleDebug + upload artifact | — |
-| `e2e-test` | Playwright chromium | — |
+| `e2e-test` | Playwright chromium (build+preview, retries=2) | web-build |
 | `release` | 自動建立 GitHub Release + APK 附件 | 所有上述 jobs（master push 限定）|
 
 ### 7.4 本地 Pre-push Hook

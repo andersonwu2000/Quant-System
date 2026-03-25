@@ -8,7 +8,8 @@ async function loginAndSetup(page: import("@playwright/test").Page) {
     localStorage.setItem("quant_authenticated", "true");
     localStorage.setItem("quant_user_role", "admin");
   });
-  await page.goto("/backtest");
+  // /backtest redirects to /research, which defaults to Backtest tab
+  await page.goto("/research");
 }
 
 test.describe("Backtest page", () => {
