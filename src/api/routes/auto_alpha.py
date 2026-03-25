@@ -11,7 +11,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from src.api.auth import require_role, verify_api_key
@@ -402,3 +402,27 @@ async def run_now(
     thread.start()
 
     return RunNowResponse(task_id=task_id, message="Auto-alpha cycle started in background")
+
+
+# ── WebSocket endpoint ────────────────────────────────────────
+
+
+@router.websocket("/ws")
+async def auto_alpha_ws(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time auto-alpha pipeline events.
+
+    Clients receive stage_started, stage_completed, decision, execution,
+    alert, and error events as the pipeline runs.
+    """
+    from src.api.ws import ws_manager
+
+    await ws_manager.connect(websocket, "auto-alpha")
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    finally:
+        ws_manager.disconnect(websocket, "auto-alpha")

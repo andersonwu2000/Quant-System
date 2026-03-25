@@ -2,7 +2,7 @@
 
 > **目標**: 涵蓋台股、美股、ETF、期貨的投資組合研究與優化系統
 > **不納入**: 直接債券交易（OTC）、實體商品、零售外匯
-> **狀態**: Phase A~D 已實作，Phase E 進行中（E1 完成，E4 開發中）
+> **狀態**: Phase A~F 已實作（E1/E4 程式碼完成，待券商整合測試；F1~F4 核心完成）
 > **券商**: 台股 — 永豐金 Shioaji SDK；美股 — Interactive Brokers（待實作）
 
 ---
@@ -44,8 +44,9 @@
 │                                                                      │
 │  ╔══════════════════════════════════════════════════════════════╗   │
 │  ║  基礎設施                                                      ║   │
-│  ║  BacktestEngine │ RiskEngine(10規則) │ SimBroker │ API(12路由) ║   │
+│  ║  BacktestEngine │ RiskEngine(10規則) │ SimBroker │ API(14路由) ║   │
 │  ║  Web(10頁) │ Mobile(7tabs) │ 通知 │ 排程 │ JWT/RBAC 認證      ║   │
+│  ║  Auto-Alpha 閉環 (Phase F): 排程→研究→決策→執行→回饋          ║   │
 │  ╚══════════════════════════════════════════════════════════════╝   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -166,6 +167,26 @@ SinopacBroker.submit_order(order)
       → stat == StockOrder  → 委託確認/拒絕
       → stat == StockDeal   → 成交回報 → Order 狀態更新
 ```
+
+### 2.7 自動化 Alpha 閉環 (`src/alpha/auto/`)
+
+Phase F 新增的自動化研究與執行模組：
+
+```
+config.py             — AutoAlphaConfig + DecisionConfig (排程/篩選/安全閾值)
+universe.py           — UniverseSelector (Scanner × 靜態約束 × 處置股排除)
+researcher.py         — AlphaResearcher (AlphaPipeline + Regime + 持久化)
+decision.py           — AlphaDecisionEngine (ICIR/Hit Rate 篩選 + Regime 調適)
+executor.py           — AlphaExecutor (weights→orders→risk→execution→performance)
+scheduler.py          — AlphaScheduler (7 個排程 job: 08:30~13:35)
+store.py              — AlphaStore (DB 持久化: ResearchSnapshot + FactorScore)
+alerts.py             — AlertManager (Regime 變化 / IC 反轉 / 回撤告警)
+safety.py             — SafetyChecker (回撤熔斷 5% + 連續虧損暫停 5 天)
+factor_tracker.py     — FactorPerformanceTracker (累計 IC + 回撤 per factor)
+dynamic_pool.py       — DynamicFactorPool (ICIR 排名自動新增/移除因子)
+```
+
+**每日流程**: Scanner → 動態 Universe → 全因子 IC → ICIR 篩選 + Regime 調適 → 目標權重 → 風控 → 自動下單 → EOD 對帳 → 歸因 → 績效通知 → 回饋下一日
 
 ---
 
@@ -323,7 +344,7 @@ class Order:
 
 ## 7. API 架構
 
-### 7.1 REST 端點（12 路由模組）
+### 7.1 REST 端點（14 路由模組, 68 端點）
 
 | 模組 | 端點數 | 說明 |
 |------|--------|------|
@@ -337,6 +358,7 @@ class Order:
 | alpha | 2 | Alpha 研究 + 因子查詢 |
 | allocation | 1 | 戰術配置 |
 | execution | 6 | 執行狀態 + 交易時段 + 對帳 + Paper trading |
+| auto_alpha | 10 | 自動 Alpha: config/start/stop/status/history/performance/alerts/run-now |
 | system | 1 | 健康檢查 |
 
 ### 7.2 WebSocket 頻道
@@ -353,8 +375,8 @@ class Order:
 ## 8. 目錄結構
 
 ```
-src/                          102 .py files
-├── alpha/           ✅ 11 files — Alpha 研究 (16 因子 + Pipeline + regime + attribution)
+src/                          ~120 .py files
+├── alpha/           ✅ 23 files — Alpha 研究 (14 因子 + Pipeline + regime + attribution) + auto/ (11 files: 自動化 Alpha 閉環)
 ├── allocation/      ✅  4 files — 戰術配置 (宏觀 + 跨資產 + 戰術)
 ├── portfolio/       ✅  4 files — 組合最佳化 (6 法 + LW + 對沖)
 ├── strategy/        ✅  8 files — 9 策略 + 因子庫 + MultiAssetStrategy
@@ -364,13 +386,13 @@ src/                          102 .py files
 ├── data/            ✅ 15 files — Yahoo + FinMind + FRED + Shioaji + Scanner
 ├── instrument/      ✅  3 files — Registry + 自動推斷
 ├── domain/          ✅  3 files — 統一模型 (Order 含融資融券/零股欄位)
-├── api/             ✅ 20 files — REST(12 路由) + WS + Auth + Middleware
+├── api/             ✅ 22 files — REST(14 路由) + WS + Auth + Middleware
 ├── cli/             ✅  2 files — backtest/server/status/factors
 ├── notifications/   ✅  6 files — Discord/LINE/Telegram
 └── scheduler/       ✅  2 files — APScheduler
 
 strategies/           7 files — 7 個內建策略
-tests/               50 files — pytest (640+ tests)
+tests/               63 files — pytest (856 tests)
 apps/web/                     — React 18 + Vite + Tailwind (10 頁)
 apps/mobile/                  — React Native + Expo 52 (7 tabs)
 apps/shared/                  — @quant/shared TypeScript 套件

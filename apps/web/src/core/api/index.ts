@@ -10,6 +10,7 @@ export {
   alpha as alphaEndpoints,
   allocation,
   execution as executionEndpoints,
+  autoAlpha as autoAlphaEndpoints,
   pollBacktestResult,
 } from "@quant/shared";
 export type { Channel } from "@quant/shared";
@@ -52,4 +53,8 @@ export type {
   RebalancePreviewRequest,
   SuggestedTrade,
   RebalancePreviewResponse,
+  AutoAlphaStatus,
+  AutoAlphaPerformance,
+  FactorScoreInfo,
+  AutoAlphaSnapshot,
 } from "@quant/shared";

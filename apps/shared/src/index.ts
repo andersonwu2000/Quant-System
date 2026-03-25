@@ -43,6 +43,10 @@ export type {
   RebalancePreviewRequest,
   SuggestedTrade,
   RebalancePreviewResponse,
+  AutoAlphaStatus,
+  AutoAlphaPerformance,
+  FactorScoreInfo,
+  AutoAlphaSnapshot,
 } from "./types";
 
 // API client
@@ -55,7 +59,7 @@ export { WSManager, initWs } from "./api/ws";
 export type { Channel } from "./api/ws";
 
 // Endpoints
-export { auth, system, portfolio, strategies, orders, backtest, risk, alpha, allocation, execution } from "./api/endpoints";
+export { auth, system, portfolio, strategies, orders, backtest, risk, alpha, allocation, execution, autoAlpha } from "./api/endpoints";
 
 // Hooks / utilities
 export { pollBacktestResult } from "./hooks/pollBacktestResult";

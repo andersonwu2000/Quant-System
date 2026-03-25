@@ -8,6 +8,7 @@ It does NOT import APScheduler directly — it only returns job dicts.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -22,6 +23,24 @@ from src.execution.execution_service import ExecutionService
 from src.risk.engine import RiskEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _broadcast_event(event_type: str, data: dict[str, Any]) -> None:
+    """Fire-and-forget broadcast to auto-alpha WS channel."""
+    try:
+        from src.api.ws import ws_manager
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(
+                ws_manager.broadcast("auto-alpha", {"type": event_type, **data})
+            )
+        else:
+            loop.run_until_complete(
+                ws_manager.broadcast("auto-alpha", {"type": event_type, **data})
+            )
+    except Exception:
+        pass  # WS broadcast is best-effort
 
 # Schedule definitions — cron expressions for each pipeline stage.
 SCHEDULES: dict[str, str] = {
@@ -102,73 +121,119 @@ class AlphaScheduler:
         """
         summary: dict[str, Any] = {}
 
-        # Stage 1: Universe selection
-        universe_result: UniverseResult = self._universe_selector.select(data=data)
-        summary["universe"] = {
-            "count": len(universe_result.symbols),
-            "excluded_disposition": len(universe_result.excluded_disposition),
-            "excluded_attention": len(universe_result.excluded_attention),
-        }
-        logger.info(
-            "Stage 1 Universe: %d symbols selected", len(universe_result.symbols)
-        )
-
-        if not universe_result.symbols:
-            summary["snapshot"] = None
-            summary["decision"] = None
-            summary["execution"] = None
-            return summary
-
-        # Stage 2: Research
-        snapshot = None
-        if self._researcher is not None:
-            snapshot = self._researcher.run(
-                universe=universe_result.symbols,
-                data=data,
+        try:
+            # Stage 1: Universe selection
+            _broadcast_event("stage_started", {"stage": "universe"})
+            universe_result: UniverseResult = self._universe_selector.select(data=data)
+            summary["universe"] = {
+                "count": len(universe_result.symbols),
+                "excluded_disposition": len(universe_result.excluded_disposition),
+                "excluded_attention": len(universe_result.excluded_attention),
+            }
+            _broadcast_event(
+                "stage_completed",
+                {"stage": "universe", "count": len(universe_result.symbols)},
             )
-        summary["snapshot"] = snapshot
+            logger.info(
+                "Stage 1 Universe: %d symbols selected", len(universe_result.symbols)
+            )
 
-        if snapshot is None:
-            logger.warning("No researcher available — skipping research stage")
-            summary["decision"] = None
-            summary["execution"] = None
+            if not universe_result.symbols:
+                summary["snapshot"] = None
+                summary["decision"] = None
+                summary["execution"] = None
+                return summary
+
+            # Stage 2: Research
+            _broadcast_event("stage_started", {"stage": "research"})
+            snapshot = None
+            if self._researcher is not None:
+                snapshot = self._researcher.run(
+                    universe=universe_result.symbols,
+                    data=data,
+                )
+            summary["snapshot"] = snapshot
+
+            if snapshot is None:
+                logger.warning("No researcher available — skipping research stage")
+                _broadcast_event(
+                    "stage_completed", {"stage": "research", "factors": 0}
+                )
+                summary["decision"] = None
+                summary["execution"] = None
+                return summary
+
+            _broadcast_event(
+                "stage_completed",
+                {"stage": "research", "factors": len(snapshot.factor_scores)},
+            )
+
+            # Stage 3: Decision
+            _broadcast_event("stage_started", {"stage": "decision"})
+            decision: DecisionResult = self._decision_engine.decide(
+                snapshot=snapshot,
+                current_weights=current_weights,
+            )
+            summary["decision"] = {
+                "selected_factors": decision.selected_factors,
+                "factor_weights": decision.factor_weights,
+                "regime": decision.regime.value,
+                "reason": decision.reason,
+            }
+            _broadcast_event(
+                "decision",
+                {
+                    "factors": decision.selected_factors,
+                    "regime": decision.regime.value,
+                    "weights": decision.factor_weights,
+                },
+            )
+            logger.info(
+                "Stage 3 Decision: %d factors selected, regime=%s",
+                len(decision.selected_factors),
+                decision.regime.value,
+            )
+
+            # Stage 4: Execution
+            _broadcast_event("stage_started", {"stage": "execution"})
+            exec_result: ExecutionResult = self._executor.execute(
+                decision=decision,
+                data=data,
+                portfolio=portfolio,
+                execution_service=execution_service,
+                risk_engine=risk_engine,
+            )
+            summary["execution"] = {
+                "trades_count": exec_result.trades_count,
+                "turnover": exec_result.turnover,
+                "orders_submitted": exec_result.orders_submitted,
+                "orders_rejected": exec_result.orders_rejected,
+            }
+            _broadcast_event(
+                "execution",
+                {
+                    "trades": exec_result.trades_count,
+                    "turnover": exec_result.turnover,
+                },
+            )
+            logger.info(
+                "Stage 4 Execution: %d trades, turnover=%.2f%%",
+                exec_result.trades_count,
+                exec_result.turnover * 100,
+            )
+
+            # Broadcast alert if there were rejected orders
+            if exec_result.orders_rejected > 0:
+                _broadcast_event(
+                    "alert",
+                    {
+                        "level": "warning",
+                        "message": f"{exec_result.orders_rejected} orders rejected",
+                    },
+                )
+
             return summary
 
-        # Stage 3: Decision
-        decision: DecisionResult = self._decision_engine.decide(
-            snapshot=snapshot,
-            current_weights=current_weights,
-        )
-        summary["decision"] = {
-            "selected_factors": decision.selected_factors,
-            "factor_weights": decision.factor_weights,
-            "regime": decision.regime.value,
-            "reason": decision.reason,
-        }
-        logger.info(
-            "Stage 3 Decision: %d factors selected, regime=%s",
-            len(decision.selected_factors),
-            decision.regime.value,
-        )
-
-        # Stage 4: Execution
-        exec_result: ExecutionResult = self._executor.execute(
-            decision=decision,
-            data=data,
-            portfolio=portfolio,
-            execution_service=execution_service,
-            risk_engine=risk_engine,
-        )
-        summary["execution"] = {
-            "trades_count": exec_result.trades_count,
-            "turnover": exec_result.turnover,
-            "orders_submitted": exec_result.orders_submitted,
-            "orders_rejected": exec_result.orders_rejected,
-        }
-        logger.info(
-            "Stage 4 Execution: %d trades, turnover=%.2f%%",
-            exec_result.trades_count,
-            exec_result.turnover * 100,
-        )
-
-        return summary
+        except Exception as exc:
+            _broadcast_event("error", {"message": str(exc)})
+            raise

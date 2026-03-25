@@ -33,6 +33,9 @@ import type {
   RebalancePreviewRequest,
   RebalancePreviewResponse,
   TradeRecord,
+  AutoAlphaStatus,
+  AutoAlphaPerformance,
+  AutoAlphaSnapshot,
 } from "../types";
 
 export const auth = {
@@ -125,6 +128,17 @@ export const execution = {
   reconcile: () => post<ReconcileResult>("/api/v1/execution/reconcile"),
   autoCorrect: () => post<{ corrections: string[]; count: number }>("/api/v1/execution/reconcile/auto-correct"),
   queuedOrders: () => get<QueuedOrdersResponse>("/api/v1/execution/queued-orders"),
+};
+
+export const autoAlpha = {
+  status: () => get<AutoAlphaStatus>("/api/v1/auto-alpha/status"),
+  performance: () => get<AutoAlphaPerformance>("/api/v1/auto-alpha/performance"),
+  history: (limit = 30) => get<AutoAlphaSnapshot[]>(`/api/v1/auto-alpha/history?limit=${limit}`),
+  alerts: (limit = 50) => get<any[]>(`/api/v1/auto-alpha/alerts?limit=${limit}`),
+  config: () => get<any>("/api/v1/auto-alpha/config"),
+  start: () => post<{ message: string }>("/api/v1/auto-alpha/start"),
+  stop: () => post<{ message: string }>("/api/v1/auto-alpha/stop"),
+  runNow: () => post<{ task_id: string }>("/api/v1/auto-alpha/run-now"),
 };
 
 export const risk = {

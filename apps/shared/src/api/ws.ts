@@ -3,7 +3,7 @@
  * and exponential backoff. Platform-agnostic: URL builder injected at init.
  */
 
-export type Channel = "portfolio" | "alerts" | "orders" | "market";
+export type Channel = "portfolio" | "alerts" | "orders" | "market" | "auto-alpha";
 type MessageHandler = (data: unknown) => void;
 type StatusHandler = (connected: boolean) => void;
 

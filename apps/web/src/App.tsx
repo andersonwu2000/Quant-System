@@ -16,6 +16,7 @@ const GuidePage = lazy(() => import("@feat/guide").then(m => ({ default: m.Guide
 const RiskPage = lazy(() => import("@feat/risk").then(m => ({ default: m.RiskPage })));
 const SettingsPage = lazy(() => import("@feat/settings").then(m => ({ default: m.SettingsPage })));
 const AdminPage = lazy(() => import("@feat/admin").then(m => ({ default: m.AdminPage })));
+const AutoAlphaPage = lazy(() => import("@feat/auto-alpha").then(m => ({ default: m.AutoAlphaPage })));
 const NotFoundPage = lazy(() => import("@feat/not-found").then(m => ({ default: m.NotFoundPage })));
 
 function RequireKey({ children }: { children: React.ReactNode }) {
@@ -104,6 +105,7 @@ function AppContent() {
               <Route path="/research" element={<RequireKey><ResearchPage /></RequireKey>} />
               <Route path="/risk" element={<RequireKey><RiskPage /></RequireKey>} />
               <Route path="/guide" element={<GuidePage />} />
+              <Route path="/auto-alpha" element={<RequireKey><AutoAlphaPage /></RequireKey>} />
               <Route path="/admin" element={<RequireKey><AdminPage /></RequireKey>} />
               {/* Legacy redirects */}
               <Route path="/portfolio" element={<Navigate to="/trading" replace />} />

@@ -1,7 +1,7 @@
 # 開發計畫書
 
-> **版本**: v4.3
-> **日期**: 2026-03-25
+> **版本**: v4.4
+> **日期**: 2026-03-26
 > **目標**: 涵蓋多個可自動交易市場的投資組合研究與優化系統
 > **可交易市場**: 台股、美股、ETF（含債券/商品 ETF 代理）、台灣期貨、美國期貨
 > **不納入**: 直接債券交易（OTC）、實體商品、零售外匯
@@ -12,7 +12,7 @@
 ## 階段概覽
 
 ```
-Phase A ✅       Phase B ✅       Phase C ✅       Phase D ✅       Phase E (當前)      Phase F (下一階段)
+Phase A ✅       Phase B ✅       Phase C ✅       Phase D ✅       Phase E ✅           Phase F ✅
 基礎設施          跨資產 Alpha     組合最佳化        系統整合+風控     實盤交易              自動化 Alpha
 ─────────       ────────────    ─────────       ─────────       ─────────           ─────────
 Instrument      宏觀因子模型      6 種最佳化器     MultiAssetStrategy  Shioaji 券商對接     每日排程引擎
@@ -247,14 +247,14 @@ trade = api.place_order(contract, order, timeout=0)  # 立即返回
 
 將手動 Alpha 研究流程自動化為每日排程驅動的閉環系統。
 
-| 子任務 | 檔案 | 說明 |
-|--------|------|------|
-| F1a | `config.py` | `AutoAlphaConfig` + `DecisionConfig` — 排程/篩選/安全閾值 |
-| F1b | `universe.py` | `UniverseSelector` — Scanner 候選 × 靜態約束 × 處置股排除 |
-| F1c | `researcher.py` | `AlphaResearcher` — 包裝 AlphaPipeline + Regime 分類 + 持久化 |
-| F1d | `decision.py` | `AlphaDecisionEngine` — ICIR/Hit Rate 篩選 + Regime 權重調適 + Rolling IC |
-| F1e | `executor.py` | `AlphaExecutor` — weights→orders→risk→execution→performance |
-| F1f | `scheduler.py` | `AlphaScheduler` — 7 個排程 job（08:30~13:35） |
+| 子任務 | 檔案 | 說明 | 狀態 |
+|--------|------|------|------|
+| F1a | `config.py` | `AutoAlphaConfig` + `DecisionConfig` — 排程/篩選/安全閾值 | ✅ |
+| F1b | `universe.py` | `UniverseSelector` — Scanner 候選 × 靜態約束 × 處置股排除 | ✅ |
+| F1c | `researcher.py` | `AlphaResearcher` — 包裝 AlphaPipeline + Regime 分類 + 持久化 | ✅ |
+| F1d | `decision.py` | `AlphaDecisionEngine` — ICIR/Hit Rate 篩選 + Regime 權重調適 + Rolling IC | ✅ |
+| F1e | `executor.py` | `AlphaExecutor` — weights→orders→risk→execution→performance | ✅ |
+| F1f | `scheduler.py` | `AlphaScheduler` — 7 個排程 job（08:30~13:35） | ✅ |
 
 **每日流水線**:
 ```
@@ -267,33 +267,123 @@ trade = api.place_order(contract, order, timeout=0)  # 立即返回
 
 ### F2: 持久化 + 告警（`src/alpha/auto/`）
 
-| 子任務 | 檔案 | 說明 |
-|--------|------|------|
-| F2a | `store.py` | `AlphaStore` — DB 持久化 (ResearchSnapshot + FactorScore + alerts) |
-| F2b | `alerts.py` | `AlertManager` — Regime 變化 / IC 反轉 / 回撤告警 → 通知 |
-| F2c | `safety.py` | `SafetyChecker` — 回撤熔斷 (5%) + 連續虧損暫停 (5 天) |
-| F2d | migration | `005_auto_alpha.py` — Alembic migration for snapshots/alerts tables |
+| 子任務 | 檔案 | 說明 | 狀態 |
+|--------|------|------|------|
+| F2a | `store.py` | `AlphaStore` — DB 持久化 (ResearchSnapshot + FactorScore + alerts) | ✅ |
+| F2b | `alerts.py` | `AlertManager` — Regime 變化 / IC 反轉 / 回撤告警 → 通知 | ✅ |
+| F2c | `safety.py` | `SafetyChecker` — 回撤熔斷 (5%) + 連續虧損暫停 (5 天) | ✅ |
+| F2d | migration | `005_auto_alpha.py` — Alembic migration for snapshots/alerts tables | 待實作 |
 
 ### F3: API + 前端
 
-| 子任務 | 說明 |
-|--------|------|
-| F3a | `src/api/routes/auto_alpha.py` — 10 個端點 (config/start/stop/status/history/performance/alerts/run-now) |
-| F3b | WS `auto-alpha` 頻道 — 即時推送流水線進度 |
-| F3c | Web: Auto-Alpha Dashboard — 今日配置 + 流水線進度 + 績效走勢 + 告警 |
+| 子任務 | 說明 | 狀態 |
+|--------|------|------|
+| F3a | `src/api/routes/auto_alpha.py` — 10 個端點 (config/start/stop/status/history/performance/alerts/run-now) | ✅ |
+| F3b | WS `auto-alpha` 頻道 — 即時推送流水線進度 | 待實作 |
+| F3c | Web: Auto-Alpha Dashboard — 今日配置 + 流水線進度 + 績效走勢 + 告警 | 待實作 |
 
 ### F4: Regime 策略引擎
 
-| 子任務 | 說明 |
-|--------|------|
-| F4a | `REGIME_FACTOR_BIAS` — Bull/Bear/Sideways 因子偏好矩陣 |
-| F4b | 因子績效追蹤表 — 累計 IC 走勢 + 回撤 per factor |
-| F4c | 動態因子池 — 自動新增/移除因子（基於歷史 ICIR 排名） |
+| 子任務 | 說明 | 狀態 |
+|--------|------|------|
+| F4a | `REGIME_FACTOR_BIAS` — Bull/Bear/Sideways 因子偏好矩陣 | ✅ |
+| F4b | 因子績效追蹤表 — 累計 IC 走勢 + 回撤 per factor | ✅ |
+| F4c | 動態因子池 — 自動新增/移除因子（基於歷史 ICIR 排名） | ✅ |
 
 ### Phase F 完成標誌
 
 系統每日盤前自動執行：
 1. Scanner → 動態 Universe → 2. 全因子 IC 分析 → 3. ICIR 篩選 + Regime 調適 → 4. 目標權重 → 5. 風控 → 6. 自動下單 → 7. EOD 對帳 + 歸因 → 8. 績效通知 → 9. 回饋下一日研究
+
+---
+
+## Phase G：學術基準升級（基於教科書差距分析）
+
+> 參考：`docs/dev/SYSTEM_STATUS_REPORT.md` §11 — 基於 *Portfolio Optimization: Theory and Application* (Palomar, 608 頁) 的系統性差距比對
+
+### G1: 風險度量升級 (🔴 P0)
+
+| 子任務 | 說明 | 書中章節 | 難度 |
+|--------|------|---------|------|
+| G1a | **VaR + CVaR (Conditional Value at Risk)** 計算 — 歷史法 + 參數法 + Monte Carlo | Ch.10 | 中 |
+| G1b | **CVaR 組合最佳化** — `min CVaR s.t. return >= target`，線性規劃 (LP) 可解 | Ch.10 | 中 |
+| G1c | **Drawdown 組合 (CDaR/MaxDD)** — 以最大回撤為風險度量的最佳化 | Ch.10 | 中 |
+| G1d | Downside Risk / Semi-variance 組合 — 只懲罰下行波動 | Ch.10 | 低 |
+
+**實作位置**: `src/portfolio/optimizer.py` 新增 `CVAR_OPTIMIZATION`、`MAX_DRAWDOWN` 方法。
+**依賴**: 需要 `cvxpy` (已安裝)。
+
+### G2: 穩健最佳化 (🔴 P0)
+
+| 子任務 | 說明 | 書中章節 | 難度 |
+|--------|------|---------|------|
+| G2a | **Worst-case Robust 組合** — 橢球不確定性集 (ellipsoidal uncertainty set) | Ch.14 | 中 |
+| G2b | Portfolio Resampling (Michaud) — Monte Carlo 取樣後取平均權重 | Ch.14 | 低 |
+| G2c | 均值收縮估計 (James-Stein / grand-mean) — 改善期望報酬估計 | Ch.3 | 低 |
+
+**價值**: 直接改善 MVO/BL 的參數估計誤差敏感度，是學術界公認最關鍵的實務改進。
+
+### G3: 回測方法論強化 (🔴 P0)
+
+| 子任務 | 說明 | 書中章節 | 難度 |
+|--------|------|---------|------|
+| G3a | **Multiple Randomized Backtest** — 隨機子集資產+時段，輸出績效分布 (非單一數字) | Ch.8 | 低 |
+| G3b | **PBO (Probability of Backtest Overfitting)** — Bailey et al. (2017) | Ch.8 | 中 |
+| G3c | k-fold Cross-validation Backtest — 多折交叉驗證 | Ch.8 | 中 |
+| G3d | Synthetic Data Stress Test — 產生牛/熊市合成數據做壓力測試 | Ch.8 | 中 |
+
+**實作位置**: `src/backtest/` 新增 `randomized.py`、`overfitting.py`。
+
+### G4: 數據建模升級 (🟡 P1)
+
+| 子任務 | 說明 | 書中章節 | 難度 |
+|--------|------|---------|------|
+| G4a | **GARCH 波動率模型** — 動態風險估計 (volatility clustering) | Ch.4 | 中 |
+| G4b | **因子模型共變異數** — PCA / Fama-French 結構 (Σ = BΣ_fB^T + Ψ) | Ch.3 | 中 |
+| G4c | 非高斯分布建模 (skewed-t) — 厚尾+偏態 | Ch.2 | 高 |
+| G4d | Heavy-tailed ML 估計 (Tyler's M-estimator) — 穩健共變異數估計 | Ch.2 | 高 |
+
+### G5: 高階組合方法 (🟡 P1)
+
+| 子任務 | 說明 | 書中章節 | 難度 |
+|--------|------|---------|------|
+| G5a | **MVSK 高階矩組合** — 納入偏態+峰態 (SCA-Q-MVSK 演算法) | Ch.9 | 高 |
+| G5b | **Index Tracking (稀疏追蹤)** — 用少數標的複製指數 (sparse regression) | Ch.13 | 中 |
+| G5c | Maximum Sharpe (Dinkelbach 分數規劃) — 嚴格 MSR 而非近似 | Ch.6 | 低 |
+| G5d | Global Minimum Variance (GMV) 獨立入口 | Ch.6 | 低 |
+
+### G6: 策略升級 (🟢 P2)
+
+| 子任務 | 說明 | 書中章節 | 難度 |
+|--------|------|---------|------|
+| G6a | **Pairs Trading 升級** — 協整合 (Engle-Granger / Johansen) + Kalman Filter + Ornstein-Uhlenbeck | Ch.15 | 中 |
+| G6b | HERC (Hierarchical Equal Risk Contribution) — HRP 等風險貢獻版 | Ch.12 | 中 |
+| G6c | NCO (Nested Cluster Optimization) | Ch.12 | 中 |
+
+### G7: 績效指標補齊 (🟢 P2)
+
+| 子任務 | 說明 | 難度 |
+|--------|------|------|
+| G7a | VaR / CVaR 績效指標 — 加入回測報告 | 低 |
+| G7b | Rolling Sharpe — 滾動 Sharpe Ratio 走勢 | 低 |
+| G7c | Omega Ratio | 低 |
+
+### G8: 回測防護 (七宗罪) (🟢 P2)
+
+| Sin | 現況 | 改善 |
+|-----|------|------|
+| #1 Survivorship Bias | ❌ | 支援 delisted stock data 或標記存活偏差風險 |
+| #4 Data Snooping | ❌ | G3b PBO 工具 + Deflated Sharpe Ratio |
+| #6 Outliers | ⚠️ | 回測引擎加入價格異常偵測 (gap/circuit breaker) |
+| #7 Shorting Cost | ⚠️ | SimBroker 加入融券費率模擬 |
+
+### Phase G 完成標誌
+
+- PortfolioOptimizer 支援 10+ 方法 (含 CVaR、Robust、MVSK、Index Tracking)
+- RiskModel 支援 GARCH + 因子模型共變異數
+- 回測引擎支援 Multiple Randomized + PBO + k-fold
+- 績效報告含 VaR/CVaR/Rolling Sharpe
+- Pairs Trading 升級為協整合 + Kalman
 
 ---
 
@@ -312,15 +402,19 @@ trade = api.place_order(contract, order, timeout=0)  # 立即返回
 | 2026-03-25 | E1: SinopacBroker 核心 + ExecutionService + 對帳 + 83 tests |
 | TBD | E2: 即時行情 WS broadcast 整合 (需 API key) |
 | TBD | E3: Paper Trading 完整循環 + 排程 + 交割 |
-| TBD | E4a: Shioaji 歷史數據源 (kbars/ticks/snapshot) |
-| TBD | E4b: Scanner 動態 universe + 處置股排除 |
-| TBD | E4c-f: 額度預檢 + 融資融券 + 非阻塞 + 觸價 |
+| 2026-03-25 | E4a: Shioaji 歷史數據源 (kbars/ticks/snapshot) |
+| 2026-03-25 | E4b: Scanner 動態 universe + 處置股排除 |
+| 2026-03-25 | E4c-f: 額度預檢 + 融資融券 + 非阻塞 + 觸價 |
 | TBD | E5: 期貨選擇權交易 + 組合單 |
 | TBD | E6: IB 美股對接 |
-| TBD | F1: 自動化 Alpha 核心引擎 (4 stages + scheduler) |
-| TBD | F2: 持久化 + 告警 + 安全熔斷 |
-| TBD | F3: Auto-Alpha API + 前端 Dashboard |
-| TBD | F4: Regime 策略引擎 + 動態因子池 |
+| 2026-03-26 | F1: 自動化 Alpha 核心引擎 (6 modules + scheduler) |
+| 2026-03-26 | F2: 持久化 + 告警 + 安全熔斷 |
+| 2026-03-26 | F3a: Auto-Alpha API (10 端點) |
+| 2026-03-26 | F4: Regime 策略引擎 + 動態因子池 |
+| TBD | G1: 風險度量升級 (VaR/CVaR/Drawdown 組合最佳化) |
+| TBD | G2: 穩健最佳化 (Robust/Resampling/James-Stein) |
+| TBD | G3: 回測方法論 (Randomized/PBO/k-fold/Stress Test) |
+| TBD | G4-G8: 數據建模/高階組合/策略/績效/防護升級 |
 
 ---
 

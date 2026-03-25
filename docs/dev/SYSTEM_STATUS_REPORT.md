@@ -1,11 +1,11 @@
 # 系統現況追蹤報告書
 
-> **報告日期**: 2026-03-25
-> **版本**: v4.0
-> **當前階段**: Phase E（實盤交易）— E1/E4 程式碼完成，待券商整合測試
+> **報告日期**: 2026-03-26
+> **版本**: v4.1
+> **當前階段**: Phase F（自動化 Alpha）— F1~F4 核心完成，Phase E 待券商整合測試
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v4.2
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v4.4
 
 ---
 
@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 123 |
-| 後端 Python LOC | ~19,800 |
-| 測試檔案 | 63 |
-| 測試 LOC | ~12,200 |
-| 測試數量 (pytest collected) | **855** |
+| 後端 Python 檔案 (src/ + strategies/) | ~125 |
+| 後端 Python LOC | ~20,000 |
+| 測試檔案 | 64 |
+| 測試 LOC | ~12,400 |
+| 測試數量 (pytest collected) | **859** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -58,7 +58,7 @@
 
 | 模組 | 檔案數 | LOC | 功能描述 |
 |------|--------|-----|----------|
-| `src/api/` | 20 | 3,027 | REST API (12 路由, 44 端點) + WebSocket (4 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
+| `src/api/` | 22 | ~3,300 | REST API (14 路由, 54 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
 | `src/alpha/` | 23 | ~4,000 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool)** |
 | `src/backtest/` | 6 | 2,192 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 + HTML/CSV 報表 + Walk-forward |
@@ -195,7 +195,7 @@
 
 ## 5. API 架構
 
-### 5.1 REST 端點（11 路由模組, 44 端點）
+### 5.1 REST 端點（14 路由模組, 54 端點）
 
 | 模組 | 端點數 | 前綴 | 關鍵端點 |
 |------|--------|------|---------|
@@ -209,6 +209,7 @@
 | alpha | 3 | `/api/v1/alpha` | Alpha 研究 + 因子查詢 |
 | allocation | 1 | `/api/v1/allocation` | 戰術配置計算 |
 | execution | 6 | `/api/v1/execution` | 執行狀態 + 交易時段 + 對帳 + Paper trading + 佇列 |
+| auto_alpha | 10 + WS | `/api/v1/auto-alpha` | 自動 Alpha: config/start/stop/status/history/performance/alerts/run-now + WebSocket `/ws` |
 | system | 3 | `/api/v1/system` | 健康檢查 + Prometheus metrics |
 
 ### 5.2 WebSocket 頻道
@@ -219,6 +220,7 @@
 | `orders` | 訂單狀態變更 | OMS / SinopacBroker callback |
 | `alerts` | 風控告警 | RiskEngine / Kill Switch |
 | `market` | 即時行情 tick | SinopacQuoteManager (待接通) |
+| `auto-alpha` | 自動 Alpha 流水線即時事件 | AlphaScheduler.run_full_cycle() |
 
 ### 5.3 安全機制
 
@@ -276,7 +278,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 
 ## 7. 測試覆蓋
 
-### 7.1 後端測試（726 tests）
+### 7.1 後端測試（856 tests）
 
 | 分類 | 檔案數 | 測試數 | 說明 |
 |------|--------|--------|------|
@@ -381,8 +383,8 @@ volumes:
 | 風控引擎 | ✅ 完成 | 10 規則 + Kill Switch + 跨資產規則 |
 | InstrumentRegistry | ✅ 完成 | 自動推斷 symbol → asset_class/market/currency |
 | 多幣別 Portfolio | ✅ 完成 | nav_in_base / currency_exposure / per-bar FX |
-| API | ✅ 完成 | 44 端點 + WebSocket + JWT/RBAC + 限流 + 審計 |
-| Web 前端 | ✅ 完成 | 10 頁 + i18n (en/zh) + 深色主題 |
+| API | ✅ 完成 | 54 端點 + WebSocket + JWT/RBAC + 限流 + 審計 |
+| Web 前端 | ✅ 完成 | 11 頁 + i18n (en/zh) + 深色主題 |
 | Android | ✅ 完成 | Jetpack Compose + Material 3 + UniversePicker |
 | Android Native | 🟡 進行中 | Backtest tab + UniversePickerSheet (Material 3) + i18n |
 
@@ -405,7 +407,28 @@ volumes:
 | 期貨選擇權 | ❌ 待辦 | Shioaji 支援 FuturesPriceType + ComboOrder |
 | IB 美股 | ❌ 待辦 | Shioaji 完成後 |
 
-### 9.3 外部依賴狀態
+### 9.3 自動化 Alpha（Phase F）
+
+| 功能 | 狀態 | 說明 |
+|------|------|------|
+| AutoAlphaConfig | ✅ 完成 | 排程/篩選/安全閾值配置 (F1a) |
+| UniverseSelector | ✅ 完成 | Scanner × 靜態約束 × 處置股排除 (F1b) |
+| AlphaResearcher | ✅ 完成 | AlphaPipeline + Regime + 持久化 (F1c) |
+| AlphaDecisionEngine | ✅ 完成 | ICIR/Hit Rate 篩選 + Regime 調適 (F1d) |
+| AlphaExecutor | ✅ 完成 | weights→orders→risk→execution→performance (F1e) |
+| AlphaScheduler | ✅ 完成 | 7 排程 job: 08:30~13:35 (F1f) |
+| AlphaStore | ✅ 完成 | DB 持久化: ResearchSnapshot + FactorScore (F2a) |
+| AlertManager | ✅ 完成 | Regime/IC/回撤告警 → 通知 (F2b) |
+| SafetyChecker | ✅ 完成 | 回撤熔斷 5% + 連續虧損暫停 5 天 (F2c) |
+| Auto-Alpha API | ✅ 完成 | 10 端點 (F3a) |
+| FactorPerformanceTracker | ✅ 完成 | 累計 IC + 回撤 per factor (F4b) |
+| DynamicFactorPool | ✅ 完成 | ICIR 排名自動新增/移除因子 (F4c) |
+| REGIME_FACTOR_BIAS | ✅ 完成 | Bull/Bear/Sideways 因子偏好矩陣 (F4a) |
+| DB Migration (F2d) | 🟡 待實作 | Alembic 005_auto_alpha.py |
+| WS auto-alpha 頻道 (F3b) | ✅ 完成 | 即時推送流水線進度 (stage_started/stage_completed/decision/execution/alert/error) |
+| Web Dashboard (F3c) | 🟡 待實作 | Auto-Alpha 前端頁面 |
+
+### 9.4 外部依賴狀態
 
 | 依賴 | 狀態 | 備註 |
 |------|------|------|
@@ -561,12 +584,14 @@ volumes:
 | Phase D | 2026-03-25 | 系統整合 (MultiAssetStrategy + 跨資產風控 + Allocation 前端 + Alpha 強化) |
 | Phase E1 | 2026-03-25 | 交易執行核心 (SinopacBroker + ExecutionService + 對帳 + 交易時段) |
 | Phase E4 | 2026-03-25 | Shioaji 進階 (DataFeed + Scanner + 非阻塞 + 觸價 + 融資融券 + 額度預檢) |
+| Phase F | 2026-03-26 | 自動化 Alpha (F1a-f 核心引擎 + F2a-c 持久化/告警/安全 + F3a-c API + WS + Dashboard + F4a-c Regime/因子追蹤/動態池) |
 
 ### 12.2 進行中 / 待辦
 
 | 項目 | 優先級 | 前置條件 | 說明 |
 |------|--------|---------|------|
-| **Phase F: 自動化 Alpha** | 🔴 P0 | Phase E | F1a-f 完成 (config/universe/researcher/decision/executor/scheduler)；F2a-c 完成 (store/alerts/safety)；F3a 完成 (API 10 端點 + 15 tests)；**F4a-c 完成** (regime explain + FactorPerformanceTracker + DynamicFactorPool + 21 tests)；F2e 待辦 (frontend) |
+| Phase F 前端 (F3b-c) | ✅ 完成 | — | WS auto-alpha 頻道 + Web Auto-Alpha Dashboard |
+| Phase F DB Migration (F2d) | 🟡 P1 | — | Alembic 005_auto_alpha.py |
 | Shioaji 整合測試 | 🔴 P0 | API Key + CA | 模擬環境端到端驗證 |
 | WS market 頻道接通 | 🟡 P1 | API Key | SinopacQuoteManager → broadcast |
 | Paper Trading 實測 | 🟡 P1 | 整合測試通過 | 模擬帳戶跑完整循環 |
@@ -578,9 +603,9 @@ volumes:
 
 ---
 
-## 12. 快速啟動指南
+## 13. 快速啟動指南
 
-### 12.1 開發環境
+### 13.1 開發環境
 
 ```bash
 # 後端
@@ -598,7 +623,7 @@ cd apps/android && ./gradlew assembleDebug   # Android debug APK
 make start            # 後端 + Web 並行
 ```
 
-### 12.2 Paper Trading 模式
+### 13.2 Paper Trading 模式
 
 ```bash
 # .env

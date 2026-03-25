@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Brain, Microscope, ShieldAlert,
   Settings, LogOut, ChevronLeft, ChevronRight, Users,
-  ArrowLeftRight, BookOpen,
+  ArrowLeftRight, BookOpen, Zap,
 } from "lucide-react";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
@@ -39,6 +39,7 @@ export function Sidebar({ onLogout }: { onLogout?: () => void }) {
     {
       items: [
         { to: "/research", icon: Microscope, label: t.nav.research },
+        { to: "/auto-alpha", icon: Zap, label: t.nav.autoAlpha },
       ],
     },
     {

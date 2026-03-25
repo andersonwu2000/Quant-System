@@ -332,6 +332,47 @@ export interface QueuedOrdersResponse {
   count: number;
 }
 
+// ── Auto-Alpha types ────────────────────────────────────────────────────────
+
+export interface AutoAlphaStatus {
+  running: boolean;
+  status: string;
+  last_run: string | null;
+  regime: string | null;
+  selected_factors: string[];
+  factor_weights: Record<string, number>;
+}
+
+export interface AutoAlphaPerformance {
+  total_days: number;
+  win_rate: number;
+  cumulative_return: number;
+  max_drawdown: number;
+  avg_daily_pnl: number;
+  best_day: number;
+  worst_day: number;
+}
+
+export interface FactorScoreInfo {
+  name: string;
+  ic: number;
+  icir: number;
+  hit_rate: number;
+  eligible: boolean;
+}
+
+export interface AutoAlphaSnapshot {
+  date: string;
+  regime: string;
+  universe_size: number;
+  selected_factors: string[];
+  factor_scores: Record<string, FactorScoreInfo>;
+  factor_weights: Record<string, number>;
+  trades_count: number;
+  turnover: number;
+  daily_pnl: number | null;
+}
+
 // ── Saved Portfolio types ───────────────────────────────────────────────────
 
 export interface PortfolioListItem {
