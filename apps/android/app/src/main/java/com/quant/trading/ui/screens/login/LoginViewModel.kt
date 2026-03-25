@@ -22,7 +22,7 @@ class LoginViewModel @Inject constructor(
         val apiKey: String = "",
         val username: String = "",
         val password: String = "",
-        val usePassword: Boolean = false,
+        val usePassword: Boolean = true,
         val loading: Boolean = false,
         val error: String? = null,
     )
