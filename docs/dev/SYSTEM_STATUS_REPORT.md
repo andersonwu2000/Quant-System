@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 110 |
-| 後端 Python LOC | 17,687 |
-| 測試檔案 | 51 |
-| 測試 LOC | 10,025 |
-| 測試數量 (pytest collected) | **726** |
+| 後端 Python 檔案 (src/ + strategies/) | 120 |
+| 後端 Python LOC | ~19,100 |
+| 測試檔案 | 60 |
+| 測試 LOC | ~11,600 |
+| 測試數量 (pytest collected) | **819** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -60,7 +60,7 @@
 |------|--------|-----|----------|
 | `src/api/` | 20 | 3,027 | REST API (12 路由, 44 端點) + WebSocket (4 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
-| `src/alpha/` | 11 | 2,158 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline + Regime + Attribution |
+| `src/alpha/` | 21 | ~3,600 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler)** |
 | `src/backtest/` | 6 | 2,192 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 + HTML/CSV 報表 + Walk-forward |
 | `src/execution/` | 10 | 1,956 | SinopacBroker + SimBroker + ExecutionService + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 |
 | `src/strategy/` | 8 | 1,401 | 策略 ABC + 因子庫 (14) + 最佳化器 (3) + 研究工具 + Registry + MultiAssetStrategy |
@@ -281,7 +281,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 | 分類 | 檔案數 | 測試數 | 說明 |
 |------|--------|--------|------|
 | Execution 層 | 7 | ~170 | SinopacBroker, QuoteManager, ExecutionService, MarketHours, Reconcile, StopOrder, ShioajiFeed |
-| Alpha 層 | 9 | ~100 | 因子, Pipeline, Regime, Attribution, Rolling IC |
+| Alpha 層 | 15 | ~163 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety)** |
 | 策略 + 回測 | 8 | ~120 | 各策略, 引擎, 分析, Walk-forward |
 | 風控 | 3 | ~60 | 規則, Kill Switch, Monitor |
 | API + 整合 | 6 | ~100 | REST 端點, Portfolio API, Auth, WebSocket |
@@ -454,6 +454,7 @@ volumes:
 
 | 項目 | 優先級 | 前置條件 | 說明 |
 |------|--------|---------|------|
+| **Phase F: 自動化 Alpha** | 🔴 P0 | Phase E | F1a-f 完成 (config/universe/researcher/decision/executor/scheduler)；F2a-c 完成 (store/alerts/safety)；F2d-e 待辦 (API/frontend) |
 | Shioaji 整合測試 | 🔴 P0 | API Key + CA | 模擬環境端到端驗證 |
 | WS market 頻道接通 | 🟡 P1 | API Key | SinopacQuoteManager → broadcast |
 | Paper Trading 實測 | 🟡 P1 | 整合測試通過 | 模擬帳戶跑完整循環 |

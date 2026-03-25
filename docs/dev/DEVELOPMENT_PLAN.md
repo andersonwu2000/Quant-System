@@ -1,6 +1,6 @@
 # 開發計畫書
 
-> **版本**: v4.2
+> **版本**: v4.3
 > **日期**: 2026-03-25
 > **目標**: 涵蓋多個可自動交易市場的投資組合研究與優化系統
 > **可交易市場**: 台股、美股、ETF（含債券/商品 ETF 代理）、台灣期貨、美國期貨
@@ -12,14 +12,14 @@
 ## 階段概覽
 
 ```
-Phase A ✅       Phase B ✅       Phase C ✅       Phase D ✅       Phase E (當前)
-基礎設施          跨資產 Alpha     組合最佳化        系統整合+風控     實盤交易
-─────────       ────────────    ─────────       ─────────       ─────────
-Instrument      宏觀因子模型      6 種最佳化器     MultiAssetStrategy  Shioaji 券商對接
-多幣別 Portfolio  跨資產信號       風險模型(LW)     跨資產風控規則      Paper Trading
-DataFeed 擴展   戰術配置引擎      幣別對沖         FX per-bar 修復    即時行情(tick)
-FRED 數據源     API + 前端型別                    Alpha層強化        IB 美股(第二階段)
-管線整合                                         因子/型別同步       EOD 對帳
+Phase A ✅       Phase B ✅       Phase C ✅       Phase D ✅       Phase E (當前)      Phase F (下一階段)
+基礎設施          跨資產 Alpha     組合最佳化        系統整合+風控     實盤交易              自動化 Alpha
+─────────       ────────────    ─────────       ─────────       ─────────           ─────────
+Instrument      宏觀因子模型      6 種最佳化器     MultiAssetStrategy  Shioaji 券商對接     每日排程引擎
+多幣別 Portfolio  跨資產信號       風險模型(LW)     跨資產風控規則      Paper Trading       因子自動篩選
+DataFeed 擴展   戰術配置引擎      幣別對沖         FX per-bar 修復    即時行情(tick)       Regime 調適
+FRED 數據源     API + 前端型別                    Alpha層強化        IB 美股(第二階段)    績效回饋循環
+管線整合                                         因子/型別同步       EOD 對帳             安全熔斷
 ```
 
 ---
@@ -239,6 +239,64 @@ trade = api.place_order(contract, order, timeout=0)  # 立即返回
 
 ---
 
+## Phase F：自動化 Alpha 研究系統（下一階段）
+
+> 架構設計：`docs/dev/AUTOMATED_ALPHA_ARCHITECTURE.md`
+
+### F1: 核心引擎（`src/alpha/auto/`）
+
+將手動 Alpha 研究流程自動化為每日排程驅動的閉環系統。
+
+| 子任務 | 檔案 | 說明 |
+|--------|------|------|
+| F1a | `config.py` | `AutoAlphaConfig` + `DecisionConfig` — 排程/篩選/安全閾值 |
+| F1b | `universe.py` | `UniverseSelector` — Scanner 候選 × 靜態約束 × 處置股排除 |
+| F1c | `researcher.py` | `AlphaResearcher` — 包裝 AlphaPipeline + Regime 分類 + 持久化 |
+| F1d | `decision.py` | `AlphaDecisionEngine` — ICIR/Hit Rate 篩選 + Regime 權重調適 + Rolling IC |
+| F1e | `executor.py` | `AlphaExecutor` — weights→orders→risk→execution→performance |
+| F1f | `scheduler.py` | `AlphaScheduler` — 7 個排程 job（08:30~13:35） |
+
+**每日流水線**:
+```
+08:50 Scanner → Universe (150 stocks - disposition)
+08:52 AlphaPipeline.research() → 全因子 IC/ICIR/Regime
+08:55 因子篩選 (ICIR>0.3, Hit>52%) → Regime 調適 → 目標權重
+09:00 風控檢查 → SinopacBroker 非阻塞下單
+13:30 EOD 對帳 → 歸因 → 績效記錄 → 通知
+```
+
+### F2: 持久化 + 告警（`src/alpha/auto/`）
+
+| 子任務 | 檔案 | 說明 |
+|--------|------|------|
+| F2a | `store.py` | `AlphaStore` — DB 持久化 (ResearchSnapshot + FactorScore + alerts) |
+| F2b | `alerts.py` | `AlertManager` — Regime 變化 / IC 反轉 / 回撤告警 → 通知 |
+| F2c | `safety.py` | `SafetyChecker` — 回撤熔斷 (5%) + 連續虧損暫停 (5 天) |
+| F2d | migration | `005_auto_alpha.py` — Alembic migration for snapshots/alerts tables |
+
+### F3: API + 前端
+
+| 子任務 | 說明 |
+|--------|------|
+| F3a | `src/api/routes/auto_alpha.py` — 10 個端點 (config/start/stop/status/history/performance/alerts/run-now) |
+| F3b | WS `auto-alpha` 頻道 — 即時推送流水線進度 |
+| F3c | Web: Auto-Alpha Dashboard — 今日配置 + 流水線進度 + 績效走勢 + 告警 |
+
+### F4: Regime 策略引擎
+
+| 子任務 | 說明 |
+|--------|------|
+| F4a | `REGIME_FACTOR_BIAS` — Bull/Bear/Sideways 因子偏好矩陣 |
+| F4b | 因子績效追蹤表 — 累計 IC 走勢 + 回撤 per factor |
+| F4c | 動態因子池 — 自動新增/移除因子（基於歷史 ICIR 排名） |
+
+### Phase F 完成標誌
+
+系統每日盤前自動執行：
+1. Scanner → 動態 Universe → 2. 全因子 IC 分析 → 3. ICIR 篩選 + Regime 調適 → 4. 目標權重 → 5. 風控 → 6. 自動下單 → 7. EOD 對帳 + 歸因 → 8. 績效通知 → 9. 回饋下一日研究
+
+---
+
 ## 里程碑時間線
 
 | 日期 | 里程碑 |
@@ -259,6 +317,10 @@ trade = api.place_order(contract, order, timeout=0)  # 立即返回
 | TBD | E4c-f: 額度預檢 + 融資融券 + 非阻塞 + 觸價 |
 | TBD | E5: 期貨選擇權交易 + 組合單 |
 | TBD | E6: IB 美股對接 |
+| TBD | F1: 自動化 Alpha 核心引擎 (4 stages + scheduler) |
+| TBD | F2: 持久化 + 告警 + 安全熔斷 |
+| TBD | F3: Auto-Alpha API + 前端 Dashboard |
+| TBD | F4: Regime 策略引擎 + 動態因子池 |
 
 ---
 
