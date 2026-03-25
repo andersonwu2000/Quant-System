@@ -25,7 +25,13 @@ fun BacktestTab(viewModel: BacktestViewModel = hiltViewModel()) {
         QuantCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = state.strategy, onValueChange = viewModel::updateStrategy, label = { Text(stringResource(R.string.backtest_strategy)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = state.universe, onValueChange = viewModel::updateUniverse, label = { Text(stringResource(R.string.backtest_universe)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+
+                // Universe picker (replaces plain text field)
+                UniversePickerField(
+                    selected = state.universe,
+                    onOpenPicker = viewModel::showUniversePicker,
+                )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = state.startDate, onValueChange = viewModel::updateStartDate, label = { Text(stringResource(R.string.backtest_start_date)) }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = state.endDate, onValueChange = viewModel::updateEndDate, label = { Text(stringResource(R.string.backtest_end_date)) }, singleLine = true, modifier = Modifier.weight(1f))
@@ -74,5 +80,14 @@ fun BacktestTab(viewModel: BacktestViewModel = hiltViewModel()) {
                 }
             }
         }
+    }
+
+    // Universe Picker Bottom Sheet
+    if (state.showUniversePicker) {
+        UniversePickerSheet(
+            selected = state.universe,
+            onConfirm = viewModel::confirmUniverse,
+            onDismiss = viewModel::hideUniversePicker,
+        )
     }
 }

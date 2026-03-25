@@ -20,7 +20,7 @@ class BacktestViewModel @Inject constructor(
 
     data class UiState(
         val strategy: String = "momentum",
-        val universe: String = "AAPL,MSFT,GOOGL",
+        val universe: List<String> = listOf("AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"),
         val startDate: String = "2023-01-01",
         val endDate: String = "2024-12-31",
         val running: Boolean = false,
@@ -28,27 +28,38 @@ class BacktestViewModel @Inject constructor(
         val summary: BacktestSummary? = null,
         val result: BacktestResult? = null,
         val error: String? = null,
+        val showUniversePicker: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
     fun updateStrategy(v: String) { _state.value = _state.value.copy(strategy = v) }
-    fun updateUniverse(v: String) { _state.value = _state.value.copy(universe = v) }
+    fun updateUniverse(v: List<String>) { _state.value = _state.value.copy(universe = v) }
     fun updateStartDate(v: String) { _state.value = _state.value.copy(startDate = v) }
     fun updateEndDate(v: String) { _state.value = _state.value.copy(endDate = v) }
+
+    fun showUniversePicker() { _state.value = _state.value.copy(showUniversePicker = true) }
+    fun hideUniversePicker() { _state.value = _state.value.copy(showUniversePicker = false) }
+
+    fun confirmUniverse(tickers: List<String>) {
+        _state.value = _state.value.copy(universe = tickers, showUniversePicker = false)
+    }
 
     fun run() {
         val s = _state.value
         if (s.running) return
+        if (s.universe.isEmpty()) {
+            _state.value = s.copy(error = "Universe must have at least 1 symbol")
+            return
+        }
         _state.value = s.copy(running = true, error = null, result = null, summary = null, progress = 0f)
 
         viewModelScope.launch {
             try {
-                val symbols = s.universe.split(",").map { it.trim() }.filter { it.isNotBlank() }
                 val req = BacktestRequest(
                     strategy = s.strategy,
-                    universe = symbols,
+                    universe = s.universe,
                     start = s.startDate,
                     end = s.endDate,
                 )

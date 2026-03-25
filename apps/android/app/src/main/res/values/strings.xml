@@ -106,6 +106,12 @@
     <string name="backtest_trades">Trades</string>
     <string name="backtest_win_rate">Win Rate</string>
 
+    <!-- Universe Picker -->
+    <string name="universe_picker_title">Stock Universe</string>
+    <string name="universe_search">Search ticker or company name…</string>
+    <string name="universe_selected">selected</string>
+    <string name="universe_done">Done</string>
+
     <!-- Alpha -->
     <string name="alpha_factors">Factors</string>
     <string name="alpha_run">Run Alpha</string>

@@ -106,6 +106,12 @@
     <string name="backtest_trades">交易次數</string>
     <string name="backtest_win_rate">勝率</string>
 
+    <!-- Universe Picker -->
+    <string name="universe_picker_title">股票池選擇</string>
+    <string name="universe_search">搜尋代碼或公司名稱…</string>
+    <string name="universe_selected">已選</string>
+    <string name="universe_done">完成</string>
+
     <!-- Alpha -->
     <string name="alpha_factors">因子</string>
     <string name="alpha_run">執行 Alpha 研究</string>

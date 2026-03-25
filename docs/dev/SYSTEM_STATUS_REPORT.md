@@ -263,6 +263,14 @@
 
 **特色**: Victory Native 圖表, Expo SecureStore 憑證, OfflineBanner, Role-based 功能控制
 
+### 6.2.1 Android Native (Jetpack Compose)
+
+Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
+- 市場分頁（US / TW / ETF）+ 搜尋 + 板塊分組
+- 預設組合（e.g. FAANG, 台灣50）+ 批次操作
+- 股票資料 (`StockData.kt`) 鏡像 Web `stocks.ts`
+- i18n（en + zh-TW）via `strings.xml`
+
 ### 6.3 共享套件 (`@quant/shared`)
 
 - 型別定義 (1:1 對應後端 Pydantic schemas)
@@ -383,6 +391,7 @@ volumes:
 | API | ✅ 完成 | 44 端點 + WebSocket + JWT/RBAC + 限流 + 審計 |
 | Web 前端 | ✅ 完成 | 10 頁 + i18n (en/zh) + 深色主題 |
 | Mobile | ✅ 完成 | 7 tabs + Expo SecureStore + OfflineBanner |
+| Android Native | 🟡 進行中 | Backtest tab + UniversePickerSheet (Material 3) + i18n |
 
 ### 9.2 交易執行（Phase E）
 
