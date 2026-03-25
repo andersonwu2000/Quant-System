@@ -46,9 +46,17 @@ class BacktestResult:
     var_95: float = 0.0               # 日 95% VaR
     cvar_95: float = 0.0              # 日 95% CVaR
 
+    # ── Omega / Rolling Sharpe ──
+    omega_ratio: float = 0.0           # Omega ratio (threshold=0)
+    rolling_sharpe: list[float] = field(default_factory=list)  # 63-day rolling Sharpe
+
     # ── 拒絕訂單統計 ──
     rejected_orders: int = 0
     rejected_notional: float = 0.0
+
+    # ── 回測防禦警告 ──
+    survivorship_warnings: list[str] = field(default_factory=list)
+    price_warnings: list[str] = field(default_factory=list)
 
     # ── 時序數據 ──
     nav_series: pd.Series = field(repr=False, default_factory=pd.Series)
@@ -106,7 +114,48 @@ class BacktestResult:
             "cvar_95": self.cvar_95,
             "rejected_orders": self.rejected_orders,
             "rejected_notional": self.rejected_notional,
+            "omega_ratio": self.omega_ratio,
+            "rolling_sharpe": self.rolling_sharpe,
+            "survivorship_warnings": self.survivorship_warnings,
+            "price_warnings": self.price_warnings,
         }
+
+
+def compute_omega_ratio(returns: pd.Series, threshold: float = 0.0) -> float:
+    """Omega ratio: Σ max(r - threshold, 0) / Σ max(threshold - r, 0).
+
+    Returns inf if denominator is 0 (no losses), 0.0 if no data.
+    """
+    if returns.empty:
+        return 0.0
+    vals = np.asarray(returns.values, dtype=np.float64)
+    gains = np.sum(np.maximum(vals - threshold, 0.0))
+    losses = np.sum(np.maximum(threshold - vals, 0.0))
+    if losses == 0:
+        return float("inf") if gains > 0 else 0.0
+    return float(gains / losses)
+
+
+def compute_rolling_sharpe(returns: pd.Series, window: int = 63) -> list[float]:
+    """Rolling Sharpe ratio = rolling_mean / rolling_std * sqrt(252).
+
+    Returns list of length max(0, len(returns) - window + 1).
+    """
+    if len(returns) < window:
+        return []
+    rolling_mean = returns.rolling(window).mean()
+    rolling_std = returns.rolling(window).std()
+    # rolling produces NaN for first (window-1) entries
+    valid_mean = rolling_mean.iloc[window - 1:]
+    valid_std = rolling_std.iloc[window - 1:]
+    result: list[float] = []
+    annualize = np.sqrt(252)
+    for m, s in zip(valid_mean, valid_std):
+        if s > 0:
+            result.append(float(m / s * annualize))
+        else:
+            result.append(0.0)
+    return result
 
 
 def compute_analytics(
@@ -179,6 +228,10 @@ def compute_analytics(
     start_date = str(nav_series.index[0].date()) if hasattr(nav_series.index[0], "date") else str(nav_series.index[0])
     end_date = str(nav_series.index[-1].date()) if hasattr(nav_series.index[-1], "date") else str(nav_series.index[-1])
 
+    # Omega ratio & rolling Sharpe
+    omega = compute_omega_ratio(daily_returns)
+    rolling_sh = compute_rolling_sharpe(daily_returns)
+
     return BacktestResult(
         strategy_name=strategy_name,
         start_date=start_date,
@@ -202,6 +255,8 @@ def compute_analytics(
         rejected_notional=rejected_notional,
         var_95=var_95,
         cvar_95=cvar_95,
+        omega_ratio=omega,
+        rolling_sharpe=rolling_sh,
         nav_series=nav_series,
         daily_returns=daily_returns,
         drawdown_series=drawdown,

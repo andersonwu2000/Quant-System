@@ -34,6 +34,9 @@ class SimConfig:
     # Price limit config (0 = disabled; 0.10 = +/-10% Taiwan default)
     price_limit_pct: float = 0.0
 
+    # Short selling borrow cost (annual rate, e.g. 0.02 = 2%)
+    short_borrow_rate: float = 0.0
+
 
 class SimBroker:
     """
@@ -177,6 +180,11 @@ class SimBroker:
                     commission += notional * Decimal(str(inst_tax))
                 else:
                     commission += notional * Decimal(str(self.config.tax_rate))
+
+            # 融券借券成本（賣出開倉時）
+            if order.side == Side.SELL and self.config.short_borrow_rate > 0:
+                borrow_cost = notional * Decimal(str(self.config.short_borrow_rate)) / Decimal("252")
+                commission += borrow_cost
 
             # 更新訂單狀態
             order.status = OrderStatus.FILLED

@@ -42,6 +42,9 @@ class OptimizationMethod(Enum):
     RESAMPLED = "resampled"
     CVAR_OPTIMIZATION = "cvar_optimization"
     MAX_DRAWDOWN = "max_drawdown"
+    GLOBAL_MIN_VARIANCE = "global_min_variance"
+    MAX_SHARPE = "max_sharpe"
+    INDEX_TRACKING = "index_tracking"
 
 
 @dataclass
@@ -59,6 +62,8 @@ class OptimizerConfig:
     resample_iterations: int = 500    # Michaud 重取樣迭代次數
     shrink_mean: bool = False         # 是否套用 James-Stein 均值收縮
     cvar_confidence: float = 0.95     # CVaR 最佳化信心水準
+    tracking_index: str = ""          # 追蹤指數 symbol（Index Tracking 用）
+    tracking_max_stocks: int = 30     # 追蹤組合最大持股數
 
 
 @dataclass
@@ -159,6 +164,13 @@ class PortfolioOptimizer:
             raw = self._optimize_cvar(returns, symbols)
         elif cfg.method == OptimizationMethod.MAX_DRAWDOWN:
             raw = self._optimize_max_drawdown(returns, symbols)
+        elif cfg.method == OptimizationMethod.GLOBAL_MIN_VARIANCE:
+            raw = self._optimize_gmv(cov, symbols)
+        elif cfg.method == OptimizationMethod.MAX_SHARPE:
+            mu = expected_returns if expected_returns is not None else returns.mean() * 252
+            raw = self._optimize_max_sharpe(mu, cov, symbols)
+        elif cfg.method == OptimizationMethod.INDEX_TRACKING:
+            raw = self._optimize_index_tracking(returns, symbols)
         else:
             raw = self._equal_weight(symbols)
 
@@ -631,6 +643,190 @@ class PortfolioOptimizer:
             logger.warning("Max drawdown optimization failed, falling back to equal weight")
 
         return self._equal_weight(symbols)
+
+    # ── G5a: Global Minimum Variance ─────────────────────
+
+    def _optimize_gmv(
+        self,
+        cov: pd.DataFrame,
+        symbols: list[str],
+    ) -> dict[str, float]:
+        """Global Minimum Variance: min w'Sigma w s.t. sum(w)=1."""
+        cfg = self.config
+        n = len(symbols)
+        sigma: npt.NDArray[np.float64] = np.asarray(
+            cov.loc[symbols, symbols].values, dtype=np.float64,
+        )
+
+        def portfolio_variance(w: npt.NDArray[np.floating[Any]]) -> float:
+            return float(w @ sigma @ w)
+
+        w0 = np.ones(n) / n
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+        lb = 0.0 if cfg.long_only else -cfg.max_weight
+        bounds = [(lb, cfg.max_weight)] * n
+
+        result = scipy_minimize(
+            portfolio_variance,
+            w0,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraints,
+            options={"maxiter": 500, "ftol": 1e-12},
+        )
+
+        w = result.x
+        if cfg.long_only:
+            w = np.maximum(w, 0.0)
+        total = w.sum()
+        if total > 0:
+            w = w / total
+        else:
+            return self._equal_weight(symbols)
+
+        return {symbols[i]: float(w[i]) for i in range(n)}
+
+    # ── G5b: Maximum Sharpe Ratio ──────────────────────────
+
+    def _optimize_max_sharpe(
+        self,
+        expected_returns: pd.Series,
+        cov: pd.DataFrame,
+        symbols: list[str],
+    ) -> dict[str, float]:
+        """Maximum Sharpe Ratio via Dinkelbach / SLSQP.
+
+        Unconstrained analytical: w* = Sigma^{-1}(mu-rf) / 1'Sigma^{-1}(mu-rf)
+        With constraints: maximize (mu'w - rf) / sqrt(w'Sigma w) via SLSQP.
+        """
+        cfg = self.config
+        n = len(symbols)
+        mu: npt.NDArray[np.float64] = np.asarray(
+            expected_returns.reindex(symbols, fill_value=0.0).values, dtype=np.float64,
+        )
+        sigma: npt.NDArray[np.float64] = np.asarray(
+            cov.loc[symbols, symbols].values, dtype=np.float64,
+        )
+        rf = cfg.risk_free_rate
+
+        def neg_sharpe(w: npt.NDArray[np.floating[Any]]) -> float:
+            port_ret = float(mu @ w)
+            port_var = float(w @ sigma @ w)
+            port_std = float(np.sqrt(max(port_var, 1e-12)))
+            return float(-(port_ret - rf) / port_std)
+
+        w0 = np.ones(n) / n
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+        lb = 0.0 if cfg.long_only else -cfg.max_weight
+        bounds = [(lb, cfg.max_weight)] * n
+
+        try:
+            result = scipy_minimize(
+                neg_sharpe,
+                w0,
+                method="SLSQP",
+                bounds=bounds,
+                constraints=constraints,
+                options={"maxiter": 500, "ftol": 1e-12},
+            )
+            if result.success:
+                w = result.x
+                if cfg.long_only:
+                    w = np.maximum(w, 0.0)
+                total = w.sum()
+                if total > 0:
+                    w = w / total
+                return {symbols[i]: float(w[i]) for i in range(n)}
+        except Exception:
+            logger.warning("Max Sharpe optimization failed, falling back to MVO")
+
+        # Fallback: analytical MVO
+        return self._mean_variance(expected_returns, cov, symbols)
+
+    # ── G5c: Index Tracking (Sparse) ───────────────────────
+
+    def _optimize_index_tracking(
+        self,
+        returns: pd.DataFrame,
+        symbols: list[str],
+    ) -> dict[str, float]:
+        """Sparse index tracking via LASSO relaxation.
+
+        min ||r_portfolio - r_index||^2 + lambda * ||w||_1
+        s.t. sum(w) = 1, bounds
+        """
+        cfg = self.config
+        n = len(symbols)
+        r = returns[symbols].dropna().values  # (T, n)
+        T = r.shape[0]
+
+        if T < 10:
+            return self._equal_weight(symbols)
+
+        # Use equal-weighted portfolio of all symbols as index proxy
+        # if no tracking_index is specified
+        if cfg.tracking_index and cfg.tracking_index in returns.columns:
+            r_index = returns[cfg.tracking_index].dropna().values[-T:]
+        else:
+            r_index = r.mean(axis=1)
+
+        max_stocks = cfg.tracking_max_stocks
+
+        def tracking_objective(
+            w: npt.NDArray[np.floating[Any]], lam: float,
+        ) -> float:
+            r_port = r @ w
+            tracking_err = float(np.sum((r_port - r_index) ** 2) / T)
+            l1_penalty = float(lam * np.sum(np.abs(w)))
+            return tracking_err + l1_penalty
+
+        lb = 0.0 if cfg.long_only else -cfg.max_weight
+        bounds = [(lb, cfg.max_weight)] * n
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+
+        # Binary search for lambda that gives ~tracking_max_stocks non-zero
+        lam_low = 0.0
+        lam_high = 1.0
+        best_w = np.ones(n) / n
+
+        for _ in range(20):
+            lam_mid = (lam_low + lam_high) / 2.0
+            w0 = np.ones(n) / n
+
+            try:
+                result = scipy_minimize(
+                    lambda w, _lam=lam_mid: tracking_objective(w, _lam),
+                    w0,
+                    method="SLSQP",
+                    bounds=bounds,
+                    constraints=constraints,
+                    options={"maxiter": 300, "ftol": 1e-10},
+                )
+                if result.success:
+                    w = result.x
+                    if cfg.long_only:
+                        w = np.maximum(w, 0.0)
+                    n_nonzero = int(np.sum(np.abs(w) > 1e-4))
+
+                    if n_nonzero <= max_stocks:
+                        best_w = w.copy()
+                        lam_high = lam_mid
+                    else:
+                        lam_low = lam_mid
+                else:
+                    lam_low = lam_mid
+            except Exception:
+                lam_low = lam_mid
+
+        # Zero out tiny weights
+        best_w[np.abs(best_w) < 1e-4] = 0.0
+        total = best_w.sum()
+        if total > 0:
+            best_w = best_w / total
+        else:
+            return self._equal_weight(symbols)
+
+        return {symbols[i]: float(best_w[i]) for i in range(n)}
 
     # ── 約束 ─────────────────────────────────────────────
 

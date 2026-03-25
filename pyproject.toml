@@ -80,5 +80,6 @@ module = [
     "apscheduler.*",
     "httpx.*",
     "shioaji.*",
+    "statsmodels.*",
 ]
 ignore_missing_imports = true

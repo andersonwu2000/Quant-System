@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from src.backtest.analytics import BacktestResult, compute_analytics
+from src.backtest.validation import detect_price_outliers, detect_survivorship_bias
 from src.data.feed import HistoricalFeed
 from src.data.fundamentals import FundamentalsProvider
 from src.data.quality import check_bars
@@ -125,6 +126,21 @@ class BacktestEngine:
             logger.warning("Skipping %d suspect dates: %s", len(suspect_dates), sorted(suspect_dates)[:10])
 
         self._config = config
+
+        # ── G8: 回測防禦 — 存活者偏差 & 價格異常偵測 ──
+        raw_data: dict[str, pd.DataFrame] = {}
+        for sym in config.universe:
+            df = feed.get_bars(sym)
+            if not df.empty:
+                raw_data[sym] = df
+        survivorship_warnings = detect_survivorship_bias(raw_data, config.start, config.end)
+        price_warnings = detect_price_outliers(raw_data)
+        if survivorship_warnings:
+            for w in survivorship_warnings:
+                logger.warning("SURVIVORSHIP BIAS: %s", w)
+        if price_warnings:
+            for w in price_warnings:
+                logger.warning("PRICE OUTLIER: %s", w)
 
         # 載入股利數據（如果啟用）
         self._dividend_data: dict[str, dict[str, float]] = {}
@@ -298,6 +314,10 @@ class BacktestEngine:
             config=config,
             rejected_orders=sim_broker.rejected_log,
         )
+
+        # 附加防禦警告
+        result.survivorship_warnings = survivorship_warnings
+        result.price_warnings = price_warnings
 
         logger.info(
             "BACKTEST DONE [%s] return=%.2f%% sharpe=%.2f maxdd=%.2f%% trades=%d rejected=%d",
