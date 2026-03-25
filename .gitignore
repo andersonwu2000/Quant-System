@@ -11,8 +11,8 @@ build/
 *.db
 *.sqlite3
 .claude/
-CLAUDE.md
 *.pdf
+shioaji.log
 
 # Frontend
 node_modules/

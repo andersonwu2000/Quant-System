@@ -19,12 +19,12 @@ Keep updates minimal — only touch sections affected by the change.
 
 Multi-asset portfolio research and optimization system covering TW stocks, US stocks, ETFs (incl. bond/commodity ETF proxies), TW futures, US futures. Bond/commodity exposure via ETFs, not direct trading. No retail FX (Taiwan regulatory restriction). Current stage: equity alpha research layer complete, expanding to multi-asset architecture. Long-term goal: platform for individual investors and family asset management.
 
-Monorepo: Python backend + React web + React Native mobile. Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
+Monorepo: Python backend + React web + Android native (Kotlin/Compose). Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
 
 **Monorepo structure:**
 - `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (~120 files, ~20,000 LOC)
 - `apps/web/` — React 18 + Vite + Tailwind dashboard (incl. Alpha Research page)
-- `apps/mobile/` — React Native + Expo 52 mobile app (incl. Alpha tab)
+- `apps/android/` — Android native (Kotlin + Jetpack Compose + Material 3)
 - `apps/shared/` — `@quant/shared` TypeScript package (types, API client, WS manager, format utils)
 
 Frontend workspace managed by bun (`apps/package.json` workspaces).
@@ -63,11 +63,11 @@ python -m src.cli.main factors
 # === Frontend ===
 make install-apps            # bun install (all frontend packages)
 make web                     # web dev server (port 3000)
-make mobile                  # expo dev server
+cd apps/android && ./gradlew assembleDebug  # Android debug APK
 make web-build               # production build
 make web-typecheck           # tsc --noEmit
 make web-test                # vitest
-make mobile-typecheck        # tsc --noEmit
+cd apps/android && ./gradlew lintDebug  # Android lint
 
 # === Full stack ===
 make start                   # backend + web in parallel
@@ -157,20 +157,20 @@ Key design decisions:
 
 **Platform adapters** (keep platform-specific code out of shared):
 - Web: `apps/web/src/core/api/client.ts` — localStorage for API key, browser-relative URLs, Vite proxy
-- Mobile: `apps/mobile/src/api/client.ts` — Expo SecureStore for credentials, configurable base URL
-- Color helpers (`pnlColor`) stay per-platform: web uses Tailwind classes, mobile uses hex colors
+- Android: `apps/android/` — Kotlin + Jetpack Compose + Hilt DI + OkHttp
 
-**Key pattern**: Web and mobile barrel files (`@core/api/index.ts`, etc.) re-export from `@quant/shared`. Feature code imports from `@core/*` — never directly from `@quant/shared`. This keeps feature code platform-unaware while allowing platform-specific extensions.
+**Key pattern**: Web barrel files (`@core/api/index.ts`, etc.) re-export from `@quant/shared`. Feature code imports from `@core/*` — never directly from `@quant/shared`.
 
-**Web pages** (8 feature pages):
+**Web pages** (11 feature pages):
 - Dashboard (`/`) — MarketTicker, NavChart, PositionTable (WebSocket real-time)
-- Backtest (`/backtest`) — UniversePicker, ParamsEditor, ResultChart, MonthlyHeatmap, CompareTable/Chart, HistoryPanel
-- Portfolio (`/portfolio`) — CRUD + rebalance preview
-- Orders (`/orders`) — OrderForm + order history
+- Trading (`/trading`) — Portfolio + Orders + Paper Trading (consolidated)
 - Strategies (`/strategies`) — List + start/stop controls
+- Research (`/research`) — Alpha + Backtest + Allocation (consolidated)
+- Auto-Alpha (`/auto-alpha`) — Auto-Alpha Dashboard + factor allocation + performance
 - Risk (`/risk`) — Rules, alerts, kill switch
-- Settings (`/settings`) — API key, password change, SystemMetrics
-- Admin (`/admin`) — User CRUD, audit logs, configuration
+- Guide (`/guide`) — 7-chapter interactive guide
+- Settings (`/settings`) — API key, password, Getting Started
+- Admin (`/admin`) — User CRUD, audit logs
 
 **Web UI patterns**:
 - Shared `<Card>` component for consistent card styling across all pages
@@ -181,19 +181,15 @@ Key design decisions:
 - `ErrorBoundary` + `RouteErrorBoundary` for error handling
 - Path aliases: `@core`, `@feat`, `@shared`, `@test`
 
-**Mobile patterns**:
-- Role-based access control via `useAuth` hook (`role`, `hasRole()`)
-- `OrderForm` component with Alert confirmation dialog
-- Role-gated features: Kill Switch (risk_manager), rule toggles (risk_manager)
-- Victory Native for charts (NavChart, BacktestChart, PositionPieChart)
-- `OfflineBanner` with expo-network detection
-- Hooks: `useAuth`, `usePortfolio`, `useOrders`, `useBacktest`, `useAlerts`, `useRealtimeData`
+**Android app** (`apps/android/`):
+- Kotlin + Jetpack Compose + Material 3
+- Hilt DI + OkHttp + Retrofit
+- Screens: Dashboard, Backtest, Strategies, Orders, Risk, Settings
+- SecureStorage for credentials, WebSocket real-time updates
 
-**Internationalization**: English + Traditional Chinese (en/zh). Context-based i18n with `useT` hook. Language preference persisted to localStorage (web) / SecureStore (mobile).
+**Internationalization**: English + Traditional Chinese (en/zh). Context-based i18n with `useT` hook (web). Language preference persisted to localStorage.
 
 **Web frontend tests**: Vitest with jsdom (`apps/web/vitest.config.ts`). Test files colocated (e.g. `BacktestPage.test.tsx`, `RiskPage.test.tsx`, `AdminPage.test.tsx`). E2E tests via Playwright (`apps/web/e2e/`).
-
-**Mobile tests**: Jest with React Native preset. Component tests in `src/components/__tests__/`, hook tests in `src/hooks/__tests__/`.
 
 ## Strategies
 
@@ -224,9 +220,9 @@ Key design decisions:
 - `web-test` — vitest (depends on web-typecheck)
 - `web-build` — vite build (depends on web-typecheck)
 - `shared-test` — vitest for @quant/shared
-- `mobile-typecheck` — tsc --noEmit
-- `mobile-test` — jest
+- `android-build` — Gradle assembleDebug
 - `e2e-test` — Playwright chromium
+- `release` — GitHub Release + APK artifact (on push to master)
 
 **Scripts**:
 - `scripts/benchmark.py` — Performance benchmarking for backtests (quick/full modes)
@@ -265,4 +261,4 @@ Key config:
 - **Rate limiting**: slowapi (memory-backed)
 - **Audit**: AuditMiddleware logs all mutations
 - **Container**: Non-root Docker user
-- **Mobile**: Expo SecureStore for credentials
+- **Android**: EncryptedSharedPreferences for credentials
