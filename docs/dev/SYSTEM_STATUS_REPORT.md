@@ -1,11 +1,11 @@
 # 系統現況追蹤報告書
 
 > **報告日期**: 2026-03-26
-> **版本**: v4.2
-> **當前階段**: Phase H（實用精煉）完成 — 14 種最佳化方法 + DSR/MinBTL + Kalman Pairs，Phase E 待券商整合測試
+> **版本**: v5.0
+> **當前階段**: Phase A~H 全部完成，待 Shioaji API Key 進行整合測試
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v6.0
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v6.1
 
 ---
 
@@ -166,7 +166,7 @@
 - `check_dispositions()` — 處置股清單查詢
 - 非阻塞下單 (`timeout=0`, ~12ms vs ~136ms)
 
-### 4.6 組合最佳化（13 方法）
+### 4.6 組合最佳化（14 方法）
 
 | 方法 | 說明 |
 |------|------|
@@ -285,7 +285,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 
 ## 7. 測試覆蓋
 
-### 7.1 後端測試（975 tests）
+### 7.1 後端測試（1,006 tests）
 
 | 分類 | 檔案數 | 測試數 | 說明 |
 |------|--------|--------|------|
@@ -513,12 +513,12 @@ volumes:
 | HRP | ✅ | — | — | López de Prado (2016) — 已實作核心 |
 | **CVaR/ES 組合** | ✅ 已實作 | — | — | Rockafellar & Uryasev (2000) LP 重構；`compute_var/compute_cvar` + `_optimize_cvar`；BacktestResult 含 `var_95/cvar_95` |
 | **Drawdown 組合 (CDaR/MaxDD)** | ✅ 已實作 | — | — | `_optimize_max_drawdown` 歷史模擬 SLSQP |
-| Downside Risk / Semi-variance | ❌ 未實作 | 缺少 | 中 | 書 Ch.10：只懲罰下行波動 |
+| Downside Risk / Semi-variance | ✅ Phase H2 | — | — | `OptimizationMethod.SEMI_VARIANCE` — semi-covariance SLSQP |
 | **MVSK 高階矩** | ❌ 未實作 | **缺少** | **中** | **Wang et al. (2024)**: RFPA 演算法, O(N²) 複雜度 (vs Q-MVSK O(N³)). 用 ghMST skew-t 分布建模, N=400 < 1 秒. CRRA utility λ=(1,ξ/2,ξ(ξ+1)/6,ξ(ξ+1)(ξ+2)/24), ξ=6. 見 `highOrderPortfolios` R 套件 |
 | **Robust 組合 (Worst-case)** | ✅ Phase G2a | — | — | `_optimize_robust` 橢圓不確定集 SLSQP |
 | **Index Tracking (稀疏追蹤)** | ✅ Phase G5b | — | — | `_optimize_index_tracking` LASSO 稀疏追蹤 (Benidis/Feng/Palomar) |
 | Portfolio Resampling | ✅ 已實作 | — | — | `_optimize_resampled` Michaud 蒙地卡羅重取樣 |
-| **Pairs Trading (協整合+Kalman)** | ✅ G6a 共整合 | **部分** | **低** | G6a 完成：Engle-Granger 兩步法共整合 + OLS hedge ratio + spread Z-score；仍缺 Kalman Filter 動態 hedge ratio |
+| **Pairs Trading (協整合+Kalman)** | ✅ G6a+H3 | — | — | Engle-Granger 共整合 + OLS hedge ratio + Kalman Filter 動態 hedge ratio (`method="kalman"`) |
 | Graph-Based (HERC, NCO) | ⚠️ 部分 | 不足 | 低 | HRP 已有但缺 HERC/NCO |
 | Deep Learning Portfolios | ❌ 未實作 | 缺少 | 低 | 書 Ch.16：端到端 DL，學術實驗階段 |
 | Utility-Based / Kelly | ❌ 未實作 | 缺少 | 低 | 書 Ch.7 |
@@ -531,7 +531,7 @@ volumes:
 | Vanilla (Train/Test Split) | ✅ | — | — | |
 | **Multiple Randomized Backtest** | ✅ Phase G3a | — | — | `src/backtest/randomized.py` + API `POST /api/v1/backtest/randomized`：隨機抽取資產子集 + 隨機時段 → N 次回測 → 績效分布 (Sharpe/Return/Drawdown) + P(Sharpe>0) |
 | **CSCV (PBO)** | ✅ Phase G3b | — | — | `src/backtest/overfitting.py` + API `POST /api/v1/backtest/pbo`：Bailey et al. (2017) CSCV 實作，S 等分 → C(S,S/2) 組合 → IS/OOS 排名比較 → PBO |
-| **Deflated Sharpe Ratio** | ❌ 未實作 | **缺少** | **高** | **Bailey et al. (2015) eq.(4)**: DSR = PSR[SR*] where SR* = E[max(SR)] under null, 校正 N_trials + skew γ₃ + kurtosis γ₄. PSR(SR*) = Φ((SR̂-SR*)√T / √(1 - γ₃SR̂ + (γ₄-1)/4 SR̂²)). 實作: ~30 行 Python. |
+| **Deflated Sharpe Ratio** | ✅ Phase H1 | — | — | `deflated_sharpe()` + `min_backtest_length()` — Bailey et al. (2014) 多重測試校正 |
 | **Minimum Backtest Length (MinBTL)** | ❌ 未實作 | **缺少** | **中** | **Bailey & López de Prado (2014)**: MinBTL = (1 + (1-γ₃SR̂+(γ₄-1)/4 SR̂²)(z_α/(SR̂-SR*))²). 給定 N 策略數→最短回測所需觀察數. 實作: ~15 行 Python. |
 | k-fold Cross-validation | ✅ Phase G3c | — | — | `src/backtest/kfold.py`：k 折時序交叉驗證，各折獨立 BacktestResult + avg/std Sharpe |
 | Synthetic Data Stress Test | ✅ Phase G3d | — | — | `src/backtest/stress_test.py` + API `POST /api/v1/backtest/stress-test`：4 預定義情境 (Bear Market / High Vol / Flash Crash / Regime Change) |
@@ -625,7 +625,8 @@ volumes:
 | Phase E1 | 2026-03-25 | 交易執行核心 (SinopacBroker + ExecutionService + 對帳 + 交易時段) |
 | Phase E4 | 2026-03-25 | Shioaji 進階 (DataFeed + Scanner + 非阻塞 + 觸價 + 融資融券 + 額度預檢) |
 | Phase F | 2026-03-26 | 自動化 Alpha (F1a-f 核心引擎 + F2a-c 持久化/告警/安全 + F3a-c API + WS + Dashboard + F4a-c Regime/因子追蹤/動態池) |
-| Phase G | 2026-03-26 | 學術基準升級 (G1-G8: 13 種最佳化 + GARCH/Factor Cov + VaR/CVaR + PBO/Randomized/k-fold/Stress + 共整合 Pairs + Omega/Rolling Sharpe + 回測防護) |
+| Phase G | 2026-03-26 | 學術基準升級 (G1-G8: +7 最佳化方法 + GARCH/Factor Cov + VaR/CVaR + PBO/Randomized/k-fold/Stress + 共整合 Pairs + Omega/Rolling Sharpe + 回測防護) |
+| Phase H | 2026-03-26 | 實用精煉 (Deflated Sharpe + MinBTL + Semi-Variance + Kalman Filter Pairs), 1,006 tests |
 | Phase H | 2026-03-26 | 實用精煉 (H1: DSR+MinBTL, H2: Semi-Variance 最佳化, H3: Kalman Pairs Trading) |
 
 ### 12.2 進行中 / 待辦

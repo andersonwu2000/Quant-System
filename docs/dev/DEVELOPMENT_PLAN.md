@@ -1,13 +1,13 @@
 # 開發計畫書
 
-> **version**: v6.0
+> **version**: v6.1
 > **date**: 2026-03-26
 
 ---
 
 ## 1. 專案現況
 
-多資產投資組合研究與優化系統，涵蓋台股、美股、ETF（含債券/商品 ETF 代理）、期貨。Python 後端 + React Web + React Native Mobile 單體倉庫。後端 128 檔案、22.5K LOC、975 tests。具備 13 種組合最佳化方法、14 個 Alpha 因子、10 條風控規則、68 個 API 端點。回測引擎與策略框架已成熟，自動化 Alpha 排程系統已實作。
+多資產投資組合研究與優化系統，涵蓋台股、美股、ETF（含債券/商品 ETF 代理）、期貨。Python 後端 + React Web + Android Native 單體倉庫。後端 128 檔案、22.5K LOC、1,006 tests。具備 14 種組合最佳化方法、14 個 Alpha 因子、10 條風控規則、71 個 API 端點。回測引擎與策略框架已成熟，自動化 Alpha 排程系統已實作。Phase A~H 全部完成。
 
 **主要阻塞**：永豐金 Shioaji API Key 尚在審核中。所有券商整合程式碼均已完成（含 83 個 mock 測試），但從未對接真實券商 API 進行驗證。
 
@@ -38,55 +38,31 @@
 | E2 即時行情 broadcast | 需 API Key 取得 tick 資料 | WS `market` 頻道接 SinopacQuoteManager |
 | E3 Paper Trading 循環 | 需 API Key 跑 simulation=True | 排程→下單→回報→對帳→通知 完整驗證 |
 
-### 3.2 已實作但缺入口的孤島
+### 3.2 已解決的孤島（v6.1 整合完成）
 
-| 模組 | 現況 | 需要 |
-|------|------|------|
-| G3 回測工具 (Randomized/PBO/Stress) | 純 Python 函數，無 API | 新增 API 端點 + 前端入口 |
-| F4 DynamicFactorPool | 獨立模組，未接入主流程 | 整合至 AlphaDecisionEngine 每日排程 |
-| F2d Alembic migration | AlphaStore schema 定義完成 | 實作 `005_auto_alpha.py` migration |
+| 模組 | 整合方式 |
+|------|---------|
+| G3 回測工具 (Randomized/PBO/Stress) | ✅ 已新增 3 個 API 端點 (`/backtest/randomized`, `/pbo`, `/stress-test`) |
+| F4 DynamicFactorPool | ✅ 已整合至 `AlphaDecisionEngine.decide()` + `AlphaScheduler.run_full_cycle()` |
+| F3b WS auto-alpha 頻道 | ✅ 已完成 |
+| F3c Auto-Alpha Dashboard | ✅ 已完成 |
 
-### 3.3 文件標記修正
+### 3.3 低優先級待辦
 
-以下項目在先前版本標記有誤，實際狀態：
-
-- **F3b WS auto-alpha 頻道**: 已完成（先前標記「待實作」）
-- **F3c Auto-Alpha Dashboard**: 已完成（先前標記「待實作」）
-- **E3 排程整合**: 部分完成 — AlphaScheduler 已實作，但 Paper Trading 循環需 API Key 驗證
+| 項目 | 優先級 | 說明 |
+|------|--------|------|
+| F2d Alembic migration | 🟢 P2 | AlphaStore 目前使用 JSON 檔案，正式部署時需 DB migration |
+| FastAPI lifespan handler | 🟢 P2 | 替換 deprecated `on_event` (DeprecationWarning) |
 
 ---
 
-## 4. Phase H：實用精煉
+## 4. Phase H：實用精煉 ✅ (2026-03-26 完成)
 
-只排入有明確實用價值、難度合理的項目。
-
-### H1: Deflated Sharpe Ratio + MinBTL — P0, 低難度
-
-**動機**：系統已有 PBO 和 Randomized Backtest，但缺少最基本的多重測試校正。測試過越多策略，越需要 DSR 來判斷 Sharpe 是否為偽陽性。
-
-**實作**：
-- `deflated_sharpe()` — 校正 N_trials、skewness、kurtosis（Bailey et al. 2015）
-- `min_backtest_length()` — 給定 N 策略，最短回測長度避免偽陽性
-
-**位置**: `src/backtest/analytics.py` 新增 2 個函數 + 對應 tests。
-
-### H2: Downside Risk 最佳化 — P1, 低難度
-
-**動機**：投資者最在意的是下行風險，而非對稱波動。Semi-variance 只懲罰低於目標報酬的波動，比 MVO 更貼近真實風險偏好。
-
-**實作**：
-- `OptimizationMethod.SEMI_VARIANCE` — semi-covariance matrix + SLSQP
-- 整合至現有 PortfolioOptimizer 框架
-
-**位置**: `src/portfolio/optimizer.py`。
-
-### H3: Kalman Filter Pairs Trading — P1, 中難度
-
-**動機**：現有 Pairs Trading 使用靜態 OLS hedge ratio（Engle-Granger），當共整合關係漂移時會失效。Kalman Filter 可動態追蹤 hedge ratio。
-
-**實作**：
-- `KalmanHedgeRatio` — 線上更新 hedge ratio + 動態 spread
-- 升級 `strategies/pairs_trading.py`，可選 `method='kalman'`
+| 項目 | 說明 | 論文依據 |
+|------|------|---------|
+| H1 ✅ | `deflated_sharpe()` + `min_backtest_length()` — 多重測試校正 | Bailey & López de Prado (2014) |
+| H2 ✅ | `OptimizationMethod.SEMI_VARIANCE` — 下行風險最佳化（第 14 個方法） | Markowitz downside framework |
+| H3 ✅ | `KalmanHedgeRatio` + `PairsTradingStrategy(method="kalman")` | Kalman Filter state-space model |
 
 ---
 
@@ -109,7 +85,6 @@
 | 2026-03-22~23 | 股票交易系統（回測 + 7 策略 + 風控 + API + Web + Mobile） |
 | 2026-03-24 | Phase A~C（基礎設施 + 跨資產 Alpha + 組合最佳化） |
 | 2026-03-25 | Phase D~E（系統整合 + 實盤交易架構） |
-| 2026-03-26 | Phase F~G（自動化 Alpha + 學術基準升級） |
-| 2026-03-26 | Phase H（實用精煉：H1 DSR+MinBTL, H2 Semi-Variance, H3 Kalman Pairs） |
-| TBD | Shioaji API Key 取得 → 整合測試 |
-| TBD | Paper Trading 完整循環驗證 |
+| 2026-03-26 | Phase F~H（自動化 Alpha + 學術升級 + 實用精煉），1,006 tests |
+| TBD | Shioaji API Key 取得 → 整合測試 → Paper Trading 驗證 |
+| TBD | Alpha 自動化擴展至 ETF / 跨資產配置（下一階段） |

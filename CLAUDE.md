@@ -46,7 +46,7 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v (856 tests)
+make test                    # pytest tests/ -v (1006 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
@@ -219,7 +219,7 @@ Key design decisions:
 
 **CI/CD** (`.github/workflows/ci.yml`) — 9 jobs:
 - `backend-lint` — ruff check + mypy strict
-- `backend-test` — pytest (856 tests)
+- `backend-test` — pytest (1006 tests)
 - `web-typecheck` — tsc --noEmit
 - `web-test` — vitest (depends on web-typecheck)
 - `web-build` — vite build (depends on web-typecheck)
