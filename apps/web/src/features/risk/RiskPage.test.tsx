@@ -141,9 +141,10 @@ describe("RiskPage", () => {
     expect(switches.length).toBe(2);
 
     // Click the first toggle (max_position_weight, currently enabled)
+    // Component uses ConfirmModal (not window.confirm) — must click Confirm in modal
     fireEvent.click(switches[0]);
-
-    expect(window.confirm).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText("Confirm")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Confirm"));
 
     await waitFor(() => {
       expect(riskApi.toggleRule).toHaveBeenCalledWith("max_position_weight", false);

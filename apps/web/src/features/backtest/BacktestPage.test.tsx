@@ -172,10 +172,16 @@ describe("BacktestPage", () => {
 
     renderWithProviders(<BacktestPage />);
 
+    // Top-level metrics are always visible
     expect(screen.getByText("Total Return")).toBeInTheDocument();
     expect(screen.getByText("Annual Return")).toBeInTheDocument();
     expect(screen.getByText("Sharpe Ratio")).toBeInTheDocument();
     expect(screen.getByText("Max Drawdown")).toBeInTheDocument();
+
+    // Advanced metrics live inside the collapsible "Metric" section (detailOpen=false by default)
+    // Open it first
+    fireEvent.click(screen.getByText("Metric"));
+
     expect(screen.getByText("Sortino")).toBeInTheDocument();
     expect(screen.getByText("Calmar")).toBeInTheDocument();
     expect(screen.getByText("Win Rate")).toBeInTheDocument();
@@ -187,17 +193,17 @@ describe("BacktestPage", () => {
 
     renderWithProviders(<BacktestPage />);
 
-    // NAV Curve tab is shown by default
-    expect(screen.getByText("NAV Curve")).toBeInTheDocument();
+    // NAV curve is always visible (not a tab) — ResultChart is always rendered
+    expect(screen.getByTestId("result-chart")).toBeInTheDocument();
+
+    // Tab buttons live inside the collapsible — open it first
+    fireEvent.click(screen.getByText("Metric"));
+
     expect(screen.getByText("Drawdown")).toBeInTheDocument();
     expect(screen.getByText("Monthly Returns")).toBeInTheDocument();
     expect(screen.getByText("Trade Detail")).toBeInTheDocument();
 
-    // Default tab shows ResultChart
-    expect(screen.getByTestId("result-chart")).toBeInTheDocument();
-
-    // Switch to drawdown tab
-    fireEvent.click(screen.getByText("Drawdown"));
+    // Default analysisTab is "drawdown" → DrawdownChart visible immediately
     expect(screen.getByTestId("drawdown-chart")).toBeInTheDocument();
 
     // Switch to monthly tab

@@ -73,7 +73,10 @@ describe("StrategiesPage", () => {
       expect(screen.getByText("Stop")).toBeInTheDocument();
     });
 
+    // Component uses ConfirmModal (not window.confirm) — must click Confirm in modal
     fireEvent.click(screen.getByText("Stop"));
+    await waitFor(() => expect(screen.getByText("Confirm")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Confirm"));
 
     await waitFor(() => {
       expect(strategiesApi.stop).toHaveBeenCalledWith("momentum_12_1");
@@ -90,7 +93,10 @@ describe("StrategiesPage", () => {
       expect(screen.getByText("Start")).toBeInTheDocument();
     });
 
+    // Component uses ConfirmModal (not window.confirm) — must click Confirm in modal
     fireEvent.click(screen.getByText("Start"));
+    await waitFor(() => expect(screen.getByText("Confirm")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Confirm"));
 
     await waitFor(() => {
       expect(strategiesApi.start).toHaveBeenCalledWith("mean_reversion");

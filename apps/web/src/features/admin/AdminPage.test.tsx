@@ -158,9 +158,10 @@ describe("AdminPage", () => {
 
     // deleteButtons[1] = bob (trader) — should proceed normally
     const deleteButtons = screen.getAllByTitle("Delete User");
+    // Component uses ConfirmModal (not window.confirm) — must click Confirm in modal
     fireEvent.click(deleteButtons[1]);
-
-    expect(window.confirm).toHaveBeenCalledWith("Are you sure you want to delete this user?");
+    await waitFor(() => expect(screen.getByText("Confirm")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Confirm"));
 
     await waitFor(() => {
       expect(adminApi.deleteUser).toHaveBeenCalledWith(2);

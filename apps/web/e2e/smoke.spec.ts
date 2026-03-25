@@ -34,13 +34,15 @@ test.describe("Smoke tests", () => {
   test("navigate to each page via sidebar links", async ({ page }) => {
     await loginAndSetup(page);
 
+    // Only routes that exist as sidebar NavLinks are tested here.
+    // /portfolio, /orders, /backtest are legacy paths that redirect to /trading or /research
+    // and are NOT present as nav links in the current sidebar.
     const navLinks = [
-      { path: "/portfolio", heading: /portfolio/i },
+      // /trading shows TradingPage which renders PortfolioPage (h2 "Portfolio") by default
+      { path: "/trading",    heading: /portfolio/i },
       { path: "/strategies", heading: /strateg/i },
-      { path: "/orders", heading: /order/i },
-      { path: "/backtest", heading: /backtest/i },
-      { path: "/risk", heading: /risk/i },
-      { path: "/settings", heading: /setting/i },
+      { path: "/risk",       heading: /risk/i },
+      { path: "/settings",   heading: /setting/i },
     ];
 
     for (const { path, heading } of navLinks) {
