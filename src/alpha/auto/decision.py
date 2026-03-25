@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.alpha.auto.config import AutoAlphaConfig, FactorScore, ResearchSnapshot
+from src.alpha.auto.dynamic_pool import DynamicFactorPool
+from src.alpha.auto.factor_tracker import FactorPerformanceTracker
+from src.alpha.auto.store import AlphaStore
 from src.alpha.regime import MarketRegime
 
 logger = logging.getLogger(__name__)
@@ -61,6 +64,7 @@ class AlphaDecisionEngine:
         self,
         snapshot: ResearchSnapshot,
         current_weights: dict[str, float] | None = None,
+        store: AlphaStore | None = None,
     ) -> DecisionResult:
         """Produce a DecisionResult from a ResearchSnapshot.
 
@@ -70,14 +74,43 @@ class AlphaDecisionEngine:
             Daily research snapshot containing factor scores and regime.
         current_weights:
             Current portfolio weights (reserved for future turnover-aware logic).
+        store:
+            Optional AlphaStore for dynamic factor pool filtering.  When the
+            store contains >= 5 snapshots, ``FactorPerformanceTracker`` and
+            ``DynamicFactorPool`` are used to pre-filter factors before the
+            ICIR / hit-rate checks.
         """
         cfg = self._config
+
+        # Step 0 — dynamic factor pool pre-filter (if enough history)
+        pool_active: set[str] | None = None
+        pool_probation: list[str] = []
+        pool_excluded: list[str] = []
+
+        if store is not None:
+            snapshots = store.list_snapshots(limit=5)
+            if len(snapshots) >= 5:
+                tracker = FactorPerformanceTracker(store)
+                pool = DynamicFactorPool(tracker, cfg)
+                pool_result = pool.update_pool()
+                pool_active = set(pool_result.active)
+                pool_probation = pool_result.probation
+                pool_excluded = pool_result.excluded
+                logger.info(
+                    "DynamicFactorPool: %d active, %d probation, %d excluded",
+                    len(pool_result.active),
+                    len(pool_probation),
+                    len(pool_excluded),
+                )
 
         # Step 1 — filter factors
         eligible: list[str] = []
         raw_weights: dict[str, float] = {}
 
         for name, score in snapshot.factor_scores.items():
+            # If dynamic pool is active, skip factors not in the active set
+            if pool_active is not None and name not in pool_active:
+                continue
             if not self._passes_filter(score):
                 continue
             eligible.append(name)
@@ -118,6 +151,14 @@ class AlphaDecisionEngine:
         ]
         if cfg.regime_aware:
             reason_parts.append("regime_bias=ON")
+        if pool_probation:
+            reason_parts.append(
+                f"probation=[{', '.join(pool_probation)}]"
+            )
+        if pool_excluded:
+            reason_parts.append(
+                f"pool_excluded={len(pool_excluded)}"
+            )
         reason = "; ".join(reason_parts)
 
         return DecisionResult(

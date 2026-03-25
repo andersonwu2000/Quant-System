@@ -5,7 +5,7 @@
 > **當前階段**: Phase G（學術基準升級）完成 — 13 種最佳化方法 + 進階回測 + GARCH/Factor Cov，Phase E 待券商整合測試
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v4.4
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v6.0
 
 ---
 
@@ -202,14 +202,14 @@
 
 ## 5. API 架構
 
-### 5.1 REST 端點（14 路由模組, 54 端點）
+### 5.1 REST 端點（14 路由模組, 57 端點）
 
 | 模組 | 端點數 | 前綴 | 關鍵端點 |
 |------|--------|------|---------|
 | auth | 3 | `/api/v1/auth` | login, register, refresh |
 | admin | 5 | `/api/v1/admin` | 用戶 CRUD, 審計日誌, 配置 |
 | portfolio | 8 | `/api/v1/portfolio` | CRUD + rebalance-preview + 交易歷史 |
-| backtest | 5 | `/api/v1/backtest` | 回測 + walk-forward + 歷史結果 |
+| backtest | 8 | `/api/v1/backtest` | 回測 + walk-forward + randomized + PBO + stress-test + 歷史結果 |
 | strategies | 4 | `/api/v1/strategies` | 列表 + 啟停控制 |
 | orders | 2 | `/api/v1/orders` | 手動下單 + 訂單歷史 |
 | risk | 4 | `/api/v1/risk` | 規則狀態 + kill switch + 告警 |
@@ -428,8 +428,8 @@ volumes:
 | AlertManager | ✅ 完成 | Regime/IC/回撤告警 → 通知 (F2b) |
 | SafetyChecker | ✅ 完成 | 回撤熔斷 5% + 連續虧損暫停 5 天 (F2c) |
 | Auto-Alpha API | ✅ 完成 | 10 端點 (F3a) |
-| FactorPerformanceTracker | ✅ 完成 | 累計 IC + 回撤 per factor (F4b) |
-| DynamicFactorPool | ✅ 完成 | ICIR 排名自動新增/移除因子 (F4c) |
+| FactorPerformanceTracker | ✅ 完成 | 累計 IC + 回撤 per factor (F4b)；已整合至 AlphaDecisionEngine + AlphaScheduler |
+| DynamicFactorPool | ✅ 完成 | ICIR 排名自動新增/移除因子 (F4c)；已整合至 AlphaDecisionEngine.decide() + AlphaScheduler.run_full_cycle() |
 | REGIME_FACTOR_BIAS | ✅ 完成 | Bull/Bear/Sideways 因子偏好矩陣 (F4a) |
 | DB Migration (F2d) | 🟡 待實作 | Alembic 005_auto_alpha.py |
 | WS auto-alpha 頻道 (F3b) | ✅ 完成 | 即時推送流水線進度 (stage_started/stage_completed/decision/execution/alert/error) |
@@ -522,12 +522,12 @@ volumes:
 |------|---------|------|--------|---------|
 | Walk-forward Backtest | ✅ | — | — | |
 | Vanilla (Train/Test Split) | ✅ | — | — | |
-| **Multiple Randomized Backtest** | ✅ Phase G3a | — | — | `src/backtest/randomized.py`：隨機抽取資產子集 + 隨機時段 → N 次回測 → 績效分布 (Sharpe/Return/Drawdown) + P(Sharpe>0) |
-| **CSCV (PBO)** | ✅ Phase G3b | — | — | `src/backtest/overfitting.py`：Bailey et al. (2017) CSCV 實作，S 等分 → C(S,S/2) 組合 → IS/OOS 排名比較 → PBO |
+| **Multiple Randomized Backtest** | ✅ Phase G3a | — | — | `src/backtest/randomized.py` + API `POST /api/v1/backtest/randomized`：隨機抽取資產子集 + 隨機時段 → N 次回測 → 績效分布 (Sharpe/Return/Drawdown) + P(Sharpe>0) |
+| **CSCV (PBO)** | ✅ Phase G3b | — | — | `src/backtest/overfitting.py` + API `POST /api/v1/backtest/pbo`：Bailey et al. (2017) CSCV 實作，S 等分 → C(S,S/2) 組合 → IS/OOS 排名比較 → PBO |
 | **Deflated Sharpe Ratio** | ❌ 未實作 | **缺少** | **高** | Bailey et al.：校正多重測試的 Sharpe ratio，SR* = SR × adjustment(N_trials, skewness, kurtosis) |
 | **Minimum Backtest Length (MinBTL)** | ❌ 未實作 | **缺少** | **中** | Bailey et al. (2014)：給定 N 次試驗，計算回測需要的最短時間長度才能避免偽陽性 |
 | k-fold Cross-validation | ✅ Phase G3c | — | — | `src/backtest/kfold.py`：k 折時序交叉驗證，各折獨立 BacktestResult + avg/std Sharpe |
-| Synthetic Data Stress Test | ✅ Phase G3d | — | — | `src/backtest/stress_test.py`：4 預定義情境 (Bear Market / High Vol / Flash Crash / Regime Change) |
+| Synthetic Data Stress Test | ✅ Phase G3d | — | — | `src/backtest/stress_test.py` + API `POST /api/v1/backtest/stress-test`：4 預定義情境 (Bear Market / High Vol / Flash Crash / Regime Change) |
 
 **七宗罪防護現況**（書 Ch.8.2, Luo et al. 2014）：
 

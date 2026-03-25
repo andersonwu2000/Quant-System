@@ -377,3 +377,93 @@ class RebalancePreviewResponse(BaseModel):
     suggested_trades: list[SuggestedTrade]
     estimated_total_commission: float
     estimated_total_tax: float
+
+
+# ─── Randomized Backtest ──────────────────────────
+
+class RandomizedBacktestRequest(BaseModel):
+    strategy: str
+    universe: list[str] = Field(min_length=1)
+    start: str = Field(default="2020-01-01", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end: str = Field(default="2025-12-31", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    params: dict[str, Any] = Field(default_factory=dict)
+    n_iterations: int = Field(default=100, ge=1, le=1000)
+    asset_sample_pct: float = Field(default=0.7, gt=0.0, le=1.0)
+    time_sample_pct: float = Field(default=0.8, gt=0.0, le=1.0)
+    initial_cash: float = Field(default=10_000_000.0, gt=0)
+    slippage_bps: float = Field(default=5.0, ge=0)
+    commission_rate: float = Field(default=0.001425, ge=0, le=1)
+    rebalance_freq: str = "weekly"
+
+    @field_validator("strategy")
+    @classmethod
+    def strategy_not_empty(cls, v: str) -> str:
+        return _validate_strategy_not_empty(v)
+
+    @field_validator("end")
+    @classmethod
+    def end_after_start(cls, v: str, info: ValidationInfo) -> str:
+        return _validate_end_after_start(v, info)
+
+
+class RandomizedBacktestResponse(BaseModel):
+    iterations: int
+    median_sharpe: float
+    sharpe_5th_pct: float
+    sharpe_95th_pct: float
+    probability_positive_sharpe: float
+
+
+# ─── PBO ─────────────────────────────────────────
+
+class PBORequest(BaseModel):
+    returns_matrix: list[list[float]] = Field(
+        ..., min_length=1,
+        description="List of columns; each column is a list of daily returns for one strategy variant.",
+    )
+    strategy_labels: list[str] | None = None
+    n_partitions: int = Field(default=10, ge=2)
+
+
+class PBOResponse(BaseModel):
+    pbo: float
+    is_overfit: bool
+    n_combinations: int
+
+
+# ─── Stress Test ─────────────────────────────────
+
+class StressTestRequest(BaseModel):
+    strategy: str
+    universe: list[str] = Field(min_length=1)
+    start: str = Field(default="2020-01-01", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end: str = Field(default="2025-12-31", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    params: dict[str, Any] = Field(default_factory=dict)
+    scenarios: list[str] | None = None
+    initial_cash: float = Field(default=10_000_000.0, gt=0)
+    slippage_bps: float = Field(default=5.0, ge=0)
+    commission_rate: float = Field(default=0.001425, ge=0, le=1)
+    rebalance_freq: str = "weekly"
+    seed: int = 42
+
+    @field_validator("strategy")
+    @classmethod
+    def strategy_not_empty(cls, v: str) -> str:
+        return _validate_strategy_not_empty(v)
+
+    @field_validator("end")
+    @classmethod
+    def end_after_start(cls, v: str, info: ValidationInfo) -> str:
+        return _validate_end_after_start(v, info)
+
+
+class StressTestScenarioResult(BaseModel):
+    scenario: str
+    total_return: float
+    annual_return: float
+    sharpe: float
+    max_drawdown: float
+
+
+class StressTestResponse(BaseModel):
+    results: list[StressTestScenarioResult]

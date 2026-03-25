@@ -16,7 +16,10 @@ import pandas as pd
 
 from src.alpha.auto.config import AutoAlphaConfig
 from src.alpha.auto.decision import AlphaDecisionEngine, DecisionResult
+from src.alpha.auto.dynamic_pool import DynamicFactorPool
 from src.alpha.auto.executor import AlphaExecutor, ExecutionResult
+from src.alpha.auto.factor_tracker import FactorPerformanceTracker
+from src.alpha.auto.store import AlphaStore
 from src.alpha.auto.universe import UniverseResult, UniverseSelector
 from src.domain.models import Portfolio
 from src.execution.execution_service import ExecutionService
@@ -80,12 +83,14 @@ class AlphaScheduler:
         researcher: Any | None = None,
         decision_engine: AlphaDecisionEngine | None = None,
         executor: AlphaExecutor | None = None,
+        store: AlphaStore | None = None,
     ) -> None:
         self._config = config
         self._universe_selector = universe_selector or UniverseSelector(config)
         self._researcher = researcher
         self._decision_engine = decision_engine or AlphaDecisionEngine(config)
         self._executor = executor or AlphaExecutor(config)
+        self._store = store
 
     def create_jobs(self) -> list[dict[str, str]]:
         """Return job definitions consumable by SchedulerService.
@@ -168,11 +173,39 @@ class AlphaScheduler:
                 {"stage": "research", "factors": len(snapshot.factor_scores)},
             )
 
+            # Stage 2.5: Dynamic factor pool (between research and decision)
+            if self._store is not None:
+                try:
+                    tracker = FactorPerformanceTracker(self._store)
+                    pool = DynamicFactorPool(tracker, self._config)
+                    pool_result = pool.update_pool()
+                    logger.info(
+                        "DynamicFactorPool: active=%d, probation=%d, excluded=%d",
+                        len(pool_result.active),
+                        len(pool_result.probation),
+                        len(pool_result.excluded),
+                    )
+                    if pool_result.excluded:
+                        logger.info(
+                            "Excluded factors: %s", pool_result.excluded,
+                        )
+                    if pool_result.probation:
+                        logger.warning(
+                            "Probation factors (declining trend): %s",
+                            pool_result.probation,
+                        )
+                except Exception:
+                    logger.warning(
+                        "DynamicFactorPool evaluation failed, proceeding without pool filter",
+                        exc_info=True,
+                    )
+
             # Stage 3: Decision
             _broadcast_event("stage_started", {"stage": "decision"})
             decision: DecisionResult = self._decision_engine.decide(
                 snapshot=snapshot,
                 current_weights=current_weights,
+                store=self._store,
             )
             summary["decision"] = {
                 "selected_factors": decision.selected_factors,
