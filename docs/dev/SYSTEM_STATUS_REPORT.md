@@ -297,7 +297,7 @@
 | Mobile | Jest | 14 |
 | Shared | Vitest | 4 |
 
-### 7.3 CI/CD Pipeline（10 jobs）
+### 7.3 CI/CD Pipeline（9 jobs）
 
 | Job | 內容 | 依賴 |
 |-----|------|------|
@@ -308,7 +308,6 @@
 | `web-build` | vite build | web-typecheck |
 | `shared-test` | vitest (@quant/shared) | — |
 | `android-build` | assembleDebug + upload artifact | — |
-| `mobile-typecheck` | tsc --noEmit | — |
 | `e2e-test` | Playwright chromium | — |
 | `release` | 自動建立 GitHub Release + APK 附件 | 所有上述 jobs（master push 限定）|
 

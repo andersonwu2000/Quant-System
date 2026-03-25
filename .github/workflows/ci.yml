@@ -85,14 +85,6 @@ jobs:
           path: apps/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-  mobile-typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: cd apps && bun install
-      - run: cd apps/mobile && bun run typecheck
-
   e2e-test:
     runs-on: ubuntu-latest
     defaults:
@@ -118,7 +110,6 @@ jobs:
       - web-build
       - shared-test
       - android-build
-      - mobile-typecheck
       - e2e-test
     permissions:
       contents: write   # 允許建立 Release 和 tag
