@@ -1,0 +1,787 @@
+---
+title: "Fast Design of Risk Parity Portfolios"
+author: |
+  | Zé Vinícius and Daniel P. Palomar
+  | The Hong Kong University of Science and Technology (HKUST)
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2    
+csl: apalike.csl
+csl-entry-spacing: 1.2em
+bibliography: refs.bib
+link-citations: yes
+vignette: >
+  %\VignetteIndexEntry{Design of Risk Parity Portfolios}
+  %\VignetteKeyword{risk parity}
+  %\VignetteKeyword{risk}
+  %\VignetteKeyword{portfolio}
+  %\VignetteKeyword{optimization}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r, echo = FALSE}
+library(knitr)
+opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.align = "center",
+  fig.retina = 2,
+  out.width = "85%",
+  dpi = 96,
+  pngquant = "--speed=1"
+)
+knit_hooks$set(pngquant = hook_pngquant)  # brew install pngquant
+options(width=120)
+# rmarkdown::render("vignettes/RiskParityPortfolio.Rmd")
+```
+
+-----------
+> This vignette illustrates the design of risk parity portfolios, which are
+  widely used by practitioners in the financial industry, with the package
+  `riskParityPortfolio`, giving a description of the algorithms and
+  comparing the performance against existing packages.
+
+\newcommand{\bm}[1]{\boldsymbol{#1}}
+\def\T{{\mkern-2mu\raise-1mu\textsf{T}}}
+
+
+# Quick Start
+```{r, echo = FALSE, eval=FALSE}
+# compute Sigma and save it
+library(xts)
+library(quantmod)
+
+# download data from YahooFinance
+stock_namelist <- c("AAPL", "AMD", "ADI",  "ABBV", "AEZS", "A",  "APD", "AA","CF")
+prices <- xts()
+for (i in 1:length(stock_namelist)) {
+  tmp <- Ad(getSymbols(stock_namelist[i], from = "2014-01-01", to = "2016-12-31", auto.assign = FALSE))
+  tmp <- na.approx(tmp, na.rm = FALSE)  # interpolate NAs
+  prices <- cbind(prices, tmp)
+}
+colnames(prices) <- stock_namelist
+indexClass(prices) <- "Date"
+
+# compute log-returns
+X <- diff(log(prices))[-1]
+
+mu <- colMeans(X)
+Sigma <- cov(X)
+
+save(Sigma, mu, file = "Sigma_mu.RData")
+```
+```{r, echo=FALSE}
+load("Sigma_mu.RData")
+```
+
+Let's start by loading the package:
+```{r, echo=TRUE}
+library(riskParityPortfolio)
+?riskParityPortfolio  # to get help for the function
+```
+
+The simplest use is for the [vanilla risk parity portfolio](#vanilla-convex-formulation):
+```{r, echo=TRUE}
+rpp_vanilla <- riskParityPortfolio(Sigma)
+names(rpp_vanilla)
+round(rpp_vanilla$w, digits = 3)
+```
+
+To obtain the [naive diagonal solution](#naive-diagonal-formulation), also known as inverse volatility portfolio,
+make use of the `formulation` argument:
+```{r, echo=TRUE}
+rpp_naive <- riskParityPortfolio(Sigma, formulation = "diag")
+```
+
+For a more realistic formulation including the expected return in the objective and box constraints:
+$$\begin{array}{ll}
+\underset{\bm{w}}{\textsf{minimize}} & \sum_{i,j=1}^{N}\left(\dfrac{w_{i}\left(\bm{\Sigma}\bm{w}\right)_{i}}{b_i}-\dfrac{w_{j}\left(\bm{\Sigma}\bm{w}\right)_{j}}{b_j}\right)^{2} \color{blue}{- \lambda \;\bm{w}^\T\bm{\mu}}\\
+\textsf{subject to} & \bm{w} \ge \bm{0}, \quad\bm{1}^\T\bm{w}=1, \quad\color{blue}{\bm{l}\le\bm{w}\le\bm{u}}.
+\end{array}$$
+```{r, echo=TRUE, size="small"}
+rpp_mu <- riskParityPortfolio(Sigma, formulation = "rc-over-b-double-index",
+                              mu = mu, lmd_mu = 1e-3, # for expected return term
+                              w_ub = 0.16)            # for box upper bound constraints
+```
+
+To plot and compare the results:
+```{r, echo=TRUE}
+w_all <- cbind("EWP"           = rep(1/nrow(Sigma), nrow(Sigma)),
+               "RPP (naive)"   = rpp_naive$w,
+               "RPP (vanilla)" = rpp_vanilla$w,
+               "RPP + mu"      = rpp_mu$w)
+barplotPortfolioRisk(w_all, Sigma)
+```
+
+
+# What is a Risk Parity Portfolio?
+## Signal model
+Let us denote by $\bm{r}_{t}$ the vector of the **returns** of $N$ assets at time $t$ and suppose they follow an i.i.d. distribution
+(which is not a totally accurate assumption, but it is widely adopted, nonetheless) with mean $\bm{\mu}$ and covariance matrix $\bm{\Sigma}$.
+
+The portfolio vector $\bm{w}$ denotes the normalized dollar weights allocated to the $N$ assets, such that $\bm{1}^{\T}\bm{w}=1$, and the
+**portfolio return** is then $r_{t}^{\sf portf} = \bm{w}^{\T}\bm{r}_{t}$,
+with expected return $\bm{w}^{\T}\bm{\mu}$ and variance $\bm{w}^{\T}\bm{\Sigma}\bm{w}$.
+
+## Modern Portfolio Theory
+In 1952, Markowitz proposed in his seminal paper [@Markowitz1952] to find a trade-off between the portfolio expected return and its risk measured by the variance:
+$$\begin{array}{ll}
+\underset{\bm{w}}{\textsf{maximize}} & \bm{w}^{\T}\bm{\mu}-\lambda\bm{w}^{\T}\bm{\Sigma}\bm{w}\\
+\textsf{subject to} & \bm{w} \ge \bm{0}, \quad\bm{1}^\T\bm{w}=1,
+\end{array}$$
+where $\lambda$ is a parameter that controls how risk-averse the investor is.
+
+Markowitz's portfolio has been heavily critized for over half a century and has never been fully embraced by practitioners, among many reasons because:
+
+- it only considers the risk of the portfolio as a whole and ignores the risk diversification
+  (i.e., concentrates too much risk in few assets, which was observed in the 2008 financial crisis)
+- it is highly sensitive to the estimation errors in the parameters (i.e., small estimation errors in the parameters may change the designed portfolio drastically).
+
+Although portfolio management did not change much during the 40 years after the seminal works of Markowitz and Sharpe, the development of risk budgeting techniques marked an important milestone in deepening the relationship between risk and asset management.
+
+
+## From “dollar” to risk diversification
+Since the global financial crisis in 2008, **risk management** has particularly become more important than performance management in portfolio optimization. Indeed, risk parity became a popular financial model after the global financial crisis in 2008 [@Qian2005; @Asness_etal2012].
+
+The alternative **risk parity portfolio design** has been receiving significant attention from both the theoretical and practical sides [@Roncalli2013riskparity; @Qian2016] because it: (1) diversifies the risk, instead of the capital, among the assets and (2) is less sensitive to parameter estimation errors.
+
+Nowadays, pension funds and institutional investors are using this approach in the development of smart indexing and the redefinition of long-term investment policies.
+
+**Risk parity** is an approach to portfolio management that focuses on **allocation of risk** rather than allocation of capital. The risk parity approach asserts that when asset allocations are adjusted to the same risk level, the portfolio can achieve a higher Sharpe ratio and can be more resistant to market downturns.
+
+While the minimum variance portfolio tries to minimize the variance (with the disadvantage that a few assets may be the ones contributing most to the risk), the risk parity portfolio tries to constrain **each asset** (or asset class, such as bonds, stocks, real estate, etc.) to **contribute equally to the portfolio overall volatility**.
+
+The term “risk parity” was coined by Edward Qian from PanAgora Asset Management [@Qian2005] and was then adopted by the asset management industry.
+Some of its theoretical components were developed in the 1950s and 1960s, but the first risk parity fund, called the “All Weather” fund, was pioneered
+by Bridgewater Associates LP in 1996. The interest in the risk parity approach has increased since the financial crisis in the late 2000s as the
+risk parity approach fared better than portfolios designed in traditional fashions.
+
+Some portfolio managers have expressed skepticism with risk parity, while others point to its performance during the financial crisis of
+2007-2008 as an indication of its potential success.
+
+The idea of the risk parity portfolio (RPP), aka equal risk portfolio (ERP), is to "equalize" the risk so that the risk contribution of every asset is equal,
+rather than simply having an equal capital allocation like the equally weighted portfolio (EWP):
+
+```{r, echo=FALSE}
+knitr::include_graphics("figures/EWP-and-RPP-w-and-RRC.png")
+```
+
+## Risk parity portfolio
+From Euler's theorem, the volatility of the portfolio $\sigma\left(\bm{w}\right)=\sqrt{\bm{w}^{\T}\bm{\Sigma}\bm{w}}$ can be decomposed as
+$$\sigma\left(\bm{w}\right)=\sum_{i=1}^{N}w_i\frac{\partial\sigma}{\partial w_i}
+= \sum_{i=1}^N\frac{w_i\left(\bm{\Sigma}\bm{w}\right)_{i}}{\sqrt{\bm{w}^{\T}\bm{\Sigma}\bm{w}}}.$$
+
+The **risk contribution (RC)** from the $i$th asset to the total risk $\sigma(\bm{w})$ is defined as
+$${\sf RC}_i =\frac{w_i\left(\bm{\Sigma}\bm{w}\right)_i}{\sqrt{\bm{w}^{\T}\bm{\Sigma}\bm{w}}}$$
+which satisfies $\sum_{i=1}^{N}{\sf RC}_i=\sigma\left(\bm{w}\right)$.
+
+The **relative risk contribution (RRC)** is a normalized version:
+$${\sf RRC}_i = \frac{w_i\left(\bm{\Sigma}\bm{w}\right)_i}{\bm{w}^{\T}\bm{\Sigma}\bm{w}}$$
+so that $\sum_{i=1}^{N}{\sf RRC}_i=1$.
+
+The **risk parity portfolio (RPP)** attemps to “equalize” the risk contributions:
+$${\sf RC}_i = \frac{1}{N}\sigma(\bm{w})\quad\text{or}\quad{\sf RRC}_i = \frac{1}{N}.$$
+
+More generally, the **risk budgeting portfolio (RBP)** attemps to allocate the risk according to the risk profile determined by the weights $\bm{b}$ (with $\bm{1}^\T\bm{b}=1$ and $\bm{b}\ge \bm{0}$):
+$${\sf RC}_i = b_i \sigma(\bm{w})\quad\text{or}\quad{\sf RRC}_i = b_i.$$
+
+In practice, one can express the condition ${\sf RC}_i = \frac{1}{N}\sigma(\bm{w})$ in different equivalent ways such as
+$$w_i(\Sigma \bm{w})_{i} = w_j(\Sigma \bm{w})_{j}, \quad\forall i, j.$$ The budget condition ${\sf RC}_i = b_i \sigma(\bm{w})$ can also be expressed as
+$$w_i (\Sigma \bm{w})_i = b_i \bm{w}^{\T}\Sigma\bm{w}, \quad\forall i.$$
+
+
+# Solving the Risk Parity Portfolio (RPP)
+## Naive diagonal formulation
+Assuming that the assets are uncorrelated, i.e., that $\bm{\Sigma}$ is diagonal, and simply using the volatilities $\bm{\sigma} = \sqrt{{\sf diag(\bm{\Sigma})}}$, one obtains
+$$\bm{w} = \frac{\bm{\sigma}^{-1}}{\bm{1}^\T\bm{\sigma}^{-1}}$$
+or, more generally,
+$$\bm{w} = \frac{\sqrt{\bm{b}}\odot\bm{\sigma}^{-1}}{\bm{1}^\T\left(\sqrt{\bm{b}}\odot\bm{\sigma}^{-1}\right)}.$$
+However, for non-diagonal $\bm{\Sigma}$ or with other additional constraints or objective function terms, a closed-form solution does not exist and some optimization procedures have to be constructed. The previous diagonal solution can always be used and is called _naive risk budgeting portfolio_.
+
+
+
+## Vanilla convex formulation
+Suppose we only have the constraints $\bm{1}^\T\bm{w}=1$ and $\bm{w} \ge \bm{0}$. Then, after the change of variable $\bm{x}=\bm{w}/\sqrt{\bm{w}^{\T}\bm{\Sigma}\bm{w}}$, the equations $w_i (\Sigma \bm{w})_i = b_i \bm{w}^{\T}\Sigma\bm{w}$ become $x_i\left(\bm{\Sigma}\bm{x}\right)_i = b_i$ or, more compactly in vector form, as
+$$\bm{\Sigma}\bm{x} = \bm{b}/\bm{x}$$
+with $\bm{x} \ge \bm{0}$ and we can always recover the portfolio by normalizing: $\bm{w} = \bm{x}/(\bm{1}^\T\bm{x})$.
+
+At this point, one could use a nonlinear multivariate root finder for $\bm{\Sigma}\bm{x} = \bm{b}/\bm{x}$. For example, in R we can use the package [rootSolve](https://CRAN.R-project.org/package=rootSolve).
+
+
+With the goal of designing risk budget portfolios, Spinu proposed in [@Spinu2013] to solve the
+following convex optimization problem:
+$$\underset{\bm{x}\ge\bm{0}}{\textsf{minimize}} \quad \frac{1}{2}\bm{x}^{\T}\bm{\Sigma}\bm{x} - \sum_{i=1}^{N}b_i\log(x_i),$$
+where the portfolio can be recovered as $\bm{w} = \bm{x}/(\bm{1}^\T\bm{x})$.
+
+Indeed, Spinu realized in [@Spinu2013] that precisely the risk budgeting equation $\bm{\Sigma}\bm{x} = \bm{b}/\bm{x}$ corresponds to the gradient of the convex function $f(\bm{x}) = \frac{1}{2}\bm{x}^{\T}\bm{\Sigma}\bm{x} - \bm{b}^\T\log(\bm{x})$ set to zero: 
+$$\nabla f(\bm{x}) = \bm{\Sigma}\bm{x} - \bm{b}/\bm{x} = \bm{0}.$$
+
+Thus, a convenient way to solve the problem is by solving the following convex optimization problem:
+$$\underset{\bm{x}\ge\bm{0}}{\textsf{minimize}} \quad \frac{1}{2}\bm{x}^{\T}\bm{\Sigma}\bm{x} - \bm{b}^\T\log(\bm{x})$$
+which has optimality condition $\bm{\Sigma}\bm{x} = \bm{b}/\bm{x}$.
+
+Such solution can be computed using a general-purpose convex optimization package, but faster algorithms such as the **Newton method** and the **cyclical coordinate descent method**, employed in [@Spinu2013] and [@GriveauRichardRoncalli2013], are implemented in this package. (Yet another convex formulation was proposed in [@KayaLee2012].)
+
+
+
+## General nonconvex formulation
+The previous methods are based on a convex reformulation of the problem so they are guaranteed to converge to the optimal risk budgeting solution. However, they can only be employed for the simplest risk budgeting formulation with a simplex constraint set (i.e., $\bm{1}^\T\bm{w}=1$ and $\bm{w} \ge \bm{0}$). They cannot be used if
+
+- we have other constraints like allowing shortselling or box constraints: $l_i \le w_i \le u_i$
+- on top of the risk budgeting constraints $w_i\left(\bm{\Sigma}\bm{w}\right)_i = b_i \;\bm{w}^{\T}\bm{\Sigma}\bm{w}$ we have other objectives like maximizing the expected return $\bm{w}^\T\bm{\mu}$ or minimizing the overall variance $\bm{w}^\T\bm{\Sigma}\bm{w}$.
+
+For those more general cases, we need more sophisticated formulations, which unfortunately are not convex. The idea is to try to achieve equal risk contributions
+${\sf RC}_i = \frac{w_i\left(\bm{\Sigma}\bm{w}\right)_i}{\sqrt{\bm{w}^{\T}\bm{\Sigma}\bm{w}}}$
+by penalizing the differences between the terms $w_{i}\left(\bm{\Sigma}\bm{w}\right)_{i}$.
+
+There are many reformulations possible. For illustrative purposes, one such formulation is
+$$\begin{array}{ll}
+\underset{\bm{w}}{\textsf{minimize}} & \sum_{i,j=1}^{N}\left(w_{i}\left(\bm{\Sigma}\bm{w}\right)_{i}-w_{j}\left(\bm{\Sigma}\bm{w}\right)_{j}\right)^{2} \color{blue}{- \;F(\bm{w})}\\
+\textsf{subject to} & \bm{w} \ge \bm{0}, \quad\bm{1}^\T\bm{w}=1, \quad\color{blue}{\bm{w}\in\cal{W}}
+\end{array}$$
+where $F(\bm{w})$ denotes some additional objective function and $\cal{W}$ denotes an arbitrary convex set of constraints. More expressions for the risk concentration terms are listed in
+[Appendix I](#appendix-i---risk-concentration-formulations).
+
+The way to solve this general problem is derived in [@FengPal2015riskparity; @FengPal2016monograph] and is based on a powerful optimization framework named successive convex approximation (SCA) [@ScuFacSonPal2013]. See
+[Appendix II](#successive-convex-approximation-algorithm-for-the-modern-risk-parity-formulation) for a general idea of the method.
+
+
+# Using the Package **riskParityPortfolio**
+A simple code example on how to design a risk parity portfolio is as follows:
+```{r, message=FALSE}
+library(riskParityPortfolio)
+
+# generate synthetic data
+set.seed(42)
+N <- 10
+V <- matrix(rnorm(N^2), nrow = N)
+Sigma <- cov(V)
+
+# compute risk parity portfolio
+rpp <- riskParityPortfolio(Sigma)
+
+# plot
+barplotPortfolioRisk(rpp$w, Sigma, col = "#A29BFE")
+```
+
+As presented earlier, risk parity portfolios are designed in
+such a way as to ensure equal risk contribution from the assests,
+which can be noted in the chart above.
+
+
+# Modern Risk Parity Portfolio
+The design of risk parity portfolios as solved by [@Spinu2013] and [@GriveauRichardRoncalli2013] is of paramount importance
+both for academia and industry. However, practitioners would like the ability to include
+additional constraints and objective terms desired in practice, such as the mean return, box constraints, etc.
+In such cases, the risk-contribution constraints cannot be met exactly due to the trade-off among different objectives
+or additional constraints.
+
+## RPP with additional expected return term
+Let us explore, for instance, the effect of including the expected return as an
+additional objective in the optimization problem. The problem can be formulated as
+$$\begin{array}{ll}
+\underset{\bm{w}}{\textsf{minimize}} &
+R(\bm{w}) - \lambda_{\mu} \bm{w}^{\T}\bm{\mu}\\
+\textsf{subject to} & \bm{1}^\T\bm{w}=1, \bm{w} \ge \bm{0},
+\end{array}$$
+where $R(\bm{w}) = \sum_{i=1}^{N}\left(w_{i}\left(\bm{\Sigma}\bm{w}\right)_i - b_i\bm{w}^\T\bm{\Sigma}\bm{w}\right)^{2}$ is the risk concentration function or risk parity function, $\bm{w}^{\T}\bm{\mu}$ is the expected return, and $\lambda_{\mu}$ is a trade-off parameter.
+
+```{r, message=FALSE, cache=TRUE}
+library(ggplot2)
+library(riskParityPortfolio)
+
+N <- 10
+V <- matrix(rnorm(N^2), nrow = N)
+Sigma <- cov(V)
+mu <- runif(N)
+
+lmd_sweep <- 10^seq(-5, 2, .25)
+mean_return <- c()
+risk_concentration <- c()
+for (lmd_mu in lmd_sweep) {
+  rpp <- riskParityPortfolio(Sigma, mu = mu, lmd_mu = lmd_mu,
+                             formulation = "rc-over-sd vs b-times-sd")
+  mean_return <- c(mean_return, rpp$mean_return)
+  risk_concentration <- c(risk_concentration, rpp$risk_concentration)
+}
+
+ggplot(data.frame(risk_concentration, mean_return),
+       aes(x = risk_concentration, y = mean_return)) +
+  geom_line() + geom_point() +
+  labs(title = "Expected Return vs Risk Concentration", x = "Risk Concentration", y = "Expected Return")
+```
+
+
+## RPP with additional variance term
+Similarly, the `riskParityPortfolio` package allows us to include the variance $\bm{w}^{\T}\bm{\Sigma}\bm{w}$
+as an objective term:
+$$\begin{array}{ll}
+\underset{\bm{w}}{\textsf{minimize}} &
+R(\bm{w}) + \lambda_{\sf var} \bm{w}^{\T}\bm{\Sigma}\bm{w}\\
+\textsf{subject to} & \bm{1}^\T\bm{w}=1, \bm{w} \ge \bm{0},
+\end{array}$$
+where $\lambda_{\sf var}$ is a trade-off parameter.
+
+In the code, that can be done by passing a positive value to the parameter `lmd_var`.
+Let's check the following illustrative example that depicts the trade-off between
+volatility and risk parity:
+
+```{r, message=FALSE, cache=TRUE}
+library(ggplot2)
+library(riskParityPortfolio)
+
+load("Sigma_mu.RData")
+
+lmd_sweep <- 10^seq(-5, 5, .25)
+variance <- c()
+risk_concentration <- c()
+for (lmd_var in lmd_sweep) {
+  rpp <- riskParityPortfolio(Sigma, lmd_var = lmd_var,
+                             formulation = "rc-over-sd vs b-times-sd")
+  variance <- c(variance, rpp$variance)
+  risk_concentration <- c(risk_concentration, rpp$risk_concentration)
+}
+volatility <- sqrt(variance)
+
+ggplot(data.frame(risk_concentration, volatility),
+       aes(x = risk_concentration, y = volatility)) +
+  geom_line() + geom_point() +
+  labs(title = "Volatility vs Risk Concentration", x = "Risk Concentration", y = "Volatility")
+```
+
+
+## RPP with general linear constraints
+In version 2.0, we added support for general linear constraints, i.e., `riskParityPortfolio` is now able
+to solve the following problem:
+$$\begin{array}{ll}
+\underset{\bm{w}}{\textsf{minimize}} &
+R(\bm{w}) + \lambda F(\bm{w})\\
+\textsf{subject to} & \bm{C}\bm{w} = \bm{c},~~\bm{D}\bm{w} \leq \bm{d}.
+\end{array}$$
+
+Users interested in the details of the algorithm used to solve this problems
+are refered to Section V (*Advanced Solving Approaches*) of [@FengPal2015riskparity]. In summary,
+the algorithm fits well within the SCA framework, while preserving speed and scalability.
+
+It was recently mentioned by [@RichardRoncalli2019] that the problem of designing risk parity
+portfolios with general constraints is harder than it seems. Indeed, [@RichardRoncalli2019] shows
+that, after imposing general linear constraints, the property of equal risk contributions (ERC)
+is unlikely to be preserved among the assets affected by the constraints.
+
+Let's check out a numerical example from [@RichardRoncalli2019]. Consider we have a universe of
+eight assets and we would like to design a risk parity portfolio $\bm{w}$ satisfying the
+following constraints:
+$$ w_5 + w_6 + w_7 + w_8 \geq 30\%, $$ $$ w_2 + w_6 \geq w_1 + w_5 + 5\%, $$ and $$ \sum_i w_i = 100\% . $$
+
+```{r}
+# compute the covariance matrix
+vol <- c(0.05, 0.05, 0.07, 0.1, 0.15, 0.15, 0.15, 0.18)
+Corr <- rbind(c(100,  80,  60, -20, -10, -20, -20, -20),
+              c( 80, 100,  40, -20, -20, -10, -20, -20),
+              c( 60,  40, 100,  50,  30,  20,  20,  30),
+              c(-20, -20,  50, 100,  60,  60,  50,  60),
+              c(-10, -20,  30,  60, 100,  90,  70,  70),
+              c(-20, -10,  20,  60,  90, 100,  60,  70),
+              c(-20, -20,  20,  50,  70,  60, 100,  70),
+              c(-20, -20,  30,  60,  70,  70,  70, 100)) / 100
+Sigma <- Corr * (vol %o% vol)
+
+# define linear constraints
+Dmat <- matrix(0, 2, 8)
+Dmat[1, ] <- c(rep(0, 4), rep(-1, 4))
+Dmat[2, ] <- c(1, -1, 0, 0, 1, -1, 0, 0)
+dvec <- c(-0.30, -0.05)
+
+# design portfolio
+rpp <- riskParityPortfolio(Sigma, Dmat = Dmat, dvec = dvec)
+
+# plot portfolio weights
+barplotPortfolioRisk(rpp$w, Sigma)
+```
+As we can observe, the risk contributions are somewhat clustered according to the relationship
+among assets defined by the linear constraints, as mentioned by [@RichardRoncalli2019].
+
+The linear constraints are obviously satisfied:
+```{r}
+# equality constraints
+print(sum(rpp$w))
+
+# inequality constraints
+print(Dmat %*% rpp$w)
+```
+
+The results obtained by our implementation agree with those reported by [@RichardRoncalli2019].
+
+
+# A pratical example using FAANG price data
+In [@souza2019], the author showed how to build a risk parity portfolio for FAANG companies
+(Facebook, Apple, Amazon, Netflix, and Google) using **riskParityPortfolio**.  Here, we will
+attempt to replicate their backtest results, but using the package
+[portfolioBacktest](https://github.com/dppalomar/portfolioBacktest) instead.
+
+```{r, message = FALSE, fig.width=7, fig.height=4}
+library(xts)
+library(portfolioBacktest)
+library(riskParityPortfolio)
+
+# download price data
+faang_data <- stockDataDownload(c("GOOG", "NFLX", "AAPL", "AMZN", "FB"),
+                                from = "2014-01-01", to = "2019-06-25")
+
+# define portfolios to be backtested
+# risk parity portfolio
+risk_parity <- function(dataset, w_current) {
+  prices <- dataset$adjusted
+  log_returns <- diff(log(prices))[-1]
+  return(riskParityPortfolio(cov(log_returns))$w)
+}
+
+# tangency portfolio (maximum sharpe ratio)
+library(quadprog)
+max_sharpe_ratio <- function(dataset, w_current) {
+    prices <- dataset$adjusted
+    log_returns <- diff(log(prices))[-1]
+    N <- ncol(prices)
+    Sigma <- cov(log_returns)
+    mu <- colMeans(log_returns)
+    if (all(mu <= 1e-8))
+        return(rep(0, N))
+    Dmat <- 2 * Sigma
+    Amat <- diag(N)
+    Amat <- cbind(mu, Amat)
+    bvec <- c(1, rep(0, N))
+    dvec <- rep(0, N)
+    res <- solve.QP(Dmat = Dmat, dvec = dvec, Amat = Amat, bvec = bvec, meq = 1)
+    w <- res$solution
+    return(w/sum(w))
+}
+
+# call portfolioBacktest and benchmark against the max. sharpe ratio portfolio
+bt <- portfolioBacktest(list("risk parity portfolio" = risk_parity,
+                             "tangency portfolio"    = max_sharpe_ratio),
+                        list(faang_data),
+                        lookback = 12*20,
+                        optimize_every = 3*20,
+                        rebalance_every = 3*20)
+
+# dates of the designed portfolios
+index(bt$tangency$data1$w_designed)
+
+# check performance summary
+backtestSummary(bt)$performance
+
+# plot cumulative returns chart
+backtestChartCumReturn(bt)
+```
+
+<!---
+```{r, eval=FALSE}
+library(fPortfolio)
+fPortfolio_tangency <- function(dataset) {
+    prices <- dataset$adjusted
+    log_returns <- diff(log(prices))[-1]
+    res <- tangencyPortfolio(as.timeSeries(log_returns), constraints = "LongOnly")
+    return(getWeights(res))
+}
+bt <- portfolioBacktest::portfolioBacktest(list("risk parity" = risk_parity,
+                                                "tangency-fPortfolio"    = fPortfolio_tangency,
+                                                "tangency"    = max_sharpe_ratio),
+                                           list(faang_data),
+                                           T_rolling_window = 12*20, optimize_every = 3*20, rebalance_every = 3*20)
+backtestSummary(bt)$performance
+backtestChartStackedBar(bt, portfolio = "tangency-fPortfolio" , legend = TRUE)
+```
+--->
+
+
+```{r, fig.width=7, fig.height=3}
+# plot max drawdown chart
+backtestChartDrawdown(bt)
+```
+```{r, fig.width=7, fig.height=3}
+# plot assets exposures over time
+backtestChartStackedBar(bt, portfolio = "risk parity portfolio", legend = TRUE)
+backtestChartStackedBar(bt, portfolio = "tangency portfolio" , legend = TRUE)
+```
+
+Indeed, the charts are quite similar to those reported in [@souza2019]. Note that the weights evolution of the Markowitz's tangency portfolio is quite sensitive to minute changes in the rebalance/optimization dates, whereas no significant difference is noticed for the risk parity portfolio weights.
+
+
+# Comparison with other Packages
+Others R packages with the goal of designing risk parity portfolios do exist,
+such as `FinCovRegularization`, `cccp`, and `RiskPortfolios`. Let's check how
+do they perform against `riskParityPortfolio`.
+(Note that other packages like `FRAPO` use `cccp` under the hood.)
+
+```{r, message=FALSE}
+library(FinCovRegularization)
+library(cccp)
+library(RiskPortfolios)
+
+# generate synthetic data
+set.seed(42)
+N <- 10
+V <- matrix(rnorm(N*(N+N/5)), N+N/5, N)
+Sigma <- cov(V)
+
+# uniform initial guess for the portfolio weights
+w0 <- rep(1/N, N)
+
+# compute risk parity portfolios using different methods
+rpp <- riskParityPortfolio(Sigma, w0 = w0, formulation = "rc-double-index")
+fincov_w <- FinCovRegularization::RiskParity(Sigma)
+riskport_w <- optimalPortfolio(Sigma = Sigma,
+                               control = list(type = "erc",
+                                              constraint = "lo"))
+cccp_w <- c(getx(cccp::rp(w0, Sigma, mrc = w0, optctrl = ctrl(trace = FALSE))))
+
+# plot
+w_all <- cbind("riskParityPortfolio"  = rpp$w,
+               "FinCovRegularization" = fincov_w,
+               "cccp"                 = cccp_w,
+               "RiskPortfolios"       = riskport_w)
+barplotPortfolioRisk(w_all, Sigma)
+```
+
+Depending on the condition number of the covariance matrix, we found that the
+packages `FinCovRegularization` and `RiskPortfolios` may fail unexpectedly.
+Apart from that, all functions perform similarly.
+
+Now, let's see a comparison, in terms of computational time, of our cyclical coordinate descent
+implementation against the `rp()` function from the `cccp` package and the `optimalPortfolio()` function
+from the `RiskPortfolios` package. (For a fair comparison, instead of calling our function `riskParityPortfolio()`,
+we call directly the core internal function `risk_parity_portfolio_ccd_spinu()`, which only
+computes the risk parity weights, just like `rp()` and `optimalPortfolio()`.)
+```{r, cache=TRUE}
+library(microbenchmark)
+library(ggplot2)
+library(cccp)
+library(RiskPortfolios)
+library(riskParityPortfolio)
+
+N <- 100
+V <- matrix(rnorm(N^2), ncol = N)
+Sigma <- cov(V)
+b <- rep(1/N, N)
+
+op <- microbenchmark(
+          cccp = rp(b, Sigma, b, optctrl = ctrl(trace = FALSE)),
+          riskParityPortfolio =
+            riskParityPortfolio:::risk_parity_portfolio_ccd_choi(Sigma, b, 1e-6, 50),
+          RiskPortfolios =
+            optimalPortfolio(Sigma = Sigma,
+                             control = list(type = 'erc', constraint = 'lo')),
+          times = 10L)
+print(op)
+autoplot(op)
+```
+
+As it can be observed, our implementation is orders of maginitude faster than
+the interior-point method used by `cccp` and the formulation used by `RiskPortfolios`.
+
+# Appendix I - Risk concentration formulations {-}
+In general, with different constraints and objective functions, exact parity cannot be achieved and one needs to define a risk term to be
+minimized: $R(\bm{w}) = \sum_{i=1}^{N}\left(g_{i}\left(\bm{w}\right)\right)^{2}$, where the $g_{i}$'s denote the different risk contribution errors, e.g., $g_{i} = w_{i}\left(\bm{\Sigma}\bm{w}\right)_i - b_i\bm{w}^\T\bm{\Sigma}\bm{w}$.
+A double-index summation can also be used:
+$R(\bm{w}) = \sum_{i,j=1}^{N}\left(g_{ij}\left(\bm{w}\right)\right)^{2}$.
+
+We consider the risk formulations as presented in [@FengPal2015riskparity; @FengPal2016monograph].
+They can be passed through the keyword argument `formulation` in the function
+`riskParityPortfolio()`.
+
+The name of the formulations and their mathematical expressions are presented as follows.
+
+**Formulation "rc-double-index"**:
+$$R(\bm{w}) = \sum_{i,j=1}^{N}\left(w_{i}\left(\bm{\Sigma}\bm{w}\right)_{i}-w_{j}\left(\bm{\Sigma}\bm{w    }\right)_{j}\right)^{2}$$
+
+**Formulation "rc-vs-theta"**:
+$$
+R(\bm{w},\theta) = \sum_{i=1}^{N}\left(w_{i}\left(\bm{\Sigma}\bm{w}\right)_i - \theta \right)^{2}
+$$
+
+**Formulation "rc-over-var-vs-b"**:
+$$
+R(\bm{w}) = \sum_{i=1}^{N}\left(\frac{w_{i}\left(\bm{\Sigma}\bm{w}\right)_i}{\bm{w}^\T\bm{\Sigma}\bm{w}}-b_i\right)^{2}
+$$
+
+**Formulation "rc-over-b double-index"**:
+$$
+R(\bm{w}) = \sum_{i,j=1}^{N}\left(\frac{w_i\left(\bm{\Sigma}\bm{w}\right)_i}{b_i} - \frac{w_j\left(\bm{\Sigma}\bm{w}\right)_j}{b_j}\right)^{2}
+$$
+
+**Formulation "rc-vs-b-times-var"**:
+$$
+R(\bm{w}) = \sum_{i=1}^{N}\left(w_{i}\left(\bm{\Sigma}\bm{w}\right)_i - b_i\bm{w}^\T\bm{\Sigma}\bm{w}\right)^{2}
+$$
+
+**Formulation "rc-over-sd vs b-times-sd"**:
+$$
+R(\bm{w}) = \sum_{i=1}^{N}\left(\frac{w_{i}\left(\bm{\Sigma}\bm{w}\right)_i}{\sqrt{\bm{w}^\T\bm{\Sigma}\bm{w}}}-b_i\sqrt{\bm{w}^\T\bm{\Sigma}\bm{w}}\right)^{2}
+$$
+
+**Formulation "rc-over-b vs theta"**:
+$$
+R(\bm{w},\theta) = \sum_{i=1}^{N}\left(\frac{w_{i}\left(\bm{\Sigma}\bm{w}\right)_i}{b_i} - \theta \right)^{2}
+$$
+
+**Formulation "rc-over-var"**:
+$$
+R(\bm{w}) = \sum_{i=1}^{N}\left(\frac{w_{i}\left(\bm{\Sigma}\bm{w}\right)_i}{\bm{w}^\T\bm{\Sigma}\bm{w}}\right)^{2}
+$$
+
+
+# Appendix II - Numerical algorithms for the risk parity portfolio {-}
+In this appendix we describe the algorithms implemented for both the vanilla
+risk parity portfolio and the modern risk parity portfolio that may contain
+additional objective terms and constraints.
+
+## Algorithms for the vanilla risk parity formulation
+We now describe the implementation of the Newton method and the cyclical (coordinate) descent algorithm for the vanilla risk parity formulations presented in [@Spinu2013] and [@GriveauRichardRoncalli2013].
+
+Consider the risk budgeting equations
+$$w_i\left(\bm{\Sigma}\bm{w}\right)_i = b_i \;\bm{w}^{\T}\bm{\Sigma}\bm{w}, \qquad i=1,\ldots,N$$
+with $\bm{1}^\T\bm{w}=1$ and $\bm{w} \ge \bm{0}$.
+
+If we define $\bm{x}=\bm{w}/\sqrt{\bm{w}^{\T}\bm{\Sigma}\bm{w}}$, then we can rewrite the risk budgeting equations compactly as
+$$\bm{\Sigma}\bm{x} = \bm{b}/\bm{x}$$ with $\bm{x} \ge \bm{0}$ and we can always recover the portfolio by normalizing: $\bm{w} = \bm{x}/(\bm{1}^\T\bm{x})$.
+
+Spinu [@Spinu2013] realized that precisely that equation corresponds to the gradient of the function $f(\bm{x}) = \frac{1}{2}\bm{x}^{\T}\bm{\Sigma}\bm{x} - \bm{b}^\T\log(\bm{x})$ set to zero, which is the optimality condition for its minimization.
+
+So we can finally formulate the risk budgeting problem as the following convex optimization problem:
+$$\underset{\bm{x}\ge\bm{0}}{\textsf{minimize}} \quad \frac{1}{2}\bm{x}^{\T}\bm{\Sigma}\bm{x} - \bm{b}^\T\log(\bm{x}).$$
+
+Roncalli et al. [@GriveauRichardRoncalli2013] proposed a slightly different formulation (also convex):
+$$\underset{\bm{x}\ge\bm{0}}{\textsf{minimize}} \quad \sqrt{\bm{x}^{\T}\bm{\Sigma}\bm{x}} - \bm{b}^\T\log(\bm{x}).$$
+
+Unfortunately, even though these two problems are convex, they do not conform with the typical classes that most solvers embrace (i.e., LP, QP, QCQP, SOCP, SDP, GP, etc.).
+
+Nevertheless, there are several simple iterative algorithms that can be used, like the Newton method and the cyclical coordinate descent algorithm.
+
+
+**Newton method**
+The Newton method obtains the iterates based on the gradient $\nabla f$ and the Hessian ${\sf H}$ of the objective function $f(\bm{x})$ as follows:
+$$\bm{x}^{(k+1)} = \bm{x}^{(k)} - {\sf H}^{-1}(\bm{x}^{(k)})\nabla f(\bm{x}^{(k)})$$
+
+In practice, one may need to use the backtracking method to properly adjust the step size of each iteration [@BoydVandenberghe2004].
+
+* For the function $f(\bm{x}) = \frac{1}{2}\bm{x}^{\T}\bm{\Sigma}\bm{x} -
+  \bm{b}^\T\log(\bm{x})$, the gradient and Hessian are given by
+    $$\begin{array}{ll}
+    \nabla f(\bm{x}) &= \bm{\Sigma}\bm{x} - \bm{b}/\bm{x}\\
+    {\sf H}(\bm{x}) &= \bm{\Sigma} + {\sf Diag}(\bm{b}/\bm{x}^2).
+    \end{array}$$
+
+* For the function $f(\bm{x}) = \sqrt{\bm{x}^{\T}\bm{\Sigma}\bm{x}} -
+  \bm{b}^\T\log(\bm{x})$, the gradient and Hessian are given by
+    $$\begin{array}{ll}
+    \nabla f(\bm{x}) &= \bm{\Sigma}\bm{x}/\sqrt{\bm{x}^{\T}\bm{\Sigma}\bm{x}} - \bm{b}/\bm{x}\\
+    {\sf H}(\bm{x}) &= \left(\bm{\Sigma} - \bm{\Sigma}\bm{x}\bm{x}^\T\bm{\Sigma}/\bm{x}^{\T}\bm{\Sigma}\bm{x}\right) / \sqrt{\bm{x}^{\T}\bm{\Sigma}\bm{x}} + {\sf Diag}(\bm{b}/\bm{x}^2).
+    \end{array}$$
+
+
+**Cyclical coordinate descent algorithm**
+This method simply minimizes in a cyclical manner with respect to each element
+of the variable $\bm{x}$ (denote $\bm{x}_{-i}=[x_1,\ldots,x_{i-1},0,x_{i+1},\ldots,x_N]^\T$),
+while helding the other elements fixed.
+
+* For the function $f(\bm{x}) = \frac{1}{2}\bm{x}^{\T}\bm{\Sigma}\bm{x} -
+  \bm{b}^\T\log(\bm{x})$, the minimization w.r.t. $x_i$ is
+    $$\underset{x_i>0}{\textsf{minimize}} \quad \frac{1}{2}x_i^2\bm{\Sigma}_{ii} + x_i(\bm{x}_{-i}^\T\bm{\Sigma}_{\cdot,i}) - b_i\log{x_i}$$
+with gradient $\nabla_i f = x_i\bm{\Sigma}_{ii} + (\bm{x}_{-i}^\T\bm{\Sigma}_{\cdot,i}) - b_i/x_i$.
+Setting the gradient to zero gives us the second order equation
+$$x_i^2\bm{\Sigma}_{ii} + x_i(\bm{x}_{-i}^\T\bm{\Sigma}_{\cdot,i}) - b_i = 0$$
+with positive solution given by
+$$x_i^\star = \frac{-(\bm{x}_{-i}^\T\bm{\Sigma}_{\cdot,i})+\sqrt{(\bm{x}_{-i}^\T\bm{\Sigma}_{\cdot,i})^2+
+4\bm{\Sigma}_{ii} b_i}}{2\bm{\Sigma}_{ii}}.$$
+
+* The derivation for the function
+$f(\bm{x}) = \sqrt{\bm{x}^{\T}\bm{\Sigma}\bm{x}} - \bm{b}^\T\log(\bm{x})$
+follows similarly. The update for $x_i$ is given by
+$$x_i^\star = \frac{-(\bm{x}_{-i}^\T\bm{\Sigma}_{\cdot,i})+\sqrt{(\bm{x}_{-i}^\T\bm{\Sigma}_{\cdot,i})^2+
+4\bm{\Sigma}_{ii} b_i \sqrt{\bm{x}^{\T}\bm{\Sigma}\bm{x}}}}{2\bm{\Sigma}_{ii}}.$$
+
+## Successive convex approximation algorithm for the modern risk parity formulation
+Many practical formulations deployed to design risk parity portfolios lead to nonconvex problems,
+specially when additional objective terms such as mean return or variance, or additional
+constraints, namely, shortselling, are taken into account. To circumvent the complications
+that arise in such formulations, Feng & Palomar [@FengPal2015riskparity] proposed a method called sucessive convex
+approximation (SCA). The SCA method works by convexifying the risk concentration term at some
+pre-defined point, casting the nonconvex problem into a much simpler strongly convex
+optimization problem. This procedure is then iterated until convergence is achieved. It is important
+to highlight that the SCA method always converges to a stationary point.
+
+At the $k$-th iteration, the SCA method aims to solve
+\begin{align}\begin{array}{ll}
+    \underset{\bm{w}}{\textsf{minimize}} & \sum_{i=1}^{n}\left(g_i(\bm{w}^k) +
+    (\nabla g_i(\bm{w}^{k}))^{\T}(\bm{w} - \bm{w}^{k})\right)^2 +
+    \tau ||\bm{w} - \bm{w}^{k}||^{2}_{2} + \lambda F(\bm{w})\\
+\textsf{subject to} & \bm{w}^{\T}\bm{1} = 1, \bm{w} \in \mathcal{W},
+\end{array}\end{align}
+where the first order Taylor expasion of $g_i(\bm{w})$ has been used.
+
+After some mathematical manipulations described in detail in [@FengPal2015riskparity], the optimization
+problem above can be rewritten as
+\begin{align}\begin{array}{ll}
+    \underset{\bm{w}}{\textsf{minimize}} & \dfrac{1}{2}\bm{w}^{\T}\bm{Q}^{k}\bm{w} +
+    \bm{w}^{\T}\bm{q}^{k} + \lambda F(\bm{w})\\
+\textsf{subject to} & \bm{w}^{\T}\bm{1} = 1, \bm{w} \in \mathcal{W},
+\end{array}\end{align}
+where
+\begin{align}
+    \bm{Q}^{k} & \triangleq 2(\bm{A}^{k})^{\T}\bm{A}^{k} + \tau \bm{I},\\
+    \bm{q}^{k} & \triangleq 2(\bm{A}^{k})^{\T}\bm{g}(\bm{w}^{k}) - \bm{Q}^{k}\bm{w}^{k},
+\end{align}
+and
+\begin{align}
+    \bm{A}^{k} & \triangleq \left[\nabla_{\bm{w}} g_{1}\left(\bm{w}^{k}\right), ...,
+                              \nabla_{\bm{w}} g_{n}\left(\bm{w}^{k}\right)\right]^{\T} \\
+    \bm{g}\left(\bm{w}^{k}\right) & \triangleq \left[g_{1}\left(\bm{w}^{k}\right), ...,
+                                                   g_{n}\left(\bm{w}^{k}\right)\right]^{\T}.
+\end{align}
+
+The above problem is a quadratic program (QP) which can be efficiently solved by
+standard R libraries. Furthermore, it is straightforward that adding the mean return
+or variance terms still keeps the structure of the problem intact.
+
+
+# Appendix III - Computational time {-}
+
+In order to efficiently design high dimensional portfolios that follows the risk parity criterion,
+we implement the cyclical coordinate descent algorithm proposed by [@GriveauRichardRoncalli2013]. In brief, this
+algorithm optimizes for one portfolio weight at a time while leaving the rest fixed.
+
+The plot below illustrates the computational scaling of both Newton and cyclical algorithms.
+Note that the cyclical algorithm is implemented for two different formulations used by [@Spinu2013]
+and [@GriveauRichardRoncalli2013], respectively. Nonetheless, they output the same solution, as they should.
+```{r, cache=TRUE}
+library(microbenchmark)
+library(riskParityPortfolio)
+library(ggplot2)
+
+size_seq <- c(10, 50, 100, 200, 300, 400, 500, 600, 700)
+df <- data.frame()
+for (i in seq_along(size_seq)) {
+  V <- matrix(rnorm(1000 * size_seq[i]), nrow = size_seq[i])
+  Sigma <- V %*% t(V)
+  bench <- microbenchmark(
+            "Newton"            = riskParityPortfolio(Sigma, method_init = "newton"),
+            "Cyclical Spinu"    = riskParityPortfolio(Sigma, method_init = "cyclical-spinu"),
+            "Cyclical Roncalli" = riskParityPortfolio(Sigma, method_init = "cyclical-roncalli"),
+            times = 10L, unit = "milliseconds", control = list(order = "inorder", warmup = 4))
+  df <- rbind(df, data.frame("size" = size_seq[i], aggregate(. ~ expr, data = bench, FUN = median)))
+}
+
+ggplot(df, aes(x = size, y = time/1e6, col = expr)) +
+  geom_line() + geom_point() +
+  theme(legend.title = element_blank()) +
+  scale_color_manual(values = c("#2d3436", "#6c5ce7", "#74b9ff")) +
+  labs(title = "Convergence time for the convex formulation", x = "Portfolio size N", y = "CPU time [ms]")
+```
+
+
+# References {-}
+
+

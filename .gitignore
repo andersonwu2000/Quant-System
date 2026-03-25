@@ -12,6 +12,7 @@ build/
 *.sqlite3
 .claude/
 *.pdf
+!docs/ref/**/*.pdf
 shioaji.log
 
 # Frontend
