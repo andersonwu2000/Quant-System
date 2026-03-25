@@ -297,7 +297,7 @@
 | Mobile | Jest | 14 |
 | Shared | Vitest | 4 |
 
-### 7.3 CI/CD Pipeline（9 jobs）
+### 7.3 CI/CD Pipeline（10 jobs）
 
 | Job | 內容 | 依賴 |
 |-----|------|------|
@@ -307,9 +307,18 @@
 | `web-test` | vitest | web-typecheck |
 | `web-build` | vite build | web-typecheck |
 | `shared-test` | vitest (@quant/shared) | — |
+| `android-build` | assembleDebug + upload artifact | — |
 | `mobile-typecheck` | tsc --noEmit | — |
-| `mobile-test` | jest | — |
 | `e2e-test` | Playwright chromium | — |
+| `release` | 自動建立 GitHub Release + APK 附件 | 所有上述 jobs（master push 限定）|
+
+### 7.4 本地 Pre-push Hook
+
+- **位置**：`.githooks/pre-push`
+- **啟用**：`make setup-hooks`（執行 `git config core.hooksPath .githooks`）
+- **執行內容**：ruff lint → mypy → pytest tests/unit/ → web/mobile typecheck
+- **跳過選項**：`git push --no-verify` / `SKIP_LINT=1` / `SKIP_TESTS=1`
+- **完整模式**：`FULL_CHECK=1 git push`（加跑 web/shared vitest）
 
 ---
 

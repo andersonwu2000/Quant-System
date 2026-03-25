@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Pre-push hook — 本地 CI 檢查（push 前自動執行）
+#
+# 執行順序：
+#   1. Backend lint   (ruff + mypy)         — 快速，必跑
+#   2. Backend tests  (pytest tests/unit/)  — 單元測試，必跑
+#   3. Web typecheck  (tsc --noEmit)        — TypeScript，必跑
+#   4. Web tests      (vitest)              — 選擇性（FULL_CHECK=1 才跑）
+#   5. Shared tests   (vitest)              — 選擇性（FULL_CHECK=1 才跑）
+#
+# 跳過方式：
+#   git push --no-verify          # 完全跳過此 hook
+#   SKIP_LINT=1 git push          # 跳過 lint
+#   SKIP_TESTS=1 git push         # 跳過所有測試
+#   FULL_CHECK=1 git push         # 加跑 web/shared 測試
+# =============================================================================
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+PASS="${GREEN}✔${NC}"
+FAIL="${RED}✘${NC}"
+SKIP="${YELLOW}⊘${NC}"
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+cd "$PROJECT_ROOT"
+
+echo ""
+echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BOLD}${CYAN}  Pre-push CI 檢查${NC}"
+echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+FAILED=0
+
+run_step() {
+    local label="$1"
+    local cmd="$2"
+    printf "  %-40s" "$label"
+    if output=$(eval "$cmd" 2>&1); then
+        echo -e "$PASS"
+    else
+        echo -e "$FAIL"
+        echo ""
+        echo -e "${RED}──── 錯誤輸出 ────${NC}"
+        echo "$output" | tail -30
+        echo -e "${RED}──────────────────${NC}"
+        echo ""
+        FAILED=$((FAILED + 1))
+    fi
+}
+
+skip_step() {
+    local label="$1"
+    printf "  %-40s" "$label"
+    echo -e "$SKIP 已跳過"
+}
+
+# ── 1. Backend Lint ──────────────────────────────────────────────────────────
+echo -e "${BOLD}[1/3] Backend Lint${NC}"
+if [[ "${SKIP_LINT:-0}" == "1" ]]; then
+    skip_step "ruff check"
+    skip_step "mypy strict"
+else
+    if command -v ruff &>/dev/null; then
+        run_step "ruff check src/ tests/" "ruff check src/ tests/ --quiet"
+    else
+        skip_step "ruff check (未安裝)"
+    fi
+    if command -v mypy &>/dev/null; then
+        run_step "mypy src/" "mypy src/ --no-error-summary 2>&1 | tail -5"
+    else
+        skip_step "mypy (未安裝)"
+    fi
+fi
+echo ""
+
+# ── 2. Backend Unit Tests ────────────────────────────────────────────────────
+echo -e "${BOLD}[2/3] Backend Tests${NC}"
+if [[ "${SKIP_TESTS:-0}" == "1" ]]; then
+    skip_step "pytest tests/unit/"
+else
+    if command -v pytest &>/dev/null; then
+        run_step "pytest tests/unit/ -q" "pytest tests/unit/ -q --tb=short 2>&1"
+    else
+        skip_step "pytest (未安裝)"
+    fi
+fi
+echo ""
+
+# ── 3. Frontend Typecheck ────────────────────────────────────────────────────
+echo -e "${BOLD}[3/3] Frontend Typecheck${NC}"
+if [[ "${SKIP_LINT:-0}" == "1" ]]; then
+    skip_step "web typecheck"
+    skip_step "mobile typecheck"
+elif command -v bun &>/dev/null && [[ -f "apps/package.json" ]]; then
+    run_step "web   tsc --noEmit" "cd apps/web && bun run typecheck 2>&1"
+    run_step "mobile tsc --noEmit" "cd '$PROJECT_ROOT/apps/mobile' && bun run typecheck 2>&1"
+else
+    skip_step "web typecheck (bun 未安裝)"
+    skip_step "mobile typecheck (bun 未安裝)"
+fi
+echo ""
+
+# ── 4. 選擇性完整前端測試（FULL_CHECK=1）───────────────────────────────────
+if [[ "${FULL_CHECK:-0}" == "1" ]]; then
+    echo -e "${BOLD}[+] Full Check 模式 — Frontend Tests${NC}"
+    if command -v bun &>/dev/null; then
+        run_step "web tests (vitest)" "cd '$PROJECT_ROOT/apps/web' && bun run test --run 2>&1"
+        run_step "shared tests (vitest)" "cd '$PROJECT_ROOT/apps/shared' && bun run test --run 2>&1"
+    fi
+    echo ""
+fi
+
+# ── 結果 ────────────────────────────────────────────────────────────────────
+echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+if [[ $FAILED -eq 0 ]]; then
+    echo -e "  ${GREEN}${BOLD}全部通過！正在推送…${NC}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    exit 0
+else
+    echo -e "  ${RED}${BOLD}${FAILED} 項檢查失敗，已中止推送${NC}"
+    echo -e "  ${YELLOW}提示：git push --no-verify 可強制跳過${NC}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    exit 1
+fi

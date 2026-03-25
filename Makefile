@@ -52,3 +52,14 @@ mobile-typecheck:
 start:
 	$(MAKE) dev &
 	$(MAKE) web
+
+# === Git Hooks ===
+
+setup-hooks:
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-push
+	@echo "✔ Git hooks 已啟用（.githooks/pre-push）"
+
+# 本地執行與 CI 相同的完整檢查
+pre-push:
+	@bash .githooks/pre-push
