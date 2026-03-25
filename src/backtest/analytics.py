@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from src.domain.models import Order, Trade
+from src.portfolio.risk_model import RiskModel
 
 
 @dataclass
@@ -41,6 +42,10 @@ class BacktestResult:
     total_commission: float
     turnover: float                 # 平均換手率
 
+    # ── VaR / CVaR ──
+    var_95: float = 0.0               # 日 95% VaR
+    cvar_95: float = 0.0              # 日 95% CVaR
+
     # ── 拒絕訂單統計 ──
     rejected_orders: int = 0
     rejected_notional: float = 0.0
@@ -68,6 +73,8 @@ class BacktestResult:
             "",
             f"Max Drawdown:  {self.max_drawdown:.2%}",
             f"Max DD Days:   {self.max_drawdown_duration}",
+            f"VaR (95%):     {self.var_95:.4%}",
+            f"CVaR (95%):    {self.cvar_95:.4%}",
             "",
             f"Total Trades:  {self.total_trades}",
             f"Win Rate:      {self.win_rate:.1%}",
@@ -95,6 +102,8 @@ class BacktestResult:
             "total_trades": self.total_trades,
             "win_rate": self.win_rate,
             "total_commission": self.total_commission,
+            "var_95": self.var_95,
+            "cvar_95": self.cvar_95,
             "rejected_orders": self.rejected_orders,
             "rejected_notional": self.rejected_notional,
         }
@@ -162,6 +171,10 @@ def compute_analytics(
     n_rejected = len(_rejected)
     rejected_notional = sum(float(o.notional) for o in _rejected)
 
+    # VaR / CVaR
+    var_95 = RiskModel.compute_var(daily_returns, confidence=0.95, method="historical")
+    cvar_95 = RiskModel.compute_cvar(daily_returns, confidence=0.95, method="historical")
+
     # 確定日期範圍
     start_date = str(nav_series.index[0].date()) if hasattr(nav_series.index[0], "date") else str(nav_series.index[0])
     end_date = str(nav_series.index[-1].date()) if hasattr(nav_series.index[-1], "date") else str(nav_series.index[-1])
@@ -187,6 +200,8 @@ def compute_analytics(
         turnover=turnover,
         rejected_orders=n_rejected,
         rejected_notional=rejected_notional,
+        var_95=var_95,
+        cvar_95=cvar_95,
         nav_series=nav_series,
         daily_returns=daily_returns,
         drawdown_series=drawdown,

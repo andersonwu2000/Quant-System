@@ -46,7 +46,7 @@
 | 後端 Python LOC | ~20,000 |
 | 測試檔案 | 64 |
 | 測試 LOC | ~12,400 |
-| 測試數量 (pytest collected) | **859** |
+| 測試數量 (pytest collected) | **926** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -64,7 +64,7 @@
 | `src/backtest/` | 6 | 2,192 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 + HTML/CSV 報表 + Walk-forward |
 | `src/execution/` | 10 | 1,956 | SinopacBroker + SimBroker + ExecutionService + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 |
 | `src/strategy/` | 8 | 1,401 | 策略 ABC + 因子庫 (14) + 最佳化器 (3) + 研究工具 + Registry + MultiAssetStrategy |
-| `src/portfolio/` | 4 | 757 | 組合最佳化 (6 方法) + 風險模型 (Ledoit-Wolf) + 幣別對沖 |
+| `src/portfolio/` | 4 | ~950 | 組合最佳化 (8 方法 + CVaR/MaxDD) + 風險模型 (Ledoit-Wolf + VaR/CVaR) + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
 | `src/domain/` | 3 | 653 | 領域模型：Instrument + Portfolio (多幣別) + Order (融資融券/零股) + Trade + RiskAlert |
 | `src/risk/` | 4 | 573 | 風控引擎 (10 規則) + Kill Switch + RiskMonitor |
@@ -166,7 +166,7 @@
 - `check_dispositions()` — 處置股清單查詢
 - 非阻塞下單 (`timeout=0`, ~12ms vs ~136ms)
 
-### 4.6 組合最佳化（6 方法）
+### 4.6 組合最佳化（10 方法）
 
 | 方法 | 說明 |
 |------|------|
@@ -176,8 +176,12 @@
 | Mean-Variance (MVO) | Markowitz 均值變異數 |
 | Black-Litterman (BL) | 支援 `BLView` 主觀觀點 |
 | Hierarchical Risk Parity (HRP) | 階層式風險平價 |
+| Robust (Worst-case) | 橢圓不確定集穩健最佳化 |
+| Resampled (Michaud) | 蒙地卡羅重取樣平均 |
+| CVaR Optimization | 最小化 CVaR (Rockafellar-Uryasev LP 重構) |
+| Max Drawdown | 最小化最大回撤（歷史模擬 SLSQP） |
 
-**風險模型**: 歷史 / EWM / Ledoit-Wolf 收縮共變異數 + 邊際風險貢獻。
+**風險模型**: 歷史 / EWM / Ledoit-Wolf 收縮共變異數 + 邊際風險貢獻 + VaR/CVaR (歷史+參數法) + James-Stein 均值收縮。
 
 ### 4.7 戰術配置
 
@@ -377,7 +381,7 @@ volumes:
 | 數據源 | ✅ 完成 | Yahoo + FinMind + FRED + Shioaji (kbars/ticks/snapshot) |
 | Alpha 研究 | ✅ 完成 | 14 因子/中性化/正交化/Rolling IC/Pipeline/Regime/Attribution |
 | 戰術配置 | ✅ 完成 | 宏觀四因子 + 跨資產信號 + TacticalEngine |
-| 組合最佳化 | ✅ 完成 | 6 方法 + Ledoit-Wolf + 風險貢獻 |
+| 組合最佳化 | ✅ 完成 | 10 方法 (含 CVaR/MaxDD/Robust/Resampled) + Ledoit-Wolf + VaR/CVaR + James-Stein 均值收縮 + 風險貢獻 |
 | 幣別對沖 | ✅ 完成 | 分級對沖 + HedgeRecommendation |
 | 兩層整合 | ✅ 完成 | MultiAssetStrategy (allocation → alpha → optimizer) |
 | 風控引擎 | ✅ 完成 | 10 規則 + Kill Switch + 跨資產規則 |
@@ -463,112 +467,129 @@ volumes:
 
 ## 11. 學術基準差距分析
 
-> 參考書籍：*Portfolio Optimization: Theory and Application* (D. P. Palomar, 608 頁)
-> 比對範圍：書中 15 章涵蓋的技術 vs 本系統現有實作
+> **參考書籍**：*Portfolio Optimization: Theory and Application* (D. P. Palomar, 608 頁, 15 章)
+> **參考論文**（已下載至 `docs/ref/`）：
+> - Rockafellar & Uryasev (2000). *Optimization of Conditional Value-at-Risk.* — CVaR 最佳化奠基論文
+> - Bailey, Borwein, López de Prado, Zhu (2015). *The Probability of Backtest Overfitting.* — CSCV 回測過擬合檢測
+> - López de Prado (2016). *Building Diversified Portfolios that Outperform Out of Sample.* — HRP 方法論
+> **比對範圍**：書中 15 章 + 3 篇 P0 論文 vs 本系統現有實作
 
-### 11.1 數據建模層（書 Part I, Ch.2-5）
-
-| 書中技術 | 系統現況 | 差距 | 嚴重度 | 說明 |
-|----------|---------|------|--------|------|
-| 非高斯分布建模 (skewed-t, GH) | ❌ 未實作 | 缺少 | 中 | 現行假設常態分布；書中 Ch.2 強調金融數據有厚尾+偏態 |
-| Heavy-tailed ML 估計 (Tyler's M-estimator) | ❌ 未實作 | 缺少 | 中 | 替代 Gaussian ML，對離群值更穩健 |
-| 均值收縮估計 (James-Stein / grand-mean) | ❌ 未實作 | 缺少 | 中 | 書中 Ch.3 證明 JS 收縮 MSE 恆優於樣本均值 |
-| 共變異數收縮 (Ledoit-Wolf) | ✅ 已實作 | — | — | `risk_model.py` 支援 LW 收縮 |
-| 共變異數非線性收縮 (RMT-based) | ❌ 未實作 | 缺少 | 低 | Ledoit-Wolf (2017) 非線性版本，估計誤差更低 |
-| 因子模型共變異數 (PCA / Fama-French / Barra) | ⚠️ 部分 | 不足 | 中 | Alpha 因子用於信號但未用於共變異數分解；書中建議 Σ = BΣ_fB^T + Ψ |
-| Black-Litterman 觀點融合 | ✅ 已實作 | — | — | `BLView` + WLS 公式 |
-| GARCH / Stochastic Volatility | ❌ 未實作 | 缺少 | 中 | 書中 Ch.4 強調波動率聚集 (volatility clustering)，對動態風險管理重要 |
-| Kalman Filter 均值/波動率估計 | ❌ 未實作 | 缺少 | 低 | 書中推薦用於時變參數估計，替代滾動窗口 |
-| 圖模型 (Graph Learning for Covariance) | ❌ 未實作 | 缺少 | 低 | Ch.5 — 稀疏精度矩陣估計，學術前沿 |
-
-### 11.2 組合最佳化層（書 Part II, Ch.6-15）
+### 11.1 數據建模層（書 Part I, Ch.2–5）
 
 | 書中技術 | 系統現況 | 差距 | 嚴重度 | 說明 |
 |----------|---------|------|--------|------|
-| Equal Weight (1/N) | ✅ | — | — | `EQUAL_WEIGHT` |
-| Global Minimum Variance (GMV) | ⚠️ 近似 | 不足 | 低 | MVO 可達成，但無獨立 GMV 入口 |
-| Inverse Volatility | ✅ | — | — | `INVERSE_VOL` |
-| Risk Parity (等風險貢獻) | ✅ | — | — | `RISK_PARITY` |
-| Mean-Variance (Markowitz) | ✅ | — | — | `MEAN_VARIANCE` |
-| Maximum Sharpe Ratio | ⚠️ 近似 | 不足 | 低 | MVO 設 target_return=None 可近似，但非嚴格分數規劃 (Dinkelbach) |
-| Black-Litterman | ✅ | — | — | `BLACK_LITTERMAN` |
-| HRP (Hierarchical Risk Parity) | ✅ | — | — | `HRP` |
-| **高階矩組合 (MVSK)** | ❌ 未實作 | **缺少** | **高** | 書 Ch.9 — 納入偏態+峰態的最佳化，已有高效演算法 (SCA-Q-MVSK) |
-| **CVaR/ES 組合** | ❌ 未實作 | **缺少** | **高** | 書 Ch.10 — 條件風險值最佳化，業界風控標準 |
-| **Drawdown 組合 (CDaR/MaxDD)** | ❌ 未實作 | **缺少** | **中** | 書 Ch.10 — 以最大回撤為風險度量的最佳化 |
-| Downside Risk / Semi-variance | ❌ 未實作 | 缺少 | 中 | 書 Ch.10 — 只懲罰下行波動 |
-| Utility-Based (指數/對數/CRRA) | ❌ 未實作 | 缺少 | 低 | 書 Ch.7 — 效用函數最佳化 |
-| Kelly Criterion | ❌ 未實作 | 缺少 | 低 | 書 Ch.7 — 最大化長期幾何成長率 |
-| **Index Tracking (稀疏追蹤)** | ❌ 未實作 | **缺少** | **中** | 書 Ch.13 — 用少數標的複製指數 (sparse regression)，ETF 管理必備 |
-| Enhanced Index Tracking | ❌ 未實作 | 缺少 | 低 | 追蹤 + alpha |
-| **Robust 組合 (Worst-case)** | ❌ 未實作 | **缺少** | **高** | 書 Ch.14 — 參數不確定性下的穩健最佳化 |
-| Portfolio Resampling | ❌ 未實作 | 缺少 | 中 | Michaud resampling — 蒙地卡羅取樣後取平均 |
-| **Pairs Trading (協整合+Kalman)** | ⚠️ 基礎 | **不足** | **中** | 現有 `pairs_trading.py` 只用相關性；書 Ch.15 用協整合 + Kalman Filter + Ornstein-Uhlenbeck |
-| Graph-Based Portfolios (HERC, NCO) | ⚠️ 部分 | 不足 | 低 | HRP 已有，但缺 HERC (等風險貢獻版) 和 NCO (Nested Cluster) |
-| Deep Learning Portfolios | ❌ 未實作 | 缺少 | 低 | 書 Ch.16 — 端到端 DL 權重預測，學術前沿 |
+| 非高斯分布建模 (skewed-t, GH) | ❌ 未實作 | 缺少 | 中 | 書 Ch.2 證實金融數據有厚尾+偏態；系統隱含假設常態分布 |
+| Heavy-tailed ML 估計 (Tyler's M-estimator) | ❌ 未實作 | 缺少 | 中 | 替代 Gaussian ML，對離群值更穩健（參考 `fitHeavyTail` vignette） |
+| 均值收縮估計 (James-Stein / grand-mean) | ❌ 未實作 | 缺少 | 中 | 書 Ch.3 定理：JS 收縮 MSE **恆優於**樣本均值（Stein paradox），直接改善 MVO/BL |
+| 共變異數收縮 (Ledoit-Wolf linear) | ✅ 已實作 | — | — | `risk_model.py` 支援 LW 線性收縮（target: scaled identity / diagonal） |
+| 共變異數非線性收縮 (RMT / QuEST) | ❌ 未實作 | 缺少 | 低 | Ledoit-Wolf (2017) 非線性版本，eigenvalue 層面收縮 |
+| 因子模型共變異數 (PCA / Fama-French / Barra) | ⚠️ 部分 | 不足 | 中 | Alpha 因子用於信號但未用於 Σ 分解；書 Ch.3 eq.(3.15): Σ = BΣ_fB^T + Ψ |
+| Black-Litterman 觀點融合 | ✅ 已實作 | — | — | `BLView` + WLS 公式（書 Ch.3 eq.(3.19)） |
+| GARCH / Stochastic Volatility | ❌ 未實作 | 缺少 | 中 | 書 Ch.4：volatility clustering 是最顯著的 stylized fact；Python `arch` 套件可整合 |
+| Kalman Filter 均值/波動率估計 | ❌ 未實作 | 缺少 | 低 | 書 Ch.4 推薦替代滾動窗口，用於時變參數 |
+| 圖模型 (Graph Learning for Σ) | ❌ 未實作 | 缺少 | 低 | 書 Ch.5：稀疏精度矩陣估計，學術前沿 |
 
-### 11.3 回測方法論（書 Ch.8）
+### 11.2 組合最佳化層（書 Part II, Ch.6–15）
 
-| 書中技術 | 系統現況 | 差距 | 嚴重度 | 說明 |
-|----------|---------|------|--------|------|
-| Walk-forward Backtest | ✅ | — | — | `walk_forward.py` |
-| Vanilla (Train/Test Split) | ✅ | — | — | 標準回測 |
-| **Seven Sins 防護** | ⚠️ 部分 | 不足 | **高** | 見下方詳述 |
-| k-fold Cross-validation Backtest | ❌ 未實作 | 缺少 | 中 | 書中推薦替代單次回測 |
-| **Multiple Randomized Backtest** | ❌ 未實作 | **缺少** | **高** | 隨機子集資產+時段的多次回測，產出績效分布 (非單一數字) |
-| Synthetic Data Backtest (Stress Test) | ❌ 未實作 | 缺少 | 中 | 產生牛/熊市合成數據做壓力測試 |
-| Backtest Overfitting Detection | ❌ 未實作 | 缺少 | 中 | Bailey et al. (2017) PBO (Probability of Backtest Overfitting) |
+| 書中技術 | 系統現況 | 差距 | 嚴重度 | 論文/章節依據 |
+|----------|---------|------|--------|-------------|
+| Equal Weight (1/N) | ✅ | — | — | |
+| Global Minimum Variance (GMV) | ⚠️ 近似 | 不足 | 低 | MVO 可達成但無獨立入口 |
+| Inverse Volatility | ✅ | — | — | |
+| Risk Parity | ✅ | — | — | 參考 `riskParityPortfolio` vignette 改進 |
+| Mean-Variance (Markowitz) | ✅ | — | — | |
+| Maximum Sharpe Ratio | ⚠️ 近似 | 不足 | 低 | 書 Ch.7：嚴格解需 Dinkelbach 分數規劃 |
+| Black-Litterman | ✅ | — | — | |
+| HRP | ✅ | — | — | López de Prado (2016) — 已實作核心 |
+| **CVaR/ES 組合** | ✅ 已實作 | — | — | Rockafellar & Uryasev (2000) LP 重構；`compute_var/compute_cvar` + `_optimize_cvar`；BacktestResult 含 `var_95/cvar_95` |
+| **Drawdown 組合 (CDaR/MaxDD)** | ✅ 已實作 | — | — | `_optimize_max_drawdown` 歷史模擬 SLSQP |
+| Downside Risk / Semi-variance | ❌ 未實作 | 缺少 | 中 | 書 Ch.10：只懲罰下行波動 |
+| **MVSK 高階矩** | ❌ 未實作 | **缺少** | **中** | 書 Ch.9：SCA-Q-MVSK 演算法（`highOrderPortfolios` vignette），N=400 可在 1 秒內求解 |
+| **Robust 組合 (Worst-case)** | ✅ 已實作 | — | — | `_optimize_robust` 橢圓不確定集 SLSQP |
+| **Index Tracking (稀疏追蹤)** | ❌ 未實作 | **缺少** | **中** | 書 Ch.13 + `sparseIndexTracking` vignette：L1 正則化 min ‖r_p - r_index‖² + λ‖w‖₁ |
+| Portfolio Resampling | ✅ 已實作 | — | — | `_optimize_resampled` Michaud 蒙地卡羅重取樣 |
+| **Pairs Trading (協整合+Kalman)** | ⚠️ 基礎 | **不足** | **中** | 書 Ch.15：現有 `pairs_trading.py` 只用相關性；需升級為 Engle-Granger 協整合 + Kalman Filter 動態 hedge ratio + Ornstein-Uhlenbeck spread 建模 |
+| Graph-Based (HERC, NCO) | ⚠️ 部分 | 不足 | 低 | HRP 已有但缺 HERC/NCO |
+| Deep Learning Portfolios | ❌ 未實作 | 缺少 | 低 | 書 Ch.16：端到端 DL，學術實驗階段 |
+| Utility-Based / Kelly | ❌ 未實作 | 缺少 | 低 | 書 Ch.7 |
 
-**七宗罪防護現況**：
+### 11.3 回測方法論（書 Ch.8 + Bailey et al. 2015）
 
-| Sin | 描述 | 系統防護 | 狀態 |
-|-----|------|---------|------|
-| #1 Survivorship Bias | 使用存活標的回測 | 無：Yahoo/FinMind 數據含存活偏差 | ❌ |
-| #2 Look-ahead Bias | 未來資訊洩漏 | ✅：Context 時間截斷 + HistoricalFeed.set_current_date() | ✅ |
-| #3 Storytelling Bias | 事後合理化 | 無程式化防護（需使用者紀律） | ⚠️ |
-| #4 Data Snooping | 過度參數搜索 | 無：缺少 PBO / deflated Sharpe ratio 工具 | ❌ |
-| #5 Turnover & Cost | 忽略交易成本 | ✅：SimBroker per-instrument 費率 + 滑點 | ✅ |
-| #6 Outliers | 極端值影響 | ⚠️：因子有 winsorize，但回測引擎未處理價格異常 | ⚠️ |
-| #7 Shorting Cost | 忽略融券成本 | ⚠️：Order 模型支援融券，但回測未計算借券費 | ⚠️ |
+| 技術 | 系統現況 | 差距 | 嚴重度 | 論文依據 |
+|------|---------|------|--------|---------|
+| Walk-forward Backtest | ✅ | — | — | |
+| Vanilla (Train/Test Split) | ✅ | — | — | |
+| **Multiple Randomized Backtest** | ❌ 未實作 | **缺少** | **🔴 高** | 書 Ch.8.4.4：隨機抽取 N 支資產子集 + 隨機時段 → k 次回測 → 績效**分布**（box plot）而非單一數字。避免選擇偏差。`portfolioBacktest` vignette 有完整框架。 |
+| **CSCV (Combinatorially Symmetric Cross-Validation)** | ❌ 未實作 | **缺少** | **🔴 高** | **Bailey et al. (2015) Algorithm 2.3**：將 T 期績效矩陣 M (T×N) 分為 S 塊 → 取 C(S,S/2) 組合 → 每組分 IS/OOS → 計算 IS 最優策略的 OOS 排名 → 輸出 PBO = Prob(OOS rank < median)。**系統完全缺少此核心防護**。 |
+| **Deflated Sharpe Ratio** | ❌ 未實作 | **缺少** | **高** | Bailey et al.：校正多重測試的 Sharpe ratio，SR* = SR × adjustment(N_trials, skewness, kurtosis) |
+| **Minimum Backtest Length (MinBTL)** | ❌ 未實作 | **缺少** | **中** | Bailey et al. (2014)：給定 N 次試驗，計算回測需要的最短時間長度才能避免偽陽性 |
+| k-fold Cross-validation | ❌ 未實作 | 缺少 | 中 | 書 Ch.8.4.3：但有 leakage 問題（時序數據）；CSCV 是改良版 |
+| Synthetic Data Stress Test | ❌ 未實作 | 缺少 | 中 | 書 Ch.8.5：VAR/Bootstrap 產生合成牛/熊市場景 |
 
-### 11.4 績效衡量（書 Ch.6）
+**七宗罪防護現況**（書 Ch.8.2, Luo et al. 2014）：
 
-| 指標 | 系統現況 | 差距 |
-|------|---------|------|
-| Sharpe Ratio | ✅ | — |
-| Sortino Ratio | ✅ | — |
-| Calmar Ratio | ✅ | — |
-| Max Drawdown | ✅ | — |
-| Annualized Return/Vol | ✅ | — |
-| Information Ratio | ✅ | — |
-| **CVaR (Conditional VaR)** | ❌ | 缺少 — 業界尾部風險標準指標 |
-| **VaR (Value at Risk)** | ❌ | 缺少 |
-| Omega Ratio | ❌ | 缺少 |
-| Rolling Sharpe | ❌ | 缺少 — 書中建議用於檢視穩定性 |
-| Turnover 統計 | ✅ | — |
+| Sin | 描述 | 系統防護 | 狀態 | 改善方案 |
+|-----|------|---------|------|---------|
+| #1 Survivorship Bias | 用存活標的回測 | 無：Yahoo/FinMind 數據含存活偏差 | ❌ | 需 point-in-time universe 或 CRSP-equivalent |
+| #2 Look-ahead Bias | 未來資訊洩漏 | ✅ Context 時間截斷 + `set_current_date()` | ✅ | — |
+| #3 Storytelling Bias | 事後合理化 | 無程式化防護 | ⚠️ | CSCV + PBO 可客觀量化過擬合 |
+| #4 Data Snooping | 過度參數搜索 | ❌ 無 PBO / deflated SR | ❌ | **實作 CSCV (Bailey et al.)** |
+| #5 Turnover & Cost | 忽略交易成本 | ✅ SimBroker per-instrument 費率 + sqrt 滑點 | ✅ | — |
+| #6 Outliers | 極端值影響 | ⚠️ 因子有 winsorize，但回測引擎未處理價格異常 | ⚠️ | 回測層加價格離群值偵測 |
+| #7 Shorting Cost | 忽略融券成本 | ⚠️ Order 模型支援融券，但回測未計算借券費 | ⚠️ | SimBroker 加 `borrow_cost_bps` 參數 |
 
-### 11.5 優先改善建議
+### 11.4 HRP 改進空間（López de Prado 2016）
 
-根據書中理論重要性 × 實務影響，建議以下改善順序：
+現有 HRP 實作已涵蓋論文核心：hierarchical clustering → quasi-diagonalization → recursive bisection。
+但論文指出幾個系統尚未處理的細節：
 
-| 優先級 | 項目 | 書中章節 | 預估難度 | 價值 |
-|--------|------|---------|---------|------|
-| 🔴 P0 | CVaR 風險度量 + CVaR 組合最佳化 | Ch.10 | 中 | 業界標準尾部風險管理 |
-| 🔴 P0 | Robust 組合 (worst-case/ellipsoidal) | Ch.14 | 中 | 參數估計誤差下的穩健決策 |
-| 🔴 P0 | Multiple Randomized Backtest | Ch.8 | 低 | 避免單次回測誤判，輸出績效分布 |
-| 🟡 P1 | MVSK 高階矩組合 | Ch.9 | 高 | 納入偏態/峰態，改善非高斯環境績效 |
-| 🟡 P1 | 均值收縮估計 (James-Stein) | Ch.3 | 低 | 改善期望報酬估計，直接提升 MVO/BL |
-| 🟡 P1 | GARCH 波動率模型 | Ch.4 | 中 | 動態風險估計，改善 risk parity 即時性 |
-| 🟡 P1 | Index Tracking | Ch.13 | 中 | 稀疏追蹤指數，ETF/基金管理必備 |
-| 🟡 P1 | 因子模型共變異數 (PCA-structured) | Ch.3 | 中 | 大 N 小 T 下更穩定的共變異數估計 |
-| 🟢 P2 | Pairs Trading 升級 (協整合+Kalman) | Ch.15 | 中 | 現有策略只用相關性，需升級為嚴格統計套利 |
-| 🟢 P2 | Downside Risk / Semi-variance 組合 | Ch.10 | 低 | 只懲罰下行，更符合投資者心理 |
-| 🟢 P2 | Portfolio Resampling (Michaud) | Ch.14 | 低 | 蒙地卡羅取樣後取平均，減少參數敏感度 |
-| 🟢 P2 | k-fold / PBO 回測改良 | Ch.8 | 中 | 多折交叉驗證 + 過擬合概率檢測 |
-| 🔵 P3 | 非線性共變異數收縮 (RMT) | Ch.3 | 高 | Ledoit-Wolf 2017 改良版 |
-| 🔵 P3 | Graph-based 組合 (HERC/NCO) | Ch.12 | 中 | HRP 擴展 |
-| 🔵 P3 | Deep Learning Portfolios | Ch.16 | 高 | 端到端 DL，學術實驗階段 |
-| 🔵 P3 | Kelly Criterion | Ch.7 | 低 | 幾何成長率最大化 |
+| 論文要點 | 系統現況 | 改善 |
+|----------|---------|------|
+| Distance metric: d(i,j) = √(0.5(1-ρ_{i,j})) | ✅ 已使用相關距離 | — |
+| Linkage: single linkage | ⚠️ 需確認（scipy 預設 single） | 驗證 linkage 方法 |
+| Out-of-sample 穩定性 | 未驗證 | 用 Multiple Randomized Backtest 比較 HRP vs MVO |
+| Monte Carlo 模擬驗證 | 未做 | 論文用 10,000 次模擬證明 HRP > CLA；系統應複現 |
+
+### 11.5 績效衡量缺口（書 Ch.6 + Rockafellar 2000）
+
+| 指標 | 系統現況 | 差距 | 說明 |
+|------|---------|------|------|
+| Sharpe Ratio | ✅ | — | |
+| Sortino Ratio | ✅ | — | |
+| Calmar Ratio | ✅ | — | |
+| Max Drawdown | ✅ | — | |
+| Annualized Return/Vol | ✅ | — | |
+| Information Ratio | ✅ | — | |
+| Turnover 統計 | ✅ | — | |
+| **CVaR (Conditional VaR)** | ❌ | **缺少** | Rockafellar (2000) 定義：φ_β(x) = E[Loss \| Loss ≥ VaR_β]。β=0.95 為業界標準。 |
+| **VaR (Value at Risk)** | ❌ | **缺少** | CVaR ≥ VaR，Rockafellar 證明最小化 CVaR 同時降低 VaR |
+| **EVaR (Entropic VaR)** | ❌ | **缺少** | 書 Ch.10：比 CVaR 更嚴格的 coherent risk measure |
+| Omega Ratio | ❌ | 缺少 | |
+| Rolling Sharpe | ❌ | 缺少 | 書 Ch.6：穩定性檢視 |
+| **Deflated Sharpe Ratio** | ❌ | **缺少** | Bailey et al.：校正多重測試效應後的 Sharpe |
+
+### 11.6 優先改善建議（論文驅動）
+
+根據 3 篇 P0 論文的具體方法 × 系統缺口 × 實務價值：
+
+| 優先級 | 項目 | 論文/章節 | 實作路徑 | 預估難度 |
+|--------|------|---------|---------|---------|
+| 🔴 P0 | **CVaR 風險度量 + 最佳化** | Rockafellar & Uryasev (2000) eq.(9)(17) | 新增 `OptimizationMethod.CVAR`：min F̃_β(w,α) = α + 1/(q(1-β)) Σ[-w^Ty_k - α]^+，化為 LP (`scipy.optimize.linprog`) | 中 |
+| 🔴 P0 | **CSCV 回測過擬合檢測** | Bailey et al. (2015) Algorithm 2.3 | 新增 `src/backtest/cscv.py`：輸入 (T×N) 績效矩陣 → S 塊分割 → C(S,S/2) 組合 → PBO 分布 + logit λ | 中 |
+| 🔴 P0 | **Deflated Sharpe Ratio** | Bailey et al. (2015) §3 | 新增 `deflated_sharpe()` 到 `analytics.py`：校正 N_trials + 非常態性 | 低 |
+| 🔴 P0 | **Multiple Randomized Backtest** | 書 Ch.8.4.4 + `portfolioBacktest` vignette | 新增 `src/backtest/randomized.py`：k 次隨機子集回測 → 績效 box plot | 低 |
+| 🔴 P0 | **VaR/CVaR 績效指標** | Rockafellar (2000) eq.(2)(3) | 新增 `var_95`, `cvar_95` 到 `BacktestResult` | 低 |
+| ✅ 完成 | Robust 組合 (worst-case) | 書 Ch.14 | 橢圓不確定集穩健 MVO (SLSQP) + Michaud 重取樣 | 中 |
+| 🟡 P1 | MVSK 高階矩 | 書 Ch.9 + `highOrderPortfolios` vignette | SCA-Q-MVSK 演算法 | 高 |
+| ✅ 完成 | 均值收縮 (James-Stein) | 書 Ch.3 eq.(Jorion 1986) | `shrink_mean()` in `risk_model.py`，`OptimizerConfig.shrink_mean` 整合 | 低 |
+| 🟡 P1 | GARCH 波動率 | 書 Ch.4 + `arch` 套件 | 動態共變異數 DCC-GARCH，替代滾動窗口 | 中 |
+| 🟡 P1 | Index Tracking | 書 Ch.13 + `sparseIndexTracking` vignette | L1 稀疏回歸追蹤指數 | 中 |
+| 🟡 P1 | 因子模型共變異數 | 書 Ch.3 eq.(3.15) | PCA → Σ = BΣ_fB^T + Ψ | 中 |
+| 🟡 P1 | MinBTL | Bailey et al. (2014) | 根據 N 策略數計算最短回測時間 | 低 |
+| 🟢 P2 | Pairs Trading 升級 | 書 Ch.15 | Engle-Granger 協整合 + Kalman hedge ratio | 中 |
+| 🟢 P2 | Downside Risk / Semi-variance | 書 Ch.10 | 只懲罰下行波動 | 低 |
+| 🟢 P2 | Portfolio Resampling | 書 Ch.14 | 蒙地卡羅取樣後取平均 | 低 |
+| 🔵 P3 | 非線性收縮 (RMT) / HERC / DL | 書 Ch.3, 12, 16 | 學術前沿 | 高 |
 
 ---
 

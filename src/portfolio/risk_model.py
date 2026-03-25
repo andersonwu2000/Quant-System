@@ -12,8 +12,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
+from scipy import stats
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +167,84 @@ class RiskModel:
         rc = marginal / total
         return {symbols[i]: float(rc[i]) for i in range(len(symbols))}
 
+    # ── VaR / CVaR ─────────────────────────────────────────
+
+    @staticmethod
+    def compute_var(
+        returns: pd.Series,
+        confidence: float = 0.95,
+        method: str = "historical",
+    ) -> float:
+        """計算 Value at Risk。
+
+        Args:
+            returns: 日報酬序列
+            confidence: 信心水準（如 0.95 表示 95% VaR）
+            method: "historical" 或 "parametric"
+
+        Returns:
+            VaR（正數，代表損失）
+        """
+        clean = returns.dropna()
+        if len(clean) < 2:
+            return 0.0
+
+        alpha = 1.0 - confidence
+
+        if method == "parametric":
+            mu = float(clean.mean())
+            sigma = float(clean.std(ddof=1))
+            if sigma <= 0:
+                return 0.0
+            z = float(stats.norm.ppf(alpha))
+            var = -(mu + z * sigma)
+            return float(max(var, 0.0))
+        else:
+            # historical
+            quantile_val = float(np.percentile(clean.to_numpy(), alpha * 100))
+            return float(max(-quantile_val, 0.0))
+
+    @staticmethod
+    def compute_cvar(
+        returns: pd.Series,
+        confidence: float = 0.95,
+        method: str = "historical",
+    ) -> float:
+        """計算 Conditional VaR (Expected Shortfall)。
+
+        Args:
+            returns: 日報酬序列
+            confidence: 信心水準
+            method: "historical" 或 "parametric"
+
+        Returns:
+            CVaR（正數，代表損失）
+        """
+        clean = returns.dropna()
+        if len(clean) < 2:
+            return 0.0
+
+        alpha = 1.0 - confidence
+
+        if method == "parametric":
+            mu = float(clean.mean())
+            sigma = float(clean.std(ddof=1))
+            if sigma <= 0:
+                return 0.0
+            z_alpha = stats.norm.ppf(alpha)
+            # CVaR for normal: μ + σ * φ(z_α) / α  (but we want loss = negative)
+            # ES = -(μ - σ * φ(Φ^{-1}(α)) / α)
+            pdf_val = float(stats.norm.pdf(z_alpha))
+            cvar = -(mu - sigma * pdf_val / alpha)
+            return max(cvar, 0.0)
+        else:
+            # historical: average of returns at or below the VaR percentile
+            quantile_val = float(np.percentile(clean.to_numpy(), alpha * 100))
+            tail = clean[clean <= quantile_val]
+            if len(tail) == 0:
+                return float(max(-quantile_val, 0.0))
+            return float(max(-float(tail.mean()), 0.0))
+
     # ── Ledoit-Wolf 收縮 ─────────────────────────────────
 
     @staticmethod
@@ -199,3 +281,51 @@ class RiskModel:
 
         shrunk = (1 - rho) * S + rho * target
         return pd.DataFrame(shrunk, index=sample_cov.index, columns=sample_cov.columns)
+
+
+def shrink_mean(
+    sample_mean: npt.NDArray[np.floating[Any]],
+    n_obs: int | None = None,
+    grand_mean: float | None = None,
+) -> npt.NDArray[np.float64]:
+    """James-Stein mean shrinkage estimator.
+
+    μ_JS = (1-c)μ̂ + c·μ₀·1
+    c = max(0, (p-2) / (n·‖μ̂ - μ₀·1‖²))
+
+    Args:
+        sample_mean: Sample mean vector (p-dimensional).
+        n_obs: Number of observations used to compute the sample mean.
+               If None, defaults to 252.
+        grand_mean: Target shrinkage mean. If None, uses cross-sectional
+                    average of sample_mean.
+
+    Returns:
+        Shrunk mean vector.
+    """
+    mu = np.asarray(sample_mean, dtype=np.float64).ravel()
+    p = len(mu)
+
+    # James-Stein requires p >= 3 to shrink
+    if p < 3:
+        return mu.copy()
+
+    if n_obs is None:
+        n_obs = 252
+
+    if grand_mean is None:
+        mu0 = float(np.mean(mu))
+    else:
+        mu0 = float(grand_mean)
+
+    diff = mu - mu0
+    norm_sq = float(diff @ diff)
+
+    if norm_sq <= 0:
+        return mu.copy()
+
+    c = max(0.0, (p - 2) / (n_obs * norm_sq))
+    c = min(c, 1.0)  # cap at 1 for stability
+
+    result: npt.NDArray[np.float64] = (1.0 - c) * mu + c * mu0
+    return result
