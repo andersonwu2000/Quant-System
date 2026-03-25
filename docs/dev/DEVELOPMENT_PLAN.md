@@ -1,6 +1,6 @@
 # 開發計畫書
 
-> **版本**: v4.4
+> **版本**: v4.5
 > **日期**: 2026-03-26
 > **目標**: 涵蓋多個可自動交易市場的投資組合研究與優化系統
 > **可交易市場**: 台股、美股、ETF（含債券/商品 ETF 代理）、台灣期貨、美國期貨
@@ -12,14 +12,14 @@
 ## 階段概覽
 
 ```
-Phase A ✅       Phase B ✅       Phase C ✅       Phase D ✅       Phase E ✅           Phase F ✅
-基礎設施          跨資產 Alpha     組合最佳化        系統整合+風控     實盤交易              自動化 Alpha
-─────────       ────────────    ─────────       ─────────       ─────────           ─────────
-Instrument      宏觀因子模型      6 種最佳化器     MultiAssetStrategy  Shioaji 券商對接     每日排程引擎
-多幣別 Portfolio  跨資產信號       風險模型(LW)     跨資產風控規則      Paper Trading       因子自動篩選
-DataFeed 擴展   戰術配置引擎      幣別對沖         FX per-bar 修復    即時行情(tick)       Regime 調適
-FRED 數據源     API + 前端型別                    Alpha層強化        IB 美股(第二階段)    績效回饋循環
-管線整合                                         因子/型別同步       EOD 對帳             安全熔斷
+Phase A ✅       Phase B ✅       Phase C ✅       Phase D ✅       Phase E ✅           Phase F ✅         Phase G ✅
+基礎設施          跨資產 Alpha     組合最佳化        系統整合+風控     實盤交易              自動化 Alpha       學術基準升級
+─────────       ────────────    ─────────       ─────────       ─────────           ─────────         ─────────
+Instrument      宏觀因子模型      6 種最佳化器     MultiAssetStrategy  Shioaji 券商對接     每日排程引擎       VaR/CVaR+最佳化
+多幣別 Portfolio  跨資產信號       風險模型(LW)     跨資產風控規則      Paper Trading       因子自動篩選       Robust/Resampled
+DataFeed 擴展   戰術配置引擎      幣別對沖         FX per-bar 修復    即時行情(tick)       Regime 調適       GARCH/Factor Cov
+FRED 數據源     API + 前端型別                    Alpha層強化        IB 美股(第二階段)    績效回饋循環       PBO/Randomized
+管線整合                                         因子/型別同步       EOD 對帳             安全熔斷          共整合+回測防護
 ```
 
 ---
@@ -297,93 +297,137 @@ trade = api.place_order(contract, order, timeout=0)  # 立即返回
 
 ---
 
-## Phase G：學術基準升級（基於教科書差距分析）
+## Phase G：學術基準升級 ✅（基於教科書差距分析）
 
 > 參考：`docs/dev/SYSTEM_STATUS_REPORT.md` §11 — 基於 *Portfolio Optimization: Theory and Application* (Palomar, 608 頁) 的系統性差距比對
+> **完成日期**: 2026-03-26
 
-### G1: 風險度量升級 (🔴 P0)
+### G1: 風險度量升級 ✅
 
-| 子任務 | 說明 | 書中章節 | 難度 |
-|--------|------|---------|------|
-| G1a | **VaR + CVaR (Conditional Value at Risk)** 計算 — 歷史法 + 參數法 + Monte Carlo | Ch.10 | 中 |
-| G1b | **CVaR 組合最佳化** — `min CVaR s.t. return >= target`，線性規劃 (LP) 可解 | Ch.10 | 中 |
-| G1c | **Drawdown 組合 (CDaR/MaxDD)** — 以最大回撤為風險度量的最佳化 | Ch.10 | 中 |
-| G1d | Downside Risk / Semi-variance 組合 — 只懲罰下行波動 | Ch.10 | 低 |
-
-**實作位置**: `src/portfolio/optimizer.py` 新增 `CVAR_OPTIMIZATION`、`MAX_DRAWDOWN` 方法。
-**依賴**: 需要 `cvxpy` (已安裝)。
-
-### G2: 穩健最佳化 (🔴 P0)
-
-| 子任務 | 說明 | 書中章節 | 難度 |
-|--------|------|---------|------|
-| G2a | **Worst-case Robust 組合** — 橢球不確定性集 (ellipsoidal uncertainty set) | Ch.14 | 中 |
-| G2b | Portfolio Resampling (Michaud) — Monte Carlo 取樣後取平均權重 | Ch.14 | 低 |
-| G2c | 均值收縮估計 (James-Stein / grand-mean) — 改善期望報酬估計 | Ch.3 | 低 |
-
-**價值**: 直接改善 MVO/BL 的參數估計誤差敏感度，是學術界公認最關鍵的實務改進。
-
-### G3: 回測方法論強化 (🔴 P0)
-
-| 子任務 | 說明 | 書中章節 | 難度 |
-|--------|------|---------|------|
-| G3a | **Multiple Randomized Backtest** — 隨機子集資產+時段，輸出績效分布 (非單一數字) | Ch.8 | 低 |
-| G3b | **PBO (Probability of Backtest Overfitting)** — Bailey et al. (2017) | Ch.8 | 中 |
-| G3c | k-fold Cross-validation Backtest — 多折交叉驗證 | Ch.8 | 中 |
-| G3d | Synthetic Data Stress Test — 產生牛/熊市合成數據做壓力測試 | Ch.8 | 中 |
-
-**實作位置**: `src/backtest/` 新增 `randomized.py`、`overfitting.py`。
-
-### G4: 數據建模升級 (🟡 P1)
-
-| 子任務 | 說明 | 書中章節 | 難度 |
-|--------|------|---------|------|
-| G4a | **GARCH 波動率模型** — 動態風險估計 (volatility clustering) | Ch.4 | 中 |
-| G4b | **因子模型共變異數** — PCA / Fama-French 結構 (Σ = BΣ_fB^T + Ψ) | Ch.3 | 中 |
-| G4c | 非高斯分布建模 (skewed-t) — 厚尾+偏態 | Ch.2 | 高 |
-| G4d | Heavy-tailed ML 估計 (Tyler's M-estimator) — 穩健共變異數估計 | Ch.2 | 高 |
-
-### G5: 高階組合方法 (🟡 P1)
-
-| 子任務 | 說明 | 書中章節 | 難度 |
-|--------|------|---------|------|
-| G5a | **MVSK 高階矩組合** — 納入偏態+峰態 (SCA-Q-MVSK 演算法) | Ch.9 | 高 |
-| G5b | **Index Tracking (稀疏追蹤)** — 用少數標的複製指數 (sparse regression) | Ch.13 | 中 |
-| G5c | Maximum Sharpe (Dinkelbach 分數規劃) — 嚴格 MSR 而非近似 | Ch.6 | 低 |
-| G5d | Global Minimum Variance (GMV) 獨立入口 | Ch.6 | 低 |
-
-### G6: 策略升級 (🟢 P2)
-
-| 子任務 | 說明 | 書中章節 | 難度 |
-|--------|------|---------|------|
-| G6a | **Pairs Trading 升級** — 協整合 (Engle-Granger / Johansen) + Kalman Filter + Ornstein-Uhlenbeck | Ch.15 | 中 |
-| G6b | HERC (Hierarchical Equal Risk Contribution) — HRP 等風險貢獻版 | Ch.12 | 中 |
-| G6c | NCO (Nested Cluster Optimization) | Ch.12 | 中 |
-
-### G7: 績效指標補齊 (🟢 P2)
-
-| 子任務 | 說明 | 難度 |
+| 子任務 | 說明 | 狀態 |
 |--------|------|------|
-| G7a | VaR / CVaR 績效指標 — 加入回測報告 | 低 |
-| G7b | Rolling Sharpe — 滾動 Sharpe Ratio 走勢 | 低 |
-| G7c | Omega Ratio | 低 |
+| G1a | **VaR + CVaR** 計算 — 歷史法 + 參數法 (`compute_var/compute_cvar` in risk_model.py) | ✅ 2026-03-26 |
+| G1b | **CVaR 組合最佳化** — Rockafellar-Uryasev LP 重構 (`OptimizationMethod.CVAR`) | ✅ 2026-03-26 |
+| G1c | **MaxDD 組合** — 最小化最大回撤 (`OptimizationMethod.MAX_DRAWDOWN`, SLSQP) | ✅ 2026-03-26 |
+| G1d | Downside Risk / Semi-variance — 只懲罰下行波動 | ❌ 移至 Phase H |
 
-### G8: 回測防護 (七宗罪) (🟢 P2)
+### G2: 穩健最佳化 ✅
 
-| Sin | 現況 | 改善 |
+| 子任務 | 說明 | 狀態 |
+|--------|------|------|
+| G2a | **Worst-case Robust** — 橢球不確定集 (`OptimizationMethod.ROBUST`) | ✅ 2026-03-26 |
+| G2b | **Resampled (Michaud)** — Monte Carlo 重取樣平均 (`OptimizationMethod.RESAMPLED`) | ✅ 2026-03-26 |
+| G2c | **James-Stein 均值收縮** — Jorion (1986) 公式 (`shrink_mean()` in risk_model.py) | ✅ 2026-03-26 |
+
+### G3: 回測方法論強化 ✅
+
+| 子任務 | 說明 | 狀態 |
+|--------|------|------|
+| G3a | **Multiple Randomized Backtest** — `src/backtest/randomized.py` | ✅ 2026-03-26 |
+| G3b | **PBO (CSCV)** — Bailey et al. `src/backtest/overfitting.py` | ✅ 2026-03-26 |
+| G3c | **k-fold CV** — `src/backtest/kfold.py` | ✅ 2026-03-26 |
+| G3d | **Stress Test** — 4 情境 (Bear/HighVol/FlashCrash/RegimeChange) `src/backtest/stress_test.py` | ✅ 2026-03-26 |
+
+### G4: 數據建模升級 (部分完成)
+
+| 子任務 | 說明 | 狀態 |
+|--------|------|------|
+| G4a | **GARCH(1,1) 波動率** — `garch_covariance()` in risk_model.py | ✅ 2026-03-26 |
+| G4b | **PCA 因子模型共變異數** — `factor_model_covariance()` Σ = BΣ_fB^T + Ψ | ✅ 2026-03-26 |
+| G4c | 非高斯分布建模 (skewed-t) | ❌ 移至 Phase H |
+| G4d | Tyler's M-estimator 穩健共變異數 | ❌ 移至 Phase H |
+
+### G5: 高階組合方法 (部分完成)
+
+| 子任務 | 說明 | 狀態 |
+|--------|------|------|
+| G5a | MVSK 高階矩 (SCA-Q-MVSK) | ❌ 移至 Phase H |
+| G5b | **Index Tracking** — LASSO 稀疏追蹤 (Benidis/Feng/Palomar) | ✅ 2026-03-26 |
+| G5c | **Maximum Sharpe** — Dinkelbach 分數規劃 SLSQP | ✅ 2026-03-26 |
+| G5d | **GMV** — 獨立入口 | ✅ 2026-03-26 |
+
+### G6: 策略升級 (部分完成)
+
+| 子任務 | 說明 | 狀態 |
+|--------|------|------|
+| G6a | **Pairs Trading 共整合** — Engle-Granger + OLS hedge ratio | ✅ 2026-03-26 |
+| G6b | HERC / NCO | ❌ 移至 Phase H |
+
+### G7: 績效指標補齊 ✅
+
+| 子任務 | 說明 | 狀態 |
+|--------|------|------|
+| G7a | **Omega Ratio** — `compute_omega_ratio()` in analytics.py | ✅ 2026-03-26 |
+| G7b | **Rolling Sharpe** — `compute_rolling_sharpe()` 63-day window | ✅ 2026-03-26 |
+
+### G8: 回測防護 ✅
+
+| Sin | 狀態 | 實作 |
 |-----|------|------|
-| #1 Survivorship Bias | ❌ | 支援 delisted stock data 或標記存活偏差風險 |
-| #4 Data Snooping | ❌ | G3b PBO 工具 + Deflated Sharpe Ratio |
-| #6 Outliers | ⚠️ | 回測引擎加入價格異常偵測 (gap/circuit breaker) |
-| #7 Shorting Cost | ⚠️ | SimBroker 加入融券費率模擬 |
+| #1 Survivorship Bias | ✅ | 存活者偏差偵測 + 警告標記 |
+| #4 Data Snooping | ✅ | PBO (CSCV) + Randomized Backtest + k-fold CV |
+| #6 Outliers | ✅ | 價格異常偵測 (gap/circuit breaker) |
+| #7 Shorting Cost | ✅ | SimBroker `short_borrow_rate` 融券借券成本 |
 
-### Phase G 完成標誌
+### Phase G 完成總結
 
-- PortfolioOptimizer 支援 10+ 方法 (含 CVaR、Robust、MVSK、Index Tracking)
-- RiskModel 支援 GARCH + 因子模型共變異數
-- 回測引擎支援 Multiple Randomized + PBO + k-fold
-- 績效報告含 VaR/CVaR/Rolling Sharpe
-- Pairs Trading 升級為協整合 + Kalman
+- PortfolioOptimizer: **13 方法** (EW/IV/RP/MVO/BL/HRP/CVaR/MaxDD/Robust/Resampled/GMV/MaxSharpe/IndexTracking)
+- RiskModel: GARCH(1,1) + PCA 因子模型共變異數 + VaR/CVaR + James-Stein
+- 回測: Randomized + PBO (CSCV) + k-fold CV + Stress Test + 回測防護 (存活偏差/借券/異常)
+- 績效: Omega Ratio + Rolling Sharpe + VaR/CVaR
+- 策略: Pairs Trading Engle-Granger 共整合
+- **未完成項目移至 Phase H**: MVSK, 非高斯建模, Downside Risk, HERC/NCO, Kalman Filter
+
+---
+
+## Phase H：學術精煉（論文驅動的第二輪升級）
+
+> G 階段遺留項目 + 論文 (`docs/ref/`) 中尚未覆蓋的重要方法
+
+### H1: Deflated Sharpe Ratio + MinBTL (🔴 P0)
+
+| 子任務 | 說明 | 論文依據 | 難度 |
+|--------|------|---------|------|
+| H1a | `deflated_sharpe()` — SR 校正 N_trials, skewness, kurtosis | Bailey et al. (2015) §3 | 低 |
+| H1b | `min_backtest_length()` — 給定 N 策略，最短回測時間才能避免偽陽性 | Bailey et al. (2014) | 低 |
+
+**實作位置**: `src/backtest/analytics.py`。
+**價值**: 多重測試校正是回測驗證最關鍵的缺口，防止過度挖掘。
+
+### H2: MVSK 高階矩組合 (🟡 P1)
+
+| 子任務 | 說明 | 論文依據 | 難度 |
+|--------|------|---------|------|
+| H2a | SCA-Q-MVSK 演算法 — Mean-Variance-Skewness-Kurtosis 最佳化 | `highOrderPortfolios` vignette, 書 Ch.9 | 高 |
+
+**實作位置**: `src/portfolio/optimizer.py` 新增 `OptimizationMethod.MVSK`。
+**價值**: 金融報酬有顯著偏態+峰態，MV 不足以捕捉尾部風險偏好。
+
+### H3: 非高斯建模 (🟡 P1)
+
+| 子任務 | 說明 | 論文依據 | 難度 |
+|--------|------|---------|------|
+| H3a | Tyler's M-estimator — 穩健共變異數估計 | `fitHeavyTail` vignette, 書 Ch.2 | 高 |
+| H3b | Skewed-t 分布擬合 — 厚尾+偏態建模 | `fitHeavyTail` vignette | 高 |
+
+**實作位置**: `src/portfolio/risk_model.py`。
+
+### H4: Downside Risk + EVaR (🟡 P1)
+
+| 子任務 | 說明 | 論文依據 | 難度 |
+|--------|------|---------|------|
+| H4a | Semi-variance 組合最佳化 — 只懲罰下行波動 | 書 Ch.10 | 低 |
+| H4b | Entropic Value at Risk (EVaR) — 比 CVaR 更嚴格的 coherent risk measure | 書 Ch.10 | 中 |
+
+**實作位置**: `src/portfolio/optimizer.py`。
+
+### H5: 進階擴展 (🟢 P2)
+
+| 子任務 | 說明 | 論文依據 | 難度 |
+|--------|------|---------|------|
+| H5a | Kalman Filter 動態 hedge ratio — Pairs Trading 升級 | 書 Ch.15 | 中 |
+| H5b | HERC / NCO — HRP 等風險貢獻版 + 巢狀叢集最佳化 | 書 Ch.12, López de Prado | 中 |
+| H5c | 非線性共變異數收縮 — Ledoit-Wolf (2017) RMT eigenvalue 收縮 | Ledoit-Wolf (2017) | 高 |
 
 ---
 
@@ -411,10 +455,16 @@ trade = api.place_order(contract, order, timeout=0)  # 立即返回
 | 2026-03-26 | F2: 持久化 + 告警 + 安全熔斷 |
 | 2026-03-26 | F3a: Auto-Alpha API (10 端點) |
 | 2026-03-26 | F4: Regime 策略引擎 + 動態因子池 |
-| TBD | G1: 風險度量升級 (VaR/CVaR/Drawdown 組合最佳化) |
-| TBD | G2: 穩健最佳化 (Robust/Resampling/James-Stein) |
-| TBD | G3: 回測方法論 (Randomized/PBO/k-fold/Stress Test) |
-| TBD | G4-G8: 數據建模/高階組合/策略/績效/防護升級 |
+| 2026-03-26 | G1: 風險度量 (VaR/CVaR 計算 + CVaR 最佳化 + MaxDD 最佳化) |
+| 2026-03-26 | G2: 穩健最佳化 (Robust/Resampled/James-Stein) |
+| 2026-03-26 | G3: 回測方法論 (Randomized/PBO/k-fold/Stress Test) |
+| 2026-03-26 | G4: GARCH(1,1) + PCA 因子模型共變異數 |
+| 2026-03-26 | G5: GMV + MaxSharpe + Index Tracking |
+| 2026-03-26 | G6: Pairs Trading 共整合 (Engle-Granger) |
+| 2026-03-26 | G7-G8: Omega/Rolling Sharpe + 回測防護 (存活偏差/借券/異常) |
+| TBD | H1: Deflated Sharpe Ratio + MinBTL (P0) |
+| TBD | H2-H4: MVSK + 非高斯建模 + Downside Risk + EVaR (P1) |
+| TBD | H5: Kalman Filter + HERC/NCO + 非線性收縮 (P2) |
 
 ---
 
