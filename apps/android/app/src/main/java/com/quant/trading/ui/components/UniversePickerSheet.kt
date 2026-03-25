@@ -100,6 +100,7 @@ fun UniversePickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxSize()
+                .statusBarsPadding()
                 .navigationBarsPadding(),
         ) {
             // ── Header ──────────────────────────────────────────────

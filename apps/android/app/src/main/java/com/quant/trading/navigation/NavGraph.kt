@@ -37,6 +37,7 @@ fun QuantNavHost(
     val showBottomBar = currentRoute != Screen.Login.route
 
     Scaffold(
+        contentWindowInsets = WindowInsets.systemBars,
         bottomBar = {
             if (showBottomBar) {
                 BottomNavBar(
