@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from src.alpha.auto.config import AutoAlphaConfig, FactorScore, ResearchSnapshot
 from src.alpha.regime import MarketRegime
@@ -125,6 +126,87 @@ class AlphaDecisionEngine:
             regime=snapshot.regime,
             reason=reason,
         )
+
+    def explain_regime_adjustment(
+        self,
+        base_weights: dict[str, float],
+        regime: MarketRegime,
+    ) -> dict[str, dict[str, Any]]:
+        """Explain how regime bias adjusts each factor's weight.
+
+        Parameters
+        ----------
+        base_weights:
+            Pre-regime factor weights (unnormalised is fine; they will be
+            treated as relative magnitudes).
+        regime:
+            Current market regime.
+
+        Returns
+        -------
+        Dict keyed by factor name, each value containing:
+            base_weight, bias, adjusted_weight (normalised), reason.
+        """
+        bias_map = REGIME_FACTOR_BIAS.get(regime, {})
+
+        _REGIME_REASON: dict[MarketRegime, dict[str, str]] = {
+            MarketRegime.BULL: {
+                "momentum": "Bull market favors momentum",
+                "quality_roe": "Bull market rewards quality growth",
+                "volatility": "Volatility factor less effective in bull markets",
+                "mean_reversion": "Mean reversion weakens in trending bull markets",
+            },
+            MarketRegime.BEAR: {
+                "volatility": "Low-volatility stocks outperform in bear markets",
+                "value_pe": "Value factor strengthens in bear markets",
+                "momentum": "Momentum crashes are common in bear markets",
+                "max_ret": "Lottery stocks revert harder in downturns",
+            },
+            MarketRegime.SIDEWAYS: {
+                "mean_reversion": "Sideways markets favor mean-reversion strategies",
+                "rsi": "RSI signals are stronger in range-bound markets",
+                "momentum": "Momentum is weaker without a clear trend",
+            },
+        }
+
+        regime_reasons = _REGIME_REASON.get(regime, {})
+
+        # Compute adjusted (unnormalised) values
+        adjusted_raw: dict[str, float] = {}
+        for name, bw in base_weights.items():
+            bias = bias_map.get(name, 1.0)
+            adjusted_raw[name] = bw * bias
+
+        # Normalise
+        total = sum(adjusted_raw.values())
+        if total <= 0:
+            total = 1.0
+
+        base_total = sum(base_weights.values())
+        if base_total <= 0:
+            base_total = 1.0
+
+        result: dict[str, dict[str, Any]] = {}
+        for name, bw in base_weights.items():
+            bias = bias_map.get(name, 1.0)
+            adj_norm = adjusted_raw[name] / total
+            base_norm = bw / base_total
+
+            if bias > 1.0:
+                default_reason = f"{regime.value.capitalize()} market boosts {name}"
+            elif bias < 1.0:
+                default_reason = f"{regime.value.capitalize()} market penalises {name}"
+            else:
+                default_reason = "No regime adjustment"
+
+            result[name] = {
+                "base_weight": round(base_norm, 6),
+                "bias": bias,
+                "adjusted_weight": round(adj_norm, 6),
+                "reason": regime_reasons.get(name, default_reason),
+            }
+
+        return result
 
     # ------------------------------------------------------------------
     # Internal helpers

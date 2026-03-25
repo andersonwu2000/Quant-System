@@ -9,7 +9,9 @@ from src.alpha.auto.config import (
     ResearchSnapshot,
 )
 from src.alpha.auto.decision import AlphaDecisionEngine, DecisionResult
+from src.alpha.auto.dynamic_pool import DynamicFactorPool, FactorPoolResult
 from src.alpha.auto.executor import AlphaExecutor, ExecutionResult
+from src.alpha.auto.factor_tracker import FactorPerformanceTracker
 from src.alpha.auto.researcher import AlphaResearcher
 from src.alpha.auto.safety import SafetyChecker, SafetyResult
 from src.alpha.auto.scheduler import AlphaScheduler
@@ -27,7 +29,10 @@ __all__ = [
     "AutoAlphaConfig",
     "DecisionConfig",
     "DecisionResult",
+    "DynamicFactorPool",
     "ExecutionResult",
+    "FactorPerformanceTracker",
+    "FactorPoolResult",
     "FactorScore",
     "ResearchSnapshot",
     "SafetyChecker",

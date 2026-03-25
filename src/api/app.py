@@ -17,7 +17,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from src.api.auth import verify_ws_token
 from src.api.middleware import AuditMiddleware
-from src.api.routes import admin, allocation, alpha, auth, backtest, execution, orders, portfolio, risk, scanner, strategies, system
+from src.api.routes import admin, allocation, alpha, auth, auto_alpha, backtest, execution, orders, portfolio, risk, scanner, strategies, system
 from src.api.ws import ws_manager
 from src.config import get_config
 from src.logging_config import setup_logging
@@ -90,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(admin.router, prefix="/api/v1")
     app.include_router(alpha.router, prefix="/api/v1")
+    app.include_router(auto_alpha.router, prefix="/api/v1")
     app.include_router(allocation.router, prefix="/api/v1")
     app.include_router(portfolio.router, prefix="/api/v1")
     app.include_router(strategies.router, prefix="/api/v1")

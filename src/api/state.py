@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
+from src.alpha.auto.config import AutoAlphaConfig
+from src.alpha.auto.store import AlphaStore
 from src.data.store import DataStore
 from src.domain.models import Portfolio
 from src.execution.execution_service import ExecutionService
@@ -36,6 +38,10 @@ class AppState:
     strategies: dict[str, dict[str, Any]] = field(default_factory=dict)
     backtest_tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     alpha_tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Auto-alpha state
+    auto_alpha_config: AutoAlphaConfig = field(default_factory=AutoAlphaConfig)
+    alpha_store: AlphaStore = field(default_factory=AlphaStore)
+    auto_alpha_running: bool = False
     # 保護 portfolio mutation 的非同步鎖
     mutation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # 保護 backtest_tasks 跨執行緒存取
