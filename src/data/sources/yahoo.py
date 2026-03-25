@@ -64,6 +64,10 @@ class YahooFeed(DataFeed):
 
         df: pd.DataFrame = self._cache[cache_key]
 
+        # 確保 index 是 DatetimeIndex（parquet 快取載入後可能退化）
+        if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+
         if start is not None:
             df = df[df.index >= pd.Timestamp(start)]
         if end is not None:
@@ -126,10 +130,12 @@ class YahooFeed(DataFeed):
         df.columns = [c.lower() for c in df.columns]
         df = df[["open", "high", "low", "close", "volume"]].copy()
 
-        # 統一為 tz-naive 避免比較問題
+        # 統一為 tz-naive DatetimeIndex 避免比較問題
         dti = pd.DatetimeIndex(df.index)
         if dti.tz is not None:
             df.index = dti.tz_convert("UTC").tz_localize(None)
+        else:
+            df.index = dti  # 確保 index 始終是 DatetimeIndex
 
         df = df.sort_index()
 
