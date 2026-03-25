@@ -210,7 +210,6 @@ jobs:
             | Web Build | ✅ |
             | Shared Tests | ✅ |
             | Android Build | ✅ |
-            | Mobile Typecheck | ✅ |
             | E2E Tests | ✅ |
           files: |
             dist/quant-trading-${{ steps.version.outputs.tag }}.apk

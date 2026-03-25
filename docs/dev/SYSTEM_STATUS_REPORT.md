@@ -13,7 +13,7 @@
 
 多資產投資組合研究與優化系統，覆蓋台股、美股、ETF（含債券/商品 ETF 代理）、台灣期貨、美國期貨。面向個人投資者與家庭資產管理。
 
-**Monorepo 結構**: Python 後端 + React 18 Web + React Native Mobile + TypeScript 共享套件。
+**Monorepo 結構**: Python 後端 + React 18 Web + Android Native (Kotlin/Compose) + TypeScript 共享套件。
 
 **目標市場**: 台灣股市（手續費 0.1425%、證交稅 0.3%）為預設，透過 Yahoo Finance / FinMind / Shioaji 支援全球市場。
 
@@ -28,7 +28,7 @@
 | API 框架 | FastAPI + Uvicorn | — |
 | 資料庫 | PostgreSQL 16 (prod) / SQLite (dev) | Alembic 4 migrations |
 | Web 前端 | React 18 + Vite + Tailwind CSS | — |
-| Mobile | React Native + Expo 52 | — |
+| Mobile | Android Native (Kotlin + Jetpack Compose) | — |
 | 共享套件 | `@quant/shared` TypeScript | — |
 | 券商 SDK | Shioaji (永豐金) | 1.3.2 |
 | CI/CD | GitHub Actions (9 jobs) | — |
@@ -49,8 +49,7 @@
 | 測試數量 (pytest collected) | **726** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
-| Mobile 檔案 (.tsx/.ts) | 40 |
-| Mobile LOC | 3,004 |
+| Android 檔案 (.kt) | 40+ |
 | 共享套件檔案 (.ts) | 11 |
 | 共享套件 LOC | 1,257 |
 | **全系統 LOC** | **~41,250** |
@@ -257,13 +256,7 @@
 
 **i18n**: 英文 + 繁體中文 (`useT` hook + localStorage 持久化)
 
-### 6.2 Mobile (React Native + Expo 52)
-
-7 tabs: Dashboard / Backtest / Alpha / Strategies / Orders / Risk / Settings
-
-**特色**: Victory Native 圖表, Expo SecureStore 憑證, OfflineBanner, Role-based 功能控制
-
-### 6.2.1 Android Native (Jetpack Compose)
+### 6.2 Android Native (Jetpack Compose)
 
 Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 - 市場分頁（US / TW / ETF）+ 搜尋 + 板塊分組
@@ -302,7 +295,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 |------|------|--------|
 | Web | Vitest + jsdom | 18 |
 | Web E2E | Playwright | 3 |
-| Mobile | Jest | 14 |
+| Android | JUnit / Compose Test | — |
 | Shared | Vitest | 4 |
 
 ### 7.3 CI/CD Pipeline（9 jobs）
@@ -323,7 +316,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 
 - **位置**：`.githooks/pre-push`
 - **啟用**：`make setup-hooks`（執行 `git config core.hooksPath .githooks`）
-- **執行內容**：ruff lint → mypy → pytest tests/unit/ → web/mobile typecheck
+- **執行內容**：ruff lint → mypy → pytest tests/unit/ → web typecheck
 - **跳過選項**：`git push --no-verify` / `SKIP_LINT=1` / `SKIP_TESTS=1`
 - **完整模式**：`FULL_CHECK=1 git push`（加跑 web/shared vitest）
 
@@ -390,7 +383,7 @@ volumes:
 | 多幣別 Portfolio | ✅ 完成 | nav_in_base / currency_exposure / per-bar FX |
 | API | ✅ 完成 | 44 端點 + WebSocket + JWT/RBAC + 限流 + 審計 |
 | Web 前端 | ✅ 完成 | 10 頁 + i18n (en/zh) + 深色主題 |
-| Mobile | ✅ 完成 | 7 tabs + Expo SecureStore + OfflineBanner |
+| Android | ✅ 完成 | Jetpack Compose + Material 3 + UniversePicker |
 | Android Native | 🟡 進行中 | Backtest tab + UniversePickerSheet (Material 3) + i18n |
 
 ### 9.2 交易執行（Phase E）
@@ -486,7 +479,7 @@ make dev              # API 熱重載 port 8000
 # 前端
 make install-apps     # bun install
 make web              # Web dev server port 3000
-make mobile           # Expo dev server
+cd apps/android && ./gradlew assembleDebug   # Android debug APK
 
 # 全端
 make start            # 後端 + Web 並行
