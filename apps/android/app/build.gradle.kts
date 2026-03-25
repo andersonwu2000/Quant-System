@@ -24,9 +24,9 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("../release-key.jks")
-            storePassword = "quanttrading2026"
-            keyAlias = "quant"
-            keyPassword = "quanttrading2026"
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: project.findProperty("KEYSTORE_PASSWORD") as? String ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: project.findProperty("KEY_ALIAS") as? String ?: "quant"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: project.findProperty("KEY_PASSWORD") as? String ?: ""
         }
     }
 

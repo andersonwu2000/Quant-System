@@ -1,10 +1,13 @@
 package com.quant.trading.di
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import com.quant.trading.BuildConfig
 import com.quant.trading.data.api.AuthInterceptor
+import com.quant.trading.data.api.DynamicBaseUrlInterceptor
 import com.quant.trading.data.api.QuantApiService
+import com.quant.trading.data.api.UnauthorizedInterceptor
 import com.quant.trading.data.api.WebSocketManager
-import com.quant.trading.data.local.SecureStorage
+import com.quant.trading.data.local.SecureStorage  // Used by WebSocketManager provider
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -29,14 +32,25 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient {
+    fun provideOkHttpClient(
+        authInterceptor: AuthInterceptor,
+        dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor,
+        unauthorizedInterceptor: UnauthorizedInterceptor,
+    ): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(dynamicBaseUrlInterceptor)
             .addInterceptor(authInterceptor)
-            .addInterceptor(
-                HttpLoggingInterceptor().apply {
-                    level = HttpLoggingInterceptor.Level.BODY
+            .addInterceptor(unauthorizedInterceptor)
+            .apply {
+                // Only log HTTP bodies in debug builds to avoid OOM and credential leaks
+                if (BuildConfig.DEBUG) {
+                    addInterceptor(
+                        HttpLoggingInterceptor().apply {
+                            level = HttpLoggingInterceptor.Level.BODY
+                        }
+                    )
                 }
-            )
+            }
             .connectTimeout(120, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
@@ -48,11 +62,11 @@ object NetworkModule {
     @Singleton
     fun provideRetrofit(
         okHttpClient: OkHttpClient,
-        storage: SecureStorage,
     ): Retrofit {
-        val baseUrl = storage.getServerUrl() ?: "http://10.0.2.2:8000/"
+        // Placeholder base URL — DynamicBaseUrlInterceptor rewrites to the actual server URL.
+        // Retrofit requires a valid base URL at build time; the interceptor overrides it per-request.
         return Retrofit.Builder()
-            .baseUrl(baseUrl.trimEnd('/') + "/")
+            .baseUrl("http://localhost/")
             .client(okHttpClient)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()

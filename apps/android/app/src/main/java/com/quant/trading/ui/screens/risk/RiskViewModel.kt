@@ -52,13 +52,23 @@ class RiskViewModel @Inject constructor(
 
     fun toggleRule(name: String, enabled: Boolean) {
         viewModelScope.launch {
-            try { api.toggleRiskRule(name, RiskRuleToggle(enabled)); load() } catch (_: Exception) {}
+            try {
+                api.toggleRiskRule(name, RiskRuleToggle(enabled))
+                load()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Failed to toggle rule")
+            }
         }
     }
 
     fun killSwitch() {
         viewModelScope.launch {
-            try { api.killSwitch(); load() } catch (_: Exception) {}
+            try {
+                api.killSwitch()
+                load()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Kill switch failed")
+            }
         }
     }
 

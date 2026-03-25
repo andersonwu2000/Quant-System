@@ -89,8 +89,10 @@ class SettingsViewModel @Inject constructor(
             try {
                 val m = api.systemMetrics()
                 _state.value = _state.value.copy(metrics = m, metricsLoading = false)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 _state.value = _state.value.copy(metricsLoading = false)
+                // Metrics loading failure is non-critical, log but don't block UI
+                android.util.Log.w("SettingsViewModel", "Failed to load metrics: ${e.message}")
             }
         }
     }

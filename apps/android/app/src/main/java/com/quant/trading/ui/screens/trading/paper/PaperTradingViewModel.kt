@@ -47,13 +47,20 @@ class PaperTradingViewModel @Inject constructor(
             try {
                 val r = api.reconcile()
                 _state.value = _state.value.copy(reconcileResult = r)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Reconciliation failed")
+            }
         }
     }
 
     fun autoCorrect() {
         viewModelScope.launch {
-            try { api.autoCorrect() } catch (_: Exception) {}
+            try {
+                api.autoCorrect()
+                load()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Auto-correct failed")
+            }
         }
     }
 }

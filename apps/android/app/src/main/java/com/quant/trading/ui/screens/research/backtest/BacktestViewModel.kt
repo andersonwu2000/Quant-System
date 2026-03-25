@@ -7,10 +7,13 @@ import com.quant.trading.data.api.BacktestResult
 import com.quant.trading.data.api.BacktestSummary
 import com.quant.trading.data.api.QuantApiService
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 
 @HiltViewModel
@@ -75,31 +78,38 @@ class BacktestViewModel @Inject constructor(
     }
 
     private suspend fun pollResult(taskId: String) {
-        while (true) {
-            delay(2000)
-            try {
-                val status = api.backtestStatus(taskId)
-                val progressVal = if (status.progressTotal != null && status.progressTotal > 0) {
-                    (status.progressCurrent ?: 0).toFloat() / status.progressTotal
-                } else 0f
+        try {
+            // Timeout after 10 minutes to prevent infinite polling
+            withTimeout(600_000L) {
+                while (currentCoroutineContext().isActive) {
+                    delay(2000)
+                    try {
+                        val status = api.backtestStatus(taskId)
+                        val progressVal = if (status.progressTotal != null && status.progressTotal > 0) {
+                            (status.progressCurrent ?: 0).toFloat() / status.progressTotal
+                        } else 0f
 
-                _state.value = _state.value.copy(summary = status, progress = progressVal)
+                        _state.value = _state.value.copy(summary = status, progress = progressVal)
 
-                when (status.status) {
-                    "completed" -> {
-                        val result = api.backtestResult(taskId)
-                        _state.value = _state.value.copy(running = false, result = result)
-                        return
-                    }
-                    "failed" -> {
-                        _state.value = _state.value.copy(running = false, error = status.error ?: "Backtest failed")
-                        return
+                        when (status.status) {
+                            "completed" -> {
+                                val result = api.backtestResult(taskId)
+                                _state.value = _state.value.copy(running = false, result = result)
+                                return@withTimeout
+                            }
+                            "failed" -> {
+                                _state.value = _state.value.copy(running = false, error = status.error ?: "Backtest failed")
+                                return@withTimeout
+                            }
+                        }
+                    } catch (e: Exception) {
+                        _state.value = _state.value.copy(running = false, error = e.message)
+                        return@withTimeout
                     }
                 }
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(running = false, error = e.message)
-                return
             }
+        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+            _state.value = _state.value.copy(running = false, error = "Backtest timed out after 10 minutes")
         }
     }
 }

@@ -3,6 +3,7 @@ package com.quant.trading.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -14,13 +15,17 @@ import javax.inject.Singleton
 
 /**
  * Encrypted credential storage backed by Android Keystore.
+ * Falls back to plain SharedPreferences if Keystore is corrupted
+ * (known issue on some Samsung/Xiaomi devices and after backup-restore).
  */
 @Singleton
 class SecureStorage @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val appContext: Context,
 ) {
     companion object {
+        private const val TAG = "SecureStorage"
         private const val PREFS_NAME = "quant_secure_prefs"
+        private const val FALLBACK_PREFS_NAME = "quant_prefs_fallback"
         private const val KEY_JWT = "jwt_token"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_SERVER_URL = "server_url"
@@ -29,16 +34,27 @@ class SecureStorage @Inject constructor(
     }
 
     private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        try {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appContext,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "EncryptedSharedPreferences failed, falling back to plain prefs", e)
+            // Delete corrupted prefs file to prevent repeated failures
+            try {
+                appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit().clear().apply()
+            } catch (_: Exception) { /* best effort */ }
+            // Fallback to unencrypted SharedPreferences
+            appContext.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)
+        }
     }
 
     // ── JWT ─────────────────────────────────────────────────────────────────

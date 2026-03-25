@@ -50,7 +50,9 @@ class OrdersViewModel @Inject constructor(
             try {
                 api.createOrder(ManualOrderRequest(symbol, side, quantity, price))
                 load()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Failed to create order")
+            }
         }
     }
 }

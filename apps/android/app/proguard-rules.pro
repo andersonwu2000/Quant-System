@@ -5,12 +5,16 @@
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }
 -keepclasseswithmembers class kotlinx.serialization.json.** { kotlinx.serialization.KSerializer serializer(...); }
 
-# Keep all @Serializable data classes
--keep,includedescriptorclasses class com.quant.trading.data.api.**$$serializer { *; }
--keepclassmembers class com.quant.trading.data.api.** {
+# Keep all @Serializable data classes (api models + any other data package)
+-keep,includedescriptorclasses class com.quant.trading.data.**$$serializer { *; }
+-keepclassmembers class com.quant.trading.data.** {
     *** Companion;
     *** serializer(...);
 }
+-keepnames class com.quant.trading.data.** { *; }
+
+# Keep kotlinx.serialization core
+-keep class kotlinx.serialization.** { *; }
 
 # Retrofit
 -keepattributes Signature, Exceptions

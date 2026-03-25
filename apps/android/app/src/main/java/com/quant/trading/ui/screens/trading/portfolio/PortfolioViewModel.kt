@@ -44,7 +44,9 @@ class PortfolioViewModel @Inject constructor(
             try {
                 api.createSavedPortfolio(PortfolioCreateRequest(name, initialCash))
                 load()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Failed to create portfolio")
+            }
         }
     }
 
@@ -53,7 +55,9 @@ class PortfolioViewModel @Inject constructor(
             try {
                 api.deleteSavedPortfolio(id)
                 load()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Failed to delete portfolio")
+            }
         }
     }
 }

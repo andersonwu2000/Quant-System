@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.quant.trading.data.api.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 
 @HiltViewModel
@@ -58,25 +61,32 @@ class AlphaViewModel @Inject constructor(
     }
 
     private suspend fun pollResult(taskId: String) {
-        while (true) {
-            delay(2000)
-            try {
-                val status = api.alphaStatus(taskId)
-                when (status.status) {
-                    "completed" -> {
-                        val report = api.alphaResult(taskId)
-                        _state.value = _state.value.copy(running = false, report = report)
-                        return
-                    }
-                    "failed" -> {
-                        _state.value = _state.value.copy(running = false, error = status.error ?: "Alpha run failed")
-                        return
+        try {
+            // Timeout after 10 minutes to prevent infinite polling
+            withTimeout(600_000L) {
+                while (currentCoroutineContext().isActive) {
+                    delay(2000)
+                    try {
+                        val status = api.alphaStatus(taskId)
+                        when (status.status) {
+                            "completed" -> {
+                                val report = api.alphaResult(taskId)
+                                _state.value = _state.value.copy(running = false, report = report)
+                                return@withTimeout
+                            }
+                            "failed" -> {
+                                _state.value = _state.value.copy(running = false, error = status.error ?: "Alpha run failed")
+                                return@withTimeout
+                            }
+                        }
+                    } catch (e: Exception) {
+                        _state.value = _state.value.copy(running = false, error = e.message)
+                        return@withTimeout
                     }
                 }
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(running = false, error = e.message)
-                return
             }
+        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+            _state.value = _state.value.copy(running = false, error = "Alpha run timed out after 10 minutes")
         }
     }
 }

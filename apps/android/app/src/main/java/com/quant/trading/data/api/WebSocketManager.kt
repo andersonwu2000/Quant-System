@@ -6,6 +6,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import okhttp3.*
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.min
@@ -33,9 +34,9 @@ class WebSocketManager @Inject constructor(
     private val _messages = MutableSharedFlow<WsMessage>(extraBufferCapacity = 64)
     val messages: SharedFlow<WsMessage> = _messages
 
-    private val connections = mutableMapOf<Channel, WebSocket>()
+    private val connections = ConcurrentHashMap<Channel, WebSocket>()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var retryCount = mutableMapOf<Channel, Int>()
+    private val retryCount = ConcurrentHashMap<Channel, Int>()
 
     fun connect(channel: Channel) {
         if (connections.containsKey(channel)) return

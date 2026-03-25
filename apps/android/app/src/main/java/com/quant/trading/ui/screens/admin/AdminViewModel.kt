@@ -40,7 +40,12 @@ class AdminViewModel @Inject constructor(
 
     fun deleteUser(id: Int) {
         viewModelScope.launch {
-            try { api.deleteUser(id); load() } catch (_: Exception) {}
+            try {
+                api.deleteUser(id)
+                load()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Failed to delete user")
+            }
         }
     }
 }

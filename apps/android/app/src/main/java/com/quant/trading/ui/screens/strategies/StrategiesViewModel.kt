@@ -40,13 +40,23 @@ class StrategiesViewModel @Inject constructor(
 
     fun start(name: String) {
         viewModelScope.launch {
-            try { api.startStrategy(name); load() } catch (_: Exception) {}
+            try {
+                api.startStrategy(name)
+                load()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Failed to start strategy")
+            }
         }
     }
 
     fun stop(name: String) {
         viewModelScope.launch {
-            try { api.stopStrategy(name); load() } catch (_: Exception) {}
+            try {
+                api.stopStrategy(name)
+                load()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Failed to stop strategy")
+            }
         }
     }
 }
