@@ -14,15 +14,16 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
  * All navigation destinations in the app.
+ * Labels kept short (<=8 chars) to avoid bottom nav text wrapping.
  */
 sealed class Screen(
     val route: String,
     val icon: ImageVector,
     val label: String,
 ) {
-    data object Dashboard : Screen("dashboard", Icons.Default.Dashboard, "Dashboard")
-    data object Trading : Screen("trading", Icons.Default.SwapHoriz, "Trading")
-    data object Strategies : Screen("strategies", Icons.Default.AutoGraph, "Strategies")
+    data object Dashboard : Screen("dashboard", Icons.Default.Dashboard, "Home")
+    data object Trading : Screen("trading", Icons.Default.SwapHoriz, "Trade")
+    data object Strategies : Screen("strategies", Icons.Default.AutoGraph, "Strategy")
     data object Research : Screen("research", Icons.Default.Science, "Research")
     data object Risk : Screen("risk", Icons.Default.ShieldMoon, "Risk")
     data object Guide : Screen("guide", Icons.Default.MenuBook, "Guide")

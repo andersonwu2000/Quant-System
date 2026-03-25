@@ -18,8 +18,8 @@ fun AllocationTab(viewModel: AllocationViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Button(onClick = viewModel::compute, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
             if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)

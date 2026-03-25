@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.quant.trading.R
@@ -17,8 +18,9 @@ fun AlphaTab(viewModel: AlphaViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Input
         item {
@@ -46,10 +48,10 @@ fun AlphaTab(viewModel: AlphaViewModel = hiltViewModel()) {
         state.report?.factors?.let { factors ->
             items(factors) { f ->
                 QuantCard {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(f.name, style = MaterialTheme.typography.titleSmall)
+                    Column(Modifier.padding(16.dp)) {
+                        Text(f.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             MetricCard(label = stringResource(R.string.alpha_ic), value = "%.4f".format(f.ic.icMean), modifier = Modifier.weight(1f))
                             MetricCard(label = stringResource(R.string.alpha_icir), value = "%.2f".format(f.ic.icir), modifier = Modifier.weight(1f))
                             MetricCard(label = stringResource(R.string.alpha_sharpe), value = "%.2f".format(f.longShortSharpe), modifier = Modifier.weight(1f))

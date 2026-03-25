@@ -8,12 +8,12 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
-import com.quant.trading.R
 import com.quant.trading.data.local.SecureStorage
 import com.quant.trading.ui.screens.admin.AdminScreen
 import com.quant.trading.ui.screens.dashboard.DashboardScreen
@@ -104,11 +104,17 @@ private fun BottomNavBar(
 ) {
     var showMore by remember { mutableStateOf(false) }
 
-    NavigationBar {
+    NavigationBar(tonalElevation = 2.dp) {
         Screen.primaryTabs.forEach { screen ->
             NavigationBarItem(
                 icon = { Icon(screen.icon, contentDescription = screen.label) },
-                label = { Text(screen.label) },
+                label = {
+                    Text(
+                        text = screen.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 selected = currentRoute == screen.route,
                 onClick = { onNavigate(screen) },
             )
@@ -138,7 +144,13 @@ private fun BottomNavBar(
                     }
                 }
             },
-            label = { Text("More") },
+            label = {
+                Text(
+                    text = "More",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
             selected = Screen.moreTabs.any { it.route == currentRoute },
             onClick = { showMore = !showMore },
         )

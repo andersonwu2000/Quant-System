@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quant.trading.R
 import com.quant.trading.ui.components.QuantCard
@@ -32,7 +33,8 @@ fun GuideScreen() {
     )
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
@@ -53,7 +55,7 @@ fun GuideScreen() {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(chapter.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        Text(chapter.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Icon(
                             if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = null,

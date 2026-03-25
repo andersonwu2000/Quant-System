@@ -86,15 +86,22 @@ fun UniversePickerSheet(
         )
     }
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.Hidden },
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = null,
-        modifier = Modifier.fillMaxHeight(0.92f),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxSize()
+                .navigationBarsPadding(),
+        ) {
             // ── Header ──────────────────────────────────────────────
             Row(
                 modifier = Modifier

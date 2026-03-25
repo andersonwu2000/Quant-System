@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.quant.trading.R
@@ -34,8 +35,9 @@ fun PortfolioTab(viewModel: PortfolioViewModel = hiltViewModel()) {
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             Row(
@@ -56,12 +58,12 @@ fun PortfolioTab(viewModel: PortfolioViewModel = hiltViewModel()) {
             items(state.portfolios) { p ->
                 QuantCard {
                     Row(
-                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(p.name, style = MaterialTheme.typography.titleSmall)
+                            Text(p.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 "${p.strategyName} · ${p.positionCount} positions",
                                 style = MaterialTheme.typography.bodySmall,

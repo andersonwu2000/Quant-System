@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.quant.trading.R
@@ -23,8 +24,9 @@ fun RiskScreen(viewModel: RiskViewModel = hiltViewModel()) {
     state.error?.let { ErrorAlert(it, onRetry = viewModel::load); return }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             Text(stringResource(R.string.nav_risk), style = MaterialTheme.typography.headlineSmall)
@@ -48,11 +50,11 @@ fun RiskScreen(viewModel: RiskViewModel = hiltViewModel()) {
         items(state.rules) { rule ->
             QuantCard {
                 Row(
-                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(rule.name, style = MaterialTheme.typography.bodyMedium)
+                    Text(rule.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Switch(
                         checked = rule.enabled,
                         onCheckedChange = { viewModel.toggleRule(rule.name, it) },
@@ -69,10 +71,10 @@ fun RiskScreen(viewModel: RiskViewModel = hiltViewModel()) {
         } else {
             items(state.alerts) { alert ->
                 QuantCard {
-                    Column(Modifier.padding(12.dp)) {
+                    Column(Modifier.padding(16.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             StatusBadge(alert.severity)
-                            Text(alert.ruleName, style = MaterialTheme.typography.titleSmall)
+                            Text(alert.ruleName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Text(alert.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(Format.date(alert.timestamp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

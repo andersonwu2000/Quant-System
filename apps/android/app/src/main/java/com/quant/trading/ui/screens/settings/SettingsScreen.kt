@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -28,7 +29,7 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
@@ -41,7 +42,7 @@ fun SettingsScreen(
             Column(Modifier.padding(16.dp)) {
                 Text(stringResource(R.string.settings_server_url), style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(4.dp))
-                Text(state.serverUrl, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(state.serverUrl, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(4.dp))
                 Text("Role: ${state.role}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -119,12 +120,12 @@ fun SettingsScreen(
                     CircularProgressIndicator(Modifier.size(24.dp))
                 } else {
                     state.metrics?.let { m ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             MetricCard(label = "Uptime", value = Format.uptime(m.uptimeSeconds), modifier = Modifier.weight(1f))
                             MetricCard(label = "Requests", value = m.totalRequests.toString(), modifier = Modifier.weight(1f))
                         }
                         Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             MetricCard(label = "WS Conns", value = m.activeWsConnections.toString(), modifier = Modifier.weight(1f))
                             MetricCard(label = "Strategies", value = m.strategiesRunning.toString(), modifier = Modifier.weight(1f))
                         }

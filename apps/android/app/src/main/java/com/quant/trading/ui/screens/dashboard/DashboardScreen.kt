@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.quant.trading.R
@@ -30,8 +31,9 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     val p = state.portfolio ?: return
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp),
     ) {
         // Connection banner
         item {
@@ -45,7 +47,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
 
         // Metric cards row 1
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 MetricCard(
                     label = stringResource(R.string.dashboard_nav),
                     value = Format.currency(p.nav),
@@ -61,7 +63,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
 
         // Metric cards row 2
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 MetricCard(
                     label = stringResource(R.string.dashboard_daily_pnl),
                     value = Format.currency(p.dailyPnl),
@@ -88,19 +90,24 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
             items(p.positions) { pos ->
                 QuantCard {
                     Row(
-                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Column {
-                            Text(pos.symbol, style = MaterialTheme.typography.titleSmall)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(pos.symbol, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                            Spacer(Modifier.height(4.dp))
                             Text(
                                 "Qty: ${pos.quantity.toInt()} · Avg: ${Format.price(pos.avgCost)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        Spacer(Modifier.width(16.dp))
                         Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                            Text(Format.currency(pos.marketValue), style = MaterialTheme.typography.titleSmall)
+                            Text(Format.currency(pos.marketValue), style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                            Spacer(Modifier.height(4.dp))
                             PnlText(
                                 value = pos.unrealizedPnl,
                                 formatted = Format.currency(pos.unrealizedPnl),

@@ -18,8 +18,8 @@ fun PaperTradingTab(viewModel: PaperTradingViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Paper Trading Status
         state.paperStatus?.let { ps ->
@@ -27,7 +27,7 @@ fun PaperTradingTab(viewModel: PaperTradingViewModel = hiltViewModel()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(stringResource(R.string.paper_status), style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         MetricCard(label = "NAV", value = Format.currency(ps.portfolioNav), modifier = Modifier.weight(1f))
                         MetricCard(label = "Open Orders", value = ps.openOrders.toString(), modifier = Modifier.weight(1f))
                     }
