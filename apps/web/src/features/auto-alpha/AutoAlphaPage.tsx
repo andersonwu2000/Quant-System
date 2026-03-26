@@ -126,7 +126,6 @@ export function AutoAlphaPage() {
     setActionLoading("runNow");
     try {
       const resp = await autoAlphaEndpoints.runNow();
-      if (!mountedRef.current) return;
       const taskId = resp.task_id;
       setRunProgress({ taskId, status: "downloading" });
 
@@ -134,11 +133,9 @@ export function AutoAlphaPage() {
       if (pollRef.current) clearInterval(pollRef.current);
       let pollErrors = 0;
       pollRef.current = setInterval(async () => {
-        if (!mountedRef.current) { if (pollRef.current) clearInterval(pollRef.current); return; }
         try {
           const task = await autoAlphaEndpoints.taskStatus(taskId);
           pollErrors = 0; // Reset on success
-          if (!mountedRef.current) return;
           if (task.status === "completed") {
             setRunProgress({
               taskId,
@@ -152,12 +149,12 @@ export function AutoAlphaPage() {
             refreshStatus();
             refreshHistory();
             refreshPerf();
-            setTimeout(() => { if (mountedRef.current) setRunProgress(null); }, 5000);
+            setTimeout(() => setRunProgress(null), 5000);
           } else if (task.status === "failed") {
             setRunProgress({ taskId, status: "failed", error: task.error });
             if (pollRef.current) clearInterval(pollRef.current);
             setActionLoading(null);
-            setTimeout(() => { if (mountedRef.current) setRunProgress(null); }, 8000);
+            setTimeout(() => setRunProgress(null), 8000);
           } else {
             // Still running — update stage
             const stage = task.stage === "researching" ? "researching" : "downloading";
@@ -169,9 +166,10 @@ export function AutoAlphaPage() {
           }
         } catch {
           pollErrors++;
+          // After 3 consecutive errors or 7 minutes, check status endpoint as fallback
           if (pollErrors >= 3) {
             if (pollRef.current) clearInterval(pollRef.current);
-            if (!mountedRef.current) return;
+            // Fallback: check if status shows new data
             try {
               const st = await autoAlphaEndpoints.status();
               if (st.last_run) {
@@ -185,18 +183,17 @@ export function AutoAlphaPage() {
                 refreshStatus();
                 refreshHistory();
                 refreshPerf();
-                setTimeout(() => { if (mountedRef.current) setRunProgress(null); }, 5000);
+                setTimeout(() => setRunProgress(null), 5000);
                 return;
               }
             } catch { /* ignore */ }
             setRunProgress({ taskId, status: "failed", error: "Lost connection to task" });
             setActionLoading(null);
-            setTimeout(() => { if (mountedRef.current) setRunProgress(null); }, 5000);
+            setTimeout(() => setRunProgress(null), 5000);
           }
         }
       }, 5000);
     } catch {
-      if (!mountedRef.current) return;
       toast("error", t.common.requestFailed);
       setActionLoading(null);
       setRunProgress(null);

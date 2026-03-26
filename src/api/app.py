@@ -64,23 +64,14 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         """Application lifespan: startup & shutdown logic."""
-        # ── Startup ──
-        logger.info(
-            "Quant Trading System starting (env=%s, mode=%s)",
-            config.env, config.mode,
-        )
+        logger.info("Quant Trading System starting (env=%s, mode=%s)", config.env, config.mode)
         from src.api.state import get_app_state
         from src.strategy.registry import list_strategies
         state = get_app_state()
-        state.strategies = {
-            name: {"status": "stopped", "pnl": 0.0}
-            for name in list_strategies()
-        }
+        state.strategies = {name: {"status": "stopped", "pnl": 0.0} for name in list_strategies()}
         _seed_admin(config)
 
-        # 初始化 ExecutionService（根據 config.mode）
-        from src.execution.execution_service import ExecutionConfig, ExecutionService as ExecSvc
-
+        from src.execution.service import ExecutionConfig, ExecutionService as ExecSvc
         exec_config = ExecutionConfig(
             mode=config.mode,
             sinopac_api_key=config.sinopac_api_key,
@@ -92,7 +83,6 @@ def create_app() -> FastAPI:
         state.execution_service.initialize()
         logger.info("ExecutionService initialized: mode=%s", config.mode)
 
-        # 背景 Kill Switch 監控（每 5 秒檢查一次）
         async def _kill_switch_monitor() -> None:
             while True:
                 await asyncio.sleep(5)
@@ -109,19 +99,14 @@ def create_app() -> FastAPI:
                     logger.debug("Kill switch monitor error", exc_info=True)
 
         kill_switch_task = asyncio.create_task(_kill_switch_monitor())
-
-        # 啟動 WebSocket server-side ping（主動偵測死連線）
         ws_manager.start_ping_task()
 
-        # 啟動排程器（若啟用）
         from src.scheduler import SchedulerService
-
         scheduler = SchedulerService()
         scheduler.start(config)
 
-        yield  # ── Application running ──
+        yield
 
-        # ── Shutdown ──
         logger.info("Quant Trading System shutting down...")
         scheduler.stop()
         kill_switch_task.cancel()
@@ -216,15 +201,8 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         """捕獲所有未處理的例外，避免洩漏堆疊資訊到客戶端。"""
-        logger.error(
-            "Unhandled exception: %s %s → %s",
-            request.method, request.url.path, exc,
-            exc_info=True,
-        )
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error"},
-        )
+        logger.error("Unhandled exception: %s %s → %s", request.method, request.url.path, exc, exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
     # ── Serve Web 前端靜態檔 ──────────────────────────
     # 若 apps/web/dist 存在，則在 API 之後 mount SPA fallback
@@ -241,7 +219,6 @@ def create_app() -> FastAPI:
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str) -> FileResponse:
             file_path = (web_dist / full_path).resolve()
-            # 防止路徑穿越攻擊：確保解析後的路徑仍在 web_dist 目錄下
             if file_path.is_file() and file_path.is_relative_to(web_dist):
                 return FileResponse(str(file_path))
             return FileResponse(str(web_dist / "index.html"))
