@@ -1,11 +1,11 @@
 # 系統現況追蹤報告書
 
 > **報告日期**: 2026-03-26
-> **版本**: v6.0
-> **當前階段**: Phase A~I + R1-R4 + K 完成, Phase L 進行中（L1~L3 ✅, L4 ⏳）
+> **版本**: v7.0
+> **當前階段**: Phase A~L 完成（L 驗證 6/7, p=0.013）, Phase L+ 待執行（下行保護 + 數據修復）
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v11.0
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v12.0
 
 ---
 
@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 155 (145 src + 10 strategies) |
+| 後端 Python 檔案 (src/ + strategies/) | 156 (146 src + 10 strategies) |
 | 後端 Python LOC | ~25,400 (24,573 + 786) |
 | 測試檔案 | 92 |
 | 測試 LOC | ~16,700 |
-| 測試數量 (pytest collected) | **1,316** |
+| 測試數量 (pytest collected) | **1,329** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |

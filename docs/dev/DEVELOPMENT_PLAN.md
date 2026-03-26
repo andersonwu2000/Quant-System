@@ -1,6 +1,6 @@
 # 開發計畫書
 
-> **version**: v11.0
+> **version**: v12.0
 > **date**: 2026-03-26
 
 ---
@@ -8,9 +8,9 @@
 ## 1. 專案現況
 
 多資產投資組合研究與優化系統。Python 後端 + React Web + Android Native。
-155 後端檔案、~28K LOC、1,316 tests。83 個 Alpha 因子（66 技術 + 17 基本面）、14 種組合最佳化、11 個策略、10 條風控規則。
+156 後端檔案、~28K LOC、1,329 tests。83 個 Alpha 因子（66 技術 + 17 基本面）、14 種組合最佳化、11 個策略、10 條風控規則。
 
-**當前優先級**：**Phase L 驗證通過（6/7）** — revenue_momentum 策略 CAGR +30.5%, p=0.013。OOS 2025 H1 為負，需加下行保護後進入 Phase N Paper Trading。
+**當前優先級**：解決 FinLab 差距分析中的 P0 缺口 — **下行保護** + **倖存者偏差修復**，然後進入 Paper Trading。
 
 ---
 
@@ -32,123 +32,116 @@
 | H | 03-26 | Deflated Sharpe、Semi-Variance、Kalman Pairs | [phase-h](plans/phase-h-refinement.md) |
 | I | 03-26 | Alpha 因子庫擴展：66 技術因子 + Kakushadze | [phase-i](plans/phase-i-alpha-expansion.md) |
 | R1-R4 | 03-26 | 架構重構：TWAP + 交易日曆 + Trading Pipeline | [refactoring](architecture/REFACTORING_PLAN.md) |
-| K | 03-26 | 數據品質 + FinMind 8 dataset + 基本面因子 14 個 | [phase-k](plans/phase-k-data-quality.md) |
-| **L** | **03-26** | **策略轉型：FilterStrategy + revenue_momentum 驗證通過 (6/7, p=0.013)** | [phase-l](plans/phase-l-strategy-pivot.md) |
+| K | 03-26 | 數據品質 + FinMind 8 dataset + 基本面因子 | [phase-k](plans/phase-k-data-quality.md) |
+| L | 03-26 | 策略轉型：FilterStrategy + revenue_momentum 驗證 6/7 | [phase-l](plans/phase-l-strategy-pivot.md) |
 
 ### 待執行
 
 | 階段 | 優先級 | 摘要 | 計畫書 |
 |------|:------:|------|--------|
-| **M** | 🟡 P1 | 因子管理：去冗餘 + 替換機制 + 散戶反向/事件驅動策略 + 擁擠度 | [phase-m](plans/phase-m-factor-management.md) |
+| **L+** | 🔴 P0 | **下行保護 + 數據修復**：空頭偵測、FinMind 價格源、事件時機層 | [phase-l+](plans/phase-l-plus-gap-fix.md) |
+| **M** | 🟡 P1 | 因子管理：去冗餘 + 多策略組合 + AI 自動搜索 | [phase-m](plans/phase-m-factor-management.md) |
 | **N** | 🟡 P1 | Paper Trading：CA 憑證 + 完整循環 + 30 天驗證 | [phase-n](plans/phase-n-paper-trading.md) |
 | J | 🟢 P2 | 跨資產自動化 | [phase-j](plans/phase-j-cross-asset-automation.md) |
 
 ---
 
-## 3. 實驗結論（驅動方向轉變）
+## 3. FinLab 差距分析
 
-> 完整報告見 `docs/dev/test/`
+> 完整報告見 `docs/dev/test/Finlab.md`
 
-### 3.1 Price-volume 因子（15 次實驗，2026-03-26）
+### 3.1 績效差距
 
-- 75 個因子 × 142 支台股 × 7 年：**寬 universe 全部 < ICIR 0.5**
-- Walk-forward 最佳超額：+3.1%/年（mom6m + turnover_vol），超額 SR 0.20
-- **結論：純 price-volume alpha 在台股不顯著**
+| 指標 | 我們 (revenue_momentum) | FinLab 最佳 | 差距 | 差距來源 |
+|------|------------------------|------------|------|---------|
+| CAGR | +30.5% | +60% | -29.5pp | 無事件時機層、單一策略 |
+| Sharpe | 1.51 | Sharpe(D) > 3 | ~2x | 日頻 vs 月頻再平衡 |
+| Sortino | 2.16 | 3.02 | -0.86 | 無下行保護（Beta ≈ 1） |
+| Beta | ≈ 1.0（純多頭） | **-0.43** | **根本差異** | 無做空/對沖能力 |
+| OOS 2025 H1 | **-7.4%** | 負 Beta 策略應正 | **致命** | 純多頭在下行市場 |
 
-### 3.2 基本面因子（Phase K，2026-03-26）
+### 3.2 架構差距
 
-- **revenue_yoy ICIR 0.317** — 首次突破 0.3 門檻
-- 三因子組合（rev_yoy + momentum_6m + value_pe）Sharpe 1.19，超額 +2.7%/年
-- **結論：基本面因子有信號，但轉化效率待提升**
+| 維度 | 我們 | FinLab | 差距等級 |
+|------|------|--------|---------|
+| 下行保護 | ❌ 純多頭 | ✅ Beta -0.43 策略 | 🔴 致命 |
+| 數據可靠性 | Yahoo（倖存者偏差） | 全台股含下市 | 🔴 致命 |
+| 事件時機 | 月度再平衡 | 事件後 T+4~T+7 | 🟡 重要 |
+| AI 策略搜索 | 手動設計 | Claude Code Agent 自動 | 🟡 重要 |
+| 指標數量 | 83 因子 | 900+ | 🟢 可接受（83 已夠） |
+| 多策略組合 | 1 策略 | 54 策略輪動 | 🟡 重要 |
 
-### 3.3 FinLab 研究交叉驗證
+### 3.3 驗證標準（我們更嚴格）
 
-> 完整分析見 `docs/dev/test/Finlab.md`
+| 檢驗 | 我們 | FinLab 公開展示 | 比較 |
+|------|------|---------------|------|
+| Walk-Forward | ✅ 7 年逐年 | 未公開 | **我們更嚴格** |
+| PBO | ✅ 0% | 未提及 | **我們更嚴格** |
+| t-test (p<0.05) | ✅ p=0.013 | 未公開 | **我們更嚴格** |
+| StrategyValidator 11 項 | ✅ 強制閘門 | `verify_strategy()` | 同等 |
+| OOS 獨立驗證 | ✅ 2025 H1 | 未明確 | **我們更嚴格** |
 
-- 54 個公開策略，平均年化 20%，最高 60%
-- 年化 > 30% 的 16 策略 **100% 包含營收動能**
-- 投信買超 > 外資（外資逆向 CAGR -11.2%）
-- 低 PE（-1.4%）/ 低波動（-0.7%）完全無效
-- **結論：台股 alpha 在營收動能 + 投信籌碼，不在 price-volume**
-
-### 3.4 Phase L 嚴格驗證（676 支台股，2018-2024）
-
-> 完整報告見 `docs/dev/test/20260326_8.md`
-
-**全期回測**：CAGR **+30.5%**、Sharpe **1.51**、MDD **26.4%**、1,506 trades
-
-**Walk-Forward（年度 OOS）**：
-
-| 年度 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | Mean |
-|------|------|------|------|------|------|------|------|------|
-| CAGR | +1% | +39% | +64% | +41% | +3% | +94% | +58% | **+43%** |
-| Sharpe | 0.07 | 2.87 | 2.15 | 1.56 | 0.20 | 4.21 | 3.27 | **2.05** |
-
-**統計檢驗**：t = 3.50, **p = 0.013**, 95% CI Sharpe [0.92, 3.08]
-**PBO**：**0%**（50 次 CSCV 無過擬合）
-**OOS 2025 H1**：❌ -7.4%（偏多頭策略在下行市場表現差）
-
-| 檢驗 | 通過？ |
-|------|:------:|
-| CAGR > 15% | ✅ |
-| Sharpe > 0.7 | ✅ |
-| Max DD < 50% | ✅ |
-| WF Sharpe > 0 | ✅ |
-| p < 0.05 | ✅ |
-| PBO < 50% | ✅ |
-| OOS 2025 > 0 | ❌ |
-
-**結論：6/7 通過。首次在嚴格統計檢驗下通過的策略。**
+**結論**：我們的統計驗證框架比 FinLab 公開的更嚴格，但策略能力（下行保護、事件時機）落後。
 
 ---
 
-## 4. Phase L 完成進度
+## 4. Phase L+ ：解決 P0 差距（🔴 最高優先）
 
-### L1：數據管線 ✅
+### L+.1 空頭市場偵測 + 現金避險
 
-| 項目 | 狀態 | 說明 |
-|------|------|------|
-| 營收數據擴展 | ✅ | 143 支 revenue parquet（從 51 → 143） |
-| 投信/外資/自營分離 | ✅ | 146 支 institutional parquet（從 51 → 146） |
-| `--symbols-from-market` | ✅ | 自動從 data/market/ 發現 144 支台股 |
-| `--force` 重新下載 | ✅ | 強制覆蓋已有檔案 |
-| 本地 parquet 優先讀取 | ✅ | `get_revenue()` / `get_institutional()` 先讀本地，不呼叫 API |
-| Symbol-level cache | ✅ | 同一 symbol 只解析一次 parquet，不按日期範圍重複讀取 |
-| Yahoo mode 啟用 FinMind fundamentals | ✅ | `create_fundamentals("yahoo")` 自動使用 FinMind（如有 token） |
-| 集保數據（L1.3） | ⏳ | Phase M 依賴，暫緩 |
-| 市值數據（L1.4） | ⏳ | 現用 close × volume 代理，暫緩 |
+> 解決：OOS 2025 H1 失敗、Beta ≈ 1 無下行保護
 
-### L2：條件篩選 Pipeline ✅
+```
+邏輯：
+- 大盤 MA200 斜率 < 0 且 大盤在 MA200 以下 → 空頭市場
+- 空頭市場時：策略權重 × 0.3（只持 30% 倉位，70% 現金）
+- 或：加入反向 ETF（0050 反1 = 00632R.TW）
+```
 
-| 項目 | 狀態 | 說明 |
-|------|------|------|
-| `FilterCondition` | ✅ | 6 運算子（gt/lt/gte/lte/eq/between） |
-| `FilterStrategyConfig` | ✅ | top_n / rank_by / max_weight / min_volume_lots |
-| `FilterStrategy` | ✅ | 通用篩選策略（AND 邏輯 + 排序取前 N + 等權） |
-| 因子計算器 | ✅ | 8 price-based + 5 fundamental-based（`PRICE_FACTORS` / `FUNDAMENTAL_FACTORS`） |
-| 預設策略工廠 | ✅ | `revenue_momentum_filter()` / `trust_follow_filter()` |
-| 測試 | ✅ | 21 tests（test_filter_strategy.py） |
+**實作**：在 `revenue_momentum.py` 的 `on_bar()` 開頭加入市場環境判斷。
 
-### L3：策略實作 ✅
+**預期效果**：2022 年 MDD 從 26% 降至 ~10%、2025 H1 從 -7.4% 改善到 ~-2%。FinLab 的 Beta -0.43 策略本質就是這種多空切換。
 
-| 策略 | 檔案 | 類型 | 說明 |
-|------|------|------|------|
-| Revenue Momentum | `strategies/revenue_momentum.py` | Standalone | 營收 3M>12M + YoY>15% + 價>MA60 + 60d 動能>0 |
-| Trust Follow | `strategies/trust_follow.py` | Standalone | 投信 10d 買超>15k + 營收新高 + YoY>20% |
-| Filter Revenue Momentum | `src/alpha/filter_strategy.py` | FilterStrategy | 同上，通用框架版 |
-| Filter Trust Follow | `src/alpha/filter_strategy.py` | FilterStrategy | 同上，通用框架版 |
-| 月度 cache | ✅ | 策略只在月份變更時重新計算，避免每日重複讀 parquet |
-| 策略註冊 | ✅ | registry.py 新增 revenue_momentum + trust_follow（共 11 策略） |
-| 測試 | ✅ | 29 tests（test_revenue_strategies.py） |
+### L+.2 FinMind 價格數據源（修復倖存者偏差）
 
-### L4：8 年回測 ⏳
+> 解決：Yahoo Finance 不含已下市股票 → 回測結果過度樂觀
 
-| 項目 | 狀態 | 說明 |
-|------|------|------|
-| 回測腳本 | ✅ | `scripts/run_strategy_backtest.py` |
-| TW50 × 5 年初步回測 | ✅ | revenue_momentum CAGR +23.8% Sharpe 1.42 |
-| 全 142 支 × 8 年嚴格驗證 | ⏳ | 需要下載 2015-2019 歷史價格數據 |
-| Walk-Forward + PBO | ⏳ | 待數據就緒後執行 |
+```
+方案：
+- 用 FinMind TaiwanStockPrice 取代 Yahoo Finance 作為回測數據源
+- FinMind 含已下市股票，消除倖存者偏差
+- 下載全台股 2015-2025 價格到本地 parquet
+```
+
+**實作**：修改 `scripts/download_finmind_data.py` 加入 `price` dataset，用 FinMind 批量下載。
+
+**預期效果**：回測 CAGR 可能下降 3-8pp（消除倖存者偏差），但結果更可靠。
+
+### L+.3 事件時機層（Timing Layer）
+
+> 解決：月度再平衡 vs FinLab 的事件驅動（Sharpe 差距 2x）
+
+```
+方案：
+- 月營收公布後 T+1 觸發重新選股（目前是每月底固定）
+- 法人異常買超（trust_10d > 3σ）觸發事件進場
+- FinLab 發現：跳過事件後前 3 天，第 4-7 天進場績效最好
+```
+
+**實作**：新增 `EventDrivenRebalancer`，取代固定月度再平衡。
+
+### L+.4 多策略組合
+
+> 解決：單策略集中風險 vs FinLab 54 策略輪動
+
+```
+方案：
+- revenue_momentum（營收動能，純多頭）
+- revenue_momentum_hedged（加空頭偵測）
+- trust_follow（投信跟單，中小型股）
+- momentum_12_1（價格動量，基線）
+- 按 inverse-volatility 加權組合
+```
 
 ---
 
@@ -156,15 +149,14 @@
 
 | 項目 | 狀態 |
 |------|------|
-| FinMind 數據下載 | ✅ 143 revenue + 146 institutional（全 universe） |
-| 條件篩選 Pipeline | ✅ FilterStrategy 框架 + 13 因子計算器 |
-| 營收動能/投信跟單策略 | ✅ 4 策略 + 50 tests |
-| 本地 parquet 讀取優化 | ✅ symbol-level cache + 月度策略 cache |
-| 全 universe 驗證 | ✅ 676 支 × 7 年：CAGR +30.5%, p=0.013, PBO=0% (6/7 passed) |
-| **StrategyValidator（11 項驗證）** | ✅ `src/backtest/validator.py` — 全部策略上線前強制閘門 |
-| **OOS 2025 H1 為負** | 🟡 需要下行保護機制（Kill Switch / 空頭偵測） |
-| **Trust Follow 閾值調整** | 🟡 TW50 universe 太窄，需中小型股 |
-| CA 憑證 | ⏳ 待申請（Phase N 前置） |
+| Phase L 驗證 | ✅ 6/7 通過 (p=0.013, PBO=0%) |
+| StrategyValidator 11 項 | ✅ `src/backtest/validator.py` |
+| 數據擴充 | ✅ 900 支價格 + 312 營收 + 223 法人 |
+| **空頭偵測 + 現金避險** | 🔴 Phase L+.1（解決 OOS 失敗） |
+| **FinMind 價格源（去倖存者偏差）** | 🔴 Phase L+.2（回測可靠性） |
+| **事件時機層** | 🟡 Phase L+.3（Sharpe 提升） |
+| **多策略組合** | 🟡 Phase L+.4（降低單策略風險） |
+| CA 憑證 | ⏳ Phase N 前置 |
 
 ---
 
@@ -173,11 +165,11 @@
 | 日期 | 里程碑 |
 |------|--------|
 | 03-22~25 | Phase A~E（核心系統 + 交易架構） |
-| 03-26 | Phase F~I + R1-R4 + K（自動化 + 學術 + 因子擴展 + 數據品質） |
-| 03-26 | 15 次 Alpha 實驗 + FinLab 54 策略研究 → 確認策略方向轉型 |
-| 03-26 | Phase L: L1~L3 完成（數據管線 + 條件篩選 + 策略實作） |
-| **03-26** | **Phase L 驗證通過：676 支 × 7Y CAGR +30.5%, Sharpe 1.51, t=3.50, p=0.013, PBO=0% (6/7)** |
-| TBD | Phase M：因子庫去冗餘 + 進階策略（散戶反向 / 事件驅動） |
+| 03-26 | Phase F~I + R1-R4 + K（自動化 + 學術 + 因子 + 數據品質） |
+| 03-26 | 15 次 Alpha 實驗 + FinLab 54 策略研究 → 策略方向轉型 |
+| 03-26 | Phase L 驗證：CAGR +30.5%, p=0.013, PBO=0% (6/7) |
+| 03-26 | FinLab 差距分析：下行保護 + 數據修復 = P0 缺口 |
+| **TBD** | **Phase L+：空頭偵測 + FinMind 價格 + 事件時機** |
 | TBD | Phase N：Paper Trading 完整循環 |
 | TBD | Phase J：跨資產自動化 |
 
@@ -187,6 +179,7 @@
 
 - IB 美股對接 — 等台股 Paper Trading 穩定後
 - 期貨/選擇權交易 — 等股票流程驗證後
-- ML 因子模型 (Gu-Kelly-Xiu 2020) — OOS R² < 0.4%，穩定性存疑
+- ML 因子模型 (Gu-Kelly-Xiu 2020) — OOS R² < 0.4%
 - OpenFE 自動特徵工程 — 需大量算力
 - 券商分點數據 / 主力買賣 — 需付費數據源
+- 1,500 特徵模型 — FinLab 路線，需更多算力和數據

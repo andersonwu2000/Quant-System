@@ -162,13 +162,17 @@ FUNDAMENTAL_FACTORS — 5 個基本面因子計算器（revenue YoY/acceleration
 2. **Trust Follow 需要中小型股**：TW50 大型股中滿足投信買超 + 營收創新高的太少（5 次交易）。FinLab 研究也指出投信主要買中小型股
 3. **Momentum 在 TW50 表現最好**：但 MDD 33% 較高
 
-### 待完成
+### 待完成 → 轉移至 Phase L+
 
-| 項目 | 說明 |
-|------|------|
-| Trust Follow 閾值調整 | 降低 trust_threshold / 加入中小型股 |
-| 交易成本分層 | 大型 30 bps / 中型 50 bps / 小型 80 bps |
-| OOS 2025 H2 下行保護 | Kill Switch / 空頭偵測 |
+以下項目已轉移至 [Phase L+](phase-l-plus-gap-fix.md)（FinLab 差距修復）：
+
+| 項目 | Phase L+ 對應 |
+|------|--------------|
+| OOS 下行保護 | L+.1 空頭偵測 + 現金避險 |
+| 倖存者偏差 | L+.2 FinMind 價格源 |
+| Trust Follow 閾值 | L+.4 多策略組合中調整 |
+| 交易成本分層 | L+.2 驗證時納入 |
+| 事件時機層 | L+.3 營收公布 T+1 觸發 |
 
 ### 驗證標準（StrategyValidator 11 項強制閘門）
 

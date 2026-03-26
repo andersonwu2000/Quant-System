@@ -120,6 +120,7 @@ class RevenueMomentumStrategy(Strategy):
         bear_position_scale: float = 0.30,  # 空頭時持倉比例
         sideways_position_scale: float = 0.60,  # 盤整時持倉比例
         market_proxy: str = "0050.TW",  # 市場代理標的
+        event_driven: bool = False,  # 事件驅動再平衡（營收公布 T+1）
     ):
         self.max_holdings = max_holdings
         self.min_yoy_growth = min_yoy_growth
@@ -130,9 +131,11 @@ class RevenueMomentumStrategy(Strategy):
         self.bear_position_scale = bear_position_scale
         self.sideways_position_scale = sideways_position_scale
         self.market_proxy = market_proxy
+        self.event_driven = event_driven
         self._last_month: str = ""
         self._cached_weights: dict[str, float] = {}
         self._rev_cache: dict[str, pd.DataFrame] | None = None
+        self._event_rebalancer = None
 
     def name(self) -> str:
         return "revenue_momentum"
@@ -166,9 +169,19 @@ class RevenueMomentumStrategy(Strategy):
 
     def on_bar(self, ctx: Context) -> dict[str, float]:
         current_date = ctx.now()
-        current_month = pd.Timestamp(current_date).strftime("%Y-%m")
-        if current_month == self._last_month:
-            return self._cached_weights
+
+        # 再平衡判斷：事件驅動 or 月度
+        if self.event_driven:
+            if self._event_rebalancer is None:
+                from src.alpha.event_rebalancer import EventDrivenRebalancer
+                self._event_rebalancer = EventDrivenRebalancer()
+            signal = self._event_rebalancer.check(current_date)
+            if not signal.should_rebalance:
+                return self._cached_weights
+        else:
+            current_month = pd.Timestamp(current_date).strftime("%Y-%m")
+            if current_month == self._last_month:
+                return self._cached_weights
 
         # 懶載入營收快取
         if self._rev_cache is None:
@@ -218,6 +231,8 @@ class RevenueMomentumStrategy(Strategy):
             except Exception as e:
                 logger.debug("Skip %s: %s", symbol, e)
                 continue
+
+        current_month = pd.Timestamp(current_date).strftime("%Y-%m")
 
         if not candidates:
             self._last_month = current_month
