@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.core.models import Trade, Order
+from src.core.models import Order
 
 
 # ── Analytics Formulas ─────────────────────────────────────────
