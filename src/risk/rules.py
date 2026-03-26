@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Callable
 
-from src.core.models import Order, Portfolio, RiskDecision
+from src.core.models import Order, Portfolio, RiskDecision, Side
 
 
 @dataclass
@@ -131,7 +131,8 @@ def max_daily_trades(limit: int = 100) -> RiskRule:
         count = trade_count.get(today, 0)
         if count >= limit:
             return RiskDecision.REJECT(f"今日交易次數已達上限 {limit}")
-        # Don't increment here — call record_trade() after execution
+        # Increment on approval (approximation: counts approved, not filled)
+        trade_count[today] = count + 1
         return RiskDecision.APPROVE()
 
     def record_trade() -> None:
@@ -274,7 +275,11 @@ def max_gross_leverage(threshold: float = 1.5) -> RiskRule:
         multiplier = order.instrument.multiplier or Decimal("1")
         order_notional = float(order.quantity * price * multiplier / portfolio.nav)
 
-        projected = current_gross + order_notional
+        # SELL reduces gross exposure, BUY increases it
+        if order.side == Side.SELL:
+            projected = current_gross - order_notional
+        else:
+            projected = current_gross + order_notional
         if projected > threshold:
             return RiskDecision.REJECT(
                 f"總槓桿 {projected:.2f}x 超過上限 {threshold:.1f}x"

@@ -345,3 +345,36 @@ class TestDeflatedSharpeEdgeCases:
         from src.backtest.analytics import deflated_sharpe
         dsr = deflated_sharpe(1.0, 1, 5, 0.0, 3.0)
         assert 0 <= dsr <= 1
+
+
+class TestRiskRulesEdgeCases:
+    """Risk rules edge cases."""
+
+    def test_gross_leverage_sell_reduces(self) -> None:
+        """SELL should reduce gross leverage, not increase it."""
+        from src.risk.rules import max_gross_leverage
+        from src.core.models import Instrument, Portfolio, Position, Side
+        from src.risk.engine import MarketState
+
+        rule = max_gross_leverage(threshold=1.5)
+        inst = Instrument(symbol="TEST.TW")
+        portfolio = Portfolio(cash=Decimal("500000"), initial_cash=Decimal("1000000"))
+        portfolio.positions["TEST.TW"] = Position(
+            instrument=inst, quantity=Decimal("1000"), avg_cost=Decimal("500"),
+            market_price=Decimal("500"),
+        )
+        order = Order(id="sell1", instrument=inst, side=Side.SELL, quantity=Decimal("500"),
+                     price=Decimal("500"))
+        market = MarketState(prices={"TEST.TW": Decimal("500")}, daily_volumes={})
+
+        decision = rule.check(order, portfolio, market)
+        assert decision.approved, "SELL reducing exposure should be approved"
+
+    def test_analytics_inf_safe(self) -> None:
+        """Returns with inf should not produce NaN metrics."""
+        from src.backtest.analytics import compute_analytics
+
+        nav = pd.Series([1_000_000.0, 0.01, 1_000_000.0])
+        nav.index = pd.bdate_range("2023-01-01", periods=3)
+        result = compute_analytics(nav, 1_000_000, trades=[])
+        assert not np.isnan(result.sharpe)

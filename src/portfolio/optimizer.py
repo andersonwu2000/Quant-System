@@ -502,8 +502,12 @@ class PortfolioOptimizer:
         accumulated = np.zeros(n)
         valid_count = 0
 
+        # Convert annual mu/sigma to daily for sampling
+        daily_mu = mu / 252
+        daily_sigma = sigma / 252
+
         for _ in range(cfg.resample_iterations):
-            sampled_returns = rng.multivariate_normal(mu, sigma, size=252)
+            sampled_returns = rng.multivariate_normal(daily_mu, daily_sigma, size=252)
             sample_mu = sampled_returns.mean(axis=0) * 252
             sample_cov = np.cov(sampled_returns, rowvar=False) * 252
 

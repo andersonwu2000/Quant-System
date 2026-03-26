@@ -285,11 +285,13 @@ def compute_analytics(
     if nav_series.empty:
         return _empty_result(strategy_name, initial_cash)
 
-    # 日收益率
+    # 日收益率（去除 inf 和 NaN）
     daily_returns = nav_series.pct_change().dropna()
+    daily_returns = daily_returns.replace([np.inf, -np.inf], np.nan).dropna()
 
     # 總報酬
-    total_return = float(nav_series.iloc[-1] / initial_cash - 1)
+    last_nav = nav_series.dropna().iloc[-1] if not nav_series.dropna().empty else initial_cash
+    total_return = float(last_nav / initial_cash - 1)
 
     # 年化報酬 (假設 252 交易日)
     n_days = len(nav_series)
