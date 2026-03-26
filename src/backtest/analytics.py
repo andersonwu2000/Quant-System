@@ -299,15 +299,22 @@ def compute_analytics(
     # 年化波動率
     volatility = float(daily_returns.std() * np.sqrt(252)) if len(daily_returns) > 1 else 0.0
 
-    # 下行波動率
-    negative_returns = daily_returns[daily_returns < 0]
-    downside_vol = float(negative_returns.std() * np.sqrt(252)) if len(negative_returns) > 1 else 0.0
+    # Sharpe Ratio — 算術年化（Sharpe 1994 標準）
+    # SR = mean(daily_return) / std(daily_return) × sqrt(252)
+    if len(daily_returns) > 1 and daily_returns.std() > 0:
+        sharpe = float(daily_returns.mean() / daily_returns.std() * np.sqrt(252))
+    else:
+        sharpe = 0.0
 
-    # Sharpe Ratio
-    sharpe = annual_return / volatility if volatility > 0 else 0.0
-
-    # Sortino Ratio
-    sortino = annual_return / downside_vol if downside_vol > 0 else 0.0
+    # Sortino Ratio — 下行偏差包含所有觀測值
+    # DD = sqrt(mean(min(r, 0)²)) × sqrt(252)
+    if len(daily_returns) > 1:
+        downside = np.minimum(daily_returns.values, 0.0)
+        downside_vol = float(np.sqrt(np.mean(downside ** 2)) * np.sqrt(252))
+        sortino = float(daily_returns.mean() * 252 / downside_vol) if downside_vol > 0 else 0.0
+    else:
+        downside_vol = 0.0
+        sortino = 0.0
 
     # 回撤
     cummax = nav_series.cummax()
