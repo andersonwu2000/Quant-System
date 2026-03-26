@@ -1,27 +1,75 @@
 {
   "version": 2,
-  "total_rounds": 0,
-  "total_pass": 0,
-  "total_fail": 0,
-  "best_fitness": 0,
-  "last_updated": "2026-03-27T03:30:00",
+  "total_rounds": 3,
+  "total_pass": 3,
+  "total_fail": 1,
+  "best_fitness": 22.78292982730775,
+  "last_updated": "2026-03-27T04:39:38.471524",
   "success_patterns": [
     {
       "name": "revenue_growth_variants",
       "description": "營收相關因子在台股持續有效（10年100%穩定，不衰減）",
-      "factors": ["revenue_yoy", "revenue_acceleration", "revenue_new_high", "revenue_momentum"],
+      "factors": [
+        "revenue_yoy",
+        "revenue_acceleration",
+        "revenue_new_high",
+        "revenue_momentum"
+      ],
       "avg_icir": 0.6,
       "avg_fitness": 8.5,
       "evidence": "experiments 12-13: rev_yoy ICIR 0.674, rev_accel ICIR 0.847(60d)",
-      "mutation_suggestions": ["加入行業調整", "與毛利率交互", "季節性去趨勢", "營收品質交叉"]
+      "mutation_suggestions": [
+        "加入行業調整",
+        "與毛利率交互",
+        "季節性去趨勢",
+        "營收品質交叉"
+      ]
     },
     {
       "name": "low_turnover_momentum",
       "description": "低換手率動量因子在台股有效（月頻，換手<7%）",
-      "factors": ["momentum", "momentum_6m", "momentum_12m", "adx"],
+      "factors": [
+        "momentum",
+        "momentum_6m",
+        "momentum_12m",
+        "adx"
+      ],
       "avg_icir": 0.14,
       "avg_fitness": 2.0,
       "evidence": "factor_analysis_report: 66因子中僅4個viable（全是低換手動量）",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_yoy_x_gross_margin_chg",
+      "description": "營收成長且毛利率同步改善 = 真需求增長（非削價搶市）",
+      "factors": [
+        "rev_yoy_x_gross_margin_chg"
+      ],
+      "avg_icir": 0.802212325411974,
+      "avg_fitness": 22.78292982730775,
+      "evidence": "auto_research_20260327_043323_f6a2",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_seasonal_deviation",
+      "description": "實際營收 vs 同行業歷史同月平均的偏離",
+      "factors": [
+        "rev_seasonal_deviation"
+      ],
+      "avg_icir": 0.5211546768200442,
+      "avg_fitness": 8.854085307120707,
+      "evidence": "auto_research_20260327_043529_a3ac",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_accel_2nd_derivative",
+      "description": "營收加速度的二階導數（加速度的變化率）",
+      "factors": [
+        "rev_accel_2nd_derivative"
+      ],
+      "avg_icir": 0.47046354707733756,
+      "avg_fitness": 7.686557611456443,
+      "evidence": "auto_research_20260327_043736_98db",
       "mutation_suggestions": []
     }
   ],
@@ -29,44 +77,223 @@
     {
       "name": "kakushadze_short_term",
       "reason": "換手率55-84%，台股成本（來回0.88%）完全扼殺alpha",
-      "factor_patterns": ["alpha_1", "alpha_33", "alpha_101", "alpha_38", "alpha_53", "日內因子", "高頻量價"],
+      "factor_patterns": [
+        "alpha_1",
+        "alpha_33",
+        "alpha_101",
+        "alpha_38",
+        "alpha_53",
+        "日內因子",
+        "高頻量價"
+      ],
       "evidence": "factor_analysis_report: 20個Kakushadze alpha全軍覆沒"
     },
     {
       "name": "ivol_wide_universe",
       "reason": "Selection bias: 32支ICIR 0.60 → 142支 -0.06",
-      "factor_patterns": ["ivol_寬universe", "小樣本驗證"],
+      "factor_patterns": [
+        "ivol_寬universe",
+        "小樣本驗證"
+      ],
       "evidence": "experiments 1-8"
     },
     {
       "name": "price_dilutes_revenue",
       "reason": "加入momentum/volatility會稀釋營收信號（ICIR 0.674→0.024）",
-      "factor_patterns": ["revenue+momentum組合", "revenue+volatility組合", "營收+價格混合"],
+      "factor_patterns": [
+        "revenue+momentum組合",
+        "revenue+volatility組合",
+        "營收+價格混合"
+      ],
       "evidence": "experiment 13: 所有含價格因子的組合ICIR<0.04"
     },
     {
       "name": "institutional_flow_weak",
       "reason": "外資/投信/自營商買賣超ICIR<0.1，籌碼面太弱",
-      "factor_patterns": ["foreign_net", "trust_net", "dealer_net", "純籌碼面因子"],
+      "factor_patterns": [
+        "foreign_net",
+        "trust_net",
+        "dealer_net",
+        "純籌碼面因子"
+      ],
       "evidence": "experiments 11, 15: 籌碼面未突破price-volume天花板"
     },
     {
       "name": "traditional_value_tw",
       "reason": "低PE(-1.4%)、低波動(-0.7%)在台股完全無效",
-      "factor_patterns": ["低PE策略", "低波動策略", "傳統估值因子"],
+      "factor_patterns": [
+        "低PE策略",
+        "低波動策略",
+        "傳統估值因子"
+      ],
       "evidence": "FinLab 54策略研究 + 我們的pe_ratio ICIR -0.282"
     }
   ],
   "directions": [
-    {"name": "revenue_quality_interaction", "status": "pending", "priority": "P0", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
-    {"name": "seasonal_revenue_patterns", "status": "pending", "priority": "P0", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
-    {"name": "revenue_acceleration_2nd_order", "status": "pending", "priority": "P0", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
-    {"name": "supply_chain_propagation", "status": "pending", "priority": "P1", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
-    {"name": "earnings_surprise_proxy", "status": "pending", "priority": "P1", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
-    {"name": "inventory_turnover", "status": "pending", "priority": "P1", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
-    {"name": "operating_leverage", "status": "pending", "priority": "P2", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
-    {"name": "cash_flow_quality", "status": "pending", "priority": "P2", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
-    {"name": "capex_intensity", "status": "pending", "priority": "P2", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0}
+    {
+      "name": "revenue_quality_interaction",
+      "status": "exploring",
+      "priority": "P0",
+      "best_icir": 0.802212325411974,
+      "hypothesis_count": 1,
+      "pass_count": 1
+    },
+    {
+      "name": "seasonal_revenue_patterns",
+      "status": "exploring",
+      "priority": "P0",
+      "best_icir": 0.5211546768200442,
+      "hypothesis_count": 1,
+      "pass_count": 1
+    },
+    {
+      "name": "revenue_acceleration_2nd_order",
+      "status": "exploring",
+      "priority": "P0",
+      "best_icir": 0.47046354707733756,
+      "hypothesis_count": 1,
+      "pass_count": 1
+    },
+    {
+      "name": "supply_chain_propagation",
+      "status": "pending",
+      "priority": "P1",
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "earnings_surprise_proxy",
+      "status": "pending",
+      "priority": "P1",
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "inventory_turnover",
+      "status": "pending",
+      "priority": "P1",
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "operating_leverage",
+      "status": "pending",
+      "priority": "P2",
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "cash_flow_quality",
+      "status": "pending",
+      "priority": "P2",
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "capex_intensity",
+      "status": "pending",
+      "priority": "P2",
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    }
   ],
-  "trajectories": []
+  "trajectories": [
+    {
+      "id": "20260327_043323_f6a2",
+      "timestamp": "2026-03-27T04:35:27.318378",
+      "hypothesis": {
+        "name": "rev_yoy_x_gross_margin_chg",
+        "description": "營收成長且毛利率同步改善 = 真需求增長（非削價搶市）",
+        "formula_sketch": "rank(rev_yoy) × rank(gross_margin_pct_change)",
+        "expected_direction": 1,
+        "academic_basis": "Novy-Marx (2013) gross profitability + revenue momentum",
+        "data_requirements": [
+          "revenue",
+          "financial_statement"
+        ],
+        "direction": "revenue_quality_interaction"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.07122819073116793,
+        "best_icir": 0.802212325411974,
+        "best_horizon": "60d",
+        "fitness": 22.78292982730775,
+        "turnover": 0.8831031392115836,
+        "max_corr": 0.0,
+        "positive_years": 0
+      },
+      "fitness": 22.78292982730775,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 123.82558589999098,
+      "passed": true
+    },
+    {
+      "id": "20260327_043529_a3ac",
+      "timestamp": "2026-03-27T04:37:34.628938",
+      "hypothesis": {
+        "name": "rev_seasonal_deviation",
+        "description": "實際營收 vs 同行業歷史同月平均的偏離",
+        "formula_sketch": "rev_this_month / mean(rev_same_month_past_3years) - 1",
+        "expected_direction": 1,
+        "academic_basis": "Seasonal anomalies in earnings",
+        "data_requirements": [
+          "revenue"
+        ],
+        "direction": "seasonal_revenue_patterns"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.023798839200430216,
+        "best_icir": 0.5211546768200442,
+        "best_horizon": "60d",
+        "fitness": 8.854085307120707,
+        "turnover": 0.8245208638347764,
+        "max_corr": 0.0,
+        "positive_years": 0
+      },
+      "fitness": 8.854085307120707,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 125.30404540000018,
+      "passed": true
+    },
+    {
+      "id": "20260327_043736_98db",
+      "timestamp": "2026-03-27T04:39:38.470524",
+      "hypothesis": {
+        "name": "rev_accel_2nd_derivative",
+        "description": "營收加速度的二階導數（加速度的變化率）",
+        "formula_sketch": "d(rev_3m/rev_12m)/dt",
+        "expected_direction": 1,
+        "academic_basis": "Second-order momentum",
+        "data_requirements": [
+          "revenue"
+        ],
+        "direction": "revenue_acceleration_2nd_order"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.022804058127906503,
+        "best_icir": 0.47046354707733756,
+        "best_horizon": "10d",
+        "fitness": 7.686557611456443,
+        "turnover": 0.8542801660618675,
+        "max_corr": 0.0,
+        "positive_years": 0
+      },
+      "fitness": 7.686557611456443,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 121.83455070000491,
+      "passed": true
+    }
+  ]
 }

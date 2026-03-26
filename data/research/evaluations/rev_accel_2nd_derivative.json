@@ -1,0 +1,24 @@
+{
+  "factor_name": "rev_accel_2nd_derivative",
+  "passed": true,
+  "level_reached": "L5",
+  "failure_reason": "",
+  "ic_20d": 0.022804058127906503,
+  "icir_by_horizon": {
+    "5d": 0.2648135408329873,
+    "10d": 0.47046354707733756,
+    "20d": 0.277478053937371,
+    "60d": 0.10652630189101533
+  },
+  "best_icir": 0.47046354707733756,
+  "best_horizon": "10d",
+  "avg_turnover": 0.8542801660618675,
+  "max_correlation": 0.0,
+  "correlated_with": "",
+  "positive_years": 0,
+  "total_years": 0,
+  "fitness": 7.686557611456443,
+  "wf_avg_sharpe": 0.0,
+  "wf_positive_ratio": 0.0,
+  "duration_seconds": 0.9062030000059167
+}

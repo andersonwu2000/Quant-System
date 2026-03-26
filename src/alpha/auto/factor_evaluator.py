@@ -75,7 +75,7 @@ class FactorEvaluator:
         existing_factor_ics: dict[str, pd.Series] | None = None,
         min_icir_l1: float = 0.02,
         min_icir_l2: float = 0.15,
-        max_turnover: float = 0.60,  # 月頻再平衡允許 60% 換手（營收因子自然較高）
+        max_turnover: float = 0.90,  # quintile 取樣的 turnover，營收因子天然 70-90%
         max_correlation: float = 0.50,
         min_positive_years: int = 7,
         min_fitness: float = 3.0,
