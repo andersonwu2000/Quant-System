@@ -17,7 +17,6 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -250,7 +249,7 @@ class FactorEvaluator:
         if len(ics) < 5:
             return 0.0
         ic_mean = float(np.mean(ics))
-        ic_std = float(np.std(ics))
+        ic_std = float(np.std(ics, ddof=1))  # sample std, consistent with pd.Series.std()
         return ic_mean / ic_std if ic_std > 0 else 0.0
 
     @staticmethod

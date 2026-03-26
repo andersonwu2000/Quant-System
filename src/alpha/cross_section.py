@@ -79,6 +79,8 @@ def quantile_backtest(
     turnover_sums: dict[str, float] = {q: 0.0 for q in q_labels}
     turnover_counts = 0
 
+    used_dates: list = []
+
     for dt in common_dates:
         fv = factor_values.loc[dt, common_symbols].dropna()
         fr = forward_returns.loc[dt, common_symbols].dropna()
@@ -122,12 +124,13 @@ def quantile_backtest(
             prev_assignments[q] = current_set
 
         quantile_returns_rows.append(row)
+        used_dates.append(dt)
         turnover_counts += 1
 
     if not quantile_returns_rows:
         return _empty_result(factor_name, n_quantiles)
 
-    quantile_returns = pd.DataFrame(quantile_returns_rows, index=common_dates[: len(quantile_returns_rows)])
+    quantile_returns = pd.DataFrame(quantile_returns_rows, index=used_dates)
 
     # 平均報酬（年化 — 從實際交易日數推算，非硬編碼 252）
     mean_returns = quantile_returns.mean()

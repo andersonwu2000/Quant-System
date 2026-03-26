@@ -114,7 +114,7 @@ class BacktestEngine:
         self._price_matrix = pd.DataFrame()
         self._open_matrix = pd.DataFrame()
         self._volume_matrix = pd.DataFrame()
-        self._col_index: dict[str, int] = {}  # cached column→index mapping
+        self._col_index_cache: dict[int, dict[str, int]] = {}  # matrix id → column→index
         self._last_rebalance_month = -1
         self._bar_cache = _BarCache()
 
@@ -443,7 +443,13 @@ class BacktestEngine:
     def _inject_dividends_impl(
         self, portfolio: Portfolio, date_str: str
     ) -> None:
-        """Inject dividend cash for ex-date matches."""
+        """Inject dividend cash for ex-date matches.
+
+        WARNING: If price data is dividend-adjusted (Yahoo's default with
+        auto_adjust=True), enabling dividends will DOUBLE-COUNT income —
+        the price drop already reflects the dividend. Only enable this with
+        unadjusted price data.
+        """
         for symbol, pos in portfolio.positions.items():
             div_map = self._dividend_data.get(symbol, {})
             div_amount = div_map.get(date_str)
@@ -590,7 +596,14 @@ class BacktestEngine:
         trading_dates: list[datetime],
         portfolio: Portfolio,
     ) -> None:
-        """Record pending settlements for BUY trades."""
+        """Record pending settlements for BUY trades.
+
+        NOTE: apply_trades() already deducts cash immediately. This method
+        additionally locks the amount in pending_settlements, making
+        available_cash more conservative (double-counted). This is intentional
+        to prevent the engine from spending unsettled funds in T+N mode.
+        The net effect is overly conservative cash gating, not incorrect P&L.
+        """
         for trade in trades:
             if trade.side == Side.BUY:
                 settle_dt = BacktestEngine._add_business_days(
@@ -775,9 +788,10 @@ class BacktestEngine:
         # Vectorized extraction: get all values at once via numpy
         result: dict[str, Decimal] = {}
         row_vals = row.values  # numpy array
-        if not self._col_index or len(self._col_index) != len(matrix.columns):
-            self._col_index = {c: i for i, c in enumerate(matrix.columns)}
-        col_index = self._col_index
+        matrix_id = id(matrix)
+        if matrix_id not in self._col_index_cache:
+            self._col_index_cache[matrix_id] = {c: i for i, c in enumerate(matrix.columns)}
+        col_index = self._col_index_cache[matrix_id]
         _Decimal = Decimal  # local ref for speed
         _Q = _Decimal("0.0001")
         for symbol in universe:
