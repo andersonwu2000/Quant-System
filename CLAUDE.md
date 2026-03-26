@@ -19,6 +19,50 @@ After completing any feature addition, bug fix, refactoring, architecture change
 
 Keep updates minimal — only touch sections affected by the change.
 
+## Mandatory Code Review（強制覆核）
+
+**每次修改代碼後，必須做三層檢查才能 commit：**
+
+### 1. 公式正確性
+- 分子分母單位是否一致（年化 vs 累計、算術 vs 幾何）
+- 除法是否有 zero guard
+- NaN/inf 是否會傳播
+- ddof=0 vs ddof=1 是否和其他模組一致
+
+### 2. 流程連通性
+- 新函式是否真的被呼叫（grep 確認有 caller）
+- 參數是否傳對（不是硬編碼的固定值代替動態值）
+- 結果是否存回（save/persist 是否在修改後呼叫）
+- Pipeline 是否完整（A→B→C 每一步都連通）
+
+### 3. 語義一致性
+- 函式名/docstring 描述的和代碼做的是否一致
+- 變數名暗示的含義和實際值是否一致
+- Comment 說的邏輯和代碼邏輯是否一致
+
+### 關鍵檔案（修改前必須看 `.claude/hooks/pre-edit-check.md`）
+- `src/backtest/analytics.py` — Sharpe/Sortino/CAGR/MDD/DSR
+- `src/backtest/validator.py` — 13 項驗證閘門
+- `src/backtest/engine.py` — NAV/cash/settlement/execution
+- `src/execution/broker/simulated.py` — 成本模型
+- `src/strategy/research.py` — IC/ICIR/forward returns
+- `src/alpha/cross_section.py` — quantile backtest
+- `src/scheduler/jobs.py` — 交易管線流程
+
+### 歷史教訓（12 個已修復的 bug）
+1. Sharpe 幾何/算術混用（analytics.py）
+2. Sortino 下行偏差只算負值（analytics.py）
+3. Validator cost_ratio 累計 vs 年化（validator.py）
+4. Validator benchmark 用 momentum 非 0050（validator.py）
+5. Validator bootstrap 用不存在的屬性（validator.py）
+6. Validator 日曆日 vs 交易日（validator.py）
+7. cross_section 日期錯位（cross_section.py）
+8. factor_evaluator ICIR ddof 不一致（factor_evaluator.py）
+9. engine _col_index 跨矩陣快取碰撞（engine.py）
+10. risk max_gross_leverage SELL 方向錯（rules.py）
+11. Auto-research Validator 用固定策略（alpha_research_agent.py）
+12. 交互因子計算和名稱不一致（alpha_research_agent.py）
+
 ## Project Overview
 
 Multi-asset portfolio research and optimization system covering TW stocks, US stocks, ETFs (incl. bond/commodity ETF proxies), TW futures, US futures. Bond/commodity exposure via ETFs, not direct trading. No retail FX (Taiwan regulatory restriction). Current stage: equity alpha research layer complete, expanding to multi-asset architecture. Long-term goal: platform for individual investors and family asset management.

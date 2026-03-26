@@ -289,52 +289,26 @@
 
 ---
 
-## 12. 自動化管線
-
-三條獨立排程路徑（不可同時運行）：
+## 12. 自動化管線（Phase S 統一）
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    AUTOMATION PIPELINE                           │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────┐        │
-│  │  Path 1: Monthly Revenue (Paper Trading 主路徑)      │        │
-│  │                                                      │        │
-│  │  每月 11 日 08:30  revenue_pipeline (chained)        │        │
-│  │    Step 1: monthly_revenue_update()                  │        │
-│  │      → 下載 FinMind 最新月營收 parquet               │        │
-│  │      → 失敗重試 1 次 → 仍失敗則通知 + 跳過          │        │
-│  │    Step 2: monthly_revenue_rebalance() (僅 Step 1 成功) │     │
-│  │      → revenue_momentum_hedged.on_bar()              │        │
-│  │        → 空頭偵測（MA200 OR vol_spike）              │        │
-│  │        → 篩選：acceleration>1, YoY>10%, MA60, 均量   │        │
-│  │        → 排序：revenue_acceleration（3M/12M）        │        │
-│  │        → 取前 15 檔 → weights_to_orders()            │        │
-│  │        → RiskEngine → ExecutionService → 通知         │        │
-│  │        → 存 selection + trade log                     │        │
-│  │                                                      │        │
-│  │  全局 asyncio.Lock 防止併發                           │        │
-│  │  Config: QUANT_REVENUE_SCHEDULER_ENABLED             │        │
-│  └─────────────────────────────────────────────────────┘        │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────┐        │
-│  │  Path 2: General Rebalance                           │        │
-│  │  Cron: QUANT_REBALANCE_CRON (預設每月 1 日 09:00)    │        │
-│  │  → 任何 registry 中的 active strategy                │        │
-│  │  Config: QUANT_SCHEDULER_ENABLED                     │        │
-│  └─────────────────────────────────────────────────────┘        │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────┐        │
-│  │  Path 3: Auto-Alpha Pipeline (實驗性)                │        │
-│  │  觸發: POST /auto-alpha/start                        │        │
-│  │  → 8 stages 08:30~13:35（手動啟停）                  │        │
-│  │  → 因子挖掘 → 驗證 → Memory 回寫                    │        │
-│  └─────────────────────────────────────────────────────┘        │
-│                                                                 │
-│  入口: src/scheduler/__init__.py + src/scheduler/jobs.py        │
-│  執行: src/core/trading_pipeline.py (execute_one_bar)           │
-│  研究: scripts/alpha_research_agent.py                          │
-└─────────────────────────────────────────────────────────────────┘
+Trading Pipeline（唯一交易管線）
+    Cron: QUANT_TRADING_PIPELINE_CRON（預設 30 8 11 * *）
+    Strategy: QUANT_ACTIVE_STRATEGY（預設 revenue_momentum_hedged）
+
+    execute_pipeline(config):
+        1. 數據更新（營收策略 → FinMind，其他 → 跳過，失敗 → 中止+通知）
+        2. 建立 Context（feed + fundamentals）
+        3. strategy.on_bar(ctx) → target_weights
+        4. weights_to_orders → RiskEngine → ExecutionService
+        5. 持久化（selection log + trade log）
+        6. 通知（Discord/LINE/Telegram）
+
+Research Pipeline（獨立，不操作 Portfolio）
+    觸發: CronCreate 或 POST /auto-alpha/start
+    alpha_research_agent.py → L1-L5 → Validator → deploy 判斷
+
+入口: src/scheduler/__init__.py + src/scheduler/jobs.py
 ```
 
 ---
