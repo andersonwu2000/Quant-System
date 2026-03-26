@@ -82,6 +82,23 @@ API 設有速率限制，超過限制時回傳 `429 Too Many Requests`：
 {"detail": "Invalid API key"}
 ```
 
+#### `POST /api/v1/auth/change-password`
+
+變更密碼。需要認證。
+
+**請求主體：**
+```json
+{
+  "current_password": "old-password",
+  "new_password": "new-password"
+}
+```
+
+**回應** `200`：
+```json
+{"detail": "Password changed"}
+```
+
 #### `POST /api/v1/auth/logout`
 
 登出，清除認證 cookie。
@@ -187,6 +204,74 @@ API 設有速率限制，超過限制時回傳 `429 Too Many Requests`：
 ]
 ```
 
+#### `GET /api/v1/portfolio/saved`
+
+列出所有已儲存的投資組合。
+
+**回應** `200`：
+```json
+{
+  "portfolios": [
+    {"id": "pf-001", "name": "主策略", "created_at": "2024-01-01T00:00:00"}
+  ]
+}
+```
+
+#### `POST /api/v1/portfolio/saved`
+
+建立新的持久化投資組合。
+
+**請求主體：**
+```json
+{
+  "name": "我的組合",
+  "holdings": {"AAPL": 0.3, "MSFT": 0.7}
+}
+```
+
+**回應** `201`：
+```json
+{"id": "pf-002", "name": "我的組合", "holdings": {"AAPL": 0.3, "MSFT": 0.7}}
+```
+
+#### `GET /api/v1/portfolio/saved/{portfolio_id}`
+
+取得指定投資組合的詳細資訊。
+
+#### `DELETE /api/v1/portfolio/saved/{portfolio_id}`
+
+刪除指定投資組合。
+
+#### `POST /api/v1/portfolio/saved/{portfolio_id}/rebalance-preview`
+
+根據策略計算再平衡建議交易。
+
+**請求主體：**
+```json
+{
+  "strategy": "momentum",
+  "params": {}
+}
+```
+
+**回應** `200`：包含建議交易列表（透過 `weights_to_orders()` 計算）。
+
+#### `GET /api/v1/portfolio/saved/{portfolio_id}/trades`
+
+取得指定投資組合的歷史交易紀錄。
+
+#### `POST /api/v1/portfolio/optimize`
+
+投資組合最佳化（支援 14 種方法：EW、InverseVol、RiskParity、MVO、BlackLitterman、HRP 等）。
+
+#### `POST /api/v1/portfolio/risk-analysis`
+
+投資組合風險分析（共變異數估計、風險貢獻等）。
+
+#### `POST /api/v1/portfolio/hedge-recommendations`
+
+取得貨幣避險建議。
+
 ---
 
 ### 策略
@@ -276,6 +361,50 @@ API 設有速率限制，超過限制時回傳 `429 Too Many Requests`：
   }
 ]
 ```
+
+#### `POST /api/v1/orders`
+
+建立新訂單。需要 `trader` 以上角色。
+
+**請求主體：**
+```json
+{
+  "symbol": "AAPL",
+  "side": "BUY",
+  "quantity": 100,
+  "price": 150.0
+}
+```
+
+**回應** `200`：
+```json
+{
+  "id": "ord-abc123",
+  "symbol": "AAPL",
+  "side": "BUY",
+  "quantity": 100.0,
+  "price": 150.0,
+  "status": "PENDING"
+}
+```
+
+#### `PUT /api/v1/orders/{order_id}`
+
+修改訂單（價格或數量）。僅限 `PENDING` 狀態的訂單。
+
+**請求主體：**
+```json
+{
+  "price": 151.0,
+  "quantity": 200
+}
+```
+
+#### `DELETE /api/v1/orders/{order_id}`
+
+取消訂單。僅限 `PENDING` 狀態的訂單。
+
+**回應** `200`：回傳取消後的訂單物件。
 
 ---
 
@@ -394,6 +523,54 @@ API 設有速率限制，超過限制時回傳 `429 Too Many Requests`：
 }
 ```
 
+#### `POST /api/v1/backtest/walk-forward`
+
+Walk-forward 前進式分析。將資料切割為訓練/測試視窗，逐段回測驗證策略穩健性。
+
+**請求主體：**
+```json
+{
+  "strategy": "momentum",
+  "universe": ["AAPL", "MSFT"],
+  "start": "2020-01-01",
+  "end": "2024-12-31",
+  "train_months": 12,
+  "test_months": 3
+}
+```
+
+#### `POST /api/v1/backtest/randomized`
+
+隨機化回測（Bootstrap）。
+
+#### `POST /api/v1/backtest/pbo`
+
+機率回測過度擬合（PBO）檢定。
+
+#### `POST /api/v1/backtest/stress-test`
+
+壓力測試回測。
+
+#### `POST /api/v1/backtest/grid-search`
+
+參數網格搜尋回測。
+
+#### `POST /api/v1/backtest/{task_id}/validate`
+
+對已完成的回測執行驗證閘門（11 項檢查）。
+
+#### `POST /api/v1/backtest/kfold`
+
+K-fold 交叉驗證回測。
+
+#### `POST /api/v1/backtest/full-validation`
+
+完整驗證流程（整合所有驗證方法）。
+
+#### `GET /api/v1/backtest/history`
+
+取得回測歷史紀錄列表。
+
 ---
 
 ### 風控
@@ -451,6 +628,29 @@ API 設有速率限制，超過限制時回傳 `429 Too Many Requests`：
 ]
 ```
 
+#### `GET /api/v1/risk/realtime`
+
+取得即時盤中回撤與分級警報（2%/3%/5%）。
+
+**回應** `200`：
+```json
+{
+  "intraday_drawdown": 0.012,
+  "peak_nav": 10500000.0,
+  "current_nav": 10374000.0,
+  "alerts": [],
+  "kill_switch_active": false
+}
+```
+
+#### `PUT /api/v1/risk/config`
+
+更新全域風控設定。
+
+#### `PUT /api/v1/risk/rules/{rule_name}/config`
+
+更新特定風控規則的參數設定。
+
 #### `POST /api/v1/risk/kill-switch`
 
 緊急熔斷：停止所有策略並取消所有掛單。
@@ -462,6 +662,280 @@ API 設有速率限制，超過限制時回傳 `429 Too Many Requests`：
   "code": "kill_switch"
 }
 ```
+
+---
+
+### Alpha 研究
+
+#### `POST /api/v1/alpha`
+
+執行 Alpha 因子研究管線（universe 篩選 → 因子計算 → 中性化 → 正交化 → 複合訊號 → 分位回測）。
+
+**請求主體：**
+```json
+{
+  "universe": ["2330.TW", "2317.TW"],
+  "factors": ["momentum_12_1", "ep"],
+  "start": "2022-01-01",
+  "end": "2024-12-31"
+}
+```
+
+#### `GET /api/v1/alpha/{task_id}`
+
+查詢 Alpha 研究任務狀態。
+
+#### `GET /api/v1/alpha/{task_id}/result`
+
+取得完整 Alpha 研究結果。
+
+#### `GET /api/v1/alpha/regime`
+
+取得當前市場狀態分類。
+
+#### `POST /api/v1/alpha/ic-analysis`
+
+IC（Information Coefficient）分析。
+
+#### `POST /api/v1/alpha/turnover-analysis`
+
+換手率分析。
+
+#### `POST /api/v1/alpha/attribution`
+
+績效歸因分析。
+
+#### `POST /api/v1/alpha/factor-correlation`
+
+因子相關性矩陣。
+
+#### `POST /api/v1/alpha/neutralize`
+
+因子中性化。
+
+#### `POST /api/v1/alpha/filter-strategy`
+
+條件式篩選策略（支援 13 種內建因子計算器）。
+
+#### `POST /api/v1/alpha/event-rebalancer/test`
+
+事件驅動再平衡回測。
+
+---
+
+### 資產配置
+
+#### `POST /api/v1/allocation`
+
+執行戰術資產配置（strategic weights + 宏觀因子 + 跨資產訊號 + 景氣判斷）。
+
+**回應** `200`：回傳各 AssetClass 的目標權重。
+
+#### `GET /api/v1/allocation/macro-factors`
+
+取得宏觀因子（growth/inflation/rates/credit）的 FRED z-scores。
+
+#### `GET /api/v1/allocation/cross-asset-signals`
+
+取得跨資產訊號（momentum/volatility/value per AssetClass）。
+
+---
+
+### 執行
+
+#### `GET /api/v1/execution/status`
+
+取得執行服務狀態（模式、連線狀態等）。
+
+#### `GET /api/v1/execution/market-hours`
+
+取得當前交易時段資訊。
+
+#### `POST /api/v1/execution/reconcile`
+
+執行 EOD 持倉對帳。
+
+#### `POST /api/v1/execution/reconcile/auto-correct`
+
+自動修正對帳差異。
+
+#### `GET /api/v1/execution/paper-trading/status`
+
+取得模擬交易狀態。
+
+#### `GET /api/v1/execution/queued-orders`
+
+取得排隊中的訂單。
+
+#### `GET /api/v1/execution/trading-limits`
+
+取得交易限額資訊。
+
+#### `GET /api/v1/execution/settlements`
+
+取得結算資訊。
+
+#### `GET /api/v1/execution/dispositions`
+
+取得庫存明細。
+
+#### `GET /api/v1/execution/stop-orders`
+
+取得停損單列表。
+
+#### `POST /api/v1/execution/stop-orders`
+
+建立停損單。
+
+#### `DELETE /api/v1/execution/stop-orders/{symbol}`
+
+刪除特定標的停損單。
+
+#### `DELETE /api/v1/execution/stop-orders`
+
+清除所有停損單。
+
+#### `POST /api/v1/execution/smart-order`
+
+智慧拆單（TWAP 分割執行）。
+
+#### `GET /api/v1/execution/reconciliation-history`
+
+取得歷史對帳紀錄。
+
+---
+
+### Auto-Alpha
+
+#### `GET /api/v1/auto-alpha/status`
+
+取得 Auto-Alpha 排程器運行狀態。
+
+#### `POST /api/v1/auto-alpha/start`
+
+啟動 Auto-Alpha 排程器。
+
+#### `POST /api/v1/auto-alpha/stop`
+
+停止 Auto-Alpha 排程器。
+
+#### `POST /api/v1/auto-alpha/run-now`
+
+立即執行一輪 Auto-Alpha 研究週期。
+
+#### `GET /api/v1/auto-alpha/run-now/{task_id}`
+
+查詢 run-now 任務進度。
+
+#### `GET /api/v1/auto-alpha/config`
+
+取得 Auto-Alpha 設定。
+
+#### `PUT /api/v1/auto-alpha/config`
+
+更新 Auto-Alpha 設定。
+
+#### `GET /api/v1/auto-alpha/history`
+
+取得歷史快照列表。
+
+#### `GET /api/v1/auto-alpha/history/{date}`
+
+取得特定日期的快照詳情。
+
+#### `GET /api/v1/auto-alpha/performance`
+
+取得 Auto-Alpha 績效摘要。
+
+#### `GET /api/v1/auto-alpha/alerts`
+
+取得 Auto-Alpha 警報列表。
+
+#### `GET /api/v1/auto-alpha/decision`
+
+取得最新決策引擎輸出。
+
+#### `GET /api/v1/auto-alpha/safety-gates`
+
+取得安全閘門狀態。
+
+#### `GET /api/v1/auto-alpha/factor-pnl`
+
+取得因子損益歸因。
+
+#### `GET /api/v1/auto-alpha/factor-pool`
+
+取得動態因子池狀態。
+
+---
+
+### 策略中心
+
+Web v2 專用端點，提供月營收選股策略的即時資訊。
+
+#### `GET /api/v1/strategy/selection/latest`
+
+取得最新一期月度選股結果。
+
+#### `GET /api/v1/strategy/selection/history`
+
+取得歷史選股紀錄。
+
+#### `GET /api/v1/strategy/regime`
+
+取得熊市偵測狀態與指標（MA200、波動率等）。
+
+#### `GET /api/v1/strategy/drift`
+
+取得目標 vs 實際持倉偏離度。
+
+#### `POST /api/v1/strategy/rebalance`
+
+一鍵觸發再平衡。
+
+#### `GET /api/v1/strategy/data-status`
+
+取得營收資料新鮮度。
+
+#### `GET /api/v1/strategy/info`
+
+取得策略基本資訊。
+
+---
+
+### 管理員
+
+需要 `admin` 角色。
+
+#### `GET /api/v1/admin/users`
+
+列出所有使用者。
+
+#### `POST /api/v1/admin/users`
+
+建立使用者。
+
+**請求主體：**
+```json
+{
+  "username": "john",
+  "display_name": "John",
+  "password": "securePass123",
+  "role": "trader"
+}
+```
+
+#### `PUT /api/v1/admin/users/{user_id}`
+
+修改使用者（角色、啟用狀態、顯示名稱）。
+
+#### `DELETE /api/v1/admin/users/{user_id}`
+
+刪除使用者。
+
+#### `POST /api/v1/admin/users/{user_id}/reset-password`
+
+重設使用者密碼。
 
 ---
 

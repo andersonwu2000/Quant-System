@@ -39,68 +39,115 @@
 | 測試 | pytest 8.0+、pytest-asyncio、httpx |
 | Web 前端 | React 18 + Vite + Tailwind CSS |
 | Mobile 前端 | React Native 0.76 + Expo 52 + Expo Router 4 |
+| Android 原生 | Kotlin + Jetpack Compose + Material 3 + Hilt DI |
 | 前端共享 | `@quant/shared`（TypeScript 型別、API client、WS manager） |
 
 ## 2. 專案結構
 
 ```
 src/
-├── domain/models.py      # 核心型別：Instrument, Order, Portfolio, Position, Trade
-├── config.py             # Pydantic Settings，QUANT_ 前綴環境變數
+├── core/                     # 核心模組（canonical 位置）
+│   ├── models.py             # 統一型別：Instrument, Bar, Position, Order, Portfolio, Trade, enums
+│   ├── config.py             # Pydantic Settings，QUANT_ 前綴環境變數
+│   ├── logging.py            # structlog 結構化日誌
+│   ├── repository.py         # 資料庫存取層
+│   ├── calendar.py           # TWTradingCalendar（台股交易日曆含國定假日）
+│   └── trading_pipeline.py   # execute_one_bar()（回測/實盤共用交易流程）
+├── instrument/               # InstrumentRegistry（get/search/by_market/by_asset_class）
+├── alpha/                    # Alpha 研究層（within-asset 選股）
+│   ├── pipeline.py           # 端到端流程：universe → factor → neutralization → composite → quantile backtest
+│   ├── strategy.py           # AlphaStrategy adapter（包裝 pipeline 為 Strategy）
+│   ├── filter_strategy.py    # 條件式選股（FilterCondition + 13 built-in 因子計算器）
+│   ├── regime.py             # 市場狀態分類（與 allocation 共用）
+│   └── auto/                 # 自動 Alpha 研究（9 檔案：Config, Researcher, DecisionEngine, Executor, Scheduler 等）
+├── allocation/               # 戰術資產配置（between-asset 層）
+│   ├── macro_factors.py      # 4 個總經因子（成長/通膨/利率/信用）from FRED z-scores
+│   ├── cross_asset.py        # 跨資產因子：momentum/volatility/value per AssetClass
+│   └── tactical.py           # TacticalEngine：strategic + macro + cross-asset + regime → 配置權重
+├── portfolio/                # 多資產投資組合優化
+│   ├── optimizer.py          # 14 種方法（EW/InverseVol/RiskParity/MVO/BL/HRP/Robust/CVaR 等）
+│   ├── risk_model.py         # 共變異數估計（historical/EWM/Ledoit-Wolf/GARCH/PCA）
+│   └── currency.py           # CurrencyHedger（分層避險比率 + HedgeRecommendation）
 ├── data/
-│   ├── feed.py           # DataFeed ABC + HistoricalFeed
-│   ├── store.py          # SQLAlchemy Core 持久化（SQLite/PostgreSQL）
-│   ├── quality.py        # 數據驗證（欄位、NaN、異常值）
-│   └── sources/yahoo.py  # Yahoo Finance 連接器（含 parquet 快取）
+│   ├── feed.py               # DataFeed ABC + HistoricalFeed
+│   ├── store.py              # SQLAlchemy Core 持久化（SQLite/PostgreSQL）
+│   ├── quality.py            # 數據驗證（欄位、NaN、異常值）
+│   └── sources/              # yahoo.py, finmind.py, fred.py, local_market.py
 ├── strategy/
-│   ├── base.py           # Strategy ABC + Context
-│   ├── engine.py         # weights_to_orders() 權重轉訂單
-│   ├── factors.py        # 純函式因子庫
-│   └── optimizer.py      # 投資組合優化器（equal_weight, signal_weight, risk_parity）
+│   ├── base.py               # Strategy ABC + Context
+│   ├── engine.py             # weights_to_orders() 權重轉訂單
+│   ├── factors/              # 因子套件（83 個因子）
+│   │   ├── technical.py      # 66 個技術因子（價量）
+│   │   ├── fundamental.py    # 17 個基本面因子
+│   │   └── kakushadze.py     # Kakushadze 101 Formulaic Alphas 子集
+│   ├── optimizers/           # equal_weight, signal_weight, risk_parity
+│   ├── registry.py           # 策略自動發現（strategies/ + alpha strategy）
+│   ├── multi_asset.py        # 兩層策略：tactical allocation → within-class selection → optimization
+│   └── research/             # IC 分析、factor decay
 ├── risk/
-│   ├── engine.py         # RiskEngine：依序執行規則
-│   ├── rules.py          # 宣告式風控規則工廠
-│   └── monitor.py        # 警報追蹤（含冷卻機制）
+│   ├── engine.py             # RiskEngine：依序執行規則
+│   ├── rules.py              # 宣告式風控規則工廠
+│   └── monitor.py            # RiskMonitor + RealtimeRiskMonitor（tick-level 盤中回撤分層警報）
 ├── execution/
-│   ├── sim.py            # SimBroker：含滑價/手續費/稅金的成交模擬
-│   ├── oms.py            # OrderManager + apply_trades()
-│   └── broker.py         # BrokerAdapter ABC + PaperBroker
+│   ├── broker/               # 券商子套件
+│   │   ├── base.py           # BrokerAdapter ABC + PaperBroker
+│   │   ├── simulated.py      # SimBroker（滑價/手續費/稅金/T+N 交割模擬）
+│   │   └── sinopac.py        # SinopacBroker（Shioaji SDK wrapper）
+│   ├── quote/sinopac.py      # SinopacQuoteManager（tick/bidask subscription）
+│   ├── service.py            # ExecutionService（mode-aware routing: backtest/paper/live）
+│   ├── smart_order.py        # TWAP 拆單
+│   └── oms.py                # OrderManager + apply_trades()
 ├── backtest/
-│   ├── engine.py         # BacktestEngine：事件驅動模擬迴圈
-│   ├── analytics.py      # 績效指標計算
-│   └── validation.py     # 回測合理性檢查
+│   ├── engine.py             # BacktestEngine（InstrumentRegistry 整合、多幣別偵測）
+│   ├── analytics.py          # 40+ 績效指標計算
+│   ├── validation.py         # 回測合理性檢查
+│   ├── experiment.py         # 平行網格回測
+│   └── validator.py          # StrategyValidator（11 項強制驗證閘門）
 ├── api/
-│   ├── app.py            # FastAPI 應用工廠（CORS、路由、WebSocket）
-│   ├── auth.py           # API Key + JWT + 角色存取控制
-│   ├── schemas.py        # Pydantic 請求/回應模型（→ OpenAPI）
-│   ├── state.py          # AppState 單例
-│   ├── ws.py             # WebSocket ConnectionManager
-│   └── routes/           # REST 端點（portfolio, strategies, orders, backtest, risk, system）
-└── cli/main.py           # Typer CLI：backtest, server, status, factors
+│   ├── app.py                # FastAPI 應用工廠（CORS、路由、WebSocket）
+│   ├── auth.py               # API Key + JWT + 角色存取控制
+│   ├── middleware.py         # AuditMiddleware（記錄所有 mutation 請求）
+│   ├── ws.py                 # WebSocket ConnectionManager
+│   └── routes/               # 14 個路由模組（auth, admin, portfolio, strategies, orders,
+│                             #   backtest, risk, system, allocation, alpha, auto_alpha,
+│                             #   execution, strategy_center 等）
+├── notifications/            # Discord / LINE / Telegram 通知
+├── scheduler/                # APScheduler（三條排程路徑：General / Auto-Alpha / Monthly Revenue）
+└── cli/main.py               # Typer CLI：backtest, server, status, factors
+#
+# 注意：src/config.py 和 src/domain/models.py 為向後相容的 re-export，
+# canonical 位置分別在 src/core/config.py 和 src/core/models.py
 
-strategies/               # 用戶自定義策略
-├── momentum.py           # 12-1 動量策略
-├── mean_reversion.py     # 均值回歸策略
-├── rsi_oversold.py       # RSI 超賣策略
-├── ma_crossover.py       # 均線交叉策略
-├── multi_factor.py       # 多因子複合策略
-├── pairs_trading.py      # 配對交易策略
-└── sector_rotation.py    # 板塊輪動策略
+strategies/                   # 用戶自定義策略（13 個）
+├── momentum.py               # 12-1 動量策略
+├── mean_reversion.py         # 均值回歸策略
+├── rsi_oversold.py           # RSI 超賣策略
+├── ma_crossover.py           # 均線交叉策略
+├── multi_factor.py           # 多因子複合策略（momentum + value + quality, risk-parity 加權）
+├── pairs_trading.py          # 配對交易策略
+├── sector_rotation.py        # 板塊輪動策略
+├── revenue_momentum.py       # 月營收動量 + 價格確認（rev_yoy ICIR 0.674）
+├── revenue_momentum_hedged.py # = Revenue Momentum + 複合 regime hedge（Paper Trading 主策略）
+├── trust_follow.py           # 投信跟單 + 營收成長
+└── multi_strategy_combo.py   # 多策略逆波動率加權組合
+# + src/alpha/strategy.py      # Alpha（可配置因子 pipeline）
+# + src/strategy/multi_asset.py # Multi-Asset（兩層：戰術配置 → 類內選股 → 組合優化）
 
 apps/
-├── web/                  # React 18 + Vite + Tailwind 儀表板
-├── mobile/               # React Native + Expo 52 行動 App
-└── shared/               # @quant/shared TypeScript 共享套件
+├── web/                      # React 18 + Vite + Tailwind 儀表板
+├── mobile/                   # React Native + Expo 52 行動 App
+├── android/                  # Android 原生（Kotlin + Jetpack Compose + Material 3 + Hilt DI）
+└── shared/                   # @quant/shared TypeScript 共享套件
     └── src/
-        ├── types/        # TypeScript 介面（對應後端 Pydantic schemas）
-        ├── api/client.ts # 平台無關 HTTP client（ClientAdapter 注入）
-        ├── api/ws.ts     # WSManager（自動重連 + 指數退避）
-        ├── api/endpoints.ts # 型別安全 API 端點定義
-        └── utils/format.ts  # 數值/貨幣/日期格式化
+        ├── types/            # TypeScript 介面（對應後端 Pydantic schemas）
+        ├── api/client.ts     # 平台無關 HTTP client（ClientAdapter 注入）
+        ├── api/ws.ts         # WSManager（自動重連 + 指數退避）
+        ├── api/endpoints.ts  # 型別安全 API 端點定義（25+ endpoints）
+        └── utils/format.ts   # 數值/貨幣/日期格式化
 
 tests/
-├── unit/                 # 單元測試（54 個）
-└── integration/          # 整合測試
+├── unit/                     # 單元測試（1,341 個）
+└── integration/              # 整合測試
 ```
 
 ## 3. 開發指令
@@ -128,7 +175,9 @@ make web                     # web dev server (port 3000)
 make mobile                  # expo dev server
 make web-build               # production build
 make web-typecheck           # tsc --noEmit
-make mobile-typecheck        # tsc --noEmit
+make web-test                # vitest
+cd apps/android && ./gradlew assembleDebug  # Android debug APK
+cd apps/android && ./gradlew lintDebug      # Android lint
 
 # === 全端啟動 ===
 make start                   # 後端 + web 並行
@@ -143,7 +192,7 @@ scripts/start.bat            # Windows：分別開啟視窗
 
 ```python
 from src.strategy.base import Context, Strategy
-from src.strategy.factors import momentum, rsi
+from src.strategy.factors.technical import momentum, rsi
 from src.strategy.optimizer import signal_weight, OptConstraints
 
 
@@ -236,7 +285,7 @@ class Strategy(ABC):
 
 ## 5. 撰寫自定義因子
 
-因子是 `src/strategy/factors.py` 中的純函式：
+因子位於 `src/strategy/factors/` 套件中（technical.py 66 個 + fundamental.py 17 個 + kakushadze.py = 共 83 個因子），皆為純函式：
 
 ```python
 def my_factor(prices: pd.DataFrame, lookback: int = 20) -> pd.Series:
@@ -302,16 +351,15 @@ RiskDecision.MODIFY(new_qty, "原因")             # 放行但修改數量
 
 ## 7. 投資組合優化
 
-`src/strategy/optimizer.py` 提供三種優化器：
+系統提供兩層優化：
 
-### equal_weight(signals, constraints)
-在所有正信號標的之間等權分配。最簡單的方法。
+### 策略層優化器（`src/strategy/optimizers/`）
 
-### signal_weight(signals, constraints)
-按信號強度按比例分配權重。信號越強，配置越多。
+簡單的權重分配方法，用於單一策略內部：
 
-### risk_parity(signals, volatilities, constraints)
-按波動率的倒數分配 — 每個持倉貢獻相等的風險。
+- **equal_weight** — 等權分配
+- **signal_weight** — 按信號強度按比例分配
+- **risk_parity** — 按波動率倒數分配
 
 ```python
 from src.strategy.optimizer import OptConstraints
@@ -323,6 +371,28 @@ constraints = OptConstraints(
     long_only=True,           # 不允許放空
 )
 ```
+
+### 投資組合優化器（`src/portfolio/optimizer.py`）
+
+14 種進階優化方法，用於多資產投資組合構建：
+
+| 方法 | 說明 |
+|------|------|
+| EqualWeight | 等權分配 |
+| InverseVolatility | 逆波動率加權 |
+| RiskParity | 風險平價 |
+| MVO | 均值-變異數最佳化 |
+| BlackLitterman | Black-Litterman 模型（支援 `BLView` 觀點） |
+| HRP | 層次風險平價 |
+| Robust | 穩健最佳化 |
+| Resampled | 重採樣效率前緣 |
+| CVaR | 條件風險值最佳化 |
+| MaxDrawdown | 最大回撤最佳化 |
+| GlobalMinVariance | 全域最小變異數 |
+| MaxSharpe | 最大 Sharpe 比率 |
+| IndexTracking | 指數追蹤 |
+
+搭配 `src/portfolio/risk_model.py`（共變異數估計：historical/EWM/Ledoit-Wolf/GARCH/PCA）和 `src/portfolio/currency.py`（CurrencyHedger 分層避險）。
 
 ## 8. 回測引擎內部機制
 
@@ -372,13 +442,13 @@ class DataFeed(ABC):
 
 ### 前端架構模式
 
-Web 和 Mobile 共享 `@quant/shared` 套件，各平台透過 adapter 注入平台特定邏輯：
+Web、Mobile、Android 共享 `@quant/shared` 套件，各平台透過 adapter 注入平台特定邏輯：
 
 ```
 @quant/shared (types, API client, WS manager, formatters)
-    ↑                           ↑
-apps/web/src/core/api/     apps/mobile/src/api/
-  client.ts (localStorage)   client.ts (SecureStore)
+    ↑                    ↑                    ↑
+apps/web/            apps/mobile/         apps/android/
+  (localStorage)       (SecureStore)        (Kotlin + Hilt + OkHttp)
 ```
 
 **匯入慣例：** Feature 程式碼從 `@core/*` 匯入（不直接匯入 `@quant/shared`），保持平台無關。
@@ -478,12 +548,14 @@ RiskAlert {
 
 ```
 [瀏覽器/行動裝置]              [伺服器/本機]
-Web / Mobile App   ←HTTP→   FastAPI (Port 8000)
-                   ←WS→     WebSocket (/ws/*)
+Web / Mobile /     ←HTTP→   FastAPI (Port 8000)
+Android App        ←WS→     WebSocket (/ws/*)
                                     ↕
                              PostgreSQL (DB)
                                     ↕
-                             Yahoo Finance API
+                         Yahoo Finance / FinMind / FRED API
+                                    ↕
+                         Shioaji SDK（實盤/模擬券商）
 ```
 
 ## 11. 測試
@@ -498,11 +570,19 @@ pytest tests/ --cov=src --cov-report=term-missing
 
 ### 測試結構
 
+後端共 1,341 個測試，涵蓋所有模組：
+
 - `tests/unit/test_models.py` — 領域模型測試（Position, Portfolio, Order）
 - `tests/unit/test_factors.py` — 因子計算測試
 - `tests/unit/test_risk.py` — 風控引擎與規則測試
 - `tests/unit/test_execution.py` — SimBroker 與交易更新測試
 - `tests/unit/test_strategy.py` — Strategy ABC、Context、優化器測試
+- `tests/unit/test_alpha*.py` — Alpha pipeline、filter strategy 測試
+- `tests/unit/test_portfolio*.py` — 14 種優化器、risk model 測試
+- `tests/unit/test_allocation*.py` — 戰術配置、總經因子測試
+- `tests/unit/test_backtest*.py` — 回測引擎、validator 測試
+- `tests/unit/test_api*.py` — API 路由測試
+- 前端：Vitest（web）+ Playwright（e2e）
 
 ### 撰寫測試
 
@@ -523,7 +603,7 @@ def test_example():
 
 ## 12. 配置系統
 
-`src/config.py` 使用 Pydantic Settings 搭配單例模式：
+`src/core/config.py` 使用 Pydantic Settings 搭配單例模式（`src/config.py` 為向後相容 re-export）：
 
 ```python
 from src.core.config import get_config, override_config, TradingConfig

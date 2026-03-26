@@ -2,13 +2,15 @@
 
 ## 1. 簡介
 
-量化交易系統是一個基於 Python 的量化交易平台，支援回測、模擬交易與實盤交易。系統採用模組化架構，內建風控管理、因子庫以及 REST/WebSocket API。
+量化交易系統是一個基於 Python 的量化交易平台，支援回測、模擬交易與實盤交易。Monorepo 架構包含 Python 後端、React Web 儀表板與 Android 原生 App。系統採用模組化設計，內建風控管理、因子庫以及 REST/WebSocket API。
 
 **核心功能：**
 - 事件驅動回測引擎，具備真實的滑價、手續費與稅金模擬
-- 內建技術因子庫（動量、均值回歸、RSI、均線交叉等）
+- 83 個內建因子（66 價量 + 17 基本面），含 Alpha 研究 pipeline
+- 戰術資產配置（宏觀因子 + 跨資產動能 + 市場體制判斷）
+- 投資組合優化（14 種方法：等權、風險平價、MVO、Black-Litterman、HRP 等）
 - 宣告式風控管理，含盤前檢查與緊急熔斷機制
-- REST API + WebSocket 即時監控
+- REST API + WebSocket 即時監控 + React Web 儀表板
 - CLI 命令列工具：回測、因子分析、系統管理
 
 ### 什麼是回測
@@ -57,7 +59,7 @@ make migrate
 |------|--------|------|
 | `QUANT_MODE` | `backtest` | 運行模式：`backtest`（回測）、`paper`（模擬）、`live`（實盤） |
 | `QUANT_DATABASE_URL` | `postgresql://...` | 資料庫連線字串 |
-| `QUANT_DATA_SOURCE` | `yahoo` | 數據源：`yahoo`、`fubon`、`twse` |
+| `QUANT_DATA_SOURCE` | `yahoo` | 數據源：`yahoo`、`finmind` |
 | `QUANT_API_KEY` | `dev-key` | API 認證金鑰 |
 | `QUANT_LOG_LEVEL` | `INFO` | 日誌等級 |
 | `QUANT_COMMISSION_RATE` | `0.001425` | 券商手續費（0.1425%） |
@@ -270,6 +272,76 @@ python -m src.cli.main backtest -s pairs_trading -u AAPL -u MSFT -u GOOGL -u AMZ
 python -m src.cli.main backtest -s sector_rotation -u AAPL -u MSFT -u GOOGL -u AMZN -u META
 ```
 
+### 月營收動能策略（revenue_momentum）
+
+**核心概念**：台股上市公司每月公布營收，營收加速成長的公司股價通常有延續性。
+
+具體做法：
+- 計算月營收年增率（rev_yoy）作為主要排序因子（ICIR 0.674）
+- 使用營收加速度（3 個月 / 12 個月營收比率）排序
+- 搭配價格趨勢確認，過濾假信號
+
+```bash
+python -m src.cli.main backtest -s revenue_momentum -u 2330.TW -u 2317.TW -u 2454.TW
+```
+
+### 月營收動能避險策略（revenue_momentum_hedged）
+
+**核心概念**：在月營收動能策略的基礎上，加入空頭偵測機制，避免在熊市中持倉。這是系統的 Paper Trading 主策略。
+
+具體做法：
+- 核心邏輯與 `revenue_momentum` 相同
+- 加入複合空頭偵測：當指數跌破 200 日均線（MA200）**或**出現波動率飆升（vol_spike）時判定為空頭
+- 空頭期間持倉降至 0%，避開系統性風險
+
+```bash
+python -m src.cli.main backtest -s revenue_momentum_hedged -u 2330.TW -u 2317.TW -u 2454.TW
+```
+
+### 投信跟單策略（trust_follow）
+
+**核心概念**：追蹤投信（共同基金）的買超行為，結合營收成長篩選。
+
+具體做法：
+- 篩選投信連續買超的標的
+- 搭配營收成長率作為品質過濾條件
+- 買入同時符合投信買超 + 營收成長的股票
+
+```bash
+python -m src.cli.main backtest -s trust_follow -u 2330.TW -u 2317.TW -u 2454.TW
+```
+
+### 多策略組合（multi_strategy_combo）
+
+**核心概念**：結合多個策略的信號，用反波動率加權，降低單一策略的風險。
+
+具體做法：
+- 同時運行多個子策略
+- 按各策略的波動率倒數分配權重（波動低的策略配置更多）
+- 達到分散風險的效果
+
+```bash
+python -m src.cli.main backtest -s multi_strategy_combo -u AAPL -u MSFT -u GOOGL -u AMZN -u META
+```
+
+### Alpha 因子策略（alpha）
+
+**核心概念**：可配置的量化因子 pipeline，支援因子中性化與成本感知的投組建構。
+
+具體做法：
+- 自訂宇宙篩選 → 因子計算 → 中性化 → 正交化 → 複合信號 → 分位回測
+- 支援成本感知的投組建構，考慮換手率對績效的影響
+- 適合進階用戶進行因子研究
+
+### 多資產策略（multi_asset）
+
+**核心概念**：兩層式架構，先做跨資產配置，再做類別內選股，最後進行投組優化。
+
+具體做法：
+- 第一層：戰術配置 — 根據宏觀因子與跨資產動能決定各資產類別的配置比例
+- 第二層：類別內選股 — 在每個資產類別中選出最佳標的
+- 最終透過投組優化器（14 種方法可選）產生目標權重
+
 ## 6. 撰寫你自己的策略
 
 撰寫策略只需要三步：
@@ -405,7 +477,15 @@ class MACrossStrategy(Strategy):
 
 ### 因子庫
 
-系統內建了多個技術因子，可以直接在策略中使用。它們都在 `src/strategy/factors.py` 裡：
+系統內建 83 個因子，分佈在 `src/strategy/factors/` 套件中：
+
+| 模組 | 檔案 | 因子數量 | 說明 |
+|------|------|----------|------|
+| 價量因子 | `technical.py` | 66 個 | 動量、均值回歸、波動率、RSI、均線交叉、量價趨勢等 |
+| 基本面因子 | `fundamental.py` | 17 個 | 營收成長、獲利能力、估值等 |
+| Kakushadze | `kakushadze.py` | 子集 | Kakushadze 101 Alphas 論文中的因子子集 |
+
+常用因子範例：
 
 | 因子 | 函式 | 主要參數 | 回傳值 |
 |------|------|----------|--------|
