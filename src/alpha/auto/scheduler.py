@@ -35,7 +35,7 @@ def _broadcast_event(event_type: str, data: dict[str, Any]) -> None:
         from src.api.ws import ws_manager
 
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # We're inside a running event loop — schedule coroutine
             asyncio.ensure_future(
                 ws_manager.broadcast("auto-alpha", {"type": event_type, **data})
