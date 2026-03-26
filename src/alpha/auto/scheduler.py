@@ -130,6 +130,20 @@ class AlphaScheduler:
         summary: dict[str, Any] = {}
 
         try:
+            # Pre-check: skip on non-trading days
+            from src.core.calendar import get_tw_calendar
+            from datetime import date as _date
+
+            cal = get_tw_calendar()
+            today = _date.today()
+            if not cal.is_trading_day(today):
+                logger.info(
+                    "Skipping full cycle — %s is not a trading day", today.isoformat()
+                )
+                summary["skipped"] = True
+                summary["reason"] = f"{today.isoformat()} is not a trading day"
+                return summary
+
             # Stage 1: Universe selection
             _broadcast_event("stage_started", {"stage": "universe"})
             universe_result: UniverseResult = self._universe_selector.select(data=data)

@@ -62,6 +62,10 @@ class TradingConfig(BaseSettings):
     commission_rate: float = 0.001425       # 台灣券商手續費
     tax_rate: float = 0.003                 # 台灣證交稅 (賣出)
 
+    # ── Smart Order (TWAP) ──
+    smart_order_enabled: bool = False
+    smart_order_slices: int = 5
+
     # ── 永豐 Shioaji 券商 ──
     sinopac_api_key: str = ""
     sinopac_secret_key: str = ""

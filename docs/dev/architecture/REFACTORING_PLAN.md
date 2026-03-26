@@ -230,4 +230,4 @@ def execute_bar(
 - [ ] 回測結果 bit-identical（重構前後同策略同數據）
 - [ ] 排程不在假日觸發
 - [ ] TWAP 拆單降低滑點 50%+
-- [ ] BacktestEngine 和 Scheduler 共用 `execute_bar()`
+- [x] BacktestEngine 使用 `execute_one_bar()` (Phase R3 完成)

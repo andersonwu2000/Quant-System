@@ -24,6 +24,7 @@ from src.execution.market_hours import (
 )
 from src.execution.oms import OrderManager
 from src.execution.broker.simulated import SimBroker
+from src.execution.smart_order import TWAPConfig, TWAPSplitter
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,11 @@ class ExecutionConfig:
     # General
     check_market_hours: bool = True
     queue_off_hours_orders: bool = True
+    # Smart Order (TWAP)
+    smart_order_enabled: bool = False
+    smart_order_slices: int = 5
+    smart_order_interval_minutes: int = 30
+    smart_order_min_value: float = 50000
 
 
 class ExecutionService:
@@ -62,6 +68,14 @@ class ExecutionService:
         self._order_queue = OrderQueue()
         self._initialized = False
         self._trade_callbacks: list[Any] = []
+        # TWAP splitter
+        self._twap: TWAPSplitter | None = None
+        if self._config.smart_order_enabled:
+            self._twap = TWAPSplitter(TWAPConfig(
+                n_slices=self._config.smart_order_slices,
+                interval_minutes=self._config.smart_order_interval_minutes,
+                min_order_value=Decimal(str(self._config.smart_order_min_value)),
+            ))
 
     def initialize(self) -> bool:
         """初始化執行後端。
@@ -146,6 +160,9 @@ class ExecutionService:
         if mode == "backtest":
             assert self._sim_broker is not None
             assert current_bars is not None
+            # TWAP: 拆單後逐筆送入 SimBroker（各自獨立計算滑點）
+            if self._twap is not None:
+                orders = self._apply_twap_split(orders, current_bars)
             trades = self._sim_broker.execute(orders, current_bars, timestamp)
             return trades
 
@@ -172,6 +189,10 @@ class ExecutionService:
                     order.reject_reason = f"Market closed: {session.value}"
                 return []
 
+        # TWAP: paper/live 模式下也拆單（目前一次全部送出，未來可排程）
+        if self._twap is not None:
+            orders = self._apply_twap_split(orders, current_bars)
+
         # 透過券商提交
         assert self._broker is not None
         broker_trades: list[Trade] = []
@@ -197,6 +218,50 @@ class ExecutionService:
                 self._oms.on_fill(trade)
 
         return broker_trades
+
+    def _apply_twap_split(
+        self,
+        orders: list[Order],
+        current_bars: dict[str, dict[str, Any]] | None = None,
+    ) -> list[Order]:
+        """將符合條件的母單拆為 TWAP 子單，回傳展平後的訂單列表。
+
+        每筆子單仍以 Order 物件表示（方便下游 SimBroker/OMS 不需改動），
+        但數量已縮小為 slice_qty。
+        """
+        assert self._twap is not None
+        result: list[Order] = []
+        for order in orders:
+            # 取得估計價格：優先用 current_bars 收盤價，否則用 order.price
+            price = order.price
+            if price is None and current_bars is not None:
+                bar = current_bars.get(order.instrument.symbol)
+                if bar is not None:
+                    close = bar.get("close")
+                    if close is not None:
+                        price = Decimal(str(close))
+            if price is None:
+                # 無法估價，不拆
+                result.append(order)
+                continue
+
+            if not self._twap.should_split(order, price):
+                result.append(order)
+                continue
+
+            children = self._twap.split(order)
+            for child in children:
+                # 轉回 Order 物件
+                child_order = Order(
+                    instrument=child.instrument,
+                    side=child.side,
+                    order_type=child.order_type,
+                    quantity=child.quantity,
+                    price=child.price,
+                    strategy_id=order.strategy_id,
+                )
+                result.append(child_order)
+        return result
 
     def flush_queued_orders(self) -> list[dict[str, Any]]:
         """清空盤外佇列，返回待處理的訂單。"""

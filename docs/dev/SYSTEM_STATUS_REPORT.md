@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 128 (120 src + 8 strategies) |
-| 後端 Python LOC | ~22,500 (21,807 + 714) |
-| 測試檔案 | 83 |
-| 測試 LOC | ~15,850 |
-| 測試數量 (pytest collected) | **1091** |
+| 後端 Python 檔案 (src/ + strategies/) | 129 (121 src + 8 strategies) |
+| 後端 Python LOC | ~22,630 (21,937 + 714) |
+| 測試檔案 | 85 |
+| 測試 LOC | ~16,000 |
+| 測試數量 (pytest collected) | **1136** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -62,11 +62,11 @@
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
 | `src/alpha/` | 24 | ~4,250 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
 | `src/backtest/` | 10 | ~3,500 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL |
-| `src/execution/` | 15 | ~2,000 | `broker/` (base + simulated + sinopac) + `quote/` (sinopac) + `service.py` (ExecutionService) + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 + backward-compat shims |
+| `src/execution/` | 16 | ~2,120 | `broker/` (base + simulated + sinopac) + `quote/` (sinopac) + `service.py` (ExecutionService) + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 + **TWAP 拆單 (`smart_order.py`)** + backward-compat shims |
 | `src/strategy/` | 11 | ~2,000 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 27 因子) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
 | `src/portfolio/` | 4 | ~1,260 | 組合最佳化 (14 方法: EW/InvVol/RP/MVO/BL/HRP/Robust/Resampled/CVaR/MaxDD/GMV/MaxSharpe/IndexTracking/SemiVariance) + 風險模型 (LW/GARCH/Factor Model Cov + VaR/CVaR 歷史+參數法) + James-Stein 均值收縮 + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
-| `src/core/` | 4 | ~700 | 核心模型 (models.py) + 設定 (config.py) + 日誌 (logging.py) + Repository |
+| `src/core/` | 6 | ~930 | 核心模型 (models.py) + 設定 (config.py) + 日誌 (logging.py) + Repository + **TWTradingCalendar (calendar.py)** + **trading_pipeline.py (共用交易流程)** |
 | `src/domain/` | 3 | ~30 | Backward-compat shims (re-export from `src/core/`) |
 | `src/risk/` | 4 | 573 | 風控引擎 (10 規則) + Kill Switch + RiskMonitor |
 | `src/instrument/` | 3 | 331 | InstrumentRegistry + 自動推斷 (symbol → asset_class/market/currency) |
@@ -175,9 +175,10 @@
 | SinopacQuoteManager | `sinopac_quote.py` | 即時行情訂閱 (tick/bidask STK + FOP callbacks) | ✅ 程式碼 |
 | ExecutionService | `execution_service.py` | 模式路由 (backtest/paper/live) + 下單前檢查 | ✅ |
 | OrderManager | `oms.py` | 訂單生命週期管理 + 成交記錄 | ✅ |
-| Market Hours | `market_hours.py` | 台股時段驗證 + 盤外委託佇列 | ✅ |
+| Market Hours | `market_hours.py` | 台股時段驗證 + 盤外委託佇列 + 國定假日排除 (TWTradingCalendar) | ✅ |
 | Reconcile | `reconcile.py` | EOD 持倉對帳 (diff + auto_correct) | ✅ |
 | StopOrderManager | `stop_order.py` | 軟體觸價委託 (stop-loss / stop-profit) | ✅ |
+| TWAPSplitter | `smart_order.py` | TWAP 拆單引擎 (大單拆 N 筆等量子單，降低 market impact) | ✅ |
 
 **SinopacBroker 擴展功能**:
 - `query_trading_limits()` — 交易額度/融資融券額度預檢
@@ -308,13 +309,13 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 
 | 分類 | 檔案數 | 測試數 | 說明 |
 |------|--------|--------|------|
-| Execution 層 | 7 | ~170 | SinopacBroker, QuoteManager, ExecutionService, MarketHours, Reconcile, StopOrder, ShioajiFeed |
+| Execution 層 | 8 | ~184 | SinopacBroker, QuoteManager, ExecutionService, MarketHours, Reconcile, StopOrder, ShioajiFeed, **TWAPSplitter** |
 | Alpha 層 | 20 | ~225 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety/backtest_gate, OOS decay, net alpha filter)**, Kakushadze 101, Momentum Crash, **Fundamental Factors (size/investment/gross_profit)** |
 | 策略 + 回測 | 12 | ~147 | 各策略, 引擎, 分析, Walk-forward, Randomized, PBO, K-Fold, StressTest |
 | 風控 | 3 | ~60 | 規則, Kill Switch, Monitor |
 | API + 整合 | 6 | ~100 | REST 端點, Portfolio API, Auth, WebSocket |
 | 數據 | 5 | ~80 | Yahoo, FinMind, FRED, Shioaji, Scanner |
-| 領域模型 | 6 | ~50 | Order, Portfolio, Instrument, OMS |
+| 核心 + 領域模型 | 7 | ~56 | Order, Portfolio, Instrument, OMS, **TradingPipeline** |
 | 其他 | 7 | ~46 | Config, Notifications, 雜項 |
 
 ### 7.2 前端測試
@@ -421,7 +422,7 @@ volumes:
 | SinopacBroker | ✅ 程式碼 | 下單/撤單/改單/持倉/帳務/成交回報/斷線重連 |
 | ExecutionService | ✅ 整合 | 模式路由 + AppState 接通 + startup 初始化 |
 | 非阻塞下單 | ✅ 程式碼 | `timeout=0` (~12ms) |
-| 交易時段管理 | ✅ 完成 | 盤前/盤中/零股/定盤 + 盤外佇列 |
+| 交易時段管理 | ✅ 完成 | 盤前/盤中/零股/定盤 + 盤外佇列 + **TWTradingCalendar (國定假日排除)** |
 | EOD 對帳 | ✅ 完成 | reconcile + auto_correct |
 | 觸價委託 | ✅ 完成 | StopOrderManager (stop-loss/profit) |
 | 融資融券 | ✅ 模型 | OrderCondition (Cash/Margin/Short/DayTrade) + StockOrderLot |
@@ -699,6 +700,8 @@ volumes:
 | Phase G | 2026-03-26 | 學術基準升級 (G1-G8: +7 最佳化方法 + GARCH/Factor Cov + VaR/CVaR + PBO/Randomized/k-fold/Stress + 共整合 Pairs + Omega/Rolling Sharpe + 回測防護) |
 | Phase H | 2026-03-26 | 實用精煉 (Deflated Sharpe + MinBTL + Semi-Variance + Kalman Filter Pairs), 1,006 tests |
 | Phase H | 2026-03-26 | 實用精煉 (H1: DSR+MinBTL, H2: Semi-Variance 最佳化, H3: Kalman Pairs Trading) |
+| Phase R1 | 2026-03-26 | Smart Order — TWAP 拆單引擎 (降低 market impact, ExecutionService 整合) |
+| Phase R3 | 2026-03-26 | Trading Pipeline 抽取 — `execute_one_bar()` 共用交易流程，BacktestEngine 改用 |
 
 ### 12.2 進行中 / 待辦
 
