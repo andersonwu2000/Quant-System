@@ -49,7 +49,7 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v (1,341 tests)
+make test                    # pytest tests/ -v (1,385 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
@@ -97,8 +97,7 @@ Key design decisions:
 - **Timezone handling**: All DatetimeIndex data is normalized to tz-naive UTC. Both `HistoricalFeed.load()` and `YahooFeed._download()` strip timezone info.
 
 **Module boundaries** (detailed inventory in `docs/dev/SYSTEM_STATUS_REPORT.md` §4):
-- `src/core/` — `models.py` (**Unified** Instrument, Bar, Position, Order, Portfolio, Trade, enums), `config.py` (Pydantic Settings), `logging.py` (structlog), `repository.py`, `calendar.py` (TWTradingCalendar — 台股交易日曆含國定假日), `trading_pipeline.py` (`execute_one_bar()` — 回測/實盤共用交易流程). (`src/domain/models.py` re-exports for backward compat.)
-- `src/instrument/` — `InstrumentRegistry` (get/get_or_create/search/by_market/by_asset_class). Re-exports Instrument from domain. `_infer_instrument()` auto-detects asset type from symbol pattern. Cost templates (TW_STOCK_DEFAULTS, US_FUTURES_DEFAULTS, etc.).
+- `src/core/` — `models.py` (**Unified** Instrument, Bar, Position, Order, Portfolio, Trade, enums), `config.py` (Pydantic Settings), `logging.py` (structlog), `repository.py`, `calendar.py` (TWTradingCalendar — 台股交易日曆含國定假日), `trading_pipeline.py` (`execute_one_bar()` — 回測/實盤共用交易流程). - `src/instrument/` — `InstrumentRegistry` (get/get_or_create/search/by_market/by_asset_class). Re-exports Instrument from domain. `_infer_instrument()` auto-detects asset type from symbol pattern. Cost templates (TW_STOCK_DEFAULTS, US_FUTURES_DEFAULTS, etc.).
 - `src/alpha/` — Alpha research layer (within-asset selection). `pipeline.py` orchestrates end-to-end: universe filtering → factor computation → neutralization → orthogonalization → composite signal → quantile backtest → cost-aware portfolio construction. `AlphaStrategy` adapter wraps pipeline as `Strategy`. `filter_strategy.py` provides condition-based screening (`FilterCondition` + `FilterStrategyConfig` + `FilterStrategy`, 13 built-in factor calculators, pre-configured `revenue_momentum_filter()` / `trust_follow_filter()` factories). `regime.py` classifies market regimes (shared with allocation layer). `auto/` (9 files: AutoAlphaConfig, UniverseSelector, AlphaResearcher, AlphaDecisionEngine, AlphaExecutor, AlphaScheduler, AlphaStore, AlertManager, SafetyChecker, FactorPerformanceTracker, DynamicFactorPool).
 - `src/allocation/` — Tactical asset allocation (between-asset selection). `macro_factors.py`: 4 macro factors (growth/inflation/rates/credit) from FRED z-scores. `cross_asset.py`: momentum/volatility/value per AssetClass. `tactical.py`: TacticalEngine combines strategic weights + macro + cross-asset + regime → `dict[AssetClass, float]`. API: `POST /api/v1/allocation`.
 - `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 14 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP/Robust/Resampled/CVaR/MaxDrawdown/GlobalMinVariance/MaxSharpe/IndexTracking), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage/GARCH/PCA factor model), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
@@ -159,8 +158,7 @@ Key design decisions:
 
 **WebSocket** (`src/api/ws.py`): channels — `portfolio`, `alerts`, `orders`, `market`. Token-based auth (optional in dev mode). Ping/pong keep-alive. Broadcast uses `asyncio.gather` with 5s timeout and dead connection cleanup. `market` channel connected to SinopacQuoteManager tick/bidask in paper/live mode. `RealtimeRiskMonitor` monitors intraday drawdown via tick callbacks.
 
-**Logging** (`src/core/logging.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`. (`src/logging_config.py` re-exports for backward compat.)
-
+**Logging** (`src/core/logging.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`.
 ## Frontend Architecture
 
 **Shared package** (`apps/shared/`):
@@ -252,7 +250,7 @@ Every 11th 09:05 → monthly_revenue_rebalance() → revenue_momentum_hedged.on_
 
 **CI/CD** (`.github/workflows/ci.yml`) — 9 jobs:
 - `backend-lint` — ruff check + mypy strict
-- `backend-test` — pytest (1,341 tests)
+- `backend-test` — pytest (1,385 tests)
 - `web-typecheck` — tsc --noEmit
 - `web-test` — vitest (depends on web-typecheck)
 - `web-build` — vite build (depends on web-typecheck)
@@ -267,8 +265,7 @@ Every 11th 09:05 → monthly_revenue_rebalance() → revenue_momentum_hedged.on_
 
 ## Configuration
 
-All config via `QUANT_` prefixed env vars or `.env` file (see `.env.example`). Defined in `src/core/config.py` as Pydantic Settings. Access via `get_config()` singleton; use `override_config()` in tests. (`src/config.py` re-exports for backward compat.)
-
+All config via `QUANT_` prefixed env vars or `.env` file (see `.env.example`). Defined in `src/core/config.py` as Pydantic Settings. Access via `get_config()` singleton; use `override_config()` in tests.
 Key config:
 - `mode`: `"backtest"` (default), `"paper"`, or `"live"` — operating mode
 - `data_source`: `"yahoo"` (default) or `"finmind"` — selects data feed
