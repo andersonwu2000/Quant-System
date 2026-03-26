@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "@core/hooks";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
@@ -38,6 +38,8 @@ export function AdminPage() {
   const [resetLoading, setResetLoading] = useState(false);
 
   const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; variant: "danger" | "warning"; onConfirm: () => void } | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   const roleDescriptions = t.admin.roleDescriptions as Record<string, string>;
 
@@ -49,14 +51,16 @@ export function AdminPage() {
     setCreateLoading(true);
     try {
       await adminApi.createUser(createForm);
+      if (!mountedRef.current) return;
       toast("success", t.admin.userCreated);
       setShowCreateModal(false);
       setCreateForm({ username: "", display_name: "", password: "", confirmPassword: "", role: "viewer" });
       refresh();
     } catch (err) {
+      if (!mountedRef.current) return;
       toast("error", translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
     } finally {
-      setCreateLoading(false);
+      if (mountedRef.current) setCreateLoading(false);
     }
   };
 
@@ -69,13 +73,15 @@ export function AdminPage() {
         role: editForm.role,
         is_active: editForm.is_active,
       });
+      if (!mountedRef.current) return;
       toast("success", t.admin.userUpdated);
       setEditingUser(null);
       refresh();
     } catch (err) {
+      if (!mountedRef.current) return;
       toast("error", translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
     } finally {
-      setEditLoading(false);
+      if (mountedRef.current) setEditLoading(false);
     }
   };
 
@@ -88,14 +94,16 @@ export function AdminPage() {
     setResetLoading(true);
     try {
       await adminApi.resetPassword(resetUser.id, newPassword);
+      if (!mountedRef.current) return;
       toast("success", t.admin.passwordReset);
       setResetUser(null);
       setNewPassword("");
       setConfirmNewPassword("");
     } catch (err) {
+      if (!mountedRef.current) return;
       toast("error", translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
     } finally {
-      setResetLoading(false);
+      if (mountedRef.current) setResetLoading(false);
     }
   };
 
@@ -116,9 +124,11 @@ export function AdminPage() {
         setConfirmAction(null);
         try {
           await adminApi.deleteUser(user.id);
+          if (!mountedRef.current) return;
           toast("success", t.admin.userDeleted);
           refresh();
         } catch (err) {
+          if (!mountedRef.current) return;
           toast("error", translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
         }
       },
@@ -128,9 +138,11 @@ export function AdminPage() {
   const handleToggleActive = async (user: UserInfo) => {
     try {
       await adminApi.updateUser(user.id, { is_active: !user.is_active });
+      if (!mountedRef.current) return;
       toast("success", t.admin.userUpdated);
       refresh();
     } catch (err) {
+      if (!mountedRef.current) return;
       toast("error", translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
     }
   };

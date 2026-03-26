@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { glossary } from "@core/help";
 import { useT } from "@core/i18n";
@@ -34,6 +34,13 @@ export function HelpTip({ term }: { term: string }) {
 
   const handleLeave = useCallback(() => {
     timeout.current = setTimeout(() => setShow(false), 100);
+  }, []);
+
+  // Cleanup timeout on unmount to prevent state update on unmounted component
+  useEffect(() => {
+    return () => {
+      clearTimeout(timeout.current);
+    };
   }, []);
 
   return (

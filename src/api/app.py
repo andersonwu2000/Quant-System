@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,12 +61,67 @@ def create_app() -> FastAPI:
     # 初始化 structured logging
     setup_logging(config.log_level, config.log_format)
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+        """Application lifespan: startup & shutdown logic."""
+        logger.info("Quant Trading System starting (env=%s, mode=%s)", config.env, config.mode)
+        from src.api.state import get_app_state
+        from src.strategy.registry import list_strategies
+        state = get_app_state()
+        state.strategies = {name: {"status": "stopped", "pnl": 0.0} for name in list_strategies()}
+        _seed_admin(config)
+
+        from src.execution.service import ExecutionConfig, ExecutionService as ExecSvc
+        exec_config = ExecutionConfig(
+            mode=config.mode,
+            sinopac_api_key=config.sinopac_api_key,
+            sinopac_secret_key=config.sinopac_secret_key,
+            sinopac_ca_path=config.sinopac_ca_path,
+            sinopac_ca_password=config.sinopac_ca_password,
+        )
+        state.execution_service = ExecSvc(exec_config)
+        state.execution_service.initialize()
+        logger.info("ExecutionService initialized: mode=%s", config.mode)
+
+        async def _kill_switch_monitor() -> None:
+            while True:
+                await asyncio.sleep(5)
+                try:
+                    if state.risk_engine.kill_switch(state.portfolio):
+                        for name in list(state.strategies):
+                            state.strategies[name]["status"] = "stopped"
+                        state.oms.cancel_all()
+                        await ws_manager.broadcast("alerts", {
+                            "type": "kill_switch",
+                            "message": "Kill switch triggered — all strategies stopped",
+                        })
+                except Exception:
+                    logger.debug("Kill switch monitor error", exc_info=True)
+
+        kill_switch_task = asyncio.create_task(_kill_switch_monitor())
+        ws_manager.start_ping_task()
+
+        from src.scheduler import SchedulerService
+        scheduler = SchedulerService()
+        scheduler.start(config)
+
+        yield
+
+        logger.info("Quant Trading System shutting down...")
+        scheduler.stop()
+        kill_switch_task.cancel()
+        ws_manager.stop_ping_task()
+        from src.api.state import get_app_state as _get_state
+        _get_state().execution_service.shutdown()
+        await ws_manager.close_all()
+
     app = FastAPI(
         title="Quant Trading System",
         description="量化交易平台 API",
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=lifespan,
     )
 
     # Rate limiter
@@ -137,71 +194,15 @@ def create_app() -> FastAPI:
         finally:
             ws_manager.disconnect(websocket, channel)
 
-    @app.on_event("startup")
-    async def startup() -> None:
-        logger.info(
-            "Quant Trading System starting (env=%s, mode=%s)",
-            config.env, config.mode,
-        )
-        from src.api.state import get_app_state
-        from src.strategy.registry import list_strategies
-        state = get_app_state()
-        state.strategies = {
-            name: {"status": "stopped", "pnl": 0.0}
-            for name in list_strategies()
-        }
-        _seed_admin(config)
+    # ── 全域例外處理器 ──────────────────────────────────
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
 
-        # 初始化 ExecutionService（根據 config.mode）
-        from src.execution.service import ExecutionConfig, ExecutionService as ExecSvc
-
-        exec_config = ExecutionConfig(
-            mode=config.mode,
-            sinopac_api_key=config.sinopac_api_key,
-            sinopac_secret_key=config.sinopac_secret_key,
-            sinopac_ca_path=config.sinopac_ca_path,
-            sinopac_ca_password=config.sinopac_ca_password,
-        )
-        state.execution_service = ExecSvc(exec_config)
-        state.execution_service.initialize()
-        logger.info("ExecutionService initialized: mode=%s", config.mode)
-
-        # 背景 Kill Switch 監控（每 5 秒檢查一次）
-        async def _kill_switch_monitor() -> None:
-            while True:
-                await asyncio.sleep(5)
-                try:
-                    if state.risk_engine.kill_switch(state.portfolio):
-                        for name in state.strategies:
-                            state.strategies[name]["status"] = "stopped"
-                        state.oms.cancel_all()
-                        await ws_manager.broadcast("alerts", {
-                            "type": "kill_switch",
-                            "message": "Kill switch triggered — all strategies stopped",
-                        })
-                except Exception:
-                    logger.debug("Kill switch monitor error", exc_info=True)
-
-        app.state.kill_switch_task = asyncio.create_task(_kill_switch_monitor())
-
-        # 啟動排程器（若啟用）
-        from src.scheduler import SchedulerService
-
-        scheduler = SchedulerService()
-        scheduler.start(config)
-        app.state.scheduler = scheduler
-
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
-        logger.info("Quant Trading System shutting down...")
-        if hasattr(app.state, "scheduler"):
-            app.state.scheduler.stop()
-        if hasattr(app.state, "kill_switch_task"):
-            app.state.kill_switch_task.cancel()
-        from src.api.state import get_app_state as _get_state
-
-        _get_state().execution_service.shutdown()
-        await ws_manager.close_all()
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        """捕獲所有未處理的例外，避免洩漏堆疊資訊到客戶端。"""
+        logger.error("Unhandled exception: %s %s → %s", request.method, request.url.path, exc, exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
     # ── Serve Web 前端靜態檔 ──────────────────────────
     # 若 apps/web/dist 存在，則在 API 之後 mount SPA fallback
@@ -217,8 +218,8 @@ def create_app() -> FastAPI:
         # SPA fallback: 所有非 /api 路由回傳 index.html
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str) -> FileResponse:
-            file_path = web_dist / full_path
-            if file_path.is_file():
+            file_path = (web_dist / full_path).resolve()
+            if file_path.is_file() and file_path.is_relative_to(web_dist):
                 return FileResponse(str(file_path))
             return FileResponse(str(web_dist / "index.html"))
 

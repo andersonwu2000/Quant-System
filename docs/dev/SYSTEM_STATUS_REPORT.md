@@ -483,9 +483,23 @@ volumes:
 | D-25 | ✅ | — | ShioajiScanner + 處置/注意股排除 | — |
 | D-26 | ✅ | — | Order 融資融券/零股欄位 | — |
 | D-27 | 待辦 | 中 | WebSocket `market` 頻道未接入 SinopacQuoteManager | 前端無即時行情 |
-| D-28 | 待辦 | 低 | FastAPI `on_event` deprecated → lifespan handler | DeprecationWarning |
+| D-28 | ✅ 已修復 | 低 | FastAPI `on_event` deprecated → lifespan handler | 已遷移至 lifespan context manager |
 | D-29 | ✅ 已修復 | 低 | CI backend-test count 過時 (326 vs 726) | CLAUDE.md 數字已更新 |
 | D-30 | ✅ | — | Auto-Alpha API routes (10 端點, Phase F3a) | — |
+| D-31 | ✅ 已修復 | 高 | SPA fallback 路徑穿越漏洞 | `app.py` 加入 `is_relative_to()` 防護 |
+| D-32 | ✅ 已修復 | 高 | auto-alpha WS 端點無認證 | 加入 token 認證邏輯 |
+| D-33 | ✅ 已修復 | 中 | `_run_now_tasks` 無限增長（記憶體洩漏） | 加入 50 筆上限 + 自動清除 |
+| D-34 | ✅ 已修復 | 中 | 全域例外處理器缺失 | 加入 500 fallback handler |
+| D-35 | ✅ 已修復 | 中 | WSManager 無重連上限 / WS 連線數無限 | MAX_RETRIES=20, 200/channel |
+| D-36 | ✅ 已修復 | 低 | 前端全部頁面 async handler 缺少 mounted 檢查 | 8 個頁面均已加入 mountedRef 保護 |
+| D-37 | ✅ 已修復 | 中 | `alpha_tasks` 跨線程無鎖保護 | 加入 `alpha_lock` threading.Lock |
+| D-38 | ✅ 已修復 | 中 | 資料庫連線池未配置 pool_size/pool_recycle | PostgreSQL: pool_size=10, pool_pre_ping=True |
+| D-39 | ✅ 已修復 | 中 | `asyncio.get_event_loop()` deprecated | 改用 `get_running_loop()` |
+| D-40 | ✅ 已修復 | 中 | 前端 WS URL 不含認證 Token | login 存 token，WS URL 附帶 `?token=` |
+| D-41 | ✅ 已修復 | 中 | 後端缺少 server-side ping | 加入 `_server_ping_loop` 每 30 秒偵測死連線 |
+| D-42 | ✅ 已修復 | 中 | broadcast 無 backpressure | 同 channel 前次未完成時丟棄 + 批次 50 並行 |
+| D-43 | ✅ 已修復 | 低 | useWs 每次建立新 WSManager | singleton + refCount 共享機制 |
+| D-44 | ✅ 已修復 | 中 | backtest 結果全存記憶體 | 加入 1 小時自動過期清除 |
 
 ---
 

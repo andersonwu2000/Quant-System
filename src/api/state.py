@@ -46,6 +46,8 @@ class AppState:
     mutation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # 保護 backtest_tasks 跨執行緒存取
     backtest_lock: threading.Lock = field(default_factory=threading.Lock)
+    # 保護 alpha_tasks 跨執行緒存取
+    alpha_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 _state: AppState | None = None

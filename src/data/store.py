@@ -159,8 +159,20 @@ DEFAULT_DB_PATH = Path("data/quant.db")
 
 
 def _create_engine(url: str) -> sa.Engine:
-    """Create a SQLAlchemy engine. Sets WAL + busy_timeout for SQLite."""
-    engine = sa.create_engine(url)
+    """Create a SQLAlchemy engine. Sets WAL + busy_timeout for SQLite.
+    Configures connection pool for PostgreSQL production use."""
+    kwargs: dict[str, object] = {}
+
+    # PostgreSQL 連線池配置
+    if not url.startswith("sqlite"):
+        kwargs.update(
+            pool_size=10,
+            max_overflow=20,
+            pool_recycle=1800,  # 30 分鐘回收連線，避免斷線
+            pool_pre_ping=True,  # 使用前 ping 偵測死連線
+        )
+
+    engine = sa.create_engine(url, **kwargs)
 
     if engine.dialect.name == "sqlite":
         @event.listens_for(engine, "connect")

@@ -34,6 +34,7 @@ export function AutoAlphaPage() {
   const { t } = useT();
   const { toast } = useToast();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const mountedRef = useRef(true);
   const [runProgress, setRunProgress] = useState<RunProgress | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -86,12 +87,14 @@ export function AutoAlphaPage() {
     setActionLoading("start");
     try {
       const resp = await autoAlphaEndpoints.start();
+      if (!mountedRef.current) return;
       toast("success", resp.message);
       refreshStatus();
     } catch {
+      if (!mountedRef.current) return;
       toast("error", t.common.requestFailed);
     } finally {
-      setActionLoading(null);
+      if (mountedRef.current) setActionLoading(null);
     }
   };
 
@@ -99,18 +102,24 @@ export function AutoAlphaPage() {
     setActionLoading("stop");
     try {
       const resp = await autoAlphaEndpoints.stop();
+      if (!mountedRef.current) return;
       toast("success", resp.message);
       refreshStatus();
     } catch {
+      if (!mountedRef.current) return;
       toast("error", t.common.requestFailed);
     } finally {
-      setActionLoading(null);
+      if (mountedRef.current) setActionLoading(null);
     }
   };
 
-  // Cleanup poll on unmount
+  // Cleanup poll + mountedRef on unmount
   useEffect(() => {
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
 
   const handleRunNow = async () => {

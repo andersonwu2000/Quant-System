@@ -173,6 +173,9 @@ class FredDataSource:
             return None
         try:
             df = pd.read_parquet(path)
+            # 確保 index 是 DatetimeIndex（parquet 反序列化後可能退化為 numpy array）
+            if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
             return df.iloc[:, 0]
         except Exception:
             return None

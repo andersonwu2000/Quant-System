@@ -6,8 +6,6 @@ import com.quant.trading.data.api.AuthInterceptor
 import com.quant.trading.data.api.DynamicBaseUrlInterceptor
 import com.quant.trading.data.api.QuantApiService
 import com.quant.trading.data.api.UnauthorizedInterceptor
-import com.quant.trading.data.api.WebSocketManager
-import com.quant.trading.data.local.SecureStorage  // Used by WebSocketManager provider
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -78,12 +76,5 @@ object NetworkModule {
         return retrofit.create(QuantApiService::class.java)
     }
 
-    @Provides
-    @Singleton
-    fun provideWebSocketManager(
-        okHttpClient: OkHttpClient,
-        storage: SecureStorage,
-    ): WebSocketManager {
-        return WebSocketManager(okHttpClient, storage)
-    }
+    // WebSocketManager is provided via @Inject constructor (no @Provides needed)
 }

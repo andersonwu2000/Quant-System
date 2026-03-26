@@ -10,6 +10,7 @@ import type { UserRole } from "@quant/shared";
 import { extractRoleFromJwt } from "@core/auth";
 
 const AUTH_STORAGE = "quant_authenticated";
+const TOKEN_STORAGE = "quant_access_token";
 
 export function isAuthenticated(): boolean {
   return localStorage.getItem(AUTH_STORAGE) === "true";
@@ -22,6 +23,7 @@ export async function login(credentials: { username: string; password: string } 
     : { username: credentials.username, password: credentials.password };
   const resp = await post<{ access_token: string }>("/api/v1/auth/login", body);
   localStorage.setItem(AUTH_STORAGE, "true");
+  localStorage.setItem(TOKEN_STORAGE, resp.access_token);
   return extractRoleFromJwt(resp.access_token);
 }
 
@@ -33,6 +35,12 @@ export async function logout(): Promise<void> {
     // best effort
   }
   localStorage.removeItem(AUTH_STORAGE);
+  localStorage.removeItem(TOKEN_STORAGE);
+}
+
+/** Get the stored access token for WebSocket auth. */
+export function getAccessToken(): string | null {
+  return localStorage.getItem(TOKEN_STORAGE);
 }
 
 // Initialize shared client with web adapter
@@ -44,10 +52,12 @@ initClient({
   },
 });
 
-// Initialize shared WS with browser location
+// Initialize shared WS with browser location + auth token
 initWs((channel: Channel) => {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws/${channel}`;
+  const token = localStorage.getItem(TOKEN_STORAGE);
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+  return `${proto}//${location.host}/ws/${channel}${tokenParam}`;
 });
 
 // Re-export shared client functions
