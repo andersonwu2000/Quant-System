@@ -35,7 +35,7 @@ class TradingConfig(BaseSettings):
     database_url: str = "sqlite:///data/quant.db"
 
     # ── 數據源 ──
-    data_source: Literal["yahoo", "finmind", "fubon", "twse"] = "yahoo"
+    data_source: Literal["yahoo", "finmind"] = "yahoo"
     finmind_token: str = ""
     data_cache_dir: str = ".cache/market_data"
 
