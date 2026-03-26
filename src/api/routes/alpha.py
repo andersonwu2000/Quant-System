@@ -527,3 +527,240 @@ async def compute_attribution(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Factor Correlation Matrix ──────────────────────────────────
+
+
+class CorrelationMatrixRequest(BaseModel):
+    symbols: list[str]
+    factors: list[str]
+    start: str
+    end: str
+
+class CorrelationMatrixResponse(BaseModel):
+    matrix: dict[str, dict[str, float]]
+    n_factors: int
+
+@router.post("/factor-correlation", response_model=CorrelationMatrixResponse)
+async def compute_factor_correlation(
+    req: CorrelationMatrixRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> CorrelationMatrixResponse:
+    """Compute pairwise correlation matrix between factors."""
+    try:
+        from src.strategy.research import FACTOR_REGISTRY, compute_factor_values
+        from src.data.sources.yahoo import YahooFeed
+
+        feed = YahooFeed(universe=req.symbols)
+        data = {}
+        for sym in req.symbols:
+            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            if not bars.empty:
+                data[sym] = bars
+
+        if len(data) < 5:
+            raise HTTPException(status_code=400, detail="Need at least 5 symbols with data")
+
+        factor_dfs = {}
+        for name in req.factors:
+            if name not in FACTOR_REGISTRY:
+                continue
+            try:
+                fv = compute_factor_values(data, name)
+                if not fv.empty:
+                    factor_dfs[name] = fv
+            except Exception:
+                continue
+
+        if len(factor_dfs) < 2:
+            raise HTTPException(status_code=400, detail="Need at least 2 computable factors")
+
+        from src.alpha.orthogonalize import factor_correlation_matrix
+        corr = factor_correlation_matrix(factor_dfs)
+
+        matrix = {
+            r: {c: float(corr.loc[r, c]) for c in corr.columns}
+            for r in corr.index
+        }
+        return CorrelationMatrixResponse(matrix=matrix, n_factors=len(factor_dfs))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Neutralize ─────────────────────────────────────────────────
+
+
+class NeutralizeRequest(BaseModel):
+    symbols: list[str]
+    factor_name: str
+    start: str
+    end: str
+    method: str = "market"  # "market" | "industry"
+
+class NeutralizeResponse(BaseModel):
+    factor_name: str
+    method: str
+    n_dates: int
+    n_symbols: int
+    sample: dict[str, float]  # last date's neutralized values
+
+@router.post("/neutralize", response_model=NeutralizeResponse)
+async def neutralize_factor(
+    req: NeutralizeRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> NeutralizeResponse:
+    """Neutralize a factor (remove market or industry exposure)."""
+    try:
+        from src.strategy.research import compute_factor_values
+        from src.alpha.neutralize import neutralize
+        from src.data.sources.yahoo import YahooFeed
+
+        feed = YahooFeed(universe=req.symbols)
+        data = {}
+        for sym in req.symbols:
+            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            if not bars.empty:
+                data[sym] = bars
+
+        fv = compute_factor_values(data, req.factor_name)
+        if fv.empty:
+            raise HTTPException(status_code=400, detail=f"No factor values for {req.factor_name}")
+
+        neutralized = neutralize(fv, method=req.method)
+        last_row = neutralized.iloc[-1].dropna()
+
+        return NeutralizeResponse(
+            factor_name=req.factor_name,
+            method=req.method,
+            n_dates=len(neutralized),
+            n_symbols=len(last_row),
+            sample={k: float(v) for k, v in last_row.head(10).items()},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Filter Strategy ────────────────────────────────────────────
+
+
+class FilterStrategyRequest(BaseModel):
+    universe: list[str]
+    filters: list[dict[str, Any]]  # [{"factor": "revenue_yoy", "operator": "gt", "threshold": 15}]
+    rank_by: str = "revenue_yoy"
+    top_n: int = 15
+    start: str = "2020-01-01"
+    end: str = "2025-12-31"
+
+class FilterStrategyResponse(BaseModel):
+    task_id: str
+    status: str
+    message: str
+
+@router.post("/filter-strategy", response_model=FilterStrategyResponse)
+async def run_filter_strategy(
+    req: FilterStrategyRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> FilterStrategyResponse:
+    """Run a custom filter-based strategy backtest."""
+    try:
+        from src.alpha.filter_strategy import FilterCondition, FilterStrategyConfig, FilterStrategy
+        from src.backtest.engine import BacktestConfig, BacktestEngine
+
+        conditions = [
+            FilterCondition(
+                factor_name=f["factor"],
+                operator=f["operator"],
+                threshold=f["threshold"],
+            )
+            for f in req.filters
+        ]
+
+        config = FilterStrategyConfig(
+            filters=conditions,
+            rank_by=req.rank_by,
+            top_n=req.top_n,
+        )
+        strategy = FilterStrategy(config)
+
+        bt_config = BacktestConfig(
+            universe=req.universe,
+            start=req.start,
+            end=req.end,
+            rebalance_freq="monthly",
+            fractional_shares=True,
+        )
+
+        engine = BacktestEngine()
+        result = engine.run(strategy, bt_config)
+
+        task_id = uuid.uuid4().hex[:8]
+        state = get_app_state()
+        state.backtest_tasks[task_id] = {
+            "status": "completed",
+            "type": "filter_strategy",
+            "result": {
+                "total_return": result.total_return,
+                "sharpe": result.sharpe,
+                "max_drawdown": result.max_drawdown,
+                "total_trades": result.total_trades,
+            },
+        }
+
+        return FilterStrategyResponse(
+            task_id=task_id,
+            status="completed",
+            message=f"Return: {result.total_return:+.2%}, Sharpe: {result.sharpe:.3f}, Trades: {result.total_trades}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Event Rebalancer Config ────────────────────────────────────
+
+
+class EventRebalancerConfig(BaseModel):
+    revenue_trigger_day_lo: int = 11
+    revenue_trigger_day_hi: int = 13
+    institutional_sigma: float = 3.0
+    fallback_monthly: bool = True
+
+class EventRebalancerResponse(BaseModel):
+    config: dict[str, Any]
+    test_date: str
+    would_trigger: bool
+    trigger_type: str
+
+@router.post("/event-rebalancer/test", response_model=EventRebalancerResponse)
+async def test_event_rebalancer(
+    req: EventRebalancerConfig,
+    test_date: str = "2025-03-11",
+    api_key: str = Depends(verify_api_key),
+) -> EventRebalancerResponse:
+    """Test event-driven rebalancer configuration against a date."""
+    from src.alpha.event_rebalancer import EventDrivenRebalancer
+
+    rebalancer = EventDrivenRebalancer(
+        revenue_trigger_day_range=(req.revenue_trigger_day_lo, req.revenue_trigger_day_hi),
+        institutional_sigma=req.institutional_sigma,
+        fallback_monthly=req.fallback_monthly,
+    )
+    signal = rebalancer.check(test_date)
+
+    return EventRebalancerResponse(
+        config={
+            "revenue_trigger_days": f"{req.revenue_trigger_day_lo}-{req.revenue_trigger_day_hi}",
+            "institutional_sigma": req.institutional_sigma,
+            "fallback_monthly": req.fallback_monthly,
+        },
+        test_date=test_date,
+        would_trigger=signal.should_rebalance,
+        trigger_type=signal.trigger,
+    )

@@ -92,3 +92,42 @@ async def send_notification(
         failed.append(f"config error: {str(e)}")
 
     return NotificationResponse(sent=sent, failed=failed)
+
+
+# ── Manual Job Triggers ────────────────────────────────────────
+
+
+class JobTriggerResponse(BaseModel):
+    job: str
+    status: str
+    message: str
+
+
+@router.post("/trigger/{job_name}", response_model=JobTriggerResponse)
+async def trigger_job(
+    job_name: str,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("trader")),
+) -> JobTriggerResponse:
+    """Manually trigger a scheduled job."""
+    if job_name == "revenue_update":
+        try:
+            from src.scheduler.jobs import monthly_revenue_update
+            await monthly_revenue_update()
+            return JobTriggerResponse(job=job_name, status="completed", message="Revenue data updated")
+        except Exception as e:
+            return JobTriggerResponse(job=job_name, status="failed", message=str(e))
+
+    elif job_name == "revenue_rebalance":
+        try:
+            from src.core.config import get_config
+            from src.scheduler.jobs import monthly_revenue_rebalance
+            config = get_config()
+            await monthly_revenue_rebalance(config)
+            return JobTriggerResponse(job=job_name, status="completed", message="Revenue rebalance executed")
+        except Exception as e:
+            return JobTriggerResponse(job=job_name, status="failed", message=str(e))
+
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_name}. Available: revenue_update, revenue_rebalance")
