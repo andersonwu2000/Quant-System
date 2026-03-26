@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "total_rounds": 0,
+  "total_pass": 0,
+  "total_fail": 0,
+  "best_fitness": 0,
+  "last_updated": "2026-03-27T03:30:00",
+  "success_patterns": [
+    {
+      "name": "revenue_growth_variants",
+      "description": "營收相關因子在台股持續有效（10年100%穩定，不衰減）",
+      "factors": ["revenue_yoy", "revenue_acceleration", "revenue_new_high", "revenue_momentum"],
+      "avg_icir": 0.6,
+      "avg_fitness": 8.5,
+      "evidence": "experiments 12-13: rev_yoy ICIR 0.674, rev_accel ICIR 0.847(60d)",
+      "mutation_suggestions": ["加入行業調整", "與毛利率交互", "季節性去趨勢", "營收品質交叉"]
+    },
+    {
+      "name": "low_turnover_momentum",
+      "description": "低換手率動量因子在台股有效（月頻，換手<7%）",
+      "factors": ["momentum", "momentum_6m", "momentum_12m", "adx"],
+      "avg_icir": 0.14,
+      "avg_fitness": 2.0,
+      "evidence": "factor_analysis_report: 66因子中僅4個viable（全是低換手動量）",
+      "mutation_suggestions": []
+    }
+  ],
+  "forbidden_regions": [
+    {
+      "name": "kakushadze_short_term",
+      "reason": "換手率55-84%，台股成本（來回0.88%）完全扼殺alpha",
+      "factor_patterns": ["alpha_1", "alpha_33", "alpha_101", "alpha_38", "alpha_53", "日內因子", "高頻量價"],
+      "evidence": "factor_analysis_report: 20個Kakushadze alpha全軍覆沒"
+    },
+    {
+      "name": "ivol_wide_universe",
+      "reason": "Selection bias: 32支ICIR 0.60 → 142支 -0.06",
+      "factor_patterns": ["ivol_寬universe", "小樣本驗證"],
+      "evidence": "experiments 1-8"
+    },
+    {
+      "name": "price_dilutes_revenue",
+      "reason": "加入momentum/volatility會稀釋營收信號（ICIR 0.674→0.024）",
+      "factor_patterns": ["revenue+momentum組合", "revenue+volatility組合", "營收+價格混合"],
+      "evidence": "experiment 13: 所有含價格因子的組合ICIR<0.04"
+    },
+    {
+      "name": "institutional_flow_weak",
+      "reason": "外資/投信/自營商買賣超ICIR<0.1，籌碼面太弱",
+      "factor_patterns": ["foreign_net", "trust_net", "dealer_net", "純籌碼面因子"],
+      "evidence": "experiments 11, 15: 籌碼面未突破price-volume天花板"
+    },
+    {
+      "name": "traditional_value_tw",
+      "reason": "低PE(-1.4%)、低波動(-0.7%)在台股完全無效",
+      "factor_patterns": ["低PE策略", "低波動策略", "傳統估值因子"],
+      "evidence": "FinLab 54策略研究 + 我們的pe_ratio ICIR -0.282"
+    }
+  ],
+  "directions": [
+    {"name": "revenue_quality_interaction", "status": "pending", "priority": "P0", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
+    {"name": "seasonal_revenue_patterns", "status": "pending", "priority": "P0", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
+    {"name": "revenue_acceleration_2nd_order", "status": "pending", "priority": "P0", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
+    {"name": "supply_chain_propagation", "status": "pending", "priority": "P1", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
+    {"name": "earnings_surprise_proxy", "status": "pending", "priority": "P1", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
+    {"name": "inventory_turnover", "status": "pending", "priority": "P1", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
+    {"name": "operating_leverage", "status": "pending", "priority": "P2", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
+    {"name": "cash_flow_quality", "status": "pending", "priority": "P2", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0},
+    {"name": "capex_intensity", "status": "pending", "priority": "P2", "best_icir": 0.0, "hypothesis_count": 0, "pass_count": 0}
+  ],
+  "trajectories": []
+}
