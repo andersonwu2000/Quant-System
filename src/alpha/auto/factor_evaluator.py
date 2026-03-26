@@ -75,10 +75,11 @@ class FactorEvaluator:
         existing_factor_ics: dict[str, pd.Series] | None = None,
         min_icir_l1: float = 0.02,
         min_icir_l2: float = 0.15,
-        max_turnover: float = 0.10,
+        max_turnover: float = 0.60,  # 月頻再平衡允許 60% 換手（營收因子自然較高）
         max_correlation: float = 0.50,
         min_positive_years: int = 7,
         min_fitness: float = 3.0,
+        total_tested: int = 0,  # Harvey (2016) 多重測試校正
     ):
         self.data = data or {}
         self.existing_factor_ics = existing_factor_ics or {}
@@ -88,6 +89,18 @@ class FactorEvaluator:
         self.max_correlation = max_correlation
         self.min_positive_years = min_positive_years
         self.min_fitness = min_fitness
+        self.total_tested = total_tested
+
+    @property
+    def adjusted_icir_threshold(self) -> float:
+        """Harvey (2016) 多重測試校正：ICIR 門檻隨測試數量提高。
+
+        門檻 = base × sqrt(1 + log(max(N, 1)))
+        N=1: 0.15, N=100: 0.26, N=1000: 0.35
+        """
+        if self.total_tested <= 1:
+            return self.min_icir_l2
+        return self.min_icir_l2 * math.sqrt(1 + math.log(self.total_tested))
 
     def evaluate(self, factor_name: str, factor_values: pd.DataFrame) -> EvaluationResult:
         """執行多層驗證。"""
@@ -134,9 +147,10 @@ class FactorEvaluator:
         turnover = self._estimate_turnover(factor_values)
         result.avg_turnover = turnover
 
-        if abs(best_icir) < self.min_icir_l2:
+        adj_threshold = self.adjusted_icir_threshold
+        if abs(best_icir) < adj_threshold:
             result.level_reached = "L2"
-            result.failure_reason = f"Best ICIR = {best_icir:.4f} < {self.min_icir_l2}"
+            result.failure_reason = f"Best ICIR = {best_icir:.4f} < {adj_threshold:.4f} (Harvey-adjusted, N={self.total_tested})"
             result.duration_seconds = time.perf_counter() - t0
             return result
         if turnover > self.max_turnover:
@@ -241,7 +255,10 @@ class FactorEvaluator:
 
     @staticmethod
     def _estimate_turnover(factor: pd.DataFrame, n_quantiles: int = 5) -> float:
-        """Estimate factor turnover from quintile membership changes."""
+        """Estimate factor turnover from quintile membership changes.
+
+        使用月頻取樣（每 20 天）而非日頻，避免高估月頻因子的換手率。
+        """
         if factor.empty or len(factor) < 20:
             return 0.0
 
@@ -251,7 +268,8 @@ class FactorEvaluator:
         changes = 0
         total = 0
         prev = None
-        for i in range(0, len(top_quintile), 5):  # sample every 5 days
+        # 月頻取樣（每 20 天），對應月度再平衡
+        for i in range(0, len(top_quintile), 20):
             current = set(top_quintile.columns[top_quintile.iloc[i]])
             if prev is not None and len(prev) > 0:
                 overlap = len(current & prev)
