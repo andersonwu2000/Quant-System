@@ -46,7 +46,7 @@ class LocalMarketData:
             if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
                 df.index = pd.to_datetime(df.index)
             # 統一為 tz-naive，避免與 tz-naive Timestamp 比較時報錯
-            if not df.empty and hasattr(df.index, "tz") and df.index.tz is not None:
+            if not df.empty and isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
                 df.index = df.index.tz_convert("UTC").tz_localize(None)
             return df
         except Exception:
@@ -78,7 +78,7 @@ class LocalMarketData:
         df = self.load(symbol, freq)
         if df is None or df.empty:
             return False
-        return (
+        return bool(
             df.index.min() <= pd.Timestamp(start)
             and df.index.max() >= pd.Timestamp(end) - pd.Timedelta(days=5)
         )

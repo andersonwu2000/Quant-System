@@ -15,7 +15,7 @@ _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def gpu_available() -> bool:
     """Return True if CUDA is available."""
-    return torch.cuda.is_available()
+    return bool(torch.cuda.is_available())
 
 
 def compute_factors_gpu(
