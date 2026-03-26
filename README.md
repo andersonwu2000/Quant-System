@@ -99,6 +99,59 @@ make mobile             # Expo 行動端開發伺服器
 scripts/start.bat       # 在獨立視窗中啟動後端與前端
 ```
 
+## 行動裝置連線（Tailscale）
+
+Android APP 透過 [Tailscale](https://tailscale.com/) VPN 組網連線至後端伺服器，無需開放公網 port 或設定 ngrok，在任何網路環境下皆可使用。
+
+### 前置條件
+
+- 電腦與手機皆已安裝 Tailscale 並登入同一帳號
+- 兩台裝置在 Tailscale 管理介面中為 **Connected** 狀態
+
+### 步驟
+
+1. **查詢電腦的 Tailscale IP**
+
+   ```bash
+   tailscale status
+   ```
+
+   輸出範例：
+   ```
+   100.68.158.90   surface       you@  windows  -
+   100.125.91.16   your-phone    you@  android  -
+   ```
+
+   記住電腦的 IP（如 `100.68.158.90`）。
+
+2. **啟動後端伺服器**
+
+   ```bash
+   # 綁定 0.0.0.0 讓 Tailscale 網卡可存取
+   python -B -m uvicorn src.api.app:app --host 0.0.0.0 --port 8000
+   ```
+
+3. **驗證連線**
+
+   從手機或另一台 Tailscale 裝置測試：
+   ```bash
+   curl http://100.68.158.90:8000/api/v1/system/health
+   # 應回傳 {"status":"ok","version":"0.1.0"}
+   ```
+
+4. **設定 Android APP**
+
+   開啟 APP → 登入畫面 → 填入：
+   - **Server URL**：`http://<電腦的 Tailscale IP>:8000`（如 `http://100.68.158.90:8000`）
+   - **帳號**：`admin`
+   - **密碼**：`Admin1234`（或切換至 API Key 模式輸入 `dev-key`）
+
+### 注意事項
+
+- 新增 Tailscale 裝置後，需將其 IP 加入 `apps/android/app/src/main/res/xml/network_security_config.xml` 的 cleartext 白名單，否則 Android 會拒絕 HTTP 明文連線
+- 後端啟動時建議加 `-B` 旗標避免載入過期的 Python bytecache
+- Tailscale 的 100.x.x.x 位址在裝置重新加入網路後不會改變，可視為固定 IP
+
 ## 使用方式
 
 ### 執行回測
