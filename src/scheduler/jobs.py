@@ -1,14 +1,16 @@
 """Scheduled job implementations — 連接策略引擎與執行服務。
 
 Jobs:
-- execute_rebalance: 通用排程再平衡（任何 active 策略）
-- monthly_revenue_rebalance: 月度營收策略專用（每月 11 日觸發）
-- monthly_revenue_update: 月度營收數據更新（每月 11 日 08:30）
+- execute_pipeline: 統一交易管線（Phase S）
+- execute_rebalance: [deprecated] 通用排程再平衡
+- monthly_revenue_rebalance: [deprecated] 月度營收策略專用
+- monthly_revenue_update: 月度營收數據更新
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -319,8 +321,8 @@ def _get_tw_universe_fallback() -> list[str]:
     return universe
 
 
-def _save_selection_log(weights: dict[str, float]) -> None:
-    """記錄每月選股結果到 data/paper_trading/selections/。"""
+def _save_selection_log_legacy(weights: dict[str, float]) -> None:
+    """[deprecated] 舊版 selection log。"""
     import json
     from pathlib import Path
 
@@ -369,3 +371,159 @@ def _save_trade_log(trades: list, strategy_name: str) -> None:
     with open(path, "w") as f:
         json.dump(log, f, indent=2, ensure_ascii=False)
     logger.info("Trade log saved: %s (%d trades)", path, len(trades))
+
+
+# ── Phase S: 統一交易管線 ─────────────────────────────────────
+
+
+@dataclass
+class PipelineResult:
+    """交易管線執行結果。"""
+    status: str  # "ok" | "data_failed" | "no_weights" | "no_orders" | "error"
+    n_trades: int = 0
+    strategy_name: str = ""
+    error: str = ""
+
+
+async def execute_pipeline(config: TradingConfig) -> PipelineResult:
+    """統一交易管線 — 更新數據 → 執行策略 → 風控 → 下單 → 持久化 → 通知。
+
+    取代 execute_rebalance() 和 monthly_revenue_rebalance()。
+    根據 config.active_strategy 決定跑哪個策略和需要哪些數據。
+    """
+    from src.api.state import get_app_state
+    from src.core.models import Order
+    from src.data.sources import create_feed, create_fundamentals
+    from src.execution.oms import apply_trades
+    from src.notifications.factory import create_notifier
+    from src.strategy.base import Context
+    from src.strategy.engine import weights_to_orders
+    from src.strategy.registry import resolve_strategy
+
+    logger.info("Pipeline triggered: strategy=%s", config.active_strategy)
+
+    state = get_app_state()
+    notifier = create_notifier(config)
+
+    if not state.execution_service.is_initialized:
+        logger.error("ExecutionService not initialized, skipping pipeline")
+        return PipelineResult(status="error", error="ExecutionService not initialized")
+
+    try:
+        strategy = resolve_strategy(config.active_strategy)
+    except ValueError as e:
+        return PipelineResult(status="error", error=f"Unknown strategy: {e}")
+
+    # 1. 數據更新（失敗則中止，不用舊數據交易）
+    if config.pipeline_data_update:
+        revenue_strategies = {"revenue_momentum", "revenue_momentum_hedged", "trust_follow"}
+        if strategy.name() in revenue_strategies:
+            logger.info("Updating revenue data for %s...", strategy.name())
+            ok = await _async_revenue_update()
+            if not ok:
+                msg = "Revenue data update failed — pipeline aborted"
+                logger.error(msg)
+                if notifier.is_configured():
+                    try:
+                        await notifier.send("Pipeline Error", msg)
+                    except Exception:
+                        pass
+                return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
+
+    # 2. 建立 Context
+    universe = list(state.portfolio.positions.keys())
+    if not universe:
+        universe = _get_tw_universe_fallback()
+    if not universe:
+        return PipelineResult(status="error", strategy_name=strategy.name(), error="Empty universe")
+
+    feed = create_feed(config.data_source, universe)
+    fundamentals = create_fundamentals(config.data_source)
+    ctx = Context(feed=feed, portfolio=state.portfolio, fundamentals_provider=fundamentals)
+
+    # 3. 執行策略
+    target_weights = strategy.on_bar(ctx)
+    if not target_weights:
+        logger.info("Strategy %s returned empty weights", strategy.name())
+        return PipelineResult(status="no_weights", strategy_name=strategy.name())
+
+    logger.info("Strategy %s: %d targets", strategy.name(), len(target_weights))
+    _save_selection_log(target_weights, strategy.name())
+
+    # 4. 風控 + 下單
+    prices = {}
+    for s in target_weights:
+        try:
+            prices[s] = feed.get_latest_price(s)
+        except Exception:
+            pass
+
+    orders = weights_to_orders(target_weights, state.portfolio, prices)
+    if not orders:
+        return PipelineResult(status="no_orders", strategy_name=strategy.name())
+
+    approved: list[Order] = []
+    for order in orders:
+        decision = state.risk_engine.check_order(order, state.portfolio)
+        if decision.approved:
+            if decision.modified_qty is not None:
+                order.quantity = decision.modified_qty
+            approved.append(order)
+        else:
+            logger.warning("Rejected: %s — %s", order.instrument.symbol, decision.reason)
+
+    if not approved:
+        logger.info("All orders rejected by risk engine")
+        return PipelineResult(status="no_orders", strategy_name=strategy.name())
+
+    trades = state.execution_service.submit_orders(approved, state.portfolio)
+    if trades:
+        apply_trades(state.portfolio, trades)
+        _save_trade_log(trades, strategy.name())
+
+    logger.info("Pipeline done: %d trades, NAV=%s", len(trades) if trades else 0, state.portfolio.nav)
+
+    # 5. 通知
+    if notifier.is_configured():
+        summary = (
+            f"Pipeline [{strategy.name()}]: {len(trades) if trades else 0} trades, "
+            f"{len(target_weights)} targets, NAV={float(state.portfolio.nav):,.0f}"
+        )
+        try:
+            await notifier.send("Trading Pipeline", summary)
+        except Exception:
+            logger.debug("Notification failed", exc_info=True)
+
+    return PipelineResult(status="ok", n_trades=len(trades) if trades else 0, strategy_name=strategy.name())
+
+
+async def _async_revenue_update() -> bool:
+    """非同步包裝 monthly_revenue_update。"""
+    try:
+        await monthly_revenue_update()
+        return True
+    except Exception:
+        logger.exception("Revenue update failed")
+        return False
+
+
+def _save_selection_log(weights: dict[str, float], strategy_name: str = "") -> None:
+    """記錄選股結果。"""
+    import json
+    from pathlib import Path
+
+    out_dir = Path("data/paper_trading/selections")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    log = {
+        "date": today,
+        "strategy": strategy_name,
+        "n_targets": len(weights),
+        "weights": {k: round(v, 4) for k, v in sorted(weights.items(), key=lambda x: -x[1])},
+    }
+
+    path = out_dir / f"{today}.json"
+    with open(path, "w") as f:
+        json.dump(log, f, indent=2, ensure_ascii=False)
+    logger.info("Selection log saved: %s", path)

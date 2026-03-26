@@ -67,32 +67,22 @@ class SchedulerService:
 
         self._scheduler = AsyncIOScheduler()
 
-        # ── Job 1: General rebalance ──────────────────────────────
-        trigger = CronTrigger.from_crontab(config.rebalance_cron)
+        # ── Phase S: 統一交易管線（取代舊的 2-3 個 job） ──
+        pipeline_cron = config.trading_pipeline_cron
+        trigger = CronTrigger.from_crontab(pipeline_cron)
         self._scheduler.add_job(  # type: ignore[union-attr]
-            self._rebalance_job,
+            self._run_pipeline,
             trigger=trigger,
-            id="rebalance",
+            id="trading_pipeline",
             kwargs={"config": config},
         )
 
-        # ── Job 2: Monthly revenue — update then rebalance (chained, R10.1) ──
-        if config.revenue_scheduler_enabled:
-            revenue_trigger = CronTrigger.from_crontab(config.revenue_update_cron)
-            self._scheduler.add_job(  # type: ignore[union-attr]
-                self._revenue_update_then_rebalance,
-                trigger=revenue_trigger,
-                id="revenue_pipeline",
-                kwargs={"config": config},
-            )
-            logger.info(
-                "Revenue pipeline registered — cron: %s (update → rebalance chained)",
-                config.revenue_update_cron,
-            )
-
         self._scheduler.start()  # type: ignore[union-attr]
         self._running = True
-        logger.info("Scheduler started with cron: %s", config.rebalance_cron)
+        logger.info(
+            "Scheduler started: strategy=%s, cron=%s",
+            config.active_strategy, pipeline_cron,
+        )
 
     def stop(self) -> None:
         if self._scheduler and self._running:
@@ -104,19 +94,25 @@ class SchedulerService:
     def is_running(self) -> bool:
         return self._running
 
-    async def _rebalance_job(self, config: TradingConfig) -> None:
-        """Execute rebalance with pipeline lock (R10.3)."""
+    async def _run_pipeline(self, config: TradingConfig) -> None:
+        """Phase S: 統一交易管線。"""
         if _pipeline_lock.locked():
-            logger.warning("Pipeline lock held, skipping scheduled rebalance")
+            logger.warning("Pipeline lock held, skipping")
             return
         async with _pipeline_lock:
-            logger.info("Scheduled rebalance triggered at %s", datetime.now())
             try:
-                from src.scheduler.jobs import execute_rebalance
+                from src.scheduler.jobs import execute_pipeline
 
-                await execute_rebalance(config)
+                result = await execute_pipeline(config)
+                logger.info("Pipeline result: %s (%d trades)", result.status, result.n_trades)
             except Exception:
-                logger.exception("Scheduled rebalance failed")
+                logger.exception("Pipeline failed")
+
+    # ── Deprecated methods (kept for backward compat) ──
+
+    async def _rebalance_job(self, config: TradingConfig) -> None:
+        """[deprecated] Use _run_pipeline instead."""
+        await self._run_pipeline(config)
 
     async def _revenue_update_then_rebalance(self, config: TradingConfig) -> None:
         """Monthly revenue: update data → rebalance (chained, R10.1).

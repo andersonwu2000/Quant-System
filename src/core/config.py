@@ -94,10 +94,15 @@ class TradingConfig(BaseSettings):
 
     # ── 排程 ──
     scheduler_enabled: bool = False
-    rebalance_cron: str = "0 9 1 * *"    # 每月1日 09:00
-    revenue_scheduler_enabled: bool = True   # 月營收排程（需 scheduler_enabled=True 才生效）
-    revenue_update_cron: str = "30 8 11 * *"   # 每月11日 08:30 更新營收數據
-    revenue_rebalance_cron: str = "5 9 11 * *"  # 每月11日 09:05 營收策略再平衡
+    # 統一交易管線（Phase S）
+    active_strategy: str = "revenue_momentum_hedged"
+    trading_pipeline_cron: str = "30 8 11 * *"
+    pipeline_data_update: bool = True
+    # 舊 config（向後相容，deprecated）
+    rebalance_cron: str = "0 9 1 * *"
+    revenue_scheduler_enabled: bool = True
+    revenue_update_cron: str = "30 8 11 * *"
+    revenue_rebalance_cron: str = "5 9 11 * *"
 
     # ── 日誌 ──
     log_level: str = "INFO"

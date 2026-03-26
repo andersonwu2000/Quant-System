@@ -1,75 +1,49 @@
 # Phase S：自動化管線統一
 
 > 狀態：🔵 待執行
-> 前置：Phase R10（管線缺陷修正）✅
-> 目標：將三條獨立排程路徑合併為一條統一管線 + 獨立研究管線
+> 前置：Phase R（管線缺陷修正）+ Phase P（自動研究）
+> 目標：三條排程路徑合併為一條統一管線 + 研究管線獨立
 
 ---
 
 ## 1. 現狀問題
 
-三條路徑（General Rebalance / Monthly Revenue / Auto-Alpha）是不同 Phase 分別開發的產物，共享同一個 `state.portfolio` 但各自獨立排程。R10 加了 `asyncio.Lock` 防併發，但根本問題是：
+三條路徑（General Rebalance / Monthly Revenue / Auto-Alpha）是不同 Phase 分別開發：
 
-- **General Rebalance 和 Monthly Revenue 做的事情一樣**（取數據 → 跑策略 → 下單），只是策略不同
-- 兩條路徑有大量重複代碼（`execute_rebalance` vs `monthly_revenue_rebalance` 結構幾乎相同）
-- 「不可同時運行」靠 lock 強制，不如從架構上消除可能性
-- Auto-Alpha 不操作 Portfolio（只做因子研究），本質上與交易管線無關，不需要共享 lock
+- `execute_rebalance()` — 通用排程再平衡
+- `monthly_revenue_rebalance()` — 營收策略專用
+- Auto-Alpha — 因子研究（不操作 Portfolio）
+
+**問題**：
+1. 前兩條做一樣的事（數據→策略→下單），大量重複代碼
+2. 共享 `state.portfolio` 靠 lock 防併發，架構上不應該有併發可能
+3. 切換策略需要改代碼，不是改配置
+4. 數據更新（revenue_update）和再平衡之間沒有依賴檢查（Phase R 已發現）
 
 ---
 
 ## 2. 目標架構
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Trading Pipeline（唯一的交易管線）                       │
-│                                                          │
-│  Cron 觸發（可配置）                                     │
-│    │                                                     │
-│    ├→ 1. 更新數據（如果 active 策略需要）                │
-│    │     revenue 策略 → 下載 FinMind 營收                │
-│    │     其他策略 → 下載 Yahoo 行情                      │
-│    │     失敗 → 重試 1 次 → 仍失敗則通知 + 中止         │
-│    │                                                     │
-│    ├→ 2. 執行策略                                        │
-│    │     resolve_strategy(config.active_strategy)        │
-│    │     strategy.on_bar(ctx) → target_weights           │
-│    │                                                     │
-│    ├→ 3. 風控檢查                                        │
-│    │     RiskEngine.check_order() 逐筆                   │
-│    │                                                     │
-│    ├→ 4. 下單                                            │
-│    │     ExecutionService.submit_orders()                 │
-│    │     apply_trades() → Portfolio 更新                  │
-│    │                                                     │
-│    ├→ 5. 持久化                                          │
-│    │     selection log + trade log → JSON                 │
-│    │                                                     │
-│    └→ 6. 通知                                            │
-│          Discord / LINE / Telegram                       │
-│                                                          │
-│  Config:                                                 │
-│    QUANT_ACTIVE_STRATEGY=revenue_momentum_hedged         │
-│    QUANT_TRADING_PIPELINE_CRON=30 8 11 * *               │
-│    QUANT_PIPELINE_DATA_UPDATE=true                        │
-└─────────────────────────────────────────────────────────┘
+Trading Pipeline（唯一交易管線）
+    Cron 觸發 → 數據更新 → 執行策略 → 風控 → 下單 → 持久化 → 通知
 
-┌─────────────────────────────────────────────────────────┐
-│  Research Pipeline（獨立，不操作 Portfolio）              │
-│                                                          │
-│  觸發：POST /auto-alpha/start 或 CronCreate             │
-│    → 因子假說生成 → 實作 → 驗證 → Memory 回寫           │
-│    → 不下單、不修改 Portfolio                             │
-│    → 可與 Trading Pipeline 並行運行                      │
-└─────────────────────────────────────────────────────────┘
+Research Pipeline（獨立，不操作 Portfolio）
+    Cron 觸發 → 因子假說 → 實作 → L1-L5 → Validator → 部署判斷
+```
+
+Config:
+```
+QUANT_ACTIVE_STRATEGY=revenue_momentum_hedged
+QUANT_TRADING_PIPELINE_CRON=30 8 11 * *
+QUANT_PIPELINE_DATA_UPDATE=true
 ```
 
 ---
 
 ## 3. 實作步驟
 
-### S1：新增 `QUANT_ACTIVE_STRATEGY` config
-
-`src/core/config.py` 新增：
+### S1：Config 新增（`src/core/config.py`）
 
 ```python
 active_strategy: str = "revenue_momentum_hedged"
@@ -77,137 +51,131 @@ trading_pipeline_cron: str = "30 8 11 * *"
 pipeline_data_update: bool = True
 ```
 
-移除 `revenue_scheduler_enabled`、`revenue_update_cron`、`revenue_rebalance_cron`、`rebalance_cron`（合併為一個 cron）。
+保留舊 config 向後相容（deprecation warning）。
 
-**注意**：保留向後相容，如果舊 config 存在則自動遷移。
+### S2：統一 `execute_pipeline()`（`src/scheduler/jobs.py`）
 
-### S2：統一 `execute_pipeline()` 函式
-
-`src/scheduler/jobs.py` 新增一個函式取代 `execute_rebalance` + `monthly_revenue_rebalance`：
+取代 `execute_rebalance` + `monthly_revenue_rebalance`：
 
 ```python
-async def execute_pipeline(config: TradingConfig) -> PipelineResult:
-    """統一交易管線 — 更新數據 → 執行策略 → 風控 → 下單 → 持久化 → 通知。"""
+@dataclass
+class PipelineResult:
+    status: str  # "ok" | "data_failed" | "no_weights" | "error"
+    n_trades: int = 0
+    error: str = ""
 
+async def execute_pipeline(config: TradingConfig) -> PipelineResult:
+    """統一交易管線。"""
     strategy = resolve_strategy(config.active_strategy)
 
-    # 1. 數據更新（根據策略類型決定）
+    # 1. 數據更新（依賴檢查：失敗則中止）
     if config.pipeline_data_update:
-        if needs_revenue_data(strategy):
-            ok = await monthly_revenue_update()
-            if not ok:
-                return PipelineResult(status="data_update_failed")
-        else:
-            await refresh_market_data(config)
+        ok = await _update_data_for_strategy(strategy)
+        if not ok:
+            await _notify_error(config, "Data update failed")
+            return PipelineResult(status="data_failed")
 
-    # 2. 建立 Context
-    universe = get_universe(config, state.portfolio)
+    # 2. Context
+    state = get_app_state()
+    universe = _build_universe(state.portfolio)
     feed = create_feed(config.data_source, universe)
-    ctx = build_context(feed, state.portfolio, strategy)
+    fundamentals = create_fundamentals(config.data_source)
+    ctx = Context(feed=feed, portfolio=state.portfolio, fundamentals_provider=fundamentals)
 
     # 3. 執行策略
-    target_weights = strategy.on_bar(ctx)
+    weights = strategy.on_bar(ctx)
+    if not weights:
+        return PipelineResult(status="no_weights")
+
+    _save_selection_log(weights, strategy.name())
 
     # 4. 風控 + 下單
-    orders = weights_to_orders(target_weights, ...)
-    approved = risk_check(orders, state)
-    trades = execute_orders(approved, state)
+    prices = {s: feed.get_latest_price(s) for s in weights}
+    orders = weights_to_orders(weights, state.portfolio, prices)
+    approved = [o for o in orders if state.risk_engine.check_order(o, state.portfolio).approved]
+    trades = state.execution_service.submit_orders(approved, state.portfolio)
+    if trades:
+        apply_trades(state.portfolio, trades)
 
-    # 5. 持久化 + 通知
-    save_logs(target_weights, trades, strategy.name)
-    await notify(config, trades, strategy.name)
+    # 5. 通知
+    await _notify_success(config, strategy.name(), len(trades), state.portfolio.nav)
 
     return PipelineResult(status="ok", n_trades=len(trades))
 ```
 
-### S3：簡化 `SchedulerService`
+### S3：策略感知數據更新
+
+```python
+async def _update_data_for_strategy(strategy: Strategy) -> bool:
+    """根據策略類型更新所需數據。"""
+    revenue_strategies = {"revenue_momentum", "revenue_momentum_hedged", "trust_follow"}
+    if strategy.name() in revenue_strategies:
+        return await _run_revenue_update()
+    # 其他策略只需要價格（由 feed 自動處理）
+    return True
+
+async def _run_revenue_update() -> bool:
+    """下載最新營收，回傳是否成功。"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "scripts.download_finmind_data",
+             "--symbols-from-market", "--dataset", "revenue", "--start", "2024-01-01"],
+            capture_output=True, text=True, timeout=600,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+```
+
+### S4：簡化 SchedulerService
 
 ```python
 class SchedulerService:
     def start(self, config):
-        # 只註冊一個 job
+        # 只有一個 trading job
         self._scheduler.add_job(
             self._run_pipeline,
             trigger=CronTrigger.from_crontab(config.trading_pipeline_cron),
             id="trading_pipeline",
+            kwargs={"config": config},
         )
+        # Research pipeline 獨立（可選）
+        # 不在這裡管理，用 POST /auto-alpha/start 或 CronCreate
 
     async def _run_pipeline(self, config):
-        async with _pipeline_lock:
-            await execute_pipeline(config)
+        await execute_pipeline(config)
 ```
-
-從 3 個 job 變成 1 個。Auto-Alpha 不在這裡管理。
-
-### S4：策略感知的數據更新
-
-不同策略需要不同的數據更新邏輯：
-
-```python
-def needs_revenue_data(strategy) -> bool:
-    """判斷策略是否需要 FinMind 營收數據。"""
-    return strategy.name in ("revenue_momentum", "revenue_momentum_hedged", "trust_follow")
-```
-
-Revenue 策略 → 下載 FinMind 營收。其他策略 → 只更新 Yahoo 行情（或不更新）。
 
 ### S5：移除舊代碼
 
-- 刪除 `execute_rebalance()`（被 `execute_pipeline()` 取代）
-- 刪除 `monthly_revenue_rebalance()`（同上）
-- 刪除 `SchedulerService._revenue_update_then_rebalance()`
-- 刪除 `SchedulerService._rebalance_job()`
-- Config 移除 `revenue_scheduler_enabled`、`revenue_update_cron`、`revenue_rebalance_cron`、`rebalance_cron`
+- `execute_rebalance()` → 被 `execute_pipeline()` 取代
+- `monthly_revenue_rebalance()` → 同上
+- `monthly_revenue_update()` → 整合到 `_update_data_for_strategy()`
+- Config: `revenue_scheduler_enabled` / `revenue_update_cron` / `revenue_rebalance_cron` → deprecated
 
-### S6：更新文件
+### S6：測試 + 文件
 
-- `CLAUDE.md` Scheduling 段落
-- `SYSTEM_STATUS_REPORT.md` §12 管線圖
-- `.env.example`
-
----
-
-## 4. 新舊對照
-
-| 項目 | 舊（3 路徑） | 新（統一） |
-|------|-------------|-----------|
-| Config 欄位 | 5 個 cron/enable | 3 個（active_strategy + cron + data_update） |
-| Job 數量 | 3 個（rebalance + revenue_update + revenue_rebalance） | 1 個（trading_pipeline） |
-| 函式 | `execute_rebalance` + `monthly_revenue_rebalance` + `monthly_revenue_update` | `execute_pipeline` + `monthly_revenue_update` |
-| 併發控制 | asyncio.Lock（R10.3 補丁） | 架構上不可能併發（只有一個 job） |
-| 策略切換 | 改代碼或改 config flag | 改一個 env var `QUANT_ACTIVE_STRATEGY` |
-| 數據更新 | 硬編碼 revenue | 策略感知（根據 active 策略決定） |
-| Auto-Alpha | 共享 lock | 完全獨立，可並行 |
+- 更新 `test_scheduler.py`
+- 更新 CLAUDE.md、SYSTEM_STATUS_REPORT.md
+- 新增不變量測試：pipeline 必須先更新數據再跑策略
 
 ---
 
-## 5. 不在此 Phase 處理
+## 4. 關鍵設計決策
 
-| 項目 | 原因 |
-|------|------|
-| 多策略同時運行 | 超出當前需求，一個 active 策略就夠 |
-| 策略切換 UI | Web 前端可以後加 |
-| Auto-Alpha 自動部署因子 | 需要先驗證 Auto-Alpha 產出的品質 |
-
----
-
-## 6. 預估工作量
-
-| 步驟 | 估計 |
-|:----:|:----:|
-| S1 Config | 15 min |
-| S2 execute_pipeline | 45 min |
-| S3 SchedulerService | 15 min |
-| S4 策略感知數據更新 | 15 min |
-| S5 移除舊代碼 | 15 min |
-| S6 文件更新 | 15 min |
-| **合計** | **~2 hr** |
+| 決策 | 選擇 | 原因 |
+|------|------|------|
+| 數據更新失敗時 | 中止 + 通知 | Phase R 發現的 race condition |
+| 併發控制 | 架構上不可能（1 job） | 比 lock 更安全 |
+| 多策略 | 不支援（1 active） | 簡單優先，足夠當前需求 |
+| Research Pipeline | 完全獨立 | 不操作 Portfolio，不需要 lock |
 
 ---
 
-## 7. 驗證方式
+## 5. 驗證
 
-1. `pytest tests/unit/test_scheduler.py` — 現有測試通過
-2. 手動測試：`QUANT_ACTIVE_STRATEGY=momentum QUANT_MODE=backtest` 確認 pipeline 能跑非 revenue 策略
-3. 手動測試：`QUANT_ACTIVE_STRATEGY=revenue_momentum_hedged` 確認 revenue 路徑正常
-4. 確認 Auto-Alpha 不受影響（`POST /auto-alpha/start` 仍可正常啟動）
+1. `pytest tests/unit/test_scheduler.py`
+2. 手動：`QUANT_ACTIVE_STRATEGY=momentum` 跑非 revenue 策略
+3. 手動：`QUANT_ACTIVE_STRATEGY=revenue_momentum_hedged` 跑 revenue 路徑
+4. 確認 Auto-Alpha 不受影響
+5. 不變量測試：data_update_failed → 不下單
