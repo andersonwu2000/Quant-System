@@ -19,6 +19,7 @@ from src.alpha.auto.decision import AlphaDecisionEngine, DecisionResult
 from src.alpha.auto.dynamic_pool import DynamicFactorPool
 from src.alpha.auto.executor import AlphaExecutor, ExecutionResult
 from src.alpha.auto.factor_tracker import FactorPerformanceTracker
+from src.alpha.auto.safety import SafetyChecker
 from src.alpha.auto.store import AlphaStore
 from src.alpha.auto.universe import UniverseResult, UniverseSelector
 from src.domain.models import Portfolio
@@ -118,6 +119,8 @@ class AlphaScheduler:
         execution_service: ExecutionService,
         risk_engine: RiskEngine,
         current_weights: dict[str, float] | None = None,
+        auto_alpha_paused: bool = False,
+        days_since_pause: int = 0,
     ) -> dict[str, Any]:
         """Execute the full pipeline synchronously (for testing / manual trigger).
 
@@ -226,6 +229,60 @@ class AlphaScheduler:
                 len(decision.selected_factors),
                 decision.regime.value,
             )
+
+            # Stage 3.5: Backtest Gate — verify strategy would have been profitable recently
+            if self._config.backtest_gate_enabled and decision.selected_factors:
+                from src.alpha.auto.backtest_gate import verify_before_execution
+
+                _broadcast_event("stage_started", {"stage": "backtest_gate"})
+                gate_result = verify_before_execution(
+                    decision=decision,
+                    data=data,
+                    config=self._config,
+                )
+                summary["gate"] = {
+                    "passed": gate_result.passed,
+                    "sharpe": gate_result.sharpe,
+                    "total_return": gate_result.total_return,
+                    "max_drawdown": gate_result.max_drawdown,
+                    "net_cost": gate_result.net_cost,
+                    "reason": gate_result.reason,
+                }
+                if not gate_result.passed:
+                    logger.warning(
+                        "Backtest gate BLOCKED execution: %s", gate_result.reason
+                    )
+                    _broadcast_event(
+                        "gate_blocked",
+                        {"reason": gate_result.reason, "sharpe": gate_result.sharpe},
+                    )
+                    summary["execution"] = None
+                    return summary
+                logger.info("Backtest gate PASSED: Sharpe=%.2f", gate_result.sharpe)
+                _broadcast_event(
+                    "stage_completed",
+                    {"stage": "backtest_gate", "sharpe": gate_result.sharpe},
+                )
+
+            # Kill switch recovery check
+            if auto_alpha_paused:
+                safety_checker = SafetyChecker(self._config, self._store or AlphaStore())
+                recovery = safety_checker.check_recovery(days_since_pause)
+                summary["recovery"] = {
+                    "can_resume": recovery.can_resume,
+                    "position_scale": recovery.position_scale,
+                    "reason": recovery.reason,
+                }
+                if not recovery.can_resume:
+                    logger.info("Kill switch recovery: %s", recovery.reason)
+                    summary["execution"] = None
+                    return summary
+                # Scale down factor weights during recovery ramp
+                for factor in list(decision.factor_weights):
+                    decision.factor_weights[factor] *= recovery.position_scale
+                logger.info(
+                    "Resuming with %.0f%% position", recovery.position_scale * 100
+                )
 
             # Stage 4: Execution
             _broadcast_event("stage_started", {"stage": "execution"})

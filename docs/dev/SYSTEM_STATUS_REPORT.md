@@ -46,7 +46,7 @@
 | 後端 Python LOC | ~22,500 (21,807 + 714) |
 | 測試檔案 | 83 |
 | 測試 LOC | ~15,850 |
-| 測試數量 (pytest collected) | **1060** |
+| 測試數量 (pytest collected) | **1091** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -60,7 +60,7 @@
 |------|--------|-----|----------|
 | `src/api/` | 22 | ~3,300 | REST API (14 路由, 54 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
-| `src/alpha/` | 23 | ~4,100 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool, OOS decay 校正)** |
+| `src/alpha/` | 24 | ~4,250 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
 | `src/backtest/` | 10 | ~3,500 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL |
 | `src/execution/` | 10 | ~2,000 | SinopacBroker + SimBroker (含融券借券成本) + ExecutionService + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 |
 | `src/strategy/` | 8 | ~2,000 | 策略 ABC + 因子庫 (27: 11 價格 + 10 Kakushadze 101 + 6 基本面) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
@@ -308,7 +308,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 | 分類 | 檔案數 | 測試數 | 說明 |
 |------|--------|--------|------|
 | Execution 層 | 7 | ~170 | SinopacBroker, QuoteManager, ExecutionService, MarketHours, Reconcile, StopOrder, ShioajiFeed |
-| Alpha 層 | 18 | ~211 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety, OOS decay)**, Kakushadze 101, Momentum Crash, **Fundamental Factors (size/investment/gross_profit)** |
+| Alpha 層 | 20 | ~225 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety/backtest_gate, OOS decay, net alpha filter)**, Kakushadze 101, Momentum Crash, **Fundamental Factors (size/investment/gross_profit)** |
 | 策略 + 回測 | 12 | ~147 | 各策略, 引擎, 分析, Walk-forward, Randomized, PBO, K-Fold, StressTest |
 | 風控 | 3 | ~60 | 規則, Kill Switch, Monitor |
 | API + 整合 | 6 | ~100 | REST 端點, Portfolio API, Auth, WebSocket |
@@ -439,12 +439,13 @@ volumes:
 | AutoAlphaConfig | ✅ 完成 | 排程/篩選/安全閾值配置 (F1a) |
 | UniverseSelector | ✅ 完成 | Scanner × 靜態約束 × 處置股排除 (F1b) |
 | AlphaResearcher | ✅ 完成 | AlphaPipeline + Regime + 持久化 (F1c) |
-| AlphaDecisionEngine | ✅ 完成 | ICIR/Hit Rate 篩選 + Regime 調適 (F1d) |
+| AlphaDecisionEngine | ✅ 完成 | ICIR/Hit Rate 篩選 + Regime 調適 + **Net Alpha 過濾** (F1d) |
+| BacktestGate | ✅ 完成 | Stage 3.5: 執行前回測驗證 (Sharpe/成本門檻) |
 | AlphaExecutor | ✅ 完成 | weights→orders→risk→execution→performance (F1e) |
-| AlphaScheduler | ✅ 完成 | 7 排程 job: 08:30~13:35 (F1f) |
+| AlphaScheduler | ✅ 完成 | 8 排程 job: 08:30~13:35 + backtest gate (F1f) |
 | AlphaStore | ✅ 完成 | DB 持久化: ResearchSnapshot + FactorScore (F2a) |
 | AlertManager | ✅ 完成 | Regime/IC/回撤告警 → 通知 (F2b) |
-| SafetyChecker | ✅ 完成 | 回撤熔斷 5% + 連續虧損暫停 5 天 (F2c) |
+| SafetyChecker | ✅ 完成 | 回撤熔斷 5% + 連續虧損暫停 5 天 + **Kill Switch 恢復機制** (3 天冷靜→50%~100% 漸進恢復) (F2c) |
 | Auto-Alpha API | ✅ 完成 | 10 端點 (F3a) |
 | FactorPerformanceTracker | ✅ 完成 | 累計 IC + 回撤 per factor (F4b)；已整合至 AlphaDecisionEngine + AlphaScheduler |
 | DynamicFactorPool | ✅ 完成 | ICIR 排名自動新增/移除因子 (F4c)；已整合至 AlphaDecisionEngine.decide() + AlphaScheduler.run_full_cycle() |

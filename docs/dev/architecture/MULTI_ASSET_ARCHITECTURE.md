@@ -277,6 +277,8 @@ WebSocket broadcast("market", payload) → 前端即時更新
 | 處置股排除 | `api.punish()` 自動排除受限標的 |
 | 注意股警告 | `api.notice()` 產生告警但不阻擋 |
 | Kill switch | stop order → 即時平倉（tick callback 觸發） |
+| Kill switch 恢復 | 3 天冷靜期 → 50%~100% 漸進恢復（5 天 ramp） |
+| 回測閘門 | auto-alpha 須通過近 60 天 lookback 回測方可執行 |
 | EOD 對帳 | `reconcile()` 比對 → 差異告警 → 可選自動修正 |
 
 ---

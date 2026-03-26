@@ -159,9 +159,25 @@ class TestBroadcastEvent:
 class TestRunFullCycleWsEvents:
     """Test that run_full_cycle emits WebSocket events at each stage."""
 
+    @patch("src.alpha.auto.backtest_gate.BacktestEngine")
     @patch("src.alpha.auto.scheduler._broadcast_event")
-    def test_full_cycle_emits_all_stage_events(self, mock_broadcast: MagicMock) -> None:
-        """Full cycle should broadcast events for all 4 stages."""
+    def test_full_cycle_emits_all_stage_events(
+        self, mock_broadcast: MagicMock, mock_engine_cls: MagicMock,
+    ) -> None:
+        """Full cycle should broadcast events for all 5 stages (incl. backtest gate)."""
+        from src.backtest.analytics import BacktestResult
+
+        mock_engine = MagicMock()
+        mock_engine.run.return_value = BacktestResult(
+            strategy_name="test", start_date="2024-01-01", end_date="2024-06-01",
+            initial_cash=10_000_000.0, total_return=0.05, annual_return=0.10,
+            sharpe=0.8, sortino=1.0, calmar=0.5, max_drawdown=0.03,
+            max_drawdown_duration=10, volatility=0.15, downside_vol=0.10,
+            total_trades=20, win_rate=0.55, avg_trade_return=0.005,
+            total_commission=10_000.0, turnover=0.1,
+        )
+        mock_engine_cls.return_value = mock_engine
+
         scheduler = _build_scheduler_with_mocks()
 
         scheduler.run_full_cycle(
@@ -174,19 +190,21 @@ class TestRunFullCycleWsEvents:
         # Collect all event types
         event_types = [call.args[0] for call in mock_broadcast.call_args_list]
 
-        # Verify stage_started events for all 4 stages
-        assert event_types.count("stage_started") == 4
+        # Verify stage_started events for all 5 stages (incl. backtest_gate)
+        assert event_types.count("stage_started") == 5
         assert "stage_completed" in event_types
         assert "decision" in event_types
         assert "execution" in event_types
 
-        # Verify stage ordering: universe → research → decision → execution
+        # Verify stage ordering: universe → research → decision → backtest_gate → execution
         stage_started_calls = [
             call.args[1]["stage"]
             for call in mock_broadcast.call_args_list
             if call.args[0] == "stage_started"
         ]
-        assert stage_started_calls == ["universe", "research", "decision", "execution"]
+        assert stage_started_calls == [
+            "universe", "research", "decision", "backtest_gate", "execution",
+        ]
 
     @patch("src.alpha.auto.scheduler._broadcast_event")
     def test_error_event_on_exception(self, mock_broadcast: MagicMock) -> None:

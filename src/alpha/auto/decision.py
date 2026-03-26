@@ -276,8 +276,28 @@ class AlphaDecisionEngine:
     def _passes_filter(self, score: FactorScore) -> bool:
         """Return True if a factor passes all selection thresholds."""
         cfg = self._config
-        return (
-            score.icir > cfg.min_icir
-            and score.hit_rate > cfg.min_hit_rate
-            and score.cost_drag_bps < cfg.max_cost_drag
-        )
+
+        if score.icir <= cfg.min_icir:
+            return False
+        if score.hit_rate <= cfg.min_hit_rate:
+            return False
+        if score.cost_drag_bps >= cfg.max_cost_drag:
+            return False
+
+        # Net alpha check — reject if cost drag exceeds gross alpha
+        if cfg.decision.require_positive_net_alpha:
+            # Gross alpha proxy: IC * 10000 (converts correlation to bps)
+            gross_alpha_bps = abs(score.ic) * 10000
+            net_alpha_bps = gross_alpha_bps - score.cost_drag_bps
+            if net_alpha_bps <= 0:
+                logger.info(
+                    "Factor %s rejected: net_alpha=%.0f bps "
+                    "(gross=%.0f - cost=%.0f)",
+                    score.name,
+                    net_alpha_bps,
+                    gross_alpha_bps,
+                    score.cost_drag_bps,
+                )
+                return False
+
+        return True

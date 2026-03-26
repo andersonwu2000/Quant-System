@@ -138,8 +138,12 @@ class AlphaExecutor:
                 target_weights=target_weights,
             )
 
-        # 6. Submit orders
-        trades: list[Trade] = execution_service.submit_orders(approved, portfolio)
+        # 6. Submit orders (skip in backtest mode — no current_bars available)
+        trades: list[Trade] = []
+        if execution_service.mode != "backtest":
+            trades = execution_service.submit_orders(approved, portfolio)
+        else:
+            logger.info("Backtest mode — skipping actual order submission (%d orders)", len(approved))
 
         # 7. Apply trades to portfolio
         if trades:

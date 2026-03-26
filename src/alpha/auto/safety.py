@@ -26,6 +26,15 @@ class SafetyResult:
     momentum_crash_detected: bool = False
 
 
+@dataclass
+class RecoveryResult:
+    """Result of a kill switch recovery check."""
+
+    can_resume: bool
+    position_scale: float  # 0.0 to 1.0
+    reason: str
+
+
 class SafetyChecker:
     """Multi-layer safety checks: drawdown circuit breaker + loss streak detection.
 
@@ -116,6 +125,39 @@ class SafetyChecker:
             )
 
         return result
+
+    def check_recovery(self, days_since_pause: int) -> RecoveryResult:
+        """Check if system can resume after kill switch.
+
+        Returns RecoveryResult with:
+        - can_resume: bool -- True if cooldown period has passed
+        - position_scale: float -- 0.5 to 1.0 based on ramp schedule
+        - reason: str
+        """
+        cfg = self._config
+
+        if days_since_pause < cfg.kill_switch_cooldown_days:
+            return RecoveryResult(
+                can_resume=False,
+                position_scale=0.0,
+                reason=f"Cooldown: {days_since_pause}/{cfg.kill_switch_cooldown_days} days",
+            )
+
+        # Ramp: days 0..ramp_days maps to recovery_pct..1.0
+        days_in_ramp = days_since_pause - cfg.kill_switch_cooldown_days
+        if days_in_ramp >= cfg.kill_switch_recovery_ramp_days:
+            scale = 1.0
+        else:
+            start_pct = cfg.kill_switch_recovery_position_pct
+            scale = start_pct + (1.0 - start_pct) * (
+                days_in_ramp / cfg.kill_switch_recovery_ramp_days
+            )
+
+        return RecoveryResult(
+            can_resume=True,
+            position_scale=scale,
+            reason=f"Ramping: {scale:.0%}",
+        )
 
     def _count_consecutive_losses(self) -> int:
         """Count consecutive loss days from most-recent snapshots."""
