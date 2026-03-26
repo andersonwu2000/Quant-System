@@ -218,7 +218,7 @@ Key design decisions:
 | Multi-Factor | `strategies/multi_factor.py` | Momentum + value + quality, risk-parity weighted |
 | Pairs Trading | `strategies/pairs_trading.py` | Statistical arbitrage on correlated instruments |
 | Sector Rotation | `strategies/sector_rotation.py` | Rotate capital by relative momentum across sectors |
-| Revenue Momentum | `strategies/revenue_momentum.py` | Monthly revenue momentum + price confirmation (rev_yoy ICIR 0.674) |
+| Revenue Momentum | `strategies/revenue_momentum.py` | Monthly revenue momentum + price confirmation. Sort by revenue_acceleration (3M/12M, ICIR 0.476 after 40-day lag correction) |
 | **Revenue Momentum Hedged** | `strategies/revenue_momentum_hedged.py` | **= Revenue Momentum + composite regime hedge (MA200 OR vol_spike, bear→0% position). Paper Trading 主策略** |
 | Trust Follow | `strategies/trust_follow.py` | Investment trust net buy + revenue growth |
 | Multi-Strategy Combo | `strategies/multi_strategy_combo.py` | Multi-strategy inverse-volatility weighted combination |

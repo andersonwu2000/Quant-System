@@ -1,9 +1,10 @@
 # 系統現況追蹤報告書
 
 > **日期**: 2026-03-27
-> **版本**: v10.0
-> **階段**: Phase A~M 完成, Phase N（Paper Trading）代碼就緒, Phase P（Auto Research）設計完成
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v13.0
+> **版本**: v11.0
+> **階段**: Phase A~M 完成, N/N2/P/Q 部分完成, R 進行中
+> **進度總覽**: `docs/dev/PHASE_TRACKER.md`
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md`
 
 ---
 
@@ -13,7 +14,7 @@
 |------|------|
 | 後端 Python 檔案 | ~160 |
 | 後端 LOC | ~29,000 |
-| 測試數量 | **1,337** |
+| 測試數量 | **1,385** |
 | API 端點 | **117**（16 路由模組） |
 | Alpha 因子 | **83**（66 技術 + 17 基本面） |
 | 策略 | **13** |
@@ -56,8 +57,8 @@
 | 5 | Multi-Factor | 規則型 | 動量+價值+品質 |
 | 6 | Pairs Trading | 規則型 | 共整合 + Kalman |
 | 7 | Sector Rotation | 規則型 | 板塊動量輪動 |
-| 8 | **Revenue Momentum** | 條件篩選 | rev_yoy ICIR 0.674, CAGR +17.6%（含 40 天營收公布延遲） |
-| 9 | **Revenue Momentum Hedged** | 條件篩選 | = #8 + 空頭偵測, OOS -5.4%（含 40 天營收公布延遲） |
+| 8 | **Revenue Momentum** | 條件篩選 | 排序: revenue_acceleration ICIR 0.476 (修正後), CAGR +14.3%, Sharpe 0.89 |
+| 9 | **Revenue Momentum Hedged** | 條件篩選 | = #8 + 空頭偵測 (MA200 OR vol_spike), OOS 2025: -17.3% |
 | 10 | Trust Follow | 條件篩選 | 投信跟單 + 營收成長 |
 | 11 | Multi-Strategy Combo | 組合型 | 多策略等權 |
 | 12 | Alpha Pipeline | 管線型 | 可配置因子 + 中性化 |
@@ -132,8 +133,8 @@
 
 | 因子 | 類型 | 數據源 | ICIR | 狀態 |
 |------|------|--------|:----:|:----:|
-| **revenue_yoy** | 營收 | FinMind 月營收 | **0.674** | **核心因子** |
-| **revenue_acceleration** | 營收 | FinMind 月營收 | **0.847**（60d） | **最強因子** |
+| **revenue_yoy** | 營收 | FinMind 月營收 | 0.188（修正後, 修正前 0.674） | 有效但被高估 |
+| **revenue_acceleration** | 營收 | FinMind 月營收 | **0.476**（20d）/ **0.646**（60d）（修正後） | **最強因子** |
 | **revenue_new_high** | 營收 | FinMind 月營收 | 0.435 | 有效 |
 | **revenue_momentum** | 營收 | FinMind 月營收 | 0.481 | 有效 |
 | value_pe | Fama-French | FinMind PER | 0.282（反向） | 邊緣 |
@@ -154,37 +155,39 @@
 
 | 結論 | 證據 |
 |------|------|
-| **台股 alpha 在營收，不在價格** | 4 營收因子 ICIR > 0.3；66 price-volume 全 < 0.5 |
-| **revenue_yoy 10 年 100% 穩定** | 2016-2025 每年 IC 正 |
+| **台股 alpha 在營收，不在價格** | 4 營收因子 ICIR > 0.15（修正後）；66 price-volume 全 < 0.3 |
+| **revenue_acceleration 是修正後最強因子** | ICIR 0.476（20d）/ 0.646（60d），受延遲影響最小 |
+| **revenue_yoy 被高估** | 修正前 ICIR 0.674 → 修正後 0.188（-72%，40 天延遲） |
 | **營收因子不衰減** | 5d→60d ICIR 持續增強（vs 價格因子衰減） |
-| **純營收組合 > 混合** | rev_yoy+mom_6m ICIR 0.024（從 0.674 崩跌） |
+| **純營收組合 > 混合** | rev_yoy+mom_6m ICIR 0.024（混合後崩跌） |
 | **成本是台股瓶頸** | 換手率 > 10% 的因子全部虧損 |
-| **Selection Bias 是最大陷阱** | ivol 32 支 ICIR 0.60 → 142 支 -0.06 |
 | **1/N 等權極難打敗** | DeMiguel 2009 在台股完全驗證 |
 
 ---
 
 ## 5. 驗證狀態
 
-### StrategyValidator 13 項（revenue_momentum, 296 支 × 2018-2025）
+### StrategyValidator 13 項（revenue_momentum relaxed, 313 支 × 2018-2025）
+
+> **注意**：以下為真實性修正後數值（40 天營收延遲 + 漲跌停 + ADV 限制 + 整張交易）
 
 | # | 檢查 | 值 | 結果 |
 |---|------|---:|:----:|
-| 1 | CAGR | +17.6% | ✅ |
-| 2 | Sharpe | 1.02 | ✅ |
-| 3 | MDD | 26% | ✅ |
-| 4 | Walk-Forward 5/5 | 100% | ✅ |
-| 5 | Deflated Sharpe | 0.986 | ✅ |
-| 6 | Bootstrap P(SR>0) | 100% | ✅ |
-| 7 | OOS 2025 H2 | +49.1% | ✅ |
-| 8 | vs 1/N 超額 | +9.6% | ✅ |
-| 9 | PBO | 0% | ✅ |
-| 10 | Worst regime | +0.95% | ✅ |
-| 11 | Universe | 296 | ✅ |
-| 12 | 成本佔比 | 42.1% | ❌ |
-| 13 | Factor decay | -0.384 | ❌ |
+| 1 | Universe | 313 | ✅ |
+| 2 | CAGR | +10.1% | ✅ |
+| 3 | Sharpe | 0.728 | ✅ |
+| 4 | MDD | 30.6% | ✅ |
+| 5 | 成本佔比 | 39.5% | ❌ |
+| 6 | Walk-Forward 4/5 | 80% | ✅ |
+| 7 | DSR | 0.846 | ❌ |
+| 8 | Bootstrap | 100% | ✅ |
+| 9 | OOS 2025 H2 | +37.0% | ✅ |
+| 10 | vs 1/N | +2.5% | ✅ |
+| 11 | PBO | 0% | ✅ |
+| 12 | Worst regime | -4.1% | ✅ |
+| 13 | Factor decay | -1.575 | ❌ |
 
-**通過 11/13。** 公式驗證：Sharpe/Sortino 已修正（算術年化標準），SimBroker 成本模型/IC/ICIR/PBO 全部正確（24/24）。
+**通過 10/13。** 策略邊緣可行，尚無 Paper Trading 實績。詳見 `docs/dev/test/RESEARCH_SUMMARY.md`。
 
 ---
 
@@ -280,44 +283,94 @@
 
 | 項目 | 數值 |
 |------|------|
-| pytest 測試數 | 1,337 passed |
+| pytest 測試數 | 1,385 passed |
 | ruff lint | 0 errors |
 | CI jobs | 9（lint + test + typecheck + build + e2e + android + release） |
 
 ---
 
-## 12. 階段完成度
+## 12. 自動化管線
 
-| 階段 | 日期 | 狀態 |
-|------|------|:----:|
-| A~E | 03-22~25 | ✅ |
-| F~I | 03-26 | ✅ |
-| R1-R4 | 03-26 | ✅ |
-| K（數據品質 + 基本面因子） | 03-26 | ✅ |
-| L（策略轉型 + 條件篩選） | 03-26 | ✅ |
-| M（下行保護 + 因子驗證） | 03-27 | ✅ |
-| N（Paper Trading）代碼 | 03-27 | ✅ 代碼就緒 |
-| N（30 天 Paper Trading） | — | ⏳ 等 CA 憑證 |
-| P（自動化 Alpha 研究） | 03-27 | 🔵 設計完成 |
+三條獨立排程路徑（不可同時運行）：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    AUTOMATION PIPELINE                           │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │  Path 1: Monthly Revenue (Paper Trading 主路徑)      │        │
+│  │                                                      │        │
+│  │  每月 11 日 08:30  monthly_revenue_update()          │        │
+│  │    → 下載 FinMind 最新月營收 parquet                  │        │
+│  │                                                      │        │
+│  │  每月 11 日 09:05  monthly_revenue_rebalance()       │        │
+│  │    → revenue_momentum_hedged.on_bar()                │        │
+│  │      → 空頭偵測（MA200 OR vol_spike）                │        │
+│  │      → 篩選：acceleration>1, YoY>10%, MA60, 均量     │        │
+│  │      → 排序：revenue_acceleration（3M/12M）          │        │
+│  │      → 取前 15 檔 → weights_to_orders()              │        │
+│  │      → RiskEngine → ExecutionService → 通知           │        │
+│  │                                                      │        │
+│  │  Config: QUANT_REVENUE_SCHEDULER_ENABLED             │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │  Path 2: General Rebalance                           │        │
+│  │  Cron: QUANT_REBALANCE_CRON (預設每月 1 日 09:00)    │        │
+│  │  → 任何 registry 中的 active strategy                │        │
+│  │  Config: QUANT_SCHEDULER_ENABLED                     │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │  Path 3: Auto-Alpha Pipeline (實驗性)                │        │
+│  │  觸發: POST /auto-alpha/start                        │        │
+│  │  → 8 stages 08:30~13:35（手動啟停）                  │        │
+│  │  → 因子挖掘 → 驗證 → Memory 回寫                    │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                 │
+│  入口: src/scheduler/__init__.py + src/scheduler/jobs.py        │
+│  執行: src/core/trading_pipeline.py (execute_one_bar)           │
+│  研究: scripts/alpha_research_agent.py                          │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 13. 阻塞項
+## 13. 階段完成度
 
-| 項目 | 狀態 |
-|------|------|
-| CA 憑證（永豐金） | ⏳ 使用者申請中 |
-| Paper Trading 30 天驗證 | ⏳ 等 CA 憑證 |
-| Phase P 實作 | 🔵 設計完成，可開始 |
+詳見 `docs/dev/PHASE_TRACKER.md`。
+
+| 階段 | 狀態 | 備註 |
+|------|:----:|------|
+| A~I | ✅ | 基礎建設 → Alpha 擴充 |
+| K（數據品質） | ✅ | |
+| L（策略轉型） | ✅ | 6/7 驗證通過 |
+| M（下行保護） | ✅ | |
+| N（Paper Trading） | 🟡 | N1.1 完成，N2-N5 待辦 |
+| N2（Web 重寫） | 🟡 | Step 1-4 完成，Step 5 待辦 |
+| P（自動因子挖掘） | 🟢 | P1-P5 完成（實驗性），P6-P7 待辦 |
+| Q（策略精煉） | 🟡 | Q1 代碼已實作（10/13），Q2-Q3 待辦 |
+| R（整頓 + 實用性） | 🟡 | R1-R6 完成，R7-R9 待執行 |
 
 ---
 
-## 14. 實驗報告索引
+## 14. 阻塞項
 
-17 份實驗報告 + 5 CSV，詳見 `docs/dev/test/RESEARCH_SUMMARY.md`。
+| 項目 | 狀態 | 影響 |
+|------|------|------|
+| CA 憑證（永豐金） | ⏳ 申請中 | 阻塞 Phase N5（完整實盤循環） |
+| Paper Trading 30 天驗證 | ⏳ 未開始 | 阻塞實盤決策 |
+| 策略驗證門檻邊緣 | ⚠️ 10/13 通過 | 需 Paper Trading 最終確認 |
 
-核心結論：
-- rev_yoy ICIR 0.674（10 年 100% 穩定）
-- revenue_momentum Validator 11/13 通過
-- 純營收 > 營收+價格混合
-- 1/N 等權在台股極難打敗
+---
+
+## 15. 實驗報告索引
+
+17 份實驗報告，詳見 `docs/dev/test/RESEARCH_SUMMARY.md`。
+
+**修正後核心結論**（含 40 天營收延遲）：
+- revenue_acceleration ICIR 0.476（修正後最強因子）
+- revenue_yoy ICIR 0.188（修正前 0.674，被高估 72%）
+- revenue_momentum Validator 10/13 通過（relaxed 版）
+- 策略邊緣可行（CAGR +14.3%, Sharpe 0.89），OOS 為負
+- **0 天 Paper Trading 實績 — 回測已到極限，需實盤驗證**
