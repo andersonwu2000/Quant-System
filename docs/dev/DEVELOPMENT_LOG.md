@@ -163,6 +163,18 @@ Phase I — Alpha 因子庫擴展：
 - 因子庫重構為 package：`src/strategy/factors/` (technical.py + fundamental.py + kakushadze.py)
 - 向量化因子計算 VECTORIZED_FACTORS — 15x 加速
 
+Bug 修復與穩定性：
+- **台股回測崩潰修復 (D-45)**：Yahoo Finance 對下市台股回傳空 DataFrame (RangeIndex)，對上市台股回傳 tz-aware index (Asia/Taipei)，兩者與 tz-naive Timestamp 比較時報 `'>=' not supported between numpy.ndarray and Timestamp`。在 yahoo/finmind/feed/context/parquet_cache 五層加入防護
+- Android 二次啟動 crash 修復
+- DatetimeIndex 反序列化防護（Parquet 快取）
+- T1 Bug：最低手續費、零股滑點、除權息過濾
+- 28 項 App 穩定性問題修復
+
+基礎設施：
+- **Tailscale 行動連線**：README 新增教學，Android cleartext 白名單加入所有 Tailscale 裝置
+- 實驗網格框架 + GPU 因子運算
+- 本地優先資料存儲 + 實驗結果持久化
+
 架構重構 R1-R4：
 - **R1** TWAP Smart Order (`src/execution/smart_order.py`)：大單拆 N 筆等量子單
 - **R2** 台股交易日曆 (`src/core/calendar.py`)：TWTradingCalendar 國定假日排除
@@ -176,7 +188,7 @@ Shioaji 整合測試：
 
 Android 修復 + CI 完善 + 文件重寫
 
-**里程碑**: 系統從「可用」升級為「學術級」。27 因子、1,138 tests、147 後端檔案。Shioaji 模擬整合通過。
+**里程碑**: 系統從「可用」升級為「學術級」。27 因子、1,151 tests、147 後端檔案。Shioaji 模擬整合通過。台股回測穩定性驗證（14 支半導體股 on Android）。
 
 ---
 
@@ -185,11 +197,11 @@ Android 修復 + CI 完善 + 文件重寫
 | 指標 | 數值 |
 |------|------|
 | 開發天數 | 5 天 |
-| Git commits | 99 |
-| 檔案變更 | 512 |
+| Git commits | 145 |
+| 檔案變更 | 512+ |
 | 新增程式碼 | ~91,000 行 |
 | Python 後端 | 147 檔案 |
-| Python 測試 | 89 檔案, **1,138 tests** |
+| Python 測試 | 89 檔案, **1,151 tests** |
 | Web 前端 (TS/TSX) | 143 檔案 |
 | Android (Kotlin) | 56 檔案 |
 | 共享套件 (TS) | 11 檔案 |
@@ -218,6 +230,7 @@ Day 3:  + Alpha Pipeline + 多資產 (Registry/Portfolio/Allocation/Optimizer)
 Day 4:  + Shioaji 券商 + Paper Trading + Android Native
          ↓
 Day 5:  + Auto-Alpha + 學術最佳化 (14 方法) + 27 因子 + R1-R4 重構 + Shioaji 模擬整合
+         + 台股回測穩定性修復 + Tailscale 行動連線 + 實驗框架
 ```
 
 ### 開發方法
@@ -304,9 +317,11 @@ Day 5:  + Auto-Alpha + 學術最佳化 (14 方法) + 27 因子 + R1-R4 重構 + 
 - Kakushadze 101 Alphas — 81 個公式待擴充 (已實作 10 + 排除 10)
 
 ### 工程待辦
-- FastAPI `on_event` deprecated → lifespan handler
-- WebSocket `market` 頻道接入 SinopacQuoteManager
+- ~~FastAPI `on_event` deprecated → lifespan handler~~ ✅ D-28
+- WebSocket `market` 頻道接入 SinopacQuoteManager (D-27)
 - Auto-Alpha DB migration (Alembic 005)
+- ~~台股回測 tz-aware / empty DataFrame crash~~ ✅ D-45
+- ngrok domain 被舊 agent 佔用 → 已改用 Tailscale
 
 ---
 
