@@ -172,7 +172,10 @@
 | 03-27 | 實驗 #9：空頭偵測比較 — vol_hedge OOS +8pp，MA200 無效 |
 | 03-27 | 實驗 #10：複合偵測器 b0% — OOS -16%→**-5.4%**（+10.7pp），牛市反增 +3.4pp |
 | 03-27 | 引擎優化：676 支 × 7Y 344s → **55s**（6.3x 提速） |
-| **TBD** | **composite_b0% StrategyValidator 完整驗證** |
+| 03-27 | composite_b0% StrategyValidator：**10/13 通過**（OOS -3.7%、PBO 0.67 待調整） |
+| 03-27 | 實驗 #12：因子全流程驗證 — 4 因子全 ICIR>0.3、10/10 年正、t=16.1 |
+| 03-27 | 實驗 #13：多因子組合 — rev_yoy 單因子（0.674）≈ 最佳組合（0.692），所有跨類型因子無加成 |
+| **TBD** | **Phase N：Paper Trading** |
 | TBD | Phase N：Paper Trading 完整循環 |
 | TBD | Phase J：跨資產自動化 |
 
