@@ -491,7 +491,97 @@ class AlphaResearchAgent:
             traj.eval_results["validator_total"] = validator_result.get("n_total", 0)
             self._write_discovery_report(traj, eval_result, validator_result)
 
+            # 判斷是否自動部署到 Paper Trading
+            self._try_auto_deploy(hypothesis, validator_result)
+
         return traj
+
+    def _try_auto_deploy(
+        self, hypothesis: Hypothesis, validator_result: dict[str, Any],
+    ) -> None:
+        """判斷因子是否符合自動部署條件，若符合則部署到 Paper Trading。
+
+        部署條件（全部滿足）：
+        1. StrategyValidator >= 10/13
+        2. Sharpe > 0050.TW Sharpe（風險調整打敗大盤）
+        3. CAGR > 8%
+        """
+        n_passed = validator_result.get("n_passed", 0)
+        n_total = validator_result.get("n_total", 13)
+
+        if n_passed < 10:
+            logger.info("[Deploy] %s: %d/%d < 10, skip deploy", hypothesis.name, n_passed, n_total)
+            return
+
+        # 從 validator checks 取 Sharpe 和 CAGR
+        checks = validator_result.get("checks", [])
+        strategy_sharpe = 0.0
+        strategy_cagr = 0.0
+        for c in checks:
+            if c["name"] == "sharpe":
+                try:
+                    strategy_sharpe = float(c["value"])
+                except (ValueError, TypeError):
+                    pass
+            if c["name"] == "cagr":
+                try:
+                    strategy_cagr = float(c["value"].replace("%", "").replace("+", "")) / 100
+                except (ValueError, TypeError):
+                    pass
+
+        # 取 0050.TW Sharpe
+        bench_sharpe = self._get_0050_sharpe()
+
+        logger.info(
+            "[Deploy] %s: Sharpe=%.3f vs 0050=%.3f, CAGR=%.2f%%",
+            hypothesis.name, strategy_sharpe, bench_sharpe, strategy_cagr * 100,
+        )
+
+        if strategy_sharpe <= bench_sharpe:
+            logger.info("[Deploy] %s: Sharpe <= 0050, skip deploy", hypothesis.name)
+            return
+
+        if strategy_cagr < 0.08:
+            logger.info("[Deploy] %s: CAGR < 8%%, skip deploy", hypothesis.name)
+            return
+
+        # 全部通過 → 部署到 Paper Trading
+        try:
+            from src.alpha.auto.paper_deployer import PaperDeployer
+
+            deployer = PaperDeployer()
+            can, reason = deployer.can_deploy()
+            if not can:
+                logger.warning("[Deploy] Cannot deploy: %s", reason)
+                return
+
+            result = deployer.deploy(
+                name=f"auto_{hypothesis.name}",
+                factor_name=hypothesis.name,
+                total_nav=10_000_000,  # 預設 1000 萬
+            )
+            if result:
+                logger.info(
+                    "*** AUTO-DEPLOYED: %s → Paper Trading (%.0f NAV, stop %s) ***",
+                    hypothesis.name, result.initial_nav, result.stop_date[:10],
+                )
+        except Exception as e:
+            logger.warning("[Deploy] Failed: %s", e)
+
+    def _get_0050_sharpe(self) -> float:
+        """取得 0050.TW 的 Sharpe 作為基準。"""
+        try:
+            from src.data.sources.yahoo import YahooFeed
+            import numpy as np
+
+            feed = YahooFeed()
+            bars = feed.get_bars("0050.TW", start="2018-01-01", end="2025-06-30")
+            if bars.empty:
+                return 0.8  # fallback
+            daily_ret = bars["close"].pct_change().dropna()
+            return float(daily_ret.mean() / daily_ret.std() * np.sqrt(252))
+        except Exception:
+            return 0.8  # fallback
 
     def _run_strategy_validator(
         self, hypothesis: Hypothesis, eval_result: EvaluationResult,
