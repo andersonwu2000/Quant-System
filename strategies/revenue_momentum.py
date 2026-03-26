@@ -3,18 +3,96 @@
 
 FinLab 對標：月營收動能策略（CAGR 33.5%）+ AI 因子挖掘最佳迭代（CAGR 18.6%）
 核心邏輯：營收 3M avg > 12M avg + 營收 YoY > 15% + 股價趨勢確認 + 流動性篩選
+
+效能優化：啟動時一次預載所有營收 parquet 到記憶體，回測中不再逐支讀檔。
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src.strategy.base import Context, Strategy
-from src.strategy.optimizer import equal_weight, OptConstraints
+from src.strategy.optimizer import equal_weight, signal_weight, risk_parity, OptConstraints
 
 logger = logging.getLogger(__name__)
+
+# ── 營收預載快取 ───────────────────────────────────────────────────
+
+_revenue_cache: dict[str, pd.DataFrame] | None = None
+
+
+def _preload_revenue(fund_dir: str = "data/fundamental") -> dict[str, pd.DataFrame]:
+    """一次性預載所有營收 parquet 到記憶體。
+
+    回傳 dict: symbol → DataFrame[date, revenue, yoy_growth]
+    """
+    global _revenue_cache
+    if _revenue_cache is not None:
+        return _revenue_cache
+
+    cache: dict[str, pd.DataFrame] = {}
+    fund_path = Path(fund_dir)
+    if not fund_path.exists():
+        _revenue_cache = cache
+        return cache
+
+    for p in sorted(fund_path.glob("*_revenue.parquet")):
+        sym = p.stem.replace("_revenue", "")
+        try:
+            df = pd.read_parquet(p)
+            if df.empty or "revenue" not in df.columns:
+                continue
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").reset_index(drop=True)
+            df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
+
+            # 向量化 YoY：shift(12) 月份對齊（月頻數據直接 shift 12 行 = 去年同月）
+            if "yoy_growth" not in df.columns or df["yoy_growth"].isna().all():
+                prev_year_rev = df["revenue"].shift(12)
+                df["yoy_growth"] = ((df["revenue"] / prev_year_rev) - 1) * 100
+                df.loc[prev_year_rev <= 0, "yoy_growth"] = np.nan
+
+            cache[sym] = df
+        except Exception:
+            continue
+
+    logger.info("Preloaded revenue data: %d symbols", len(cache))
+    _revenue_cache = cache
+    return cache
+
+
+def _get_revenue_at(
+    cache: dict[str, pd.DataFrame],
+    symbol: str,
+    as_of: pd.Timestamp,
+) -> tuple[float, float, float] | None:
+    """從預載快取取得截至 as_of 的營收指標。
+
+    Returns:
+        (rev_3m_avg, rev_12m_avg, latest_yoy) 或 None（數據不足）
+    """
+    df = cache.get(symbol)
+    if df is None:
+        return None
+
+    # 只用 as_of 之前的數據（避免 look-ahead）
+    mask = df["date"] <= as_of
+    available = df[mask]
+    if len(available) < 12:
+        return None
+
+    revenues = available["revenue"].values
+    rev_3m = float(np.mean(revenues[-3:])) if len(revenues) >= 3 else 0
+    rev_12m = float(np.mean(revenues[-12:])) if len(revenues) >= 12 else 0
+
+    yoy_vals = available["yoy_growth"].dropna().values
+    latest_yoy = float(yoy_vals[-1]) if len(yoy_vals) > 0 else 0
+
+    return (rev_3m, rev_12m, latest_yoy)
 
 
 class RevenueMomentumStrategy(Strategy):
@@ -28,7 +106,7 @@ class RevenueMomentumStrategy(Strategy):
     4. 近 60 日漲幅 > 0（動能確認）
     5. 20 日均量 > min_volume 張（流動性）
 
-    排序：營收 YoY 取前 max_holdings 檔，等權配置。
+    排序：營收 YoY 取前 max_holdings 檔。
     """
 
     def __init__(
@@ -37,23 +115,33 @@ class RevenueMomentumStrategy(Strategy):
         min_yoy_growth: float = 15.0,
         min_volume_lots: int = 300,
         max_weight: float = 0.10,
+        weight_method: str = "signal",  # "equal" | "signal" | "risk_parity"
     ):
         self.max_holdings = max_holdings
         self.min_yoy_growth = min_yoy_growth
         self.min_volume_lots = min_volume_lots
         self.max_weight = max_weight
+        self.weight_method = weight_method
+        self._last_month: str = ""
+        self._cached_weights: dict[str, float] = {}
+        # 預載營收（只在第一次呼叫時讀檔，之後全在記憶體）
+        self._rev_cache: dict[str, pd.DataFrame] | None = None
 
     def name(self) -> str:
         return "revenue_momentum"
 
     def on_bar(self, ctx: Context) -> dict[str, float]:
-        candidates: list[tuple[str, float]] = []  # (symbol, yoy_growth)
-
         current_date = ctx.now()
-        start_str = (
-            pd.Timestamp(current_date) - pd.DateOffset(years=2)
-        ).strftime("%Y-%m-%d")
-        end_str = pd.Timestamp(current_date).strftime("%Y-%m-%d")
+        current_month = pd.Timestamp(current_date).strftime("%Y-%m")
+        if current_month == self._last_month:
+            return self._cached_weights
+
+        # 懶載入營收快取
+        if self._rev_cache is None:
+            self._rev_cache = _preload_revenue()
+
+        as_of = pd.Timestamp(current_date)
+        candidates: list[tuple[str, float]] = []
 
         for symbol in ctx.universe():
             try:
@@ -64,44 +152,30 @@ class RevenueMomentumStrategy(Strategy):
                 close = bars["close"]
                 volume = bars["volume"]
 
-                # 條件 5: 流動性 — 20 日均量 > min_volume_lots 張
+                # 條件 5: 流動性
                 avg_vol_20 = float(volume.iloc[-20:].mean()) if len(volume) >= 20 else 0
                 if avg_vol_20 < self.min_volume_lots * 1000:
                     continue
 
                 # 條件 3: 股價 > 60 日均線
-                if len(close) >= 60:
-                    ma60 = float(close.iloc[-60:].mean())
-                    if float(close.iloc[-1]) <= ma60:
-                        continue
-                else:
+                if len(close) < 60:
+                    continue
+                ma60 = float(close.iloc[-60:].mean())
+                if float(close.iloc[-1]) <= ma60:
                     continue
 
                 # 條件 4: 近 60 日漲幅 > 0
-                ret_60d = float(close.iloc[-1]) / float(close.iloc[-60]) - 1
-                if ret_60d <= 0:
+                if float(close.iloc[-1]) / float(close.iloc[-60]) - 1 <= 0:
                     continue
 
-                # 條件 1 & 2: 營收數據
-                if ctx._fundamentals is None:
+                # 條件 1 & 2: 營收（從預載快取，零 I/O）
+                rev_data = _get_revenue_at(self._rev_cache, symbol, as_of)
+                if rev_data is None:
                     continue
 
-                rev_df = ctx._fundamentals.get_revenue(symbol, start_str, end_str)
-                if rev_df.empty or len(rev_df) < 12:
+                rev_3m, rev_12m, latest_yoy = rev_data
+                if rev_12m <= 0 or rev_3m <= rev_12m:
                     continue
-
-                revenues = rev_df["revenue"].values
-                # 3M avg vs 12M avg
-                rev_3m_avg = float(revenues[-3:].mean()) if len(revenues) >= 3 else 0
-                rev_12m_avg = float(revenues[-12:].mean()) if len(revenues) >= 12 else 0
-
-                if rev_12m_avg <= 0 or rev_3m_avg <= rev_12m_avg:
-                    continue
-
-                # 營收 YoY
-                yoy_values = rev_df["yoy_growth"].values
-                latest_yoy = float(yoy_values[-1]) if len(yoy_values) > 0 else 0
-
                 if latest_yoy < self.min_yoy_growth:
                     continue
 
@@ -112,18 +186,26 @@ class RevenueMomentumStrategy(Strategy):
                 continue
 
         if not candidates:
+            self._last_month = current_month
+            self._cached_weights = {}
             return {}
 
-        # 按 YoY 排序取前 N
         candidates.sort(key=lambda x: x[1], reverse=True)
         selected = candidates[: self.max_holdings]
-
         signals = {sym: yoy for sym, yoy in selected}
 
-        return equal_weight(
-            signals,
-            OptConstraints(
-                max_weight=self.max_weight,
-                max_total_weight=0.95,
-            ),
+        constraints = OptConstraints(
+            max_weight=self.max_weight,
+            max_total_weight=0.95,
         )
+
+        if self.weight_method == "signal":
+            weights = signal_weight(signals, constraints)
+        elif self.weight_method == "risk_parity":
+            weights = risk_parity(signals, constraints)
+        else:
+            weights = equal_weight(signals, constraints)
+
+        self._last_month = current_month
+        self._cached_weights = weights
+        return weights

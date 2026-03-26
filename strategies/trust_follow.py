@@ -13,7 +13,7 @@ import logging
 import pandas as pd
 
 from src.strategy.base import Context, Strategy
-from src.strategy.optimizer import equal_weight, OptConstraints
+from src.strategy.optimizer import equal_weight, signal_weight, OptConstraints
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +47,20 @@ class TrustFollowStrategy(Strategy):
         self.trust_days = trust_days
         self.min_volume_lots = min_volume_lots
         self.position_limit = position_limit
+        self._last_month: str = ""
+        self._cached_weights: dict[str, float] = {}
 
     def name(self) -> str:
         return "trust_follow"
 
     def on_bar(self, ctx: Context) -> dict[str, float]:
+        current_date = ctx.now()
+        current_month = pd.Timestamp(current_date).strftime("%Y-%m")
+        if current_month == self._last_month:
+            return self._cached_weights
+
         candidates: list[tuple[str, float]] = []  # (symbol, trust_cumulative)
 
-        current_date = ctx.now()
         # Need institutional data for the past trust_days + buffer
         inst_start = (
             pd.Timestamp(current_date) - pd.DateOffset(days=self.trust_days + 30)
@@ -125,6 +131,8 @@ class TrustFollowStrategy(Strategy):
                 continue
 
         if not candidates:
+            self._last_month = current_month
+            self._cached_weights = {}
             return {}
 
         # 按投信買超排序取前 N
@@ -133,10 +141,12 @@ class TrustFollowStrategy(Strategy):
 
         signals = {sym: tc for sym, tc in selected}
 
-        return equal_weight(
-            signals,
-            OptConstraints(
-                max_weight=self.position_limit,
-                max_total_weight=0.95,
-            ),
+        constraints = OptConstraints(
+            max_weight=self.position_limit,
+            max_total_weight=0.95,
         )
+        # 信號加權：投信買超金額越大，配置越多
+        weights = signal_weight(signals, constraints)
+        self._last_month = current_month
+        self._cached_weights = weights
+        return weights

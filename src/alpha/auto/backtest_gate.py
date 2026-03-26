@@ -178,3 +178,39 @@ def verify_before_execution(
         net_cost=net_cost,
         reason=reason,
     )
+
+
+def full_validation(
+    strategy: object,
+    universe: list[str],
+    start: str,
+    end: str,
+    n_trials: int = 1,
+) -> "ValidationReport":
+    """完整策略驗證（11 項檢查）。
+
+    比 verify_before_execution() 更嚴格。適用於：
+    - 新策略首次上線前
+    - 定期重新驗證
+    - 研究報告產出
+
+    Parameters
+    ----------
+    strategy:
+        Strategy 實例。
+    universe:
+        股票池。
+    start, end:
+        回測期間。
+    n_trials:
+        已測試的策略總數（用於 Deflated Sharpe 校正）。
+
+    Returns
+    -------
+    ValidationReport — 包含 11 項檢查結果。
+    """
+    from src.backtest.validator import StrategyValidator, ValidationConfig
+
+    config = ValidationConfig(n_trials=n_trials)
+    validator = StrategyValidator(config)
+    return validator.validate(strategy, universe, start, end)  # type: ignore[arg-type]

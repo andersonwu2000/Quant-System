@@ -656,3 +656,73 @@ async def submit_kfold(
         n_folds=body.n_folds,
         message=f"K-fold validation queued: {body.n_folds} folds",
     )
+
+
+# ── Full Strategy Validation ───────────────────────────────────
+
+
+class FullValidationRequest(BaseModel):
+    strategy: str
+    universe: list[str]
+    start: str = "2017-01-01"
+    end: str = "2025-06-30"
+    n_trials: int = 1
+    min_sharpe: float = 0.7
+    min_cagr: float = 0.15
+
+class ValidationCheckItem(BaseModel):
+    name: str
+    passed: bool
+    value: str
+    threshold: str
+    detail: str = ""
+
+class FullValidationResponse(BaseModel):
+    strategy: str
+    passed: bool
+    n_passed: int
+    n_total: int
+    checks: list[ValidationCheckItem]
+    summary: str
+
+@router.post("/full-validation", response_model=FullValidationResponse)
+@_limiter.limit("1/minute")
+async def submit_full_validation(
+    request: Request,
+    body: FullValidationRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> FullValidationResponse:
+    """Run full 11-check strategy validation (PBO, Walk-Forward, Bootstrap, etc.)."""
+    try:
+        from src.backtest.validator import StrategyValidator, ValidationConfig
+        from src.strategy.registry import resolve_strategy
+
+        strategy = resolve_strategy(body.strategy)
+        config = ValidationConfig(
+            min_sharpe=body.min_sharpe,
+            min_cagr=body.min_cagr,
+            n_trials=body.n_trials,
+        )
+        validator = StrategyValidator(config)
+        report = validator.validate(strategy, body.universe, body.start, body.end)
+
+        return FullValidationResponse(
+            strategy=body.strategy,
+            passed=report.passed,
+            n_passed=report.n_passed,
+            n_total=report.n_total,
+            checks=[
+                ValidationCheckItem(
+                    name=c.name,
+                    passed=c.passed,
+                    value=str(c.value),
+                    threshold=str(c.threshold),
+                    detail=c.detail,
+                )
+                for c in report.checks
+            ],
+            summary=report.summary(),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -224,6 +224,94 @@ def build_shareholding_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     return {}
 
 
+def build_revenue_advanced_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """從月營收建構 revenue_acceleration 和 revenue_new_high 面板。"""
+    accel_data: dict[str, pd.Series] = {}
+    new_high_data: dict[str, pd.Series] = {}
+
+    for sym in symbols:
+        p = FUND_DIR / f"{sym}_revenue.parquet"
+        if not p.exists():
+            continue
+        df = pd.read_parquet(p)
+        if df.empty or "revenue" not in df.columns:
+            continue
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").set_index("date")
+        rev = df["revenue"].astype(float)
+
+        if len(rev) < 12:
+            continue
+
+        # Acceleration: 3M avg / 12M avg
+        avg3 = rev.rolling(3, min_periods=3).mean()
+        avg12 = rev.rolling(12, min_periods=12).mean()
+        accel = avg3 / avg12.replace(0, np.nan)
+        accel_data[sym] = accel
+
+        # New high: 3M avg >= rolling 12M max of 3M avg
+        rolling_max_3m = avg3.rolling(12, min_periods=12).max()
+        is_high = (avg3 >= rolling_max_3m * 0.99).astype(float)
+        new_high_data[sym] = is_high
+
+    result = {}
+    if accel_data:
+        result["revenue_acceleration"] = pd.DataFrame(accel_data).sort_index()
+    if new_high_data:
+        result["revenue_new_high"] = pd.DataFrame(new_high_data).sort_index()
+    return result
+
+
+def build_trust_cumulative_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """從法人買賣超建構 trust_10d_cumulative 面板。"""
+    data: dict[str, pd.Series] = {}
+    for sym in symbols:
+        p = FUND_DIR / f"{sym}_institutional.parquet"
+        if not p.exists():
+            continue
+        df = pd.read_parquet(p)
+        if df.empty:
+            continue
+        df["date"] = pd.to_datetime(df["date"])
+        df["buy"] = pd.to_numeric(df["buy"], errors="coerce").fillna(0)
+        df["sell"] = pd.to_numeric(df["sell"], errors="coerce").fillna(0)
+        df["net"] = df["buy"] - df["sell"]
+
+        trust = df[df["name"].str.contains("Investment_Trust", na=False)]
+        if trust.empty:
+            continue
+        tg = trust.groupby("date")["net"].sum()
+        # 10-day cumulative
+        data[sym] = tg.rolling(10, min_periods=5).sum()
+
+    if data:
+        return {"trust_10d_cumulative": pd.DataFrame(data).sort_index()}
+    return {}
+
+
+def _load_volume_panel() -> pd.DataFrame | None:
+    """讀取成交量面板。"""
+    all_vol = {}
+    for p in MARKET_DIR.glob("*.TW_1d.parquet"):
+        sym = p.stem.replace("_1d", "")
+        if sym.startswith("finmind_") or sym in ("0050.TW", "0056.TW"):
+            continue
+        try:
+            df = pd.read_parquet(p)
+            if not df.empty and "volume" in df.columns:
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index)
+                all_vol[sym] = df["volume"]
+        except Exception:
+            continue
+    if not all_vol:
+        return None
+    panel = pd.DataFrame(all_vol).sort_index()
+    panel.index = pd.to_datetime(panel.index.date)
+    panel = panel[~panel.index.duplicated(keep="first")]
+    return panel
+
+
 def build_daytrading_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     """從當沖 parquet 建構 daytrading_ratio 面板。"""
     data: dict[str, pd.Series] = {}
@@ -358,10 +446,53 @@ def main() -> None:
         print(f"  {name}: {panel.shape}", flush=True)
         all_factor_panels[name] = panel
 
-    # Also add momentum_6m from price for comparison
+    # Revenue advanced: acceleration + new_high (FinLab-driven)
+    rev_adv_panels = build_revenue_advanced_panel(symbols)
+    for name, panel in rev_adv_panels.items():
+        aligned = align_factor_to_daily(panel, close_panel.index)
+        print(f"  {name}: {panel.shape} → aligned {aligned.shape}", flush=True)
+        all_factor_panels[name] = aligned
+
+    # Trust cumulative (10-day rolling)
+    trust_cum_panels = build_trust_cumulative_panel(symbols)
+    for name, panel in trust_cum_panels.items():
+        print(f"  {name}: {panel.shape}", flush=True)
+        all_factor_panels[name] = panel
+
+    # Price-based factors for comparison
     mom6m = close_panel.pct_change(120)
     all_factor_panels["momentum_6m"] = mom6m
-    print(f"  momentum_6m: {mom6m.shape} (baseline comparison)", flush=True)
+    print(f"  momentum_6m: {mom6m.shape}", flush=True)
+
+    mom1m = close_panel.pct_change(20)
+    all_factor_panels["momentum_1m"] = mom1m
+
+    reversal_5d = -close_panel.pct_change(5)
+    all_factor_panels["reversal_5d"] = reversal_5d
+
+    volatility_20d = close_panel.pct_change().rolling(20).std() * np.sqrt(252)
+    all_factor_panels["volatility_20d"] = volatility_20d
+
+    # RSI 14
+    delta = close_panel.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi_panel = 100 - 100 / (1 + rs)
+    all_factor_panels["rsi_14"] = rsi_panel
+
+    # Volume momentum
+    vol_panel = _load_volume_panel()
+    if vol_panel is not None:
+        vol_mom = vol_panel.rolling(5).mean() / vol_panel.rolling(20).mean()
+        all_factor_panels["volume_momentum"] = vol_mom
+
+    # Price vs MA60
+    ma60 = close_panel.rolling(60).mean()
+    price_vs_ma60 = close_panel / ma60 - 1
+    all_factor_panels["price_vs_ma60"] = price_vs_ma60
+
+    print("  + price factors: momentum_1m, reversal_5d, volatility_20d, rsi_14, volume_momentum, price_vs_ma60", flush=True)
 
     print(f"\nTotal factor panels: {len(all_factor_panels)}")
 
@@ -421,9 +552,11 @@ def main() -> None:
 
 
 def _classify_factor(name: str) -> str:
-    if name in ("pe_ratio", "pb_ratio", "dividend_yield", "revenue_yoy", "revenue_momentum"):
+    if name in ("pe_ratio", "pb_ratio", "dividend_yield", "revenue_yoy",
+                "revenue_momentum", "revenue_acceleration", "revenue_new_high"):
         return "fundamental"
-    if name in ("foreign_net", "trust_net", "margin_change", "foreign_holding_chg"):
+    if name in ("foreign_net", "trust_net", "margin_change",
+                "foreign_holding_chg", "trust_10d_cumulative"):
         return "chip"
     if name in ("daytrading_ratio",):
         return "sentiment"

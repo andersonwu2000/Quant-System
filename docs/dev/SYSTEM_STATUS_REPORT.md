@@ -1,11 +1,11 @@
 # 系統現況追蹤報告書
 
 > **報告日期**: 2026-03-26
-> **版本**: v5.1
-> **當前階段**: Phase A~I + R1-R4 完成, Shioaji 模擬整合通過
+> **版本**: v6.0
+> **當前階段**: Phase A~I + R1-R4 + K 完成, Phase L 進行中（L1~L3 ✅, L4 ⏳）
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v9.0
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v11.0
 
 ---
 
@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 152 (142 src + 10 strategies) |
+| 後端 Python 檔案 (src/ + strategies/) | 155 (145 src + 10 strategies) |
 | 後端 Python LOC | ~25,400 (24,573 + 786) |
 | 測試檔案 | 92 |
 | 測試 LOC | ~16,700 |
-| 測試數量 (pytest collected) | **1,264** |
+| 測試數量 (pytest collected) | **1,316** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -58,12 +58,12 @@
 
 | 模組 | 檔案數 | LOC | 功能描述 |
 |------|--------|-----|----------|
-| `src/api/` | 22 | ~3,300 | REST API (14 路由, 74 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
+| `src/api/` | 24 | ~4,500 | REST API (15 路由, 103 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
-| `src/alpha/` | 24 | ~4,250 | Alpha 研究：66 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
-| `src/backtest/` | 11 | ~3,800 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL + **Experiment Grid (parallel backtesting across parameter combinations)** |
+| `src/alpha/` | 25 | ~4,500 | Alpha 研究：83 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline + Regime + Attribution + FilterStrategy（條件篩選）+ **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
+| `src/backtest/` | 12 | ~4,200 | 回測引擎 + 40+ 績效指標 + Walk-forward + PBO (CSCV) + K-Fold CV + Stress Test + DSR + Experiment Grid + **StrategyValidator（11 項強制驗證閘門：CAGR/Sharpe/MDD/WF/PBO/DSR/Bootstrap/OOS/1-N/Cost/Decay）** |
 | `src/execution/` | 16 | ~2,120 | `broker/` (base + simulated + sinopac) + `quote/` (sinopac) + `service.py` (ExecutionService) + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 + **TWAP 拆單 (`smart_order.py`)** + backward-compat shims |
-| `src/strategy/` | 12 | ~3,200 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 66 因子 + **GPU-accelerated factors via PyTorch CUDA**) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS — 60+ 向量化版本**) + Registry + MultiAssetStrategy |
+| `src/strategy/` | 12 | ~4,000 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 83 因子) + 最佳化器 (3) + 研究工具 (FACTOR_REGISTRY 66 + FUNDAMENTAL_REGISTRY 17 + VECTORIZED_FACTORS) + Registry (11 策略) + MultiAssetStrategy |
 | `src/portfolio/` | 4 | ~1,260 | 組合最佳化 (14 方法: EW/InvVol/RP/MVO/BL/HRP/Robust/Resampled/CVaR/MaxDD/GMV/MaxSharpe/IndexTracking/SemiVariance) + 風險模型 (LW/GARCH/Factor Model Cov + VaR/CVaR 歷史+參數法) + James-Stein 均值收縮 + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
 | `src/core/` | 6 | ~930 | 核心模型 (models.py) + 設定 (config.py) + 日誌 (logging.py) + Repository + **TWTradingCalendar (calendar.py)** + **trading_pipeline.py (共用交易流程)** |

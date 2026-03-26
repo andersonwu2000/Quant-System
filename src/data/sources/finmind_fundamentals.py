@@ -1,21 +1,23 @@
 """
 FinMind 台股基本面數據。
 
-支援財務報表、本益比/淨值比、產業分類、月營收、股利。
+支援財務報表、本益比/淨值比、產業分類、月營收、股利、法人買賣超。
 快取 TTL 7 天（基本面數據更新頻率低）。
 FinMind import 使用 lazy loading。
+優先讀取 data/fundamental/ 本地 parquet，沒有才呼叫 API。
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from src.data.fundamentals import FundamentalsProvider
-from src.data.sources.finmind_common import get_dataloader, strip_tw_suffix
+from src.data.sources.finmind_common import get_dataloader, strip_tw_suffix, ensure_tw_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,20 @@ class FinMindFundamentals(FundamentalsProvider):
     def _set_cached(self, key: str, data: object) -> None:
         """Set cached value with current timestamp."""
         self._cache[key] = (time.time(), data)
+
+    @staticmethod
+    def _read_local_parquet(symbol: str, suffix: str) -> pd.DataFrame | None:
+        """Try to read from data/fundamental/{symbol}_{suffix}.parquet."""
+        tw_sym = ensure_tw_suffix(symbol)
+        path = Path("data/fundamental") / f"{tw_sym}_{suffix}.parquet"
+        if path.exists():
+            try:
+                df = pd.read_parquet(path)
+                if not df.empty:
+                    return df
+            except Exception:
+                pass
+        return None
 
     def get_financials(self, symbol: str, date: str | None = None) -> dict[str, float]:
         """Get financial metrics from FinMind.
@@ -171,80 +187,76 @@ class FinMindFundamentals(FundamentalsProvider):
         self._set_cached("_sector_table_loaded", True)
 
     def get_revenue(self, symbol: str, start: str, end: str) -> pd.DataFrame:
-        """Get monthly revenue from TaiwanStockMonthRevenue with YoY growth."""
+        """Get monthly revenue from local parquet or TaiwanStockMonthRevenue API."""
         bare_id = strip_tw_suffix(symbol)
-        cache_key = f"revenue_{bare_id}_{start}_{end}"
-
-        cached = self._get_cached(cache_key)
-        if cached is not None:
-            return cached  # type: ignore[return-value]
+        full_cache_key = f"revenue_full_{bare_id}"
 
         empty = pd.DataFrame(columns=["date", "revenue", "yoy_growth"])
 
-        try:
-            dl = self._get_dataloader()
-            # Pull extra year for YoY calculation
-            extended_start = (
-                pd.Timestamp(start) - pd.DateOffset(years=1)
-            ).strftime("%Y-%m-%d")
+        cached_full = self._get_cached(full_cache_key)
+        if cached_full is not None:
+            full_result = cached_full  # type: ignore[assignment]
+            # Filter and return
+            if full_result.empty:
+                return empty
+            filtered = full_result[
+                (full_result["date"] >= pd.Timestamp(start))
+                & (full_result["date"] <= pd.Timestamp(end))
+            ].reset_index(drop=True)
+            return filtered
 
-            rev_df = dl.taiwan_stock_month_revenue(
-                stock_id=bare_id,
-                start_date=extended_start,
-                end_date=end,
+        # Local parquet only — no API calls during backtest
+        local_df = self._read_local_parquet(bare_id, "revenue")
+        if local_df is None:
+            self._set_cached(full_cache_key, empty)
+            return empty
+        rev_df = local_df
+
+        # Build result
+        rev_df = rev_df.sort_values("date").reset_index(drop=True)
+
+        result_rows = []
+        for _, row in rev_df.iterrows():
+            revenue = row.get("revenue", 0)
+            date_val = row["date"]
+
+            # Calculate YoY growth
+            yoy_growth = 0.0
+            if "revenue_year_ago" in rev_df.columns:
+                year_ago = row.get("revenue_year_ago", 0)
+                if pd.notna(year_ago) and year_ago > 0:
+                    yoy_growth = (revenue / year_ago - 1) * 100
+            elif "revenue" in rev_df.columns:
+                # Manual YoY: find same month previous year
+                current_date = pd.Timestamp(date_val)
+                prev_year_date = current_date - pd.DateOffset(years=1)
+                prev_rows = rev_df[
+                    pd.to_datetime(rev_df["date"]).dt.to_period("M")
+                    == prev_year_date.to_period("M")
+                ]
+                if not prev_rows.empty:
+                    prev_rev = prev_rows.iloc[0].get("revenue", 0)
+                    if pd.notna(prev_rev) and prev_rev > 0:
+                        yoy_growth = (revenue / prev_rev - 1) * 100
+
+            result_rows.append(
+                {"date": date_val, "revenue": revenue, "yoy_growth": yoy_growth}
             )
 
-            if rev_df is None or rev_df.empty:
-                self._set_cached(cache_key, empty)
-                return empty
+        full_result = pd.DataFrame(result_rows)
+        if not full_result.empty:
+            full_result["date"] = pd.to_datetime(full_result["date"])
 
-            # Build result
-            rev_df = rev_df.sort_values("date").reset_index(drop=True)
+        self._set_cached(full_cache_key, full_result)
 
-            result_rows = []
-            for _, row in rev_df.iterrows():
-                revenue = row.get("revenue", 0)
-                date_val = row["date"]
-
-                # Calculate YoY growth
-                yoy_growth = 0.0
-                if "revenue_year_ago" in rev_df.columns:
-                    year_ago = row.get("revenue_year_ago", 0)
-                    if pd.notna(year_ago) and year_ago > 0:
-                        yoy_growth = (revenue / year_ago - 1) * 100
-                elif "revenue" in rev_df.columns:
-                    # Manual YoY: find same month previous year
-                    current_date = pd.Timestamp(date_val)
-                    prev_year_date = current_date - pd.DateOffset(years=1)
-                    prev_rows = rev_df[
-                        pd.to_datetime(rev_df["date"]).dt.to_period("M")
-                        == prev_year_date.to_period("M")
-                    ]
-                    if not prev_rows.empty:
-                        prev_rev = prev_rows.iloc[0].get("revenue", 0)
-                        if pd.notna(prev_rev) and prev_rev > 0:
-                            yoy_growth = (revenue / prev_rev - 1) * 100
-
-                result_rows.append(
-                    {"date": date_val, "revenue": revenue, "yoy_growth": yoy_growth}
-                )
-
-            result = pd.DataFrame(result_rows)
-
-            # Filter to requested range
-            result["date"] = pd.to_datetime(result["date"])
-            result = result[
-                (result["date"] >= pd.Timestamp(start))
-                & (result["date"] <= pd.Timestamp(end))
-            ].reset_index(drop=True)
-
-            self._set_cached(cache_key, result)
-            return result
-
-        except Exception as e:
-            logger.warning("Failed to get revenue for %s: %s", symbol, e)
-            self._set_cached(cache_key, empty)
+        # Filter to requested range
+        if full_result.empty:
             return empty
+        filtered = full_result[
+            (full_result["date"] >= pd.Timestamp(start))
+            & (full_result["date"] <= pd.Timestamp(end))
+        ].reset_index(drop=True)
+        return filtered
 
     def get_dividends(self, symbol: str, start: str, end: str) -> pd.DataFrame:
         """Get dividend history from TaiwanStockDividend."""
@@ -295,25 +307,24 @@ class FinMindFundamentals(FundamentalsProvider):
             return empty
 
     def get_institutional(self, symbol: str, start: str, end: str) -> pd.DataFrame:
-        """Get institutional investor buy/sell data from TaiwanStockInstitutionalInvestorsBuySell."""
+        """Get institutional investor data from local parquet or API."""
         bare_id = strip_tw_suffix(symbol)
-        cache_key = f"institutional_{bare_id}_{start}_{end}"
 
-        cached = self._get_cached(cache_key)
-        if cached is not None:
-            return cached  # type: ignore[return-value]
+        # Use symbol-only cache key for local parquet (avoid re-parsing per date range)
+        full_cache_key = f"institutional_full_{bare_id}"
+        cached_full = self._get_cached(full_cache_key)
 
         empty = pd.DataFrame(columns=["date", "trust_net", "foreign_net", "dealer_net"])
 
-        try:
-            dl = self._get_dataloader()
-            df = dl.taiwan_stock_institutional_investors(
-                stock_id=bare_id, start_date=start, end_date=end
-            )
-
-            if df is None or df.empty:
-                self._set_cached(cache_key, empty)
+        if cached_full is not None:
+            full_result = cached_full  # type: ignore[assignment]
+        else:
+            # Local parquet only — no API calls during backtest
+            local_df = self._read_local_parquet(bare_id, "institutional")
+            if local_df is None:
+                self._set_cached(full_cache_key, empty)
                 return empty
+            df = local_df
 
             # Calculate net = buy - sell for each row
             df["net"] = df["buy"].astype(float) - df["sell"].astype(float)
@@ -335,15 +346,18 @@ class FinMindFundamentals(FundamentalsProvider):
                     "dealer_net": float(dealer_net),
                 })
 
-            result = pd.DataFrame(result_rows)
-            if not result.empty:
-                result["date"] = pd.to_datetime(result["date"])
-                result = result.sort_values("date").reset_index(drop=True)
+            full_result = pd.DataFrame(result_rows)
+            if not full_result.empty:
+                full_result["date"] = pd.to_datetime(full_result["date"])
+                full_result = full_result.sort_values("date").reset_index(drop=True)
 
-            self._set_cached(cache_key, result)
-            return result
+            self._set_cached(full_cache_key, full_result)
 
-        except Exception as e:
-            logger.warning("Failed to get institutional data for %s: %s", symbol, e)
-            self._set_cached(cache_key, empty)
+        # Filter to requested range
+        if full_result.empty:
             return empty
+        filtered = full_result[
+            (full_result["date"] >= pd.Timestamp(start))
+            & (full_result["date"] <= pd.Timestamp(end))
+        ].reset_index(drop=True)
+        return filtered
