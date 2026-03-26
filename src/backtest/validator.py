@@ -237,14 +237,16 @@ class StrategyValidator:
             report.error = f"Full backtest failed: {e}"
             return report
 
-        # 8. Turnover + cost
-        annual_cost = result.total_commission / cfg.initial_cash
+        # 8. Turnover + cost（兩邊都年化比較）
+        n_years = max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
+        annual_cost_rate = result.total_commission / cfg.initial_cash / n_years
+        cost_ratio = annual_cost_rate / abs(result.annual_return) if result.annual_return > 0 else 0
         report.checks.append(CheckResult(
             name="annual_cost_ratio",
-            passed=annual_cost <= cfg.max_cost_ratio * abs(result.annual_return) if result.annual_return > 0 else True,
-            value=f"{annual_cost:.2%}",
-            threshold=f"< {cfg.max_cost_ratio:.0%} × gross",
-            detail=f"Trades: {result.total_trades}",
+            passed=cost_ratio <= cfg.max_cost_ratio if result.annual_return > 0 else True,
+            value=f"{cost_ratio:.0%}",
+            threshold=f"< {cfg.max_cost_ratio:.0%} of gross",
+            detail=f"Annual cost: {annual_cost_rate:.2%}, Gross CAGR: {result.annual_return:.2%}, Trades: {result.total_trades}",
         ))
 
         # 2. Walk-Forward
@@ -511,24 +513,23 @@ class StrategyValidator:
         start: str,
         end: str,
     ) -> float:
-        """計算 vs 1/N 等權基準的年化超額報酬。
+        """計算 vs 買入持有基準的年化超額報酬。
 
-        用 buy-and-hold 等權作為最簡單的基準（DeMiguel 2009）。
-        如果無法跑基準回測，fallback 用 0（等於不比較）。
+        用大盤 ETF (0050.TW) 的 buy-and-hold 報酬作為基準。
+        如果無法取得基準，fallback 假設基準 = 0。
         """
         try:
-            # 嘗試用系統內的等權策略
-            from src.strategy.registry import resolve_strategy
-            try:
-                benchmark = resolve_strategy("momentum_12_1")
-            except Exception:
-                # Fallback: 不比較
-                return result.annual_return  # 假設基準 0%
+            from src.data.sources.yahoo import YahooFeed
+            feed = YahooFeed()
+            bars = feed.get_bars("0050.TW", start=start, end=end)
+            if bars.empty or len(bars) < 20:
+                return result.annual_return  # 無基準，假設 0%
 
-            bt_config = self._make_bt_config(universe, start, end)
-            engine = BacktestEngine()
-            bench_result = engine.run(benchmark, bt_config)
-            return result.annual_return - bench_result.annual_return
+            close = bars["close"]
+            bench_total = float(close.iloc[-1] / close.iloc[0] - 1)
+            n_years = max(len(bars) / 252, 0.5)
+            bench_annual = (1 + bench_total) ** (1 / n_years) - 1
+            return result.annual_return - bench_annual
         except Exception as e:
             logger.warning("Benchmark comparison failed: %s", e)
             return 0.0
