@@ -49,7 +49,7 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v (1,298+ tests)
+make test                    # pytest tests/ -v (1,341 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
@@ -109,7 +109,7 @@ Key design decisions:
 - `src/data/` — DataFeed ABC (`get_bars`, `get_fx_rate`, `get_futures_chain`), YahooFeed (local-first: reads `data/market/*.parquet`, downloads only if missing), FinMindFeed, FredDataSource (macro data), LocalMarketData (permanent parquet store in `data/market/`).
 - `src/api/` — FastAPI REST + WebSocket, 14 route modules (incl. `/alpha`, `/allocation`, `/execution`, `/auto-alpha`), JWT auth, Prometheus.
 - `src/notifications/` — Discord / LINE / Telegram.
-- `src/scheduler/` — APScheduler (daily snapshots, weekly rebalance).
+- `src/scheduler/` — APScheduler with three execution paths (see Scheduling section below).
 
 **Adding a new strategy**: Create a file in `strategies/`, subclass `Strategy` from `src/strategy/base.py`, implement `name()` and `on_bar(ctx) -> dict[str, float]`. Register it in `_resolve_strategy()` in both `src/api/routes/backtest.py` and `src/cli/main.py`.
 
@@ -142,6 +142,12 @@ Key design decisions:
 - `GET /api/v1/auto-alpha/status` — Auto-alpha running state
 - `POST /api/v1/auto-alpha/start` — Start auto-alpha scheduler
 - `POST /api/v1/auto-alpha/run-now` — Execute one cycle immediately
+- `GET /api/v1/strategy/selection/latest` — Latest monthly stock selection (Web v2)
+- `GET /api/v1/strategy/selection/history` — Historical selections (Web v2)
+- `GET /api/v1/strategy/regime` — Bear market detection status + indicators (Web v2)
+- `GET /api/v1/strategy/drift` — Target vs actual portfolio drift (Web v2)
+- `POST /api/v1/strategy/rebalance` — One-click rebalance trigger (Web v2)
+- `GET /api/v1/strategy/data-status` — Revenue data freshness (Web v2)
 
 **Middleware & cross-cutting concerns**:
 - `src/api/middleware.py` — AuditMiddleware logs all mutation requests (POST/PUT/DELETE) with user, path, status, duration
@@ -203,7 +209,7 @@ Key design decisions:
 
 ## Strategies
 
-11 strategies (9 built-in + 2 pipeline):
+13 strategies (11 built-in + 2 pipeline):
 
 | Strategy | File | Logic |
 |----------|------|-------|
@@ -214,10 +220,29 @@ Key design decisions:
 | Multi-Factor | `strategies/multi_factor.py` | Momentum + value + quality, risk-parity weighted |
 | Pairs Trading | `strategies/pairs_trading.py` | Statistical arbitrage on correlated instruments |
 | Sector Rotation | `strategies/sector_rotation.py` | Rotate capital by relative momentum across sectors |
-| Revenue Momentum | `strategies/revenue_momentum.py` | Monthly revenue momentum + price trend confirmation (FinLab-inspired, CAGR 33.5% benchmark) |
-| Trust Follow | `strategies/trust_follow.py` | Investment trust net buy + revenue growth (FinLab-inspired, CAGR 31.7% benchmark) |
+| Revenue Momentum | `strategies/revenue_momentum.py` | Monthly revenue momentum + price confirmation (rev_yoy ICIR 0.674) |
+| **Revenue Momentum Hedged** | `strategies/revenue_momentum_hedged.py` | **= Revenue Momentum + composite regime hedge (MA200 OR vol_spike, bear→0% position). Paper Trading 主策略** |
+| Trust Follow | `strategies/trust_follow.py` | Investment trust net buy + revenue growth |
+| Multi-Strategy Combo | `strategies/multi_strategy_combo.py` | Multi-strategy inverse-volatility weighted combination |
 | Alpha | `src/alpha/strategy.py` | Configurable factor pipeline with neutralization + cost-aware construction |
 | Multi-Asset | `src/strategy/multi_asset.py` | Two-layer: tactical allocation → within-class selection → portfolio optimization |
+
+## Scheduling
+
+Three independent execution paths — **should not run simultaneously**:
+
+| Path | Trigger | Strategy | Cron | Config |
+|------|---------|----------|------|--------|
+| **General Rebalance** | APScheduler | Any active strategy from registry | `QUANT_REBALANCE_CRON` (default: 1st of month 09:00) | `QUANT_SCHEDULER_ENABLED` |
+| **Auto-Alpha Pipeline** | `/auto-alpha/start` API | AlphaPipeline (daily factor ranking) | 8 stages from 08:30~13:35 | Manual start/stop |
+| **Monthly Revenue** | APScheduler | `revenue_momentum_hedged` | 11th of month: 08:30 update + 09:05 rebalance | `QUANT_REVENUE_SCHEDULER_ENABLED` |
+
+**Monthly Revenue flow** (Paper Trading 主路徑):
+```
+Every 11th 08:30 → monthly_revenue_update()  → download latest FinMind revenue parquet
+Every 11th 09:05 → monthly_revenue_rebalance() → revenue_momentum_hedged.on_bar()
+                                                   → regime detection → stock selection → orders → notify
+```
 
 ## Infrastructure
 
@@ -227,7 +252,7 @@ Key design decisions:
 
 **CI/CD** (`.github/workflows/ci.yml`) — 9 jobs:
 - `backend-lint` — ruff check + mypy strict
-- `backend-test` — pytest (1,298+ tests)
+- `backend-test` — pytest (1,341 tests)
 - `web-typecheck` — tsc --noEmit
 - `web-test` — vitest (depends on web-typecheck)
 - `web-build` — vite build (depends on web-typecheck)

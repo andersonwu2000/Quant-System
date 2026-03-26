@@ -1,8 +1,8 @@
 # 系統現況追蹤報告書
 
-> **報告日期**: 2026-03-26
-> **版本**: v8.0
-> **當前階段**: Phase A~M 完成, Phase N（Paper Trading 準備）待執行
+> **報告日期**: 2026-03-27
+> **版本**: v9.0
+> **當前階段**: Phase A~M 完成, Phase N（Paper Trading 準備）進行中
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md`
 > **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v13.0
@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 156 (146 src + 10 strategies) |
-| 後端 Python LOC | ~25,400 (24,573 + 786) |
-| 測試檔案 | 92 |
-| 測試 LOC | ~16,700 |
-| 測試數量 (pytest collected) | **1,329** |
+| 後端 Python 檔案 (src/ + strategies/) | 159 (148 src + 11 strategies) |
+| 後端 Python LOC | ~29,000 |
+| 測試檔案 | 95+ |
+| 測試 LOC | ~18,000 |
+| 測試數量 (pytest collected) | **1,341** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -80,7 +80,7 @@
 
 ## 4. 功能模組詳述
 
-### 4.1 策略引擎（11 個策略）
+### 4.1 策略引擎（13 個策略）
 
 | # | 策略 | 位置 | 邏輯 | 類型 |
 |---|------|------|------|------|
@@ -89,12 +89,14 @@
 | 3 | RSI Oversold | `strategies/rsi_oversold.py` | RSI < 30 超賣反彈 | 規則型 |
 | 4 | MA Crossover | `strategies/ma_crossover.py` | 快/慢均線交叉 | 規則型 |
 | 5 | Multi-Factor | `strategies/multi_factor.py` | 動量+價值+品質 (risk-parity 加權) | 規則型 |
-| 6 | Pairs Trading | `strategies/pairs_trading.py` | 統計套利：Engle-Granger 共整合 + OLS hedge ratio / Kalman Filter 動態 hedge ratio (fallback 相關性) | 規則型 |
+| 6 | Pairs Trading | `strategies/pairs_trading.py` | 統計套利：Engle-Granger 共整合 + Kalman Filter | 規則型 |
 | 7 | Sector Rotation | `strategies/sector_rotation.py` | 板塊相對動量輪動 | 規則型 |
-| 8 | **Revenue Momentum** | `strategies/revenue_momentum.py` | **營收動能 + 價格確認（FinLab 研究驅動，CAGR 33.5% 對標）** | **條件篩選型** |
-| 9 | **Trust Follow** | `strategies/trust_follow.py` | **投信跟單 + 營收成長（FinLab 研究驅動，CAGR 31.7% 對標）** | **條件篩選型** |
-| 10 | Alpha Pipeline | `src/alpha/strategy.py` | 可配置因子管線 (中性化→正交化→IC 加權→建構) | 管線型 |
-| 11 | Multi-Asset | `src/strategy/multi_asset.py` | 兩層配置：戰術 → 資產內 Alpha → 組合最佳化 | 管線型 |
+| 8 | **Revenue Momentum** | `strategies/revenue_momentum.py` | 營收動能 + 價格確認（rev_yoy ICIR 0.674） | 條件篩選型 |
+| 9 | **Revenue Momentum Hedged** | `strategies/revenue_momentum_hedged.py` | **= #8 + 複合空頭偵測（MA200 OR vol_spike），OOS -16%→-5.4%** | **條件篩選型** |
+| 10 | Trust Follow | `strategies/trust_follow.py` | 投信跟單 + 營收成長 | 條件篩選型 |
+| 11 | Multi-Strategy Combo | `strategies/multi_strategy_combo.py` | 多策略 inverse-vol 加權組合 | 組合型 |
+| 12 | Alpha Pipeline | `src/alpha/strategy.py` | 可配置因子管線 (中性化→正交化→IC 加權) | 管線型 |
+| 13 | Multi-Asset | `src/strategy/multi_asset.py` | 兩層配置：戰術 → 資產內 Alpha → 組合最佳化 | 管線型 |
 
 ### 4.2 Alpha 因子庫（83 因子: 66 FACTOR_REGISTRY + 17 FUNDAMENTAL_REGISTRY）
 

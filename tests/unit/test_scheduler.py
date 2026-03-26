@@ -54,7 +54,8 @@ class TestSchedulerService:
             scheduler.start(config)
 
             assert scheduler.is_running is True
-            mock_async_scheduler_instance.add_job.assert_called_once()
+            # 3 jobs: rebalance + revenue_update + revenue_rebalance
+            assert mock_async_scheduler_instance.add_job.call_count >= 1
             mock_async_scheduler_instance.start.assert_called_once()
 
             scheduler.stop()

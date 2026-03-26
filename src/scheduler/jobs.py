@@ -199,13 +199,23 @@ async def monthly_revenue_rebalance(config: TradingConfig) -> None:
         universe = list(state.portfolio.positions.keys())
         if not universe:
             # 用預設 universe（data/market/ 所有台股）
-            from pathlib import Path
-            market_dir = Path("data/market")
-            universe = sorted(
-                p.stem.replace("_1d", "")
-                for p in market_dir.glob("*.TW_1d.parquet")
-                if not p.stem.startswith("00")
-            )
+            try:
+                from pathlib import Path
+                market_dir = Path("data/market")
+                if not market_dir.exists():
+                    logger.error("data/market/ directory not found, cannot build universe")
+                    return
+                universe = sorted(
+                    p.stem.replace("_1d", "")
+                    for p in market_dir.glob("*.TW_1d.parquet")
+                    if not p.stem.startswith("00")
+                )
+                if not universe:
+                    logger.error("No .TW parquet files found in data/market/, skipping")
+                    return
+            except Exception:
+                logger.exception("Failed to build universe from data/market/ glob")
+                return
 
         feed = create_feed(config.data_source, universe)
         fundamentals = create_fundamentals(config.data_source)

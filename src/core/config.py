@@ -95,6 +95,9 @@ class TradingConfig(BaseSettings):
     # ── 排程 ──
     scheduler_enabled: bool = False
     rebalance_cron: str = "0 9 1 * *"    # 每月1日 09:00
+    revenue_scheduler_enabled: bool = True   # 月營收排程（需 scheduler_enabled=True 才生效）
+    revenue_update_cron: str = "30 8 11 * *"   # 每月11日 08:30 更新營收數據
+    revenue_rebalance_cron: str = "5 9 11 * *"  # 每月11日 09:05 營收策略再平衡
 
     # ── 日誌 ──
     log_level: str = "INFO"

@@ -559,19 +559,19 @@ VECTORIZED_FACTORS: dict[str, Callable[..., pd.Series]] = {
 # ── 因子註冊表 ──────────────────────────────────────────────────
 
 FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
-    "momentum": {
+    "momentum": {  # REDUNDANT: corr > 0.8 with momentum_12m (+0.997)
         "fn": flib.momentum,
         "key": "momentum",
         "default_kwargs": {"lookback": 252, "skip": 21},
         "min_bars": 252,
     },
-    "mean_reversion": {
+    "mean_reversion": {  # REDUNDANT: corr > 0.8 with rsi (-0.873); USELESS: |IC| < 0.01
         "fn": flib.mean_reversion,
         "key": "z_score",
         "default_kwargs": {"lookback": 20},
         "min_bars": 20,
     },
-    "volatility": {
+    "volatility": {  # REDUNDANT: corr > 0.8 with ivol (+0.980)
         "fn": flib.volatility,
         "key": "volatility",
         "default_kwargs": {"lookback": 20},
@@ -589,7 +589,7 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"fast": 10, "slow": 50},
         "min_bars": 50,
     },
-    "vpt": {
+    "vpt": {  # USELESS: |IC| < 0.01 (IC=+0.001)
         "fn": flib.volume_price_trend,
         "key": "vpt",
         "default_kwargs": {"lookback": 20},
@@ -601,7 +601,7 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"lookback": 5},
         "min_bars": 6,
     },
-    "illiquidity": {
+    "illiquidity": {  # REDUNDANT: corr > 0.8 with lt_reversal (+0.808)
         "fn": flib.amihud_illiquidity,
         "key": "illiquidity",
         "default_kwargs": {"lookback": 20},
@@ -619,37 +619,37 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"lookback": 60},
         "min_bars": 61,
     },
-    "max_ret": {
+    "max_ret": {  # REDUNDANT: corr > 0.8 with ivol (+0.939)
         "fn": flib.max_return,
         "key": "max_ret",
         "default_kwargs": {"lookback": 20},
         "min_bars": 21,
     },
-    "alpha_2": {
+    "alpha_2": {  # USELESS: |IC| < 0.01 (IC=-0.001)
         "fn": flib.kakushadze_alpha_2,
         "key": "alpha_2",
         "default_kwargs": {},
         "min_bars": 10,
     },
-    "alpha_3": {
+    "alpha_3": {  # REDUNDANT: corr > 0.8 with alpha_6 (+0.955); USELESS: |IC| < 0.01
         "fn": flib.kakushadze_alpha_3,
         "key": "alpha_3",
         "default_kwargs": {},
         "min_bars": 12,
     },
-    "alpha_6": {
+    "alpha_6": {  # REDUNDANT: corr > 0.8 with alpha_3 (+0.955); USELESS: |IC| < 0.01
         "fn": flib.kakushadze_alpha_6,
         "key": "alpha_6",
         "default_kwargs": {},
         "min_bars": 12,
     },
-    "alpha_12": {
+    "alpha_12": {  # USELESS: |IC| < 0.01 (IC=+0.010)
         "fn": flib.kakushadze_alpha_12,
         "key": "alpha_12",
         "default_kwargs": {},
         "min_bars": 3,
     },
-    "alpha_33": {
+    "alpha_33": {  # REDUNDANT: corr > 0.8 with alpha_18 (+0.829)
         "fn": flib.kakushadze_alpha_33,
         "key": "alpha_33",
         "default_kwargs": {},
@@ -661,13 +661,13 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {},
         "min_bars": 8,
     },
-    "alpha_38": {
+    "alpha_38": {  # REDUNDANT: corr > 0.8 with alpha_33 (+0.873)
         "fn": flib.kakushadze_alpha_38,
         "key": "alpha_38",
         "default_kwargs": {},
         "min_bars": 12,
     },
-    "alpha_44": {
+    "alpha_44": {  # REDUNDANT: corr > 0.8 with alpha_16 (+0.826); USELESS: |IC| < 0.01
         "fn": flib.kakushadze_alpha_44,
         "key": "alpha_44",
         "default_kwargs": {},
@@ -679,20 +679,20 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {},
         "min_bars": 12,
     },
-    "alpha_101": {
+    "alpha_101": {  # REDUNDANT: corr > 0.8 with alpha_18 (-0.804)
         "fn": flib.kakushadze_alpha_101,
         "key": "alpha_101",
         "default_kwargs": {},
         "min_bars": 1,
     },
     # ── New Technical Indicators ──────────────────────────────────
-    "bollinger_pos": {
+    "bollinger_pos": {  # REDUNDANT: corr > 0.8 with rsi (+0.873); USELESS: |IC| < 0.01
         "fn": flib.bollinger_position,
         "key": "bollinger_pos",
         "default_kwargs": {"lookback": 20},
         "min_bars": 20,
     },
-    "macd_hist": {
+    "macd_hist": {  # USELESS: |IC| < 0.01 (IC=-0.002)
         "fn": flib.macd_signal,
         "key": "macd_hist",
         "default_kwargs": {"fast": 12, "slow": 26, "signal": 9},
@@ -728,7 +728,7 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"period": 14},
         "min_bars": 14,
     },
-    "atr_ratio": {
+    "atr_ratio": {  # REDUNDANT: corr > 0.8 with ivol (+0.978)
         "fn": flib.atr_ratio,
         "key": "atr_ratio",
         "default_kwargs": {"period": 14},
@@ -740,13 +740,13 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"lookback": 20},
         "min_bars": 22,
     },
-    "vol_momentum": {
+    "vol_momentum": {  # USELESS: |IC| < 0.01 (IC=+0.003)
         "fn": flib.volume_momentum,
         "key": "vol_momentum",
         "default_kwargs": {"lookback": 20},
         "min_bars": 21,
     },
-    "hl_range": {
+    "hl_range": {  # REDUNDANT: corr > 0.8 with ivol (+0.973)
         "fn": flib.high_low_range,
         "key": "hl_range",
         "default_kwargs": {"lookback": 20},
@@ -758,19 +758,19 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"lookback": 5},
         "min_bars": 5,
     },
-    "gap": {
+    "gap": {  # REDUNDANT: corr > 0.8 with overnight_ret (+1.000); USELESS: |IC| < 0.01
         "fn": flib.gap_factor,
         "key": "gap",
         "default_kwargs": {},
         "min_bars": 2,
     },
-    "intraday_ret": {
+    "intraday_ret": {  # REDUNDANT: corr > 0.8 with alpha_18 (-0.807)
         "fn": flib.intraday_return,
         "key": "intraday_ret",
         "default_kwargs": {},
         "min_bars": 1,
     },
-    "overnight_ret": {
+    "overnight_ret": {  # REDUNDANT: corr > 0.8 with gap (+1.000); USELESS: |IC| < 0.01
         "fn": flib.overnight_return,
         "key": "overnight_ret",
         "default_kwargs": {},
@@ -813,7 +813,7 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"lookback": 60},
         "min_bars": 61,
     },
-    "max_daily_ret": {
+    "max_daily_ret": {  # REDUNDANT: corr > 0.8 with ivol (+0.942)
         "fn": flib.max_daily_return,
         "key": "max_daily_ret",
         "default_kwargs": {"lookback": 21},
@@ -844,19 +844,19 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {},
         "min_bars": 26,
     },
-    "alpha_4": {
+    "alpha_4": {  # REDUNDANT: corr > 0.8 with mean_reversion (+0.812); USELESS: |IC| < 0.01
         "fn": flib.kakushadze_alpha_4,
         "key": "alpha_4",
         "default_kwargs": {},
         "min_bars": 11,
     },
-    "alpha_7": {
+    "alpha_7": {  # USELESS: |IC| < 0.01 (IC=+0.004)
         "fn": flib.kakushadze_alpha_7,
         "key": "alpha_7",
         "default_kwargs": {},
         "min_bars": 68,
     },
-    "alpha_8": {
+    "alpha_8": {  # USELESS: |IC| < 0.01 (IC=+0.008)
         "fn": flib.kakushadze_alpha_8,
         "key": "alpha_8",
         "default_kwargs": {},
@@ -874,25 +874,25 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {},
         "min_bars": 6,
     },
-    "alpha_13": {
+    "alpha_13": {  # REDUNDANT: corr > 0.8 with alpha_16 (+0.803); USELESS: |IC| < 0.01
         "fn": flib.kakushadze_alpha_13,
         "key": "alpha_13",
         "default_kwargs": {},
         "min_bars": 7,
     },
-    "alpha_14": {
+    "alpha_14": {  # REDUNDANT: corr > 0.8 with alpha_6 (+0.899); USELESS: |IC| < 0.01
         "fn": flib.kakushadze_alpha_14,
         "key": "alpha_14",
         "default_kwargs": {},
         "min_bars": 15,
     },
-    "alpha_15": {
+    "alpha_15": {  # USELESS: |IC| < 0.01 (IC=-0.006)
         "fn": flib.kakushadze_alpha_15,
         "key": "alpha_15",
         "default_kwargs": {},
         "min_bars": 8,
     },
-    "alpha_16": {
+    "alpha_16": {  # REDUNDANT: corr > 0.8 with alpha_44 (+0.826); USELESS: |IC| < 0.01
         "fn": flib.kakushadze_alpha_16,
         "key": "alpha_16",
         "default_kwargs": {},
@@ -910,19 +910,19 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {},
         "min_bars": 12,
     },
-    "alpha_19": {
+    "alpha_19": {  # USELESS: |IC| < 0.01 (IC=+0.008)
         "fn": flib.kakushadze_alpha_19,
         "key": "alpha_19",
         "default_kwargs": {},
         "min_bars": 252,
     },
-    "alpha_20": {
+    "alpha_20": {  # USELESS: |IC| < 0.01 (IC=-0.009)
         "fn": flib.kakushadze_alpha_20,
         "key": "alpha_20",
         "default_kwargs": {},
         "min_bars": 3,
     },
-    "alpha_22": {
+    "alpha_22": {  # USELESS: |IC| < 0.01 (IC=-0.004)
         "fn": flib.kakushadze_alpha_22,
         "key": "alpha_22",
         "default_kwargs": {},
@@ -940,7 +940,7 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {},
         "min_bars": 104,
     },
-    "alpha_30": {
+    "alpha_30": {  # USELESS: |IC| < 0.01 (IC=+0.005)
         "fn": flib.kakushadze_alpha_30,
         "key": "alpha_30",
         "default_kwargs": {},
@@ -952,7 +952,7 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {},
         "min_bars": 34,
     },
-    "alpha_40": {
+    "alpha_40": {  # REDUNDANT: corr > 0.8 with alpha_6 (+0.825); USELESS: |IC| < 0.01
         "fn": flib.kakushadze_alpha_40,
         "key": "alpha_40",
         "default_kwargs": {},

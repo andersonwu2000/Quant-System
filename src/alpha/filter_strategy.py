@@ -1,6 +1,19 @@
 """
 條件篩選策略框架 — 替代 cross-sectional ranking 的通用篩選邏輯。
 
+.. deprecated::
+    This module is a **research / prototyping tool**, not intended for
+    production scheduling.  For production use, prefer the dedicated
+    strategy files:
+
+    - ``strategies/revenue_momentum.py`` (RevenueMomentumStrategy)
+    - ``strategies/revenue_momentum_hedged.py`` (RevenueMomentumHedgedStrategy)
+    - ``strategies/trust_follow.py`` (TrustFollowStrategy)
+
+    Those strategies are registered in the strategy registry and wired
+    into the scheduler.  This ``FilterStrategy`` class remains available
+    for ad-hoc research and rapid prototyping of new filter combinations.
+
 設計依據：FinLab 研究證實台股 alpha 來自「營收動能 + 投信籌碼」的條件組合，
 而非 cross-sectional factor ranking。此框架支援任意 boolean 條件組合 + 排序取前 N。
 
