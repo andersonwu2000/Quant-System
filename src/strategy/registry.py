@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import functools
 import inspect
+import logging
 from typing import Any, TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.strategy.base import Strategy
@@ -76,6 +79,11 @@ def resolve_strategy(name: str, params: dict[str, Any] | None = None) -> Strateg
 
     if params:
         valid_params = set(inspect.signature(cls.__init__).parameters.keys()) - {"self"}
+        dropped = {k: v for k, v in params.items() if k not in valid_params}
+        if dropped:
+            logger.warning(
+                "resolve_strategy(%s): unknown parameters ignored: %s", name, list(dropped.keys())
+            )
         filtered = {k: v for k, v in params.items() if k in valid_params}
         return cls(**filtered)
     return cls()

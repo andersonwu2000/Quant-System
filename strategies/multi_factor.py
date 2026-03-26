@@ -108,7 +108,7 @@ class MultiFactorStrategy(Strategy):
             fq = scores_single["fund_quality"]
             mom_val = scores_single["momentum"] or 0.0
             z_val = scores_single["z_score"] or 0.0
-            rsi_val = scores_single["rsi"] or 50.0
+            rsi_val = scores_single["rsi"] if scores_single["rsi"] is not None else 50.0
 
             if has_fundamentals and fv is not None:
                 value_score = min(fv * 10.0, 1.0)
@@ -156,10 +156,10 @@ class MultiFactorStrategy(Strategy):
                 if fq is not None:
                     quality_values.append(fq)
                 else:
-                    r = raw_scores[s]["rsi"] or 50.0
+                    r = raw_scores[s]["rsi"] if raw_scores[s]["rsi"] is not None else 50.0
                     quality_values.append(1.0 - r / 100.0)
         else:
-            quality_values = [1.0 - (raw_scores[s]["rsi"] or 50.0) / 100.0 for s in symbols]
+            quality_values = [1.0 - (raw_scores[s]["rsi"] if raw_scores[s]["rsi"] is not None else 50.0) / 100.0 for s in symbols]
 
         # 排名百分位（0~1）
         def rank_percentile(values: list[float]) -> list[float]:

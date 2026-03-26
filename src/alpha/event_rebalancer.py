@@ -115,6 +115,7 @@ class EventDrivenRebalancer:
             return False
 
         recent_10d = trust_net_series.iloc[-10:].sum()
+        # guard: need at least 20 historical points
         hist = trust_net_series.iloc[-lookback:-10]
         if len(hist) < 20:
             return False

@@ -94,6 +94,15 @@ def risk_parity(
     c = constraints or OptConstraints()
 
     # 只選有正信號且有波動率的標的
+    zero_vol_assets = [
+        k for k in signals
+        if signals[k] > 0 and k in volatilities and volatilities[k] == 0
+    ]
+    if zero_vol_assets:
+        logger.warning(
+            "risk_parity: assets with zero volatility excluded: %s", zero_vol_assets
+        )
+
     selected = {
         k: volatilities[k]
         for k in signals

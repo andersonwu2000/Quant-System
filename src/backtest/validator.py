@@ -238,7 +238,6 @@ class StrategyValidator:
             return report
 
         # 8. Turnover + cost
-        trading_days = max(result.total_trades, 1)
         annual_cost = result.total_commission / cfg.initial_cash
         report.checks.append(CheckResult(
             name="annual_cost_ratio",
@@ -264,14 +263,14 @@ class StrategyValidator:
 
         # 4. Deflated Sharpe
         logger.info("[Validator] Computing Deflated Sharpe...")
-        if result.sharpe > 0 and hasattr(result, 'returns_series'):
+        if result.sharpe > 0 and hasattr(result, 'daily_returns'):
             try:
-                ret = result.returns_series if result.returns_series is not None else pd.Series(dtype=float)
+                ret = result.daily_returns if result.daily_returns is not None else pd.Series(dtype=float)
                 if len(ret) > 10:
                     from scipy.stats import skew, kurtosis
                     sk = float(skew(ret.dropna()))
                     ku = float(kurtosis(ret.dropna()))
-                    dsr = deflated_sharpe(result.sharpe, cfg.n_trials, result.sharpe, sk, ku)
+                    dsr = deflated_sharpe(result.sharpe, cfg.n_trials, len(ret), sk, ku)
                 else:
                     dsr = 0.0
             except Exception:
@@ -435,6 +434,11 @@ class StrategyValidator:
 
     def _compute_pbo(self, wf_results: list[dict[str, Any]]) -> float:
         """用 Walk-Forward 各年的 Sharpe 估算 PBO。
+
+        NOTE: This is an approximate PBO implementation. It constructs
+        synthetic strategy variants by adding noise to WF period Sharpes,
+        rather than using truly independent strategy configurations.
+        Results should be interpreted as indicative, not exact.
 
         原理：將 WF 各年當作不同「策略變體」，
         用 CSCV 檢查 IS 最優年是否在 OOS 也最優。

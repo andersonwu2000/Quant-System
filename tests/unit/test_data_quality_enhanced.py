@@ -1,14 +1,12 @@
 """Tests for enhanced data quality checks (Phase K1)."""
 
 import pandas as pd
-import pytest
 
 from src.data.quality import (
     check_bars_with_dividends,
     check_fundamentals,
     detect_halted_dates,
     load_dividend_dates,
-    FUNDAMENTAL_BOUNDS,
     QualityStatus,
 )
 

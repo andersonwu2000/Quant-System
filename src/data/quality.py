@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
@@ -106,7 +106,7 @@ def check_bars(df: pd.DataFrame, symbol: str = "") -> QualityResult:
                     volume_median = float(df["volume"].median()) if len(df["volume"]) > 0 else 0
                     for idx in z_scores[jump_mask].index:
                         ret_val = float(returns.loc[idx])
-                        vol_val = float(df["volume"].get(idx, 0))
+                        vol_val = float(df.loc[idx, "volume"]) if idx in df.index else 0
                         # 除權息特徵：下跌 1~10% + 成交量正常（> 中位數 50%）
                         is_likely_ex_dividend = (
                             -0.10 < ret_val < -0.01
@@ -235,7 +235,7 @@ def check_bars_with_dividends(
                         # 啟發式備用（沒有除權息表時）
                         if not known_div_dates:
                             ret_val = float(returns.loc[idx])
-                            vol_val = float(df["volume"].get(idx, 0))
+                            vol_val = float(df.loc[idx, "volume"]) if idx in df.index else 0
                             is_likely_ex_dividend = (
                                 -0.10 < ret_val < -0.01
                                 and volume_median > 0
@@ -305,7 +305,6 @@ def detect_halted_dates(
         close = df["close"]
         unchanged = close == close.shift(1)
         streak = 0
-        streak_start_indices: list[int] = []
         for i in range(len(unchanged)):
             if unchanged.iloc[i]:
                 streak += 1

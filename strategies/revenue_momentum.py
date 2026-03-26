@@ -53,8 +53,8 @@ def _preload_revenue(fund_dir: str = "data/fundamental") -> dict[str, pd.DataFra
             # 向量化 YoY：shift(12) 月份對齊（月頻數據直接 shift 12 行 = 去年同月）
             if "yoy_growth" not in df.columns or df["yoy_growth"].isna().all():
                 prev_year_rev = df["revenue"].shift(12)
+                prev_year_rev = prev_year_rev.where(prev_year_rev > 0, np.nan)
                 df["yoy_growth"] = ((df["revenue"] / prev_year_rev) - 1) * 100
-                df.loc[prev_year_rev <= 0, "yoy_growth"] = np.nan
 
             cache[sym] = df
         except Exception:

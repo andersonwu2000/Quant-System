@@ -5,6 +5,7 @@ Phase F3a: 10 endpoints for the Automated Alpha Research System.
 
 from __future__ import annotations
 
+import logging
 import threading
 import uuid
 from dataclasses import asdict
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 from src.api.auth import require_role, verify_api_key
 from src.api.state import get_app_state
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auto-alpha", tags=["auto-alpha"])
 
 
@@ -404,7 +406,8 @@ async def run_now(
             data: dict[str, Any] = {}
 
             # 1. Load from local parquet cache (data/market/*.parquet)
-            cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "data", "market")
+            from pathlib import Path
+            cache_dir = str(Path("data/market").resolve())
             if os.path.isdir(cache_dir):
                 import pandas as pd
                 for f in os.listdir(cache_dir):
@@ -416,8 +419,8 @@ async def run_now(
                                 df.index = pd.to_datetime(df.index)
                             if len(df) >= cfg.lookback:
                                 data[sym] = df
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug("Skip parquet %s: %s", f, exc)
 
             # 2. If not enough from cache, supplement from Yahoo
             if len(data) < 30:
@@ -536,7 +539,7 @@ async def auto_alpha_ws(
     """
     from src.api.auth import verify_ws_token
     from src.api.ws import ws_manager
-    from src.config import get_config
+    from src.core.config import get_config
 
     config = get_config()
     if config.env != "dev":
@@ -573,7 +576,7 @@ async def get_current_decision(
 ) -> DecisionResponse:
     """Get the current factor selection decision from the auto-alpha engine."""
     state = get_app_state()
-    aa = state.auto_alpha
+    aa = getattr(state, "auto_alpha", None)
     if aa is None:
         return DecisionResponse(selected_factors=[], weights={}, reasoning="Auto-alpha not initialized")
 

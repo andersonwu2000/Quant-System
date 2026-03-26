@@ -9,6 +9,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from src.api.auth import verify_api_key, require_role
 from src.core.models import Side
@@ -353,8 +354,6 @@ async def rebalance_preview(
 
 
 # ── Portfolio Optimization ─────────────────────────────────────
-
-from pydantic import BaseModel
 
 
 class OptimizeRequest(BaseModel):

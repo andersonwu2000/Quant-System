@@ -13,7 +13,7 @@ import logging
 import pandas as pd
 
 from src.strategy.base import Context, Strategy
-from src.strategy.optimizer import equal_weight, signal_weight, OptConstraints
+from src.strategy.optimizer import signal_weight, OptConstraints
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,7 @@ class TrustFollowStrategy(Strategy):
             return self._cached_weights
 
         candidates: list[tuple[str, float]] = []  # (symbol, trust_cumulative)
+        _logged_no_fundamentals = False
 
         # Need institutional data for the past trust_days + buffer
         inst_start = (
@@ -110,6 +111,9 @@ class TrustFollowStrategy(Strategy):
                     continue
 
                 if ctx._fundamentals is None:
+                    if not _logged_no_fundamentals:
+                        logger.debug("No fundamentals provider for %s", symbol)
+                        _logged_no_fundamentals = True
                     continue
 
                 # 條件 1: 投信 N 日累計買超

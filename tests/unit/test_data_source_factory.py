@@ -41,9 +41,12 @@ class TestCreateFundamentals:
         assert provider is not None
         assert isinstance(provider, FundamentalsProvider)
 
-    def test_create_fundamentals_yahoo_returns_none(self):
+    def test_create_fundamentals_yahoo_may_return_finmind(self):
+        """Yahoo mode returns FinMind fundamentals if token is available, None otherwise."""
         provider = create_fundamentals("yahoo")
-        assert provider is None
+        # If QUANT_FINMIND_TOKEN is set, returns FinMindFundamentals; else None
+        if provider is not None:
+            assert isinstance(provider, FundamentalsProvider)
 
     def test_create_fundamentals_unknown_returns_none(self):
         provider = create_fundamentals("polygon")

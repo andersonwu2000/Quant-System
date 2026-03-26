@@ -123,7 +123,7 @@ def create_app() -> FastAPI:
                 ws_manager=ws_manager,
                 loop=loop,
             )
-            state.realtime_risk_monitor = realtime_risk  # type: ignore[attr-defined]
+            state.realtime_risk_monitor = realtime_risk
 
             if quote_manager is not None:
                 # Register price update callback for risk monitoring
@@ -132,7 +132,7 @@ def create_app() -> FastAPI:
 
                 quote_manager.on_tick(_risk_on_tick)
 
-            state.quote_manager = quote_manager  # type: ignore[attr-defined]
+            state.quote_manager = quote_manager
             logger.info("RealtimeRiskMonitor initialized")
 
         async def _kill_switch_monitor() -> None:
@@ -148,7 +148,7 @@ def create_app() -> FastAPI:
                             "message": "Kill switch triggered — all strategies stopped",
                         })
                 except Exception:
-                    logger.debug("Kill switch monitor error", exc_info=True)
+                    logger.warning("Kill switch monitor error", exc_info=True)
 
         kill_switch_task = asyncio.create_task(_kill_switch_monitor())
         ws_manager.start_ping_task()

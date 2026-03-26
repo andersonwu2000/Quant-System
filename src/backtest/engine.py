@@ -18,7 +18,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable, Literal
 
-import numpy as np
 import pandas as pd
 
 from src.backtest.analytics import BacktestResult, compute_analytics
@@ -115,6 +114,7 @@ class BacktestEngine:
         self._price_matrix = pd.DataFrame()
         self._open_matrix = pd.DataFrame()
         self._volume_matrix = pd.DataFrame()
+        self._col_index: dict[str, int] = {}  # cached column→index mapping
         self._last_rebalance_month = -1
         self._bar_cache = _BarCache()
 
@@ -181,8 +181,8 @@ class BacktestEngine:
                 # 載入完整 FX 時序而非單一值
                 fx_bars = feed.get_bars(
                     "USDTWD=X",
-                    start=config.start_date if hasattr(config, "start_date") else None,
-                    end=config.end_date if hasattr(config, "end_date") else None,
+                    start=config.start,
+                    end=config.end,
                 )
                 if not fx_bars.empty and "close" in fx_bars.columns:
                     self._fx_series = fx_bars["close"]
@@ -375,6 +375,7 @@ class BacktestEngine:
     ) -> None:
         """Release settled funds."""
         if config.settlement_days > 0:
+            # Keep only unsettled entries (sd > today); entries where sd <= today are released
             portfolio.pending_settlements = [
                 (sd, amt) for sd, amt in portfolio.pending_settlements
                 if sd > date_str
@@ -770,18 +771,27 @@ class BacktestEngine:
         row = self._lookup_row(matrix, pd.Timestamp(bar_date))
         if row is None:
             return {}
+        # Vectorized extraction: get all values at once via numpy
         result: dict[str, Decimal] = {}
+        row_vals = row.values  # numpy array
+        if not self._col_index or len(self._col_index) != len(matrix.columns):
+            self._col_index = {c: i for i, c in enumerate(matrix.columns)}
+        col_index = self._col_index
+        _Decimal = Decimal  # local ref for speed
+        _Q = _Decimal("0.0001")
         for symbol in universe:
-            if symbol in row.index:
-                val = row[symbol]
-                if np.isnan(val):
-                    continue
-                if skip_zero and val <= 0:
-                    continue
-                if as_int:
-                    result[symbol] = Decimal(str(int(val)))
-                else:
-                    result[symbol] = Decimal(str(round(val, 4)))
+            idx = col_index.get(symbol)
+            if idx is None:
+                continue
+            val = row_vals[idx]
+            if val != val:  # NaN check (faster than np.isnan)
+                continue
+            if skip_zero and val <= 0:
+                continue
+            if as_int:
+                result[symbol] = _Decimal(int(val))
+            else:
+                result[symbol] = _Decimal(val).quantize(_Q)
         return result
 
     def _get_prices(
@@ -817,11 +827,18 @@ class BacktestEngine:
             return {}
         prev_row = self._price_matrix.iloc[idx - 1]
         prices: dict[str, Decimal] = {}
+        row_vals = prev_row.values
+        col_index = {c: i for i, c in enumerate(self._price_matrix.columns)}
+        _Decimal = Decimal
+        _Q = _Decimal("0.0001")
         for symbol in universe:
-            if symbol in prev_row.index:
-                val = prev_row[symbol]
-                if not np.isnan(val):
-                    prices[symbol] = Decimal(str(round(val, 4)))
+            ci = col_index.get(symbol)
+            if ci is None:
+                continue
+            val = row_vals[ci]
+            if val != val:
+                continue
+            prices[symbol] = _Decimal(val).quantize(_Q)
         return prices
 
     def _get_volumes(

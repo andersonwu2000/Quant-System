@@ -8,6 +8,10 @@ expected returns or excessive transaction costs.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.backtest.validator import ValidationReport
 from dataclasses import dataclass
 
 import pandas as pd

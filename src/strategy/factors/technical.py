@@ -521,7 +521,7 @@ def overnight_return(prices: pd.DataFrame) -> pd.Series:
 
 
 def momentum_1m(prices: pd.DataFrame) -> pd.Series:
-    """1 個月動量（短期）。
+    """1 個月動量（短期，20 個交易日報酬）。
 
     Reference: Jegadeesh, Titman (1993) "Returns to Buying Winners and Selling Losers".
     """

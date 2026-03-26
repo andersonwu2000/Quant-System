@@ -225,7 +225,7 @@ class PairsTradingStrategy(Strategy):
                 else:
                     # 後備模式：簡單價格比率（僅當相關性夠高時）
                     corr = float(np.corrcoef(prices_a, prices_b)[0, 1])
-                    if abs(corr) < self.corr_fallback_threshold:
+                    if np.isnan(corr) or abs(corr) < self.corr_fallback_threshold:
                         continue
 
                     ratio = prices_a / prices_b

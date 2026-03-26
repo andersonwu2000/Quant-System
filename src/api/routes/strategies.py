@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from src.api.auth import verify_api_key, require_role
 from src.api.schemas import MessageResponse, StrategyInfo, StrategyListResponse
@@ -62,8 +63,6 @@ async def stop_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)
 
 
 # ── Factor Registry ────────────────────────────────────────────
-
-from pydantic import BaseModel
 
 
 class FactorInfoResponse(BaseModel):

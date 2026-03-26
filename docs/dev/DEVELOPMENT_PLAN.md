@@ -169,7 +169,10 @@
 | 03-26 | 15 次 Alpha 實驗 + FinLab 54 策略研究 → 策略方向轉型 |
 | 03-26 | Phase L 驗證：CAGR +30.5%, p=0.013, PBO=0% (6/7) |
 | 03-26 | FinLab 差距分析：下行保護 + 數據修復 = P0 缺口 |
-| **TBD** | **Phase L+：空頭偵測 + FinMind 價格 + 事件時機** |
+| 03-27 | 實驗 #9：空頭偵測比較 — vol_hedge OOS +8pp，MA200 無效 |
+| 03-27 | 實驗 #10：複合偵測器 b0% — OOS -16%→**-5.4%**（+10.7pp），牛市反增 +3.4pp |
+| 03-27 | 引擎優化：676 支 × 7Y 344s → **55s**（6.3x 提速） |
+| **TBD** | **composite_b0% StrategyValidator 完整驗證** |
 | TBD | Phase N：Paper Trading 完整循環 |
 | TBD | Phase J：跨資產自動化 |
 

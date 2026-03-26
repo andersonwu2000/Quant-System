@@ -124,11 +124,10 @@ class TestGetSector:
 # ── get_revenue ──
 
 class TestGetRevenue:
-    @patch("src.data.sources.finmind_fundamentals.FinMindFundamentals._get_dataloader")
-    def test_get_revenue_with_yoy_growth(self, mock_dl):
-        loader = MagicMock()
-        loader.taiwan_stock_month_revenue.return_value = _make_revenue_response()
-        mock_dl.return_value = loader
+    @patch.object(FinMindFundamentals, "_read_local_parquet")
+    def test_get_revenue_with_yoy_growth(self, mock_local):
+        # Simulate local parquet containing revenue data
+        mock_local.return_value = _make_revenue_response()
 
         provider = FinMindFundamentals()
         result = provider.get_revenue("2330.TW", start="2024-01-01", end="2024-12-31")

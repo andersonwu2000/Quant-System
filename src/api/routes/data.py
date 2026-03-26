@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import pandas as pd
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from src.api.auth import verify_api_key, require_role
+from src.api.auth import verify_api_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/data", tags=["data"])
@@ -152,7 +153,7 @@ async def get_macro_data(
         if data is None or data.empty:
             raise HTTPException(status_code=404, detail=f"No data for indicator {indicator}")
 
-        values = {str(d.date()) if hasattr(d, 'date') else str(d): float(v) for d, v in data.items() if not (v != v)}
+        values = {str(d.date()) if hasattr(d, 'date') else str(d): float(v) for d, v in data.items() if pd.notna(v)}
         return MacroDataResponse(indicator=indicator, values=values)
     except HTTPException:
         raise

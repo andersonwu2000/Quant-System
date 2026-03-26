@@ -42,6 +42,9 @@ class AppState:
     auto_alpha_config: AutoAlphaConfig = field(default_factory=AutoAlphaConfig)
     alpha_store: AlphaStore = field(default_factory=AlphaStore)
     auto_alpha_running: bool = False
+    # Realtime components (set during paper/live mode startup)
+    realtime_risk_monitor: Any = None
+    quote_manager: Any = None
     # 保護 portfolio mutation 的非同步鎖
     mutation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # 保護 backtest_tasks 跨執行緒存取

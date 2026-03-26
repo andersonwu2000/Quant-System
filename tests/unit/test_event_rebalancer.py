@@ -1,7 +1,6 @@
 """Tests for EventDrivenRebalancer (Phase L+.3)."""
 
 import pandas as pd
-import pytest
 
 from src.alpha.event_rebalancer import EventDrivenRebalancer, RebalanceSignal
 

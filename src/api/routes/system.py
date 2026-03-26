@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from src.api.auth import verify_api_key
 from src.api.middleware import get_request_count
@@ -13,6 +15,8 @@ from src.api.schemas import HealthResponse, SystemStatusResponse
 from src.api.state import get_app_state
 from src.api.ws import ws_manager
 from src.core.config import get_config
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -66,8 +70,6 @@ async def metrics(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
 
 # ── System Alerts ──────────────────────────────────────────────
 
-from pydantic import BaseModel
-
 
 class SystemAlertItem(BaseModel):
     timestamp: str
@@ -93,6 +95,6 @@ async def get_system_alerts(
                 level=getattr(alert, 'level', 'warning'),
                 message=str(alert),
             ))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Alert aggregation error: %s", e)
     return alerts[:limit]

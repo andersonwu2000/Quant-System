@@ -95,9 +95,13 @@ class YahooFeed(DataFeed):
         if cached is not None and not cached.empty:
             # 檢查快取是否涵蓋請求的日期範圍
             covers_start = start is None or cached.index.min() <= pd.Timestamp(start)
-            covers_end = end is None or cached.index.max() >= pd.Timestamp(end) - pd.Timedelta(days=5)
+            covers_end = end is None or cached.index.max() >= pd.Timestamp(end) - pd.Timedelta(days=30)
             if covers_start and covers_end:
                 logger.debug("Local cache hit for %s (freq=%s, %d bars)", symbol, freq, len(cached))
+                return cached
+            # If we have substantial data (>100 bars), use it even if range is slightly off
+            if len(cached) > 100:
+                logger.debug("Local cache partial for %s (%d bars), using without re-download", symbol, len(cached))
                 return cached
             logger.info("Local cache for %s doesn't cover requested range, re-downloading", symbol)
 
