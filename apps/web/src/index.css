@@ -2,40 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  body {
+    @apply bg-[#111111] text-neutral-50 antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-}
-:root {
-  --scrollbar-track: #e2e8f0;
-  --scrollbar-thumb: #94a3b8;
-}
-:root.dark {
-  --scrollbar-track: #0f172a;
-  --scrollbar-thumb: #334155;
-}
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 3px;
+@layer utilities {
+  .font-data {
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  /* GPU-accelerated transitions */
+  .gpu {
+    will-change: transform;
+    transform: translateZ(0);
+  }
+
+  /* Off-screen content optimization */
+  .lazy-section {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 300px;
+  }
 }
 
-@keyframes page-enter {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.page-enter {
-  animation: page-enter 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  will-change: opacity, transform;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

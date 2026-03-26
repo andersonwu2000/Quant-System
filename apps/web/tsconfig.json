@@ -8,11 +8,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@core/*": ["src/core/*"],
-      "@shared/*": ["src/shared/*"],
-      "@feat/*": ["src/features/*"],
-      "@test/*": ["src/test/*"]
+      "@/*": ["src/*"]
     },
     "outDir": "dist",
     "skipLibCheck": true,

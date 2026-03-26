@@ -1,10 +1,16 @@
-import type { ReactNode } from "react";
+import type { ReactNode } from 'react';
 
-const base = "bg-slate-50 dark:bg-surface rounded-xl border border-slate-200 dark:border-transparent shadow-sm dark:shadow-none";
+interface CardProps {
+  children: ReactNode;
+  className?: string;
+  hover?: boolean;
+}
 
-export function Card({ className = "", children, ...rest }: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
+export function Card({ children, className = '', hover }: CardProps) {
   return (
-    <div className={`${base} ${className}`} {...rest}>
+    <div className={`rounded-lg border border-white/10 bg-[#1a1a1a] p-5 ${
+      hover ? 'transition-colors duration-150 hover:bg-[#262626] hover:border-white/15 cursor-pointer' : ''
+    } ${className}`}>
       {children}
     </div>
   );

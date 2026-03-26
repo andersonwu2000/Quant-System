@@ -7,9 +7,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
-      "@core": path.resolve(__dirname, "src/core"),
-      "@shared": path.resolve(__dirname, "src/shared"),
-      "@feat": path.resolve(__dirname, "src/features"),
     },
   },
   server: {
@@ -21,5 +18,22 @@ export default defineConfig({
   },
   preview: {
     port: 4173,
+  },
+  build: {
+    // Vendor chunk splitting — keep main bundle small
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-query": ["@tanstack/react-query"],
+        },
+      },
+    },
+    // Inline small assets (< 8KB)
+    assetsInlineLimit: 8192,
+    // Source maps off for production
+    sourcemap: false,
+    // Target modern browsers only
+    target: "es2020",
   },
 });
