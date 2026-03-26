@@ -86,6 +86,12 @@ DATASETS = {
         "desc": "股利發放",
         "suffix": "dividend",
     },
+    "price": {
+        "method": "taiwan_stock_daily",
+        "desc": "日線 OHLCV（含已下市股票，修復倖存者偏差）",
+        "suffix": "1d",
+        "output_dir": "data/market",  # 存到 market/ 而非 fundamental/
+    },
 }
 
 
@@ -111,14 +117,16 @@ def download_dataset(
         logger.error("FinMind DataLoader 沒有方法: %s", method_name)
         return 0
 
-    FUND_DIR.mkdir(parents=True, exist_ok=True)
+    # price dataset 存到 data/market/，其他存到 data/fundamental/
+    out_dir = Path(ds.get("output_dir", str(FUND_DIR)))
+    out_dir.mkdir(parents=True, exist_ok=True)
     success = 0
     skipped = 0
 
     for i, sym in enumerate(symbols):
         bare = strip_tw_suffix(sym)
         tw_sym = ensure_tw_suffix(sym)
-        out_path = FUND_DIR / f"{tw_sym}_{suffix}.parquet"
+        out_path = out_dir / f"{tw_sym}_{suffix}.parquet"
 
         # 本地已有就跳過（除非 --force）
         if out_path.exists() and not force:
@@ -142,6 +150,19 @@ def download_dataset(
             if df is None or df.empty:
                 logger.warning("  %s: 無數據", bare)
                 continue
+
+            # Price dataset: normalize columns to match Yahoo format
+            if dataset_key == "price":
+                col_map = {"max": "high", "min": "low", "Trading_Volume": "volume"}
+                df = df.rename(columns=col_map)
+                keep_cols = [c for c in ["date", "open", "high", "low", "close", "volume"] if c in df.columns]
+                df = df[keep_cols]
+                if "date" in df.columns:
+                    df["date"] = pd.to_datetime(df["date"])
+                    df = df.set_index("date").sort_index()
+                # 去 timezone
+                if hasattr(df.index, "tz") and df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
 
             df.to_parquet(out_path)
             logger.info("  %s: %d 列 → %s", bare, len(df), out_path)

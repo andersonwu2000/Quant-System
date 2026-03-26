@@ -59,6 +59,10 @@ def discover_universe(require_fundamentals: bool = True) -> list[str]:
             for f in FUND_DIR.glob("*_revenue.parquet")
         }
         filtered = sorted(market_symbols & fund_symbols)
+        # 確保 0050.TW 在 universe 中（空頭偵測需要大盤 proxy）
+        if "0050.TW" in market_symbols and "0050.TW" not in filtered:
+            filtered.append("0050.TW")
+            filtered.sort()
         if filtered:
             logger.info(
                 "Universe: %d 有價格 + 營收數據（原 %d 支價格）",

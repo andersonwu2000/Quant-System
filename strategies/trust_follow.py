@@ -40,6 +40,9 @@ class TrustFollowStrategy(Strategy):
         trust_days: int = 10,
         min_volume_lots: int = 300,
         position_limit: float = 0.15,
+        enable_regime_hedge: bool = True,
+        bear_position_scale: float = 0.30,
+        market_proxy: str = "0050.TW",
     ):
         self.max_holdings = max_holdings
         self.trust_threshold = trust_threshold
@@ -47,11 +50,32 @@ class TrustFollowStrategy(Strategy):
         self.trust_days = trust_days
         self.min_volume_lots = min_volume_lots
         self.position_limit = position_limit
+        self.enable_regime_hedge = enable_regime_hedge
+        self.bear_position_scale = bear_position_scale
+        self.market_proxy = market_proxy
         self._last_month: str = ""
         self._cached_weights: dict[str, float] = {}
 
     def name(self) -> str:
         return "trust_follow"
+
+    def _market_regime(self, ctx: Context) -> str:
+        """偵測市場環境（同 RevenueMomentumStrategy）。"""
+        try:
+            market_bars = ctx.bars(self.market_proxy, lookback=252)
+            if len(market_bars) < 200:
+                return "bull"
+            close = market_bars["close"]
+            current = float(close.iloc[-1])
+            ma200 = float(close.iloc[-200:].mean())
+            ma50 = float(close.iloc[-50:].mean())
+            if current < ma200 and ma50 < ma200:
+                return "bear"
+            elif current > ma200 and ma50 > ma200:
+                return "bull"
+            return "sideways"
+        except Exception:
+            return "bull"
 
     def on_bar(self, ctx: Context) -> dict[str, float]:
         current_date = ctx.now()
@@ -147,6 +171,15 @@ class TrustFollowStrategy(Strategy):
         )
         # 信號加權：投信買超金額越大，配置越多
         weights = signal_weight(signals, constraints)
+
+        # Regime-aware position sizing
+        if self.enable_regime_hedge and weights:
+            regime = self._market_regime(ctx)
+            if regime == "bear":
+                weights = {k: v * self.bear_position_scale for k, v in weights.items()}
+            elif regime == "sideways":
+                weights = {k: v * 0.6 for k, v in weights.items()}
+
         self._last_month = current_month
         self._cached_weights = weights
         return weights

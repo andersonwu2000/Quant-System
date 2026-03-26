@@ -116,19 +116,53 @@ class RevenueMomentumStrategy(Strategy):
         min_volume_lots: int = 300,
         max_weight: float = 0.10,
         weight_method: str = "signal",  # "equal" | "signal" | "risk_parity"
+        enable_regime_hedge: bool = True,  # 空頭偵測 + 倉位調整
+        bear_position_scale: float = 0.30,  # 空頭時持倉比例
+        sideways_position_scale: float = 0.60,  # 盤整時持倉比例
+        market_proxy: str = "0050.TW",  # 市場代理標的
     ):
         self.max_holdings = max_holdings
         self.min_yoy_growth = min_yoy_growth
         self.min_volume_lots = min_volume_lots
         self.max_weight = max_weight
         self.weight_method = weight_method
+        self.enable_regime_hedge = enable_regime_hedge
+        self.bear_position_scale = bear_position_scale
+        self.sideways_position_scale = sideways_position_scale
+        self.market_proxy = market_proxy
         self._last_month: str = ""
         self._cached_weights: dict[str, float] = {}
-        # 預載營收（只在第一次呼叫時讀檔，之後全在記憶體）
         self._rev_cache: dict[str, pd.DataFrame] | None = None
 
     def name(self) -> str:
         return "revenue_momentum"
+
+    def _market_regime(self, ctx: Context) -> str:
+        """偵測市場環境：bull / bear / sideways。
+
+        使用 0050.TW（台灣 50 ETF）作為大盤 proxy。
+        - bear: 價格 < MA200 且 MA50 < MA200（死亡交叉）
+        - bull: 價格 > MA200 且 MA50 > MA200（黃金交叉）
+        - sideways: 其他
+        """
+        try:
+            market_bars = ctx.bars(self.market_proxy, lookback=252)
+            if len(market_bars) < 200:
+                return "bull"  # 數據不足，預設多頭
+
+            close = market_bars["close"]
+            current = float(close.iloc[-1])
+            ma200 = float(close.iloc[-200:].mean())
+            ma50 = float(close.iloc[-50:].mean())
+
+            if current < ma200 and ma50 < ma200:
+                return "bear"
+            elif current > ma200 and ma50 > ma200:
+                return "bull"
+            else:
+                return "sideways"
+        except Exception:
+            return "bull"  # 無法取得大盤數據，預設多頭
 
     def on_bar(self, ctx: Context) -> dict[str, float]:
         current_date = ctx.now()
@@ -205,6 +239,15 @@ class RevenueMomentumStrategy(Strategy):
             weights = risk_parity(signals, constraints)
         else:
             weights = equal_weight(signals, constraints)
+
+        # Regime-aware position sizing（空頭偵測 + 倉位調整）
+        if self.enable_regime_hedge and weights:
+            regime = self._market_regime(ctx)
+            if regime == "bear":
+                weights = {k: v * self.bear_position_scale for k, v in weights.items()}
+                logger.info("BEAR regime detected — scaling to %.0f%%", self.bear_position_scale * 100)
+            elif regime == "sideways":
+                weights = {k: v * self.sideways_position_scale for k, v in weights.items()}
 
         self._last_month = current_month
         self._cached_weights = weights
