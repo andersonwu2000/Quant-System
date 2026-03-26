@@ -123,22 +123,22 @@ class TestBroadcastEvent:
         _broadcast_event("test_event", {"key": "value"})
 
     def test_broadcast_with_mock_ws_manager(self) -> None:
-        """_broadcast_event calls ws_manager.broadcast with correct args."""
+        """_broadcast_event calls ws_manager.broadcast with correct args when a loop is running."""
         mock_manager = MagicMock()
         mock_manager.broadcast = AsyncMock()
 
-        loop = asyncio.new_event_loop()
-        try:
-            with patch("src.alpha.auto.scheduler.asyncio.get_event_loop", return_value=loop):
-                with patch("src.api.ws.ws_manager", mock_manager):
-                    _broadcast_event("stage_started", {"stage": "universe"})
+        async def _run() -> None:
+            with patch("src.api.ws.ws_manager", mock_manager):
+                _broadcast_event("stage_started", {"stage": "universe"})
+            # Let the scheduled coroutine execute
+            await asyncio.sleep(0)
 
-            mock_manager.broadcast.assert_called_once_with(
-                "auto-alpha",
-                {"type": "stage_started", "stage": "universe"},
-            )
-        finally:
-            loop.close()
+        asyncio.run(_run())
+
+        mock_manager.broadcast.assert_called_once_with(
+            "auto-alpha",
+            {"type": "stage_started", "stage": "universe"},
+        )
 
     def test_broadcast_swallows_exceptions(self) -> None:
         """_broadcast_event should not propagate exceptions."""

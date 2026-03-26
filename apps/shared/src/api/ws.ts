@@ -10,6 +10,7 @@ type StatusHandler = (connected: boolean) => void;
 const PING_INTERVAL_MS = 30_000;
 const MAX_BACKOFF_MS = 60_000;
 const BASE_DELAY_MS = 3_000;
+const MAX_RETRIES = 20;
 
 let _wsUrlBuilder: ((channel: Channel) => string) | null = null;
 
@@ -60,7 +61,13 @@ export class WSManager {
       if (e.data === "pong") return;
       try {
         const data = JSON.parse(e.data);
-        this.handlers.forEach((h) => h(data));
+        this.handlers.forEach((h) => {
+          try {
+            h(data);
+          } catch {
+            // isolate handler errors to prevent blocking other handlers
+          }
+        });
       } catch {
         // non-JSON message, skip
       }
@@ -69,8 +76,8 @@ export class WSManager {
     this.ws.onclose = () => {
       this.cleanup();
       this.setConnected(false);
-      if (this.active) {
-        const delay = Math.min(BASE_DELAY_MS * 2 ** this.retries, MAX_BACKOFF_MS);
+      if (this.active && this.retries < MAX_RETRIES) {
+        const delay = Math.min(BASE_DELAY_MS * 2 ** Math.min(this.retries, 6), MAX_BACKOFF_MS);
         this.retries++;
         this.reconnectTimer = setTimeout(() => this.connect(), delay);
       }

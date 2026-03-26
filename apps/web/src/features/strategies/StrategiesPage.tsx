@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApi } from "@core/hooks";
 import { fmtCurrency, pnlColor, translateApiError } from "@core/utils";
 import { Card, StatusBadge, ErrorAlert, Skeleton, EmptyState, ConfirmModal } from "@shared/ui";
@@ -43,6 +43,8 @@ export function StrategiesPage() {
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; variant: "danger" | "warning"; onConfirm: () => void } | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   const handleToggle = (name: string, current: string) => {
     const action = current === "running" ? t.strategies.stop : t.strategies.start;
@@ -60,11 +62,13 @@ export function StrategiesPage() {
           } else {
             await strategiesApi.start(name);
           }
+          if (!mountedRef.current) return;
           refresh();
         } catch (err) {
+          if (!mountedRef.current) return;
           setToggleError(translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
         } finally {
-          setToggling(null);
+          if (mountedRef.current) setToggling(null);
         }
       },
     });

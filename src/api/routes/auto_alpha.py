@@ -357,6 +357,22 @@ async def list_alerts(
 
 _run_now_tasks: dict[str, dict[str, Any]] = {}
 _tasks_lock = threading.Lock()
+_MAX_RUN_NOW_TASKS = 50
+
+
+def _evict_old_tasks() -> None:
+    """Remove oldest completed/failed tasks when exceeding limit. Must be called with _tasks_lock held."""
+    if len(_run_now_tasks) <= _MAX_RUN_NOW_TASKS:
+        return
+    # Sort by completion time, remove oldest completed/failed tasks first
+    removable = [
+        (tid, info) for tid, info in _run_now_tasks.items()
+        if info.get("status") in ("completed", "failed")
+    ]
+    removable.sort(key=lambda x: x[1].get("completed", ""))
+    to_remove = len(_run_now_tasks) - _MAX_RUN_NOW_TASKS
+    for tid, _ in removable[:to_remove]:
+        del _run_now_tasks[tid]
 
 
 @router.post("/run-now", response_model=RunNowResponse)
@@ -390,6 +406,7 @@ async def run_now(
                     "result": result,
                     "completed": datetime.now().isoformat(),
                 }
+                _evict_old_tasks()
         except Exception as exc:
             with _tasks_lock:
                 _run_now_tasks[task_id] = {
@@ -397,6 +414,7 @@ async def run_now(
                     "error": str(exc),
                     "completed": datetime.now().isoformat(),
                 }
+                _evict_old_tasks()
 
     thread = threading.Thread(target=_run_cycle, daemon=True)
     thread.start()
@@ -408,13 +426,29 @@ async def run_now(
 
 
 @router.websocket("/ws")
-async def auto_alpha_ws(websocket: WebSocket) -> None:
+async def auto_alpha_ws(
+    websocket: WebSocket,
+    token: str | None = Query(default=None),
+) -> None:
     """WebSocket endpoint for real-time auto-alpha pipeline events.
 
     Clients receive stage_started, stage_completed, decision, execution,
     alert, and error events as the pipeline runs.
+    Requires token authentication in non-dev environments.
     """
+    from src.api.auth import verify_ws_token
     from src.api.ws import ws_manager
+    from src.config import get_config
+
+    config = get_config()
+    if config.env != "dev":
+        if not token:
+            await websocket.close(code=4001, reason="Missing authentication token")
+            return
+        payload = verify_ws_token(token)
+        if payload is None:
+            await websocket.close(code=4001, reason="Invalid authentication token")
+            return
 
     await ws_manager.connect(websocket, "auto-alpha")
     try:

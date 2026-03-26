@@ -30,15 +30,16 @@ def _broadcast_event(event_type: str, data: dict[str, Any]) -> None:
     try:
         from src.api.ws import ws_manager
 
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
+        try:
+            loop = asyncio.get_running_loop()
+            # We're inside a running event loop — schedule coroutine
             asyncio.ensure_future(
                 ws_manager.broadcast("auto-alpha", {"type": event_type, **data})
             )
-        else:
-            loop.run_until_complete(
-                ws_manager.broadcast("auto-alpha", {"type": event_type, **data})
-            )
+        except RuntimeError:
+            # No running event loop (called from background thread) — skip
+            # WS broadcast from non-async context is best-effort
+            pass
     except Exception:
         pass  # WS broadcast is best-effort
 

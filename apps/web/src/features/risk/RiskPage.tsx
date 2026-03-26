@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi, useWs } from "@core/hooks";
 import { fmtDate, fmtTime, fmtNum, translateApiError } from "@core/utils";
 import { Card, StatusBadge, ErrorAlert, InfoTooltip, useToast, Skeleton, ConfirmModal } from "@shared/ui";
@@ -38,6 +38,8 @@ export function RiskPage() {
   const [killLoading, setKillLoading] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; variant: "danger" | "warning"; onConfirm: () => void } | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   useWs("alerts", useCallback((msg: unknown) => {
     const a = msg as RiskAlert;
@@ -57,12 +59,14 @@ export function RiskPage() {
         setToggling(name);
         try {
           await riskApi.toggleRule(name, !enabled);
+          if (!mountedRef.current) return;
           refreshRules();
           toast("success", t.toast.ruleSaved);
         } catch {
+          if (!mountedRef.current) return;
           toast("error", t.common.requestFailed);
         } finally {
-          setToggling(null);
+          if (mountedRef.current) setToggling(null);
         }
       },
     });
@@ -78,12 +82,14 @@ export function RiskPage() {
         setKillLoading(true);
         try {
           const resp = await riskApi.killSwitch();
+          if (!mountedRef.current) return;
           setKillMsg(resp.message);
           toast("success", t.toast.killSwitchActivated);
         } catch (err) {
+          if (!mountedRef.current) return;
           setKillMsg(translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
         } finally {
-          setKillLoading(false);
+          if (mountedRef.current) setKillLoading(false);
         }
       },
     });

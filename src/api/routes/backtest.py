@@ -43,7 +43,23 @@ BACKTEST_DURATION = Histogram(
 )
 _limiter = Limiter(key_func=get_remote_address)
 _MAX_BACKTEST_TASKS = 50  # evict oldest tasks beyond this limit
+_TASK_EXPIRY_SECONDS = 3600  # 1 小時後自動清除已完成的 backtest 結果，釋放記憶體
 _background_tasks: set[asyncio.Task[None]] = set()  # prevent GC of fire-and-forget tasks
+
+
+def _evict_expired_backtest_tasks(state: Any) -> None:
+    """清除超過 _TASK_EXPIRY_SECONDS 的已完成/失敗任務，避免長期佔用記憶體。
+    Must be called with state.backtest_lock held."""
+    now = time.time()
+    expired = [
+        tid for tid, task_info in state.backtest_tasks.items()
+        if task_info.get("status") in ("completed", "failed")
+        and task_info.get("_created_at", now) < now - _TASK_EXPIRY_SECONDS
+    ]
+    for tid in expired:
+        del state.backtest_tasks[tid]
+    if expired:
+        logger.info("Evicted %d expired backtest tasks", len(expired))
 
 
 @router.post("", response_model=BacktestSummaryResponse)
@@ -54,12 +70,17 @@ async def submit_backtest(request: Request, req: BacktestRequest, api_key: str =
     config = get_config()
     task_id = uuid.uuid4().hex[:8]
 
+    # 清除過期任務以釋放記憶體
+    with state.backtest_lock:
+        _evict_expired_backtest_tasks(state)
+
     # 記錄任務
     state.backtest_tasks[task_id] = {
         "status": "running",
         "strategy_name": req.strategy,
         "result": None,
         "progress": None,
+        "_created_at": time.time(),
     }
 
     cancel_event = threading.Event()

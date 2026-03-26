@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi, useWs } from "@core/hooks";
 import { useT } from "@core/i18n";
 import { fmtPct, fmtNum, fmtDate, fmtTime, pnlColor } from "@core/utils";
@@ -23,6 +23,8 @@ export function AutoAlphaPage() {
   const { t } = useT();
   const { toast } = useToast();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   const {
     data: status,
@@ -73,12 +75,14 @@ export function AutoAlphaPage() {
     setActionLoading("start");
     try {
       const resp = await autoAlphaEndpoints.start();
+      if (!mountedRef.current) return;
       toast("success", resp.message);
       refreshStatus();
     } catch {
+      if (!mountedRef.current) return;
       toast("error", t.common.requestFailed);
     } finally {
-      setActionLoading(null);
+      if (mountedRef.current) setActionLoading(null);
     }
   };
 
@@ -86,12 +90,14 @@ export function AutoAlphaPage() {
     setActionLoading("stop");
     try {
       const resp = await autoAlphaEndpoints.stop();
+      if (!mountedRef.current) return;
       toast("success", resp.message);
       refreshStatus();
     } catch {
+      if (!mountedRef.current) return;
       toast("error", t.common.requestFailed);
     } finally {
-      setActionLoading(null);
+      if (mountedRef.current) setActionLoading(null);
     }
   };
 
@@ -99,14 +105,16 @@ export function AutoAlphaPage() {
     setActionLoading("runNow");
     try {
       await autoAlphaEndpoints.runNow();
+      if (!mountedRef.current) return;
       toast("success", t.autoAlpha.runNow);
       refreshStatus();
       refreshHistory();
       refreshPerf();
     } catch {
+      if (!mountedRef.current) return;
       toast("error", t.common.requestFailed);
     } finally {
-      setActionLoading(null);
+      if (mountedRef.current) setActionLoading(null);
     }
   };
 

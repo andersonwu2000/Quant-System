@@ -91,11 +91,13 @@ export function PaperTradingPage() {
     setStratError(null);
     try {
       await strategiesApi.start(selectedStrategy);
+      if (!mountedRef.current) return;
       refreshStrats();
     } catch (e) {
+      if (!mountedRef.current) return;
       setStratError(translateApiError(e instanceof Error ? e.message : String(e), t));
     } finally {
-      setToggling(false);
+      if (mountedRef.current) setToggling(false);
     }
   }, [selectedStrategy, refreshStrats, t]);
 
@@ -104,11 +106,13 @@ export function PaperTradingPage() {
     setStratError(null);
     try {
       await strategiesApi.stop(name);
+      if (!mountedRef.current) return;
       refreshStrats();
     } catch (e) {
+      if (!mountedRef.current) return;
       setStratError(translateApiError(e instanceof Error ? e.message : String(e), t));
     } finally {
-      setToggling(false);
+      if (mountedRef.current) setToggling(false);
     }
   }, [refreshStrats, t]);
 
@@ -122,19 +126,23 @@ export function PaperTradingPage() {
     setReconcileError(null);
     try {
       const result = await paperTradingApi.reconcile();
+      if (!mountedRef.current) return;
       setReconcileResult(result);
     } catch (e) {
+      if (!mountedRef.current) return;
       setReconcileError(e instanceof Error ? e.message : String(e));
     } finally {
-      setReconcileLoading(false);
+      if (mountedRef.current) setReconcileLoading(false);
     }
   }, []);
 
   const handleAutoCorrect = useCallback(async () => {
     try {
       await paperTradingApi.autoCorrect();
+      if (!mountedRef.current) return;
       handleReconcile();
     } catch (e) {
+      if (!mountedRef.current) return;
       setReconcileError(e instanceof Error ? e.message : String(e));
     }
   }, [handleReconcile]);

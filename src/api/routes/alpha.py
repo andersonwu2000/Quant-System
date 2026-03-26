@@ -66,13 +66,14 @@ async def submit_alpha_research(
     state = get_app_state()
     task_id = uuid.uuid4().hex[:8]
 
-    state.alpha_tasks[task_id] = {
-        "status": "running",
-        "result": None,
-        "progress_current": None,
-        "progress_total": None,
-        "error": None,
-    }
+    with state.alpha_lock:
+        state.alpha_tasks[task_id] = {
+            "status": "running",
+            "result": None,
+            "progress_current": None,
+            "progress_total": None,
+            "error": None,
+        }
 
     def _run() -> None:
         try:
@@ -125,8 +126,9 @@ async def submit_alpha_research(
             def update_progress(step: int) -> None:
                 nonlocal current_step
                 current_step = step
-                state.alpha_tasks[task_id]["progress_current"] = current_step
-                state.alpha_tasks[task_id]["progress_total"] = total_steps
+                with state.alpha_lock:
+                    state.alpha_tasks[task_id]["progress_current"] = current_step
+                    state.alpha_tasks[task_id]["progress_total"] = total_steps
 
             update_progress(0)
 
@@ -166,8 +168,9 @@ async def submit_alpha_research(
                     update_progress(done_count)
 
             if not data:
-                state.alpha_tasks[task_id]["status"] = "failed"
-                state.alpha_tasks[task_id]["error"] = "No data available for the given universe and date range"
+                with state.alpha_lock:
+                    state.alpha_tasks[task_id]["status"] = "failed"
+                    state.alpha_tasks[task_id]["error"] = "No data available for the given universe and date range"
                 return
 
             update_progress(len(req.universe))
@@ -180,16 +183,18 @@ async def submit_alpha_research(
             # 轉換為前端需要的格式
             result = _format_report(report, task_id, req)
 
-            state.alpha_tasks[task_id]["status"] = "completed"
-            state.alpha_tasks[task_id]["result"] = result
+            with state.alpha_lock:
+                state.alpha_tasks[task_id]["status"] = "completed"
+                state.alpha_tasks[task_id]["result"] = result
 
         except Exception as e:
             logger.error("Alpha research failed: %s", e, exc_info=True)
-            state.alpha_tasks[task_id]["status"] = "failed"
-            state.alpha_tasks[task_id]["error"] = str(e)
+            with state.alpha_lock:
+                state.alpha_tasks[task_id]["status"] = "failed"
+                state.alpha_tasks[task_id]["error"] = str(e)
 
     # 在背景線程執行
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     task = asyncio.ensure_future(loop.run_in_executor(None, _run))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)

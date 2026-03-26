@@ -57,8 +57,14 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
   const [changePwLoading, setChangePwLoading] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const mountedRef = useRef(true);
 
-  useEffect(() => () => clearTimeout(timerRef.current), []);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timerRef.current);
+    };
+  }, []);
 
   const handleSave = async () => {
     setLoginError("");
@@ -68,16 +74,18 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
         ? { apiKey: key }
         : { username, password };
       const role = await login(credentials);
+      if (!mountedRef.current) return;
       setRole(role);
       setSaved(true);
       toast("success", t.toast.settingsSaved);
       onSave?.();
       clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setSaved(false), 2000);
+      timerRef.current = setTimeout(() => { if (mountedRef.current) setSaved(false); }, 2000);
     } catch (err) {
+      if (!mountedRef.current) return;
       setLoginError(translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
     } finally {
-      setLoginLoading(false);
+      if (mountedRef.current) setLoginLoading(false);
     }
   };
 
@@ -91,14 +99,16 @@ export function SettingsPage({ onSave }: { onSave?: () => void } = {}) {
     setChangePwLoading(true);
     try {
       await authApi.changePassword(currentPassword, newPassword);
+      if (!mountedRef.current) return;
       toast("success", t.settings.passwordChanged);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
     } catch (err) {
+      if (!mountedRef.current) return;
       toast("error", translateApiError(err instanceof Error ? err.message : t.common.requestFailed, t));
     } finally {
-      setChangePwLoading(false);
+      if (mountedRef.current) setChangePwLoading(false);
     }
   };
 

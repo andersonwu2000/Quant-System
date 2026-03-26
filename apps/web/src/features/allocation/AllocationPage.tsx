@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PieChart, BarChart3, TrendingUp, Activity } from "lucide-react";
 import { useT } from "@core/i18n";
 import { allocation as allocationApi } from "@core/api";
 import { Card, ErrorAlert, Skeleton } from "@shared/ui";
+import { translateApiError } from "@core/utils";
 import type { TacticalRequest, TacticalResponse, TacticalWeightItem } from "@core/api";
 
 const ASSET_COLORS: Record<string, string> = {
@@ -27,6 +28,8 @@ export function AllocationPage() {
   const [macroWeight, setMacroWeight] = useState(0.5);
   const [crossAssetWeight, setCrossAssetWeight] = useState(0.3);
   const [regimeWeight, setRegimeWeight] = useState(0.2);
+  const mountedRef = useRef(true);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   const run = async () => {
     setLoading(true);
@@ -39,11 +42,14 @@ export function AllocationPage() {
         regime_weight: regimeWeight,
       };
       const resp = await allocationApi.compute(req);
+      if (!mountedRef.current) return;
       setResult(resp);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Request failed");
+      if (!mountedRef.current) return;
+      const msg = e instanceof Error ? e.message : "Request failed";
+      setError(translateApiError(msg, t));
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
