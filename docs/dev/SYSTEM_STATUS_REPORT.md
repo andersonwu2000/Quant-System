@@ -364,7 +364,41 @@
 
 ---
 
-## 15. 實驗報告索引
+## 15. Alpha 驗證管線 vs 假陽性防護
+
+### 驗證步驟覆蓋度
+
+| 步驟 | 狀態 | 實作 |
+|------|:----:|------|
+| 原始假設（學術依據） | ✅ | FACTOR_REGISTRY 各因子標注論文來源 |
+| 歷史回測 (In-Sample) | ✅ | `BacktestEngine` 完整回測 |
+| 樣本外驗證 (OOS) | ✅ | Walk-Forward 年度 OOS + OOS 2025 H2（Validator 第 6、9 項） |
+| 多市場、多時間段壓力測試 | ⚠️ | 有 worst regime 檢查（Validator 第 12 項），但**僅台股單一市場**，無跨市場驗證 |
+| 交易成本模擬 | ✅ | SimBroker: sqrt 滑點 + 佣金 0.1425% + 證交稅 0.3% + 漲跌停 ±9.5% + ADV 10% 限制 |
+| 確認 Alpha 顯著穩健 | ✅ | Harvey t>3.0 + DSR + Bootstrap + PBO（Validator 13 項閘門） |
+
+### 假陽性陷阱防護
+
+| 陷阱 | 狀態 | 處理方式 | 已知缺口 |
+|------|:----:|---------|---------|
+| 過度擬合 (Overfitting) | ✅ | PBO=0%、Walk-Forward 年度 OOS、Bootstrap P(SR>0)、DSR | — |
+| 存活者偏差 (Survivorship Bias) | ⚠️ | Universe 含 40 支已下市股票 | **缺少完整歷史 universe 快照**（不知道某年某月有哪些股票在市場上），可能遺漏更多早期下市股票 |
+| 前視偏差 (Look-ahead Bias) | ✅ | 營收 +40 天公布延遲、`Context` 截斷數據到 `current_time`、`HistoricalFeed.set_current_date()` | — |
+| 多重測試問題 (Multiple Testing) | ✅ | Harvey (2016) t>3.0（≈ p<0.003，比 p<0.05 嚴格 ~17 倍）、DSR 調整 | — |
+
+### 待改善項目
+
+| 缺口 | 嚴重度 | 說明 |
+|------|:------:|------|
+| 跨市場驗證 | 中 | 只有台股，無法確認因子是台股特有還是普遍有效（但專案定位為台股，短期可接受） |
+| 存活者偏差不完整 | 中 | 有 40 支已下市，但缺歷史時點完整上市清單 |
+| 衝擊成本模型粗糙 | 低 | sqrt 滑點近似，未用 Almgren-Chriss 學術模型（ADV 10% 限制部分彌補） |
+| 獨立壓力情境 | 低 | Walk-Forward 已覆蓋 COVID + 升息，但無獨立 stress scenario（如 2008 模擬） |
+| `compute_forward_returns` 日期交集 | 中 | 大 universe 時所有股票日期交集為空集，需改用聯集（腳本層已修正，核心函式待修） |
+
+---
+
+## 16. 實驗報告索引
 
 17 份實驗報告，詳見 `docs/dev/test/RESEARCH_SUMMARY.md`。
 
