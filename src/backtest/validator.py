@@ -402,11 +402,12 @@ class StrategyValidator:
 
     def _bootstrap_sharpe(self, result: BacktestResult, n_bootstrap: int) -> float:
         """Bootstrap P(Sharpe > 0)。"""
-        if not hasattr(result, 'returns_series') or result.returns_series is None:
-            # Fallback: use total return sign
+        # 使用 daily_returns（與 DSR 一致）
+        ret_series = getattr(result, 'daily_returns', None)
+        if ret_series is None:
             return 1.0 if result.sharpe > 0 else 0.0
 
-        returns = result.returns_series.dropna().values
+        returns = ret_series.dropna().values
         if len(returns) < 20:
             return 1.0 if result.sharpe > 0 else 0.0
 
@@ -541,9 +542,11 @@ class StrategyValidator:
         end: str,
         lookback_days: int,
     ) -> float:
-        """檢查最近 N 天的 Sharpe。"""
+        """檢查最近 N 交易日的 Sharpe。"""
         try:
-            recent_start = (pd.Timestamp(end) - pd.Timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+            # lookback_days 是交易日，轉為日曆日（×365/252）
+            calendar_days = int(lookback_days * 365 / 252) + 30  # +30 buffer
+            recent_start = (pd.Timestamp(end) - pd.Timedelta(days=calendar_days)).strftime("%Y-%m-%d")
             bt_config = self._make_bt_config(universe, recent_start, end)
             engine = BacktestEngine()
             r = engine.run(strategy, bt_config)
