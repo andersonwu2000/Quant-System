@@ -1,7 +1,7 @@
 # Phase E：實盤交易
 
 > 完成日期：2026-03-25
-> 狀態：✅ 程式碼完成，待 API Key 整合測試
+> 狀態：✅ 程式碼完成，模擬整合通過 (2026-03-26)，待 CA 憑證進行生產測試
 
 ## 目標
 建立從策略到實際券商下單的完整交易管道。
@@ -23,7 +23,18 @@
 - **Order 擴展**: OrderCondition (Cash/Margin/Short/DayTrade) + StockOrderLot (Common/IntradayOdd/Odd/Fixing)
 - **Scheduler**: `execute_rebalance()` 接通策略→風控→下單→Portfolio→通知
 
-## 待 API Key 後
-- 整合測試（真實 Shioaji login/下單/行情）
-- Paper Trading 完整循環驗證
+## Shioaji 整合測試結果 (2026-03-26)
+
+**API Key 已取得，模擬模式 (simulation=True) 驗證通過。**
+
+### 模擬環境通過項目
+- Shioaji login (simulation=True) — 連線成功
+- 基本下單流程 — submit_order / cancel_order
+- 帳務查詢 — query_trading_limits / query_settlements
+- 處置股查詢 — check_dispositions
+
+### 需生產環境 CA 憑證
+- Deal callback（成交回報）— 模擬環境無真實撮合回報
+- Tick/BidAsk streaming — 需 CA 憑證才能訂閱即時行情
+- Paper Trading 完整循環 — 排程→下單→回報→對帳→通知
 - WS `market` 頻道接入即時行情

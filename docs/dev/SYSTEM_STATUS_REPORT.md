@@ -1,11 +1,11 @@
 # 系統現況追蹤報告書
 
 > **報告日期**: 2026-03-26
-> **版本**: v5.0
-> **當前階段**: Phase A~H 全部完成，待 Shioaji API Key 進行整合測試
+> **版本**: v5.1
+> **當前階段**: Phase A~I + R1-R4 完成, Shioaji 模擬整合通過
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v6.1
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v7.2
 
 ---
 
@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 129 (121 src + 8 strategies) |
-| 後端 Python LOC | ~22,630 (21,937 + 714) |
-| 測試檔案 | 85 |
+| 後端 Python 檔案 (src/ + strategies/) | 147 (139 src + 8 strategies) |
+| 後端 Python LOC | ~25,000 (24,173 + 786) |
+| 測試檔案 | 89 |
 | 測試 LOC | ~16,000 |
-| 測試數量 (pytest collected) | **1136** |
+| 測試數量 (pytest collected) | **1,138** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -58,9 +58,9 @@
 
 | 模組 | 檔案數 | LOC | 功能描述 |
 |------|--------|-----|----------|
-| `src/api/` | 22 | ~3,300 | REST API (14 路由, 54 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
+| `src/api/` | 22 | ~3,300 | REST API (14 路由, 74 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
-| `src/alpha/` | 24 | ~4,250 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
+| `src/alpha/` | 24 | ~4,250 | Alpha 研究：27 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
 | `src/backtest/` | 10 | ~3,500 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL |
 | `src/execution/` | 16 | ~2,120 | `broker/` (base + simulated + sinopac) + `quote/` (sinopac) + `service.py` (ExecutionService) + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 + **TWAP 拆單 (`smart_order.py`)** + backward-compat shims |
 | `src/strategy/` | 11 | ~2,000 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 27 因子) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
@@ -222,7 +222,7 @@
 
 ## 5. API 架構
 
-### 5.1 REST 端點（14 路由模組, 57 端點）
+### 5.1 REST 端點（14 路由模組, 74 端點）
 
 | 模組 | 端點數 | 前綴 | 關鍵端點 |
 |------|--------|------|---------|
@@ -305,7 +305,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 
 ## 7. 測試覆蓋
 
-### 7.1 後端測試（1,054 tests）
+### 7.1 後端測試（1,138 tests）
 
 | 分類 | 檔案數 | 測試數 | 說明 |
 |------|--------|--------|------|
@@ -402,7 +402,7 @@ volumes:
 | 回測引擎 | ✅ 完成 | 多資產/多幣別/FX 時序/40+ 指標/Walk-forward/Randomized/PBO(CSCV)/K-Fold/StressTest |
 | 策略框架 | ✅ 完成 | 9 策略 + Strategy ABC + Registry |
 | 數據源 | ✅ 完成 | Yahoo + FinMind + FRED + Shioaji (kbars/ticks/snapshot) |
-| Alpha 研究 | ✅ 完成 | 24 因子 (含 10 Kakushadze 101)/中性化/正交化/Rolling IC/Pipeline/Regime/Attribution/Momentum Crash 防護 |
+| Alpha 研究 | ✅ 完成 | 27 因子 (11 技術 + 10 Kakushadze + 6 基本面)/中性化/正交化/Rolling IC/Pipeline/Regime/Attribution/Momentum Crash 防護 |
 | 戰術配置 | ✅ 完成 | 宏觀四因子 + 跨資產信號 + TacticalEngine |
 | 組合最佳化 | ✅ 完成 | 14 方法 (含 CVaR/MaxDD/Robust/Resampled/GMV/MaxSharpe/IndexTracking/SemiVariance) + LW/GARCH/Factor Cov + VaR/CVaR + James-Stein + 風險貢獻 |
 | 幣別對沖 | ✅ 完成 | 分級對沖 + HedgeRecommendation |
@@ -410,7 +410,7 @@ volumes:
 | 風控引擎 | ✅ 完成 | 10 規則 + Kill Switch + 跨資產規則 |
 | InstrumentRegistry | ✅ 完成 | 自動推斷 symbol → asset_class/market/currency |
 | 多幣別 Portfolio | ✅ 完成 | nav_in_base / currency_exposure / per-bar FX |
-| API | ✅ 完成 | 54 端點 + WebSocket + JWT/RBAC + 限流 + 審計 |
+| API | ✅ 完成 | 74 端點 + WebSocket + JWT/RBAC + 限流 + 審計 |
 | Web 前端 | ✅ 完成 | 11 頁 + i18n (en/zh) + 深色主題 |
 | Android | ✅ 完成 | Jetpack Compose + Material 3 + UniversePicker |
 | Android Native | 🟡 進行中 | Backtest tab + UniversePickerSheet (Material 3) + i18n |
@@ -430,7 +430,7 @@ volumes:
 | 市場掃描器 | ✅ 完成 | VolumeRank / ChangeRank + 處置/注意股排除 |
 | 即時行情 | 🟡 架構 | SinopacQuoteManager 完成，WS broadcast 待接通 |
 | 排程 Rebalance | ✅ 整合 | scheduler/jobs.py 接通策略→風控→下單→Portfolio→通知 |
-| **整合測試** | ❌ 待辦 | **需 Shioaji API Key + CA 憑證** |
+| **整合測試** | ✅ 模擬通過 | API Key 已取得，模擬 login/下單驗證通過 (2026-03-26)。Deal callback + tick streaming 需生產 CA 憑證 |
 | 期貨選擇權 | ❌ 待辦 | Shioaji 支援 FuturesPriceType + ComboOrder |
 | IB 美股 | ❌ 待辦 | Shioaji 完成後 |
 
@@ -461,8 +461,8 @@ volumes:
 | 依賴 | 狀態 | 備註 |
 |------|------|------|
 | shioaji SDK | ✅ 已安裝 v1.3.2 | `pip install shioaji` |
-| Shioaji API Key | ❌ 未取得 | 需至 sinotrade.com.tw 申請 |
-| CA 憑證 (.pfx) | ❌ 未取得 | 同上 |
+| Shioaji API Key | ✅ 已取得 | 模擬模式驗證通過 (2026-03-26) |
+| CA 憑證 (.pfx) | ❌ 未取得 | 生產環境必需：deal callback + tick streaming |
 | PostgreSQL | ✅ Docker ready | `docker compose up -d` |
 
 ---
@@ -700,8 +700,12 @@ volumes:
 | Phase G | 2026-03-26 | 學術基準升級 (G1-G8: +7 最佳化方法 + GARCH/Factor Cov + VaR/CVaR + PBO/Randomized/k-fold/Stress + 共整合 Pairs + Omega/Rolling Sharpe + 回測防護) |
 | Phase H | 2026-03-26 | 實用精煉 (Deflated Sharpe + MinBTL + Semi-Variance + Kalman Filter Pairs), 1,006 tests |
 | Phase H | 2026-03-26 | 實用精煉 (H1: DSR+MinBTL, H2: Semi-Variance 最佳化, H3: Kalman Pairs Trading) |
+| Phase I | 2026-03-26 | Alpha 因子庫擴展 — 27 因子 (11 技術 + 10 Kakushadze + 6 基本面)，向量化 15x 加速 |
 | Phase R1 | 2026-03-26 | Smart Order — TWAP 拆單引擎 (降低 market impact, ExecutionService 整合) |
+| Phase R2 | 2026-03-26 | 台股交易日曆 — TWTradingCalendar (國定假日排除) |
 | Phase R3 | 2026-03-26 | Trading Pipeline 抽取 — `execute_one_bar()` 共用交易流程，BacktestEngine 改用 |
+| Phase R4 | 2026-03-26 | Broker 子套件重構 — broker/ + quote/ subpackage |
+| Shioaji 整合 | 2026-03-26 | API Key 取得 + 模擬模式驗證通過 (deal callback 需生產 CA) |
 
 ### 12.2 進行中 / 待辦
 
@@ -709,9 +713,9 @@ volumes:
 |------|--------|---------|------|
 | Phase F 前端 (F3b-c) | ✅ 完成 | — | WS auto-alpha 頻道 + Web Auto-Alpha Dashboard |
 | Phase F DB Migration (F2d) | 🟡 P1 | — | Alembic 005_auto_alpha.py |
-| Shioaji 整合測試 | 🔴 P0 | API Key + CA | 模擬環境端到端驗證 |
-| WS market 頻道接通 | 🟡 P1 | API Key | SinopacQuoteManager → broadcast |
-| Paper Trading 實測 | 🟡 P1 | 整合測試通過 | 模擬帳戶跑完整循環 |
+| Shioaji 生產環境 | 🔴 P0 | CA 憑證 | deal callback + tick streaming 驗證 |
+| WS market 頻道接通 | 🟡 P1 | CA 憑證 | SinopacQuoteManager → broadcast |
+| Paper Trading 實測 | 🟡 P1 | CA 憑證 | 模擬帳戶跑完整循環 |
 | 期貨選擇權交易 | 🟡 P1 | — | FuturesPriceType + ComboOrder |
 | 期貨展期模擬 | 🟢 P2 | — | R1/R2 連續合約 + roll cost |
 | IB 美股對接 | 🟢 P2 | Shioaji 完成 | IBBroker(BrokerAdapter) |
@@ -727,7 +731,7 @@ volumes:
 ```bash
 # 後端
 make install          # pip install -e ".[dev]"
-make test             # pytest tests/ -v (1006 tests)
+make test             # pytest tests/ -v (1138 tests)
 make lint             # ruff check + mypy strict
 make dev              # API 熱重載 port 8000
 

@@ -155,9 +155,28 @@ Phase H — 進階：
 - Semi-variance 組合最佳化
 - Kalman Filter 動態 hedge ratio (Pairs Trading)
 
+Phase I — Alpha 因子庫擴展：
+- Fama-French 補齊：size (SMB)、investment (CMA)、gross_profitability (Novy-Marx)
+- Kakushadze 101 精選：10 個 price-volume 因子（向量化實作）
+- 因子篩選閾值校正：ICIR 0.3→0.5 (Harvey 2016)、OOS decay 0.42 (McLean-Pontiff)
+- Momentum Crash 防護 (Daniel & Moskowitz 2016)
+- 因子庫重構為 package：`src/strategy/factors/` (technical.py + fundamental.py + kakushadze.py)
+- 向量化因子計算 VECTORIZED_FACTORS — 15x 加速
+
+架構重構 R1-R4：
+- **R1** TWAP Smart Order (`src/execution/smart_order.py`)：大單拆 N 筆等量子單
+- **R2** 台股交易日曆 (`src/core/calendar.py`)：TWTradingCalendar 國定假日排除
+- **R3** Trading Pipeline (`src/core/trading_pipeline.py`)：`execute_one_bar()` 回測/實盤共用
+- **R4** Broker 子套件重構：`src/execution/broker/` + `src/execution/quote/`
+
+Shioaji 整合測試：
+- API Key 取得，模擬模式 (simulation=True) 驗證通過
+- login + 基本下單 + 帳務查詢 + 處置股查詢 — 全部通過
+- Deal callback + tick streaming 需生產環境 CA 憑證
+
 Android 修復 + CI 完善 + 文件重寫
 
-**里程碑**: 系統從「可用」升級為「學術級」。21 篇參考論文已收集分類。
+**里程碑**: 系統從「可用」升級為「學術級」。27 因子、1,138 tests、147 後端檔案。Shioaji 模擬整合通過。
 
 ---
 
@@ -169,16 +188,16 @@ Android 修復 + CI 完善 + 文件重寫
 | Git commits | 99 |
 | 檔案變更 | 512 |
 | 新增程式碼 | ~91,000 行 |
-| Python 後端 | 120 檔案 |
-| Python 測試 | 79 檔案, **1,006 tests** |
+| Python 後端 | 147 檔案 |
+| Python 測試 | 89 檔案, **1,138 tests** |
 | Web 前端 (TS/TSX) | 143 檔案 |
 | Android (Kotlin) | 56 檔案 |
 | 共享套件 (TS) | 11 檔案 |
 | 策略數 | 9 |
-| Alpha 因子 | 14 (11 技術 + 3 基本面) |
-| 最佳化方法 | 12 (EW/IV/RP/MVO/BL/HRP/CVaR/Robust/Resampled/MaxSharpe/GMV/IndexTracking + Semi-variance/MaxDrawdown) |
+| Alpha 因子 | 27 (11 技術 + 10 Kakushadze + 6 基本面) |
+| 最佳化方法 | 14 (EW/IV/RP/MVO/BL/HRP/CVaR/Robust/Resampled/MaxSharpe/GMV/IndexTracking/Semi-variance/MaxDrawdown) |
 | 風控規則 | 10 |
-| API 端點 | 58+ |
+| API 端點 | 74 |
 | 數據源 | 5 (Yahoo/FinMind/FRED/Shioaji/Scanner) |
 | 參考論文 | 21 篇 (已下載分類至 `docs/ref/`) |
 | CI Jobs | 9 + Release pipeline |
@@ -198,7 +217,7 @@ Day 3:  + Alpha Pipeline + 多資產 (Registry/Portfolio/Allocation/Optimizer)
          ↓
 Day 4:  + Shioaji 券商 + Paper Trading + Android Native
          ↓
-Day 5:  + Auto-Alpha 自動化 + 學術級最佳化 (12 方法) + 進階回測 (PBO/CSCV)
+Day 5:  + Auto-Alpha + 學術最佳化 (14 方法) + 27 因子 + R1-R4 重構 + Shioaji 模擬整合
 ```
 
 ### 開發方法
@@ -237,21 +256,22 @@ Day 5:  + Auto-Alpha 自動化 + 學術級最佳化 (12 方法) + 進階回測 (
 | F | 自動化 Alpha | Day 5 | 5 | 12 模組: Researcher → Decision → Executor → Scheduler → Store |
 | G | 學術最佳化 | Day 5 | 4 | CVaR + Robust + PBO + GARCH + IndexTracking + 更多 |
 | H | 進階 | Day 5 | 3 | Deflated SR + Semi-variance + Kalman Pairs |
+| I | Alpha 因子擴展 | Day 5 | — | 27 因子 + 向量化 15x + 閾值校正 + Momentum Crash |
+| R1-R4 | 架構重構 | Day 5 | — | TWAP + 交易日曆 + Trading Pipeline + Broker 子套件 |
 
 ---
 
 ## 已知限制與待辦
 
 ### 阻塞項（需外部資源）
-- Shioaji API Key + CA 憑證 → 才能進行紙上交易整合測試
+- Shioaji CA 憑證 → deal callback + tick streaming + 紙上交易完整循環 (API Key 已取得，模擬通過)
 - PostgreSQL production 環境 → 目前僅 SQLite dev
 
 ### 學術差距（來自論文分析）
 - MVSK 高階矩最佳化 (Wang et al. 2024) — O(N²) RFPA 演算法待移植
 - 非高斯建模 (skewed-t / Tyler's M-estimator)
-- Gross profitability 因子 (Novy-Marx 2013)
 - 非線性共變異數收縮 (Ledoit-Wolf 2014)
-- Kakushadze 101 Alphas — 87 個公式待擴充
+- Kakushadze 101 Alphas — 81 個公式待擴充 (已實作 10 + 排除 10)
 
 ### 工程待辦
 - FastAPI `on_event` deprecated → lifespan handler

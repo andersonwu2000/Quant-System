@@ -26,7 +26,7 @@ Multi-asset portfolio research and optimization system covering TW stocks, US st
 Monorepo: Python backend + React web + Android native (Kotlin/Compose). Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
 
 **Monorepo structure:**
-- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (~120 files, ~20,000 LOC)
+- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (~147 files, ~25,000 LOC)
 - `apps/web/` — React 18 + Vite + Tailwind dashboard (incl. Alpha Research page)
 - `apps/android/` — Android native (Kotlin + Jetpack Compose + Material 3)
 - `apps/shared/` — `@quant/shared` TypeScript package (types, API client, WS manager, format utils)
@@ -35,7 +35,7 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 **Documentation:**
 - `docs/dev/SYSTEM_STATUS_REPORT.md` — System status report (module inventory, feature matrix, gap analysis)
-- `docs/dev/DEVELOPMENT_PLAN.md` — Development plan (Phase A~F: multi-asset infra → cross-asset alpha → optimizer → backtest → live → auto-alpha)
+- `docs/dev/DEVELOPMENT_PLAN.md` — Development plan (Phase A~I + R1-R4: multi-asset infra → cross-asset alpha → optimizer → backtest → live → auto-alpha → academic → alpha expansion → refactoring)
 - `docs/dev/DEVELOPMENT_LOG.md` — Development log (5-day history, key decisions, milestones)
 - `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md` — Multi-asset architecture design
 - `docs/dev/architecture/AUTOMATED_ALPHA_ARCHITECTURE.md` — Auto-alpha system design
@@ -49,7 +49,7 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v (1006 tests)
+make test                    # pytest tests/ -v (1138 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
@@ -97,14 +97,14 @@ Key design decisions:
 - **Timezone handling**: All DatetimeIndex data is normalized to tz-naive UTC. Both `HistoricalFeed.load()` and `YahooFeed._download()` strip timezone info.
 
 **Module boundaries** (detailed inventory in `docs/dev/SYSTEM_STATUS_REPORT.md` §4):
-- `src/core/models.py` — **Unified** Instrument (frozen, with asset_class/sub_class/market/currency/multiplier/margin_rate/commission_rate/tax_rate), Bar, Position, Order, Portfolio (multi-currency: `cash_by_currency`, `nav_in_base(fx_rates)`, `currency_exposure()`), Trade. Enums: AssetClass (EQUITY/FUTURE/OPTION/ETF), Market (TW/US), SubClass, Side, OrderStatus. (`src/domain/models.py` re-exports for backward compat.)
+- `src/core/` — `models.py` (**Unified** Instrument, Bar, Position, Order, Portfolio, Trade, enums), `config.py` (Pydantic Settings), `logging.py` (structlog), `repository.py`, `calendar.py` (TWTradingCalendar — 台股交易日曆含國定假日), `trading_pipeline.py` (`execute_one_bar()` — 回測/實盤共用交易流程). (`src/domain/models.py` re-exports for backward compat.)
 - `src/instrument/` — `InstrumentRegistry` (get/get_or_create/search/by_market/by_asset_class). Re-exports Instrument from domain. `_infer_instrument()` auto-detects asset type from symbol pattern. Cost templates (TW_STOCK_DEFAULTS, US_FUTURES_DEFAULTS, etc.).
 - `src/alpha/` — Alpha research layer (within-asset selection). `pipeline.py` orchestrates end-to-end: universe filtering → factor computation → neutralization → orthogonalization → composite signal → quantile backtest → cost-aware portfolio construction. `AlphaStrategy` adapter wraps pipeline as `Strategy`. `regime.py` classifies market regimes (shared with allocation layer). `auto/` (9 files: AutoAlphaConfig, UniverseSelector, AlphaResearcher, AlphaDecisionEngine, AlphaExecutor, AlphaScheduler, AlphaStore, AlertManager, SafetyChecker, FactorPerformanceTracker, DynamicFactorPool).
 - `src/allocation/` — Tactical asset allocation (between-asset selection). `macro_factors.py`: 4 macro factors (growth/inflation/rates/credit) from FRED z-scores. `cross_asset.py`: momentum/volatility/value per AssetClass. `tactical.py`: TacticalEngine combines strategic weights + macro + cross-asset + regime → `dict[AssetClass, float]`. API: `POST /api/v1/allocation`.
-- `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 13 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP/Robust/Resampled/CVaR/MaxDrawdown/GlobalMinVariance/MaxSharpe/IndexTracking), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage/GARCH/PCA factor model), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
-- `src/strategy/` — Strategy ABC (`on_bar()` → weights), `factors/` package (technical, fundamental, Kakushadze 101 alphas — pure functions), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
+- `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 14 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP/Robust/Resampled/CVaR/MaxDrawdown/GlobalMinVariance/MaxSharpe/IndexTracking), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage/GARCH/PCA factor model), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
+- `src/strategy/` — Strategy ABC (`on_bar()` → weights), `factors/` package (technical.py + fundamental.py + kakushadze.py — 27 pure-function factors, vectorized), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
 - `src/risk/` — RiskEngine executes declarative rules; `kill_switch()` at 5% daily drawdown. RiskMonitor tracks metrics.
-- `src/execution/` — `broker/base.py` (BrokerAdapter ABC, PaperBroker), `broker/simulated.py` (SimBroker — slippage, per-instrument commission/tax, T+N settlement), `broker/sinopac.py` (SinopacBroker — Shioaji SDK wrapper), `service.py` (ExecutionService — mode-aware routing: backtest/paper/live), `quote/sinopac.py` (SinopacQuoteManager — tick/bidask subscription), OMS (order lifecycle), market hours validation, EOD reconciliation.
+- `src/execution/` — `broker/` subpackage: `base.py` (BrokerAdapter ABC, PaperBroker), `simulated.py` (SimBroker — slippage, per-instrument commission/tax, T+N settlement), `sinopac.py` (SinopacBroker — Shioaji SDK wrapper). `quote/` subpackage: `sinopac.py` (SinopacQuoteManager — tick/bidask subscription). `service.py` (ExecutionService — mode-aware routing: backtest/paper/live), `smart_order.py` (TWAP splitter), OMS (order lifecycle), market hours validation, EOD reconciliation.
 - `src/backtest/` — BacktestEngine (InstrumentRegistry integration, multi-currency detection), 40+ analytics, HTML/CSV reports, walk-forward, validation.
 - `src/data/` — DataFeed ABC (`get_bars`, `get_fx_rate`, `get_futures_chain`), YahooFeed (retry/rate-limit), FinMindFeed, FredDataSource (macro data), ParquetDiskCache.
 - `src/api/` — FastAPI REST + WebSocket, 14 route modules (incl. `/alpha`, `/allocation`, `/execution`, `/auto-alpha`), JWT auth, Prometheus.
@@ -222,7 +222,7 @@ Key design decisions:
 
 **CI/CD** (`.github/workflows/ci.yml`) — 9 jobs:
 - `backend-lint` — ruff check + mypy strict
-- `backend-test` — pytest (1006 tests)
+- `backend-test` — pytest (1138 tests)
 - `web-typecheck` — tsc --noEmit
 - `web-test` — vitest (depends on web-typecheck)
 - `web-build` — vite build (depends on web-typecheck)
