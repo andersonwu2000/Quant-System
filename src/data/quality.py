@@ -80,7 +80,7 @@ def check_bars(df: pd.DataFrame, symbol: str = "") -> QualityResult:
         if not df.index.is_monotonic_increasing:
             issues.append(f"{prefix}時間戳非單調遞增")
 
-    # 7. 價格跳變
+    # 7. 價格跳變（排除疑似除權息日）
     suspect_dates: set[str] = set()
     if len(df) > 20:
         returns = df["close"].pct_change().dropna()
@@ -90,10 +90,26 @@ def check_bars(df: pd.DataFrame, symbol: str = "") -> QualityResult:
             if std_ret > 0:
                 z_scores = ((returns - mean_ret) / std_ret).abs()
                 jump_mask = z_scores > 5
-                jumps = int(jump_mask.sum())
-                if jumps > 0:
-                    issues.append(f"{prefix}{jumps} 個價格跳變 > 5σ (可疑)")
-                    suspect_dates = {str(d.date()) for d in z_scores[jump_mask].index}
+                if jump_mask.any():
+                    volume_median = float(df["volume"].median()) if len(df["volume"]) > 0 else 0
+                    for idx in z_scores[jump_mask].index:
+                        ret_val = float(returns.loc[idx])
+                        vol_val = float(df["volume"].get(idx, 0))
+                        # 除權息特徵：下跌 1~10% + 成交量正常（> 中位數 50%）
+                        is_likely_ex_dividend = (
+                            -0.10 < ret_val < -0.01
+                            and volume_median > 0
+                            and vol_val > volume_median * 0.5
+                        )
+                        if not is_likely_ex_dividend:
+                            suspect_dates.add(
+                                str(idx.date()) if hasattr(idx, "date") else str(idx)
+                            )
+                    if suspect_dates:
+                        issues.append(
+                            f"{prefix}{len(suspect_dates)} 個價格跳變 > 5σ "
+                            f"(已排除疑似除權息日)"
+                        )
 
     if not issues:
         return QualityResult(QualityStatus.PASS, [])

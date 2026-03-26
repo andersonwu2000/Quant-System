@@ -37,6 +37,13 @@ class SimConfig:
     # Short selling borrow cost (annual rate, e.g. 0.02 = 2%)
     short_borrow_rate: float = 0.0
 
+    # 最低手續費（台灣券商：整股 20 元，零股 1 元）
+    min_commission: float = 20.0            # 整股最低手續費（元）
+    min_commission_odd_lot: float = 1.0     # 零股最低手續費（元）
+
+    # 零股額外滑點（盤中零股每 3 分鐘撮合一次，流動性差）
+    odd_lot_extra_slippage_bps: float = 10.0  # 零股額外滑點
+
 
 class SimBroker:
     """
@@ -134,6 +141,12 @@ class SimBroker:
 
             # 滑價計算 (using configurable impact model)
             slippage = self._calc_slippage(close_price, fill_qty, volume)
+
+            # 零股額外滑點（盤中零股每 3 分鐘撮合，流動性差）
+            lot_size_check = getattr(order.instrument, "lot_size", 1000) or 1000
+            if fill_qty < lot_size_check and self.config.odd_lot_extra_slippage_bps > 0:
+                slippage += close_price * Decimal(str(self.config.odd_lot_extra_slippage_bps)) / Decimal("10000")
+
             if order.side == Side.BUY:
                 fill_price = close_price + slippage
             else:
@@ -167,11 +180,27 @@ class SimBroker:
             multiplier = getattr(order.instrument, "multiplier", Decimal("1")) or Decimal("1")
             notional = fill_qty * fill_price * multiplier
 
+            # 判斷是否為零股交易（qty < lot_size）
+            lot_size = getattr(order.instrument, "lot_size", 1000) or 1000
+            is_odd_lot = fill_qty < lot_size
+
             inst_comm = getattr(order.instrument, "commission_rate", None)
             if inst_comm is not None and Decimal(str(inst_comm)) > 0:
                 commission = notional * Decimal(str(inst_comm))
             else:
                 commission = notional * Decimal(str(self.config.commission_rate))
+
+            # 最低手續費：僅適用台股（.TW/.TWO），期貨和非台股不適用
+            is_futures = multiplier > Decimal("1")
+            sym = order.instrument.symbol
+            is_tw_stock = sym.endswith(".TW") or sym.endswith(".TWO")
+            if is_tw_stock and not is_futures and self.config.min_commission > 0:
+                if is_odd_lot:
+                    min_comm = Decimal(str(self.config.min_commission_odd_lot))
+                else:
+                    min_comm = Decimal(str(self.config.min_commission))
+                if commission < min_comm:
+                    commission = min_comm
 
             # 交易稅（賣出時）— 優先使用 instrument 的稅率（若存在）
             if order.side == Side.SELL:
