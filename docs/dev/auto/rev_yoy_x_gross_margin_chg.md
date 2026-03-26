@@ -1,11 +1,11 @@
 # Auto-Discovery: rev_yoy_x_gross_margin_chg
 
-**日期**: 2026-03-27T04:35:27.318378
+**日期**: 2026-03-27T05:09:42.782017
 **方向**: revenue_quality_interaction
 **假說**: 營收成長且毛利率同步改善 = 真需求增長（非削價搶市）
 **學術依據**: Novy-Marx (2013) gross profitability + revenue momentum
 
-## 評估結果
+## L1-L5 快速評估
 
 | 指標 | 值 |
 |------|---:|
@@ -16,8 +16,28 @@
 | Max Correlation | 0.000 () |
 | Positive Years | 0/0 |
 
+## StrategyValidator: 10/13
+
+| 檢查 | 值 | 結果 |
+|------|---:|:----:|
+| universe_size | 313 | PASS |
+| cagr | +10.05% | PASS |
+| sharpe | 0.728 | PASS |
+| max_drawdown | +30.63% | PASS |
+| annual_cost_ratio | 39.52% | FAIL |
+| walkforward_positive_ratio | 80% | PASS |
+| deflated_sharpe | 0.409 | FAIL |
+| bootstrap_p_sharpe_positive | 100.0% | PASS |
+| oos_return | +36.95% | PASS |
+| vs_1n_excess | +2.49% | PASS |
+| pbo | 0.000 | PASS |
+| worst_regime | -4.07% | PASS |
+| recent_period_sharpe | -1.575 | FAIL |
+
+**10/13 通過 — 可考慮進入 Paper Trading。**
+
 ## 下一步
 
 - [ ] 人工審閱假說邏輯
-- [ ] 完整 StrategyValidator 驗證
 - [ ] 決定是否加入正式因子庫
+- [ ] 決定是否部署到 Paper Trading
