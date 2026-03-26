@@ -1,6 +1,6 @@
 # Phase Q：策略精煉 — Sharpe 修正後重新達標
 
-> 狀態：🟡 進行中
+> 狀態：🟡 Q1 代碼已實作，Q2-Q3 待辦
 > 前置：Sharpe/Sortino 公式修正（幾何→算術），revenue_momentum 從 11/13 降到 8/13
 > 目標：改進策略使 StrategyValidator 13 項通過率回到 ≥ 11/13
 
@@ -37,18 +37,24 @@ Hedged 版反而更差 — 空頭偵測犧牲太多牛市報酬，修正後的 S
 
 ## 3. 改進方案
 
-### Q1：Relaxed 參數 + StrategyValidator（🔴 進行中）
+### Q1：Relaxed 參數 + StrategyValidator（✅ 代碼已實作，Validator 10/13）
 
 ```python
 RevenueMomentumStrategy(
-    min_yoy_growth=10.0,   # 從 15 降到 10（更多候選股）
+    min_yoy_growth=10.0,   # 從 15 降到 10（更多候選股）✅ 已改
     max_holdings=20,        # 從 15 增到 20（更分散）
     enable_regime_hedge=True,
     weight_method="signal",
 )
 ```
 
-對這個版本跑完整 13 項 Validator。如果 Sharpe ≥ 0.7 + CAGR ≥ 15%，即可進入 Paper Trading。
+**已實作的額外改進**（來自 20260327_15.md 建議）：
+- 排序因子從 `revenue_yoy` 改為 `revenue_acceleration`（ICIR 0.476 > 0.188）
+- 營收因子加入 40 天公布延遲（`filter_strategy.py` 3 個函式）
+- SimBroker 漲跌停流動性檢查（±9.5%）
+- `weights_to_orders()` 成交量限制 10% ADV
+
+Validator 結果：10/13 通過（見 §4）。
 
 ### Q2：整合 Phase P 新因子
 
