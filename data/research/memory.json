@@ -2,9 +2,9 @@
   "version": 2,
   "total_rounds": 3,
   "total_pass": 3,
-  "total_fail": 1,
+  "total_fail": 0,
   "best_fitness": 22.78292982730775,
-  "last_updated": "2026-03-27T04:39:38.471524",
+  "last_updated": "2026-03-27T05:17:38.367747",
   "success_patterns": [
     {
       "name": "revenue_growth_variants",
@@ -71,6 +71,39 @@
       "avg_fitness": 7.686557611456443,
       "evidence": "auto_research_20260327_043736_98db",
       "mutation_suggestions": []
+    },
+    {
+      "name": "rev_yoy_x_gross_margin_chg",
+      "description": "營收成長且毛利率同步改善 = 真需求增長（非削價搶市）",
+      "factors": [
+        "rev_yoy_x_gross_margin_chg"
+      ],
+      "avg_icir": 0.802212325411974,
+      "avg_fitness": 22.78292982730775,
+      "evidence": "auto_research_20260327_050743_5b05",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_seasonal_deviation",
+      "description": "實際營收 vs 同行業歷史同月平均的偏離",
+      "factors": [
+        "rev_seasonal_deviation"
+      ],
+      "avg_icir": 0.5211546768200442,
+      "avg_fitness": 8.854085307120707,
+      "evidence": "auto_research_20260327_051239_adbc",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_accel_2nd_derivative",
+      "description": "營收加速度的二階導數（加速度的變化率）",
+      "factors": [
+        "rev_accel_2nd_derivative"
+      ],
+      "avg_icir": 0.47046354707733756,
+      "avg_fitness": 7.686557611456443,
+      "evidence": "auto_research_20260327_051544_6b0a",
+      "mutation_suggestions": []
     }
   ],
   "forbidden_regions": [
@@ -136,7 +169,7 @@
       "priority": "P0",
       "best_icir": 0.802212325411974,
       "hypothesis_count": 1,
-      "pass_count": 1
+      "pass_count": 2
     },
     {
       "name": "seasonal_revenue_patterns",
@@ -144,7 +177,7 @@
       "priority": "P0",
       "best_icir": 0.5211546768200442,
       "hypothesis_count": 1,
-      "pass_count": 1
+      "pass_count": 2
     },
     {
       "name": "revenue_acceleration_2nd_order",
@@ -152,7 +185,7 @@
       "priority": "P0",
       "best_icir": 0.47046354707733756,
       "hypothesis_count": 1,
-      "pass_count": 1
+      "pass_count": 2
     },
     {
       "name": "supply_chain_propagation",
@@ -205,8 +238,8 @@
   ],
   "trajectories": [
     {
-      "id": "20260327_043323_f6a2",
-      "timestamp": "2026-03-27T04:35:27.318378",
+      "id": "20260327_050743_5b05",
+      "timestamp": "2026-03-27T05:09:42.782017",
       "hypothesis": {
         "name": "rev_yoy_x_gross_margin_chg",
         "description": "營收成長且毛利率同步改善 = 真需求增長（非削價搶市）",
@@ -232,12 +265,12 @@
       "fitness": 22.78292982730775,
       "failure_step": "",
       "failure_reason": "",
-      "duration_seconds": 123.82558589999098,
+      "duration_seconds": 119.18789889999607,
       "passed": true
     },
     {
-      "id": "20260327_043529_a3ac",
-      "timestamp": "2026-03-27T04:37:34.628938",
+      "id": "20260327_051239_adbc",
+      "timestamp": "2026-03-27T05:14:34.668409",
       "hypothesis": {
         "name": "rev_seasonal_deviation",
         "description": "實際營收 vs 同行業歷史同月平均的偏離",
@@ -257,17 +290,19 @@
         "fitness": 8.854085307120707,
         "turnover": 0.8245208638347764,
         "max_corr": 0.0,
-        "positive_years": 0
+        "positive_years": 0,
+        "validator_passed": 10,
+        "validator_total": 13
       },
       "fitness": 8.854085307120707,
       "failure_step": "",
       "failure_reason": "",
-      "duration_seconds": 125.30404540000018,
+      "duration_seconds": 115.1697148999956,
       "passed": true
     },
     {
-      "id": "20260327_043736_98db",
-      "timestamp": "2026-03-27T04:39:38.470524",
+      "id": "20260327_051544_6b0a",
+      "timestamp": "2026-03-27T05:17:38.367747",
       "hypothesis": {
         "name": "rev_accel_2nd_derivative",
         "description": "營收加速度的二階導數（加速度的變化率）",
@@ -292,7 +327,7 @@
       "fitness": 7.686557611456443,
       "failure_step": "",
       "failure_reason": "",
-      "duration_seconds": 121.83455070000491,
+      "duration_seconds": 113.49079029999848,
       "passed": true
     }
   ]
