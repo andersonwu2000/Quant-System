@@ -43,7 +43,7 @@ class FinMindFeed(DataFeed):
         # Normalize universe: ensure .TW suffix for internal tracking
         self._universe = [ensure_tw_suffix(s) for s in (universe or [])]
         if cache_size is None:
-            from src.config import get_config
+            from src.core.config import get_config
 
             cache_size = get_config().data_cache_size
         self._cache: LRUCache[str, pd.DataFrame] = LRUCache(maxsize=cache_size)

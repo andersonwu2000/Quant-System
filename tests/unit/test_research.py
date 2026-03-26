@@ -54,6 +54,8 @@ class TestFactorRegistry:
         expected = {
             "momentum", "mean_reversion", "volatility", "rsi", "ma_cross", "vpt",
             "reversal", "illiquidity", "ivol", "skewness", "max_ret",
+            "alpha_2", "alpha_3", "alpha_6", "alpha_12", "alpha_33",
+            "alpha_34", "alpha_38", "alpha_44", "alpha_53", "alpha_101",
         }
         assert expected == set(FACTOR_REGISTRY.keys())
 

@@ -6,8 +6,8 @@ from decimal import Decimal
 import sqlalchemy as sa
 
 from src.data.store import metadata
-from src.domain.models import Instrument, Portfolio, Position, Side, Trade
-from src.domain.repository import PortfolioRepository
+from src.core.models import Instrument, Portfolio, Position, Side, Trade
+from src.core.repository import PortfolioRepository
 
 
 def _make_engine() -> sa.Engine:

@@ -5,7 +5,7 @@ from decimal import Decimal
 import pandas as pd
 
 from src.data.feed import HistoricalFeed
-from src.domain.models import Portfolio
+from src.core.models import Portfolio
 from src.strategy.base import Context, Strategy
 from src.strategy.engine import weights_to_orders
 from src.strategy.optimizer import equal_weight, signal_weight, OptConstraints
@@ -83,7 +83,7 @@ class TestWeightsToOrders:
         assert orders[0].quantity == Decimal("500")
 
     def test_close_position(self):
-        from src.domain.models import Instrument, Position
+        from src.core.models import Instrument, Position
 
         portfolio = Portfolio(
             cash=Decimal("950000"),
@@ -106,7 +106,7 @@ class TestWeightsToOrders:
 
     def test_ignore_small_diff(self):
         """微小差異不應產生訂單。"""
-        from src.domain.models import Instrument, Position
+        from src.core.models import Instrument, Position
 
         portfolio = Portfolio(
             cash=Decimal("950000"),

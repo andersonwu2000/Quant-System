@@ -1,11 +1,11 @@
 # 系統現況追蹤報告書
 
 > **報告日期**: 2026-03-26
-> **版本**: v4.1
-> **當前階段**: Phase F（自動化 Alpha）— F1~F4 核心完成，Phase E 待券商整合測試
+> **版本**: v5.0
+> **當前階段**: Phase A~H 全部完成，待 Shioaji API Key 進行整合測試
 > **代碼庫**: 2026-03-22 起始，master 分支
-> **架構設計**: `docs/dev/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v4.4
+> **架構設計**: `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md`
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v6.1
 
 ---
 
@@ -42,17 +42,17 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | ~125 |
-| 後端 Python LOC | ~20,000 |
-| 測試檔案 | 64 |
-| 測試 LOC | ~12,400 |
-| 測試數量 (pytest collected) | **859** |
+| 後端 Python 檔案 (src/ + strategies/) | 129 (121 src + 8 strategies) |
+| 後端 Python LOC | ~22,630 (21,937 + 714) |
+| 測試檔案 | 85 |
+| 測試 LOC | ~16,000 |
+| 測試數量 (pytest collected) | **1136** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
 | 共享套件檔案 (.ts) | 11 |
 | 共享套件 LOC | 1,257 |
-| **全系統 LOC** | **~41,250** |
+| **全系統 LOC** | **~43,000** |
 
 ### 3.2 後端模組明細
 
@@ -60,20 +60,21 @@
 |------|--------|-----|----------|
 | `src/api/` | 22 | ~3,300 | REST API (14 路由, 54 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
-| `src/alpha/` | 23 | ~4,000 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool)** |
-| `src/backtest/` | 6 | 2,192 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 + HTML/CSV 報表 + Walk-forward |
-| `src/execution/` | 10 | 1,956 | SinopacBroker + SimBroker + ExecutionService + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 |
-| `src/strategy/` | 8 | 1,401 | 策略 ABC + 因子庫 (14) + 最佳化器 (3) + 研究工具 + Registry + MultiAssetStrategy |
-| `src/portfolio/` | 4 | 757 | 組合最佳化 (6 方法) + 風險模型 (Ledoit-Wolf) + 幣別對沖 |
+| `src/alpha/` | 24 | ~4,250 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
+| `src/backtest/` | 10 | ~3,500 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL |
+| `src/execution/` | 16 | ~2,120 | `broker/` (base + simulated + sinopac) + `quote/` (sinopac) + `service.py` (ExecutionService) + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 + **TWAP 拆單 (`smart_order.py`)** + backward-compat shims |
+| `src/strategy/` | 11 | ~2,000 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 27 因子) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
+| `src/portfolio/` | 4 | ~1,260 | 組合最佳化 (14 方法: EW/InvVol/RP/MVO/BL/HRP/Robust/Resampled/CVaR/MaxDD/GMV/MaxSharpe/IndexTracking/SemiVariance) + 風險模型 (LW/GARCH/Factor Model Cov + VaR/CVaR 歷史+參數法) + James-Stein 均值收縮 + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
-| `src/domain/` | 3 | 653 | 領域模型：Instrument + Portfolio (多幣別) + Order (融資融券/零股) + Trade + RiskAlert |
+| `src/core/` | 6 | ~930 | 核心模型 (models.py) + 設定 (config.py) + 日誌 (logging.py) + Repository + **TWTradingCalendar (calendar.py)** + **trading_pipeline.py (共用交易流程)** |
+| `src/domain/` | 3 | ~30 | Backward-compat shims (re-export from `src/core/`) |
 | `src/risk/` | 4 | 573 | 風控引擎 (10 規則) + Kill Switch + RiskMonitor |
 | `src/instrument/` | 3 | 331 | InstrumentRegistry + 自動推斷 (symbol → asset_class/market/currency) |
 | `src/cli/` | 2 | 299 | CLI: backtest / server / status / factors |
 | `src/notifications/` | 6 | 246 | Discord / LINE / Telegram 通知 |
 | `src/scheduler/` | 2 | 206 | APScheduler：排程 rebalance（已接通策略→風控→下單→通知） |
-| `src/` (根) | 2 | 226 | config.py (Pydantic Settings) + logging_config.py (structlog) |
-| `strategies/` | 8 | 615 | 7 個內建策略 |
+| `src/` (根) | 2 | ~10 | Backward-compat shims: config.py, logging_config.py (re-export from `src/core/`) |
+| `strategies/` | 8 | ~800 | 7 個內建策略 (pairs_trading: Engle-Granger 共整合 + OLS hedge ratio + Kalman Filter 動態 hedge ratio) |
 
 ---
 
@@ -88,12 +89,12 @@
 | 3 | RSI Oversold | `strategies/rsi_oversold.py` | RSI < 30 超賣反彈 | 規則型 |
 | 4 | MA Crossover | `strategies/ma_crossover.py` | 快/慢均線交叉 | 規則型 |
 | 5 | Multi-Factor | `strategies/multi_factor.py` | 動量+價值+品質 (risk-parity 加權) | 規則型 |
-| 6 | Pairs Trading | `strategies/pairs_trading.py` | 統計套利：相關性配對 | 規則型 |
+| 6 | Pairs Trading | `strategies/pairs_trading.py` | 統計套利：Engle-Granger 共整合 + OLS hedge ratio / Kalman Filter 動態 hedge ratio (fallback 相關性) | 規則型 |
 | 7 | Sector Rotation | `strategies/sector_rotation.py` | 板塊相對動量輪動 | 規則型 |
 | 8 | Alpha Pipeline | `src/alpha/strategy.py` | 可配置因子管線 (中性化→正交化→IC 加權→建構) | 管線型 |
 | 9 | Multi-Asset | `src/strategy/multi_asset.py` | 兩層配置：戰術 → 資產內 Alpha → 組合最佳化 | 管線型 |
 
-### 4.2 Alpha 因子庫（14 因子）
+### 4.2 Alpha 因子庫（27 因子）
 
 **價格因子 (11)**:
 
@@ -111,13 +112,31 @@
 | skewness | `skewness()` | 負：負偏態溢酬 |
 | max_ret | `max_return()` | 負：彩券效應 |
 
-**基本面因子 (3)**:
+**Kakushadze 101 精選 (10)** — Phase I2:
 
-| 因子 | 訊號 | 數據源 |
-|------|------|--------|
-| value_pe | 低 P/E | FinMind |
-| value_pb | 低 P/B | FinMind |
-| quality_roe | 高 ROE | FinMind |
+| 因子 | 函數 | 類型 |
+|------|------|------|
+| alpha_2 | `kakushadze_alpha_2()` | volume-price 相關 |
+| alpha_3 | `kakushadze_alpha_3()` | volume-price 相關 |
+| alpha_6 | `kakushadze_alpha_6()` | volume-price 相關 |
+| alpha_12 | `kakushadze_alpha_12()` | 量價反轉 |
+| alpha_33 | `kakushadze_alpha_33()` | 日內動量 |
+| alpha_34 | `kakushadze_alpha_34()` | 波動率 regime |
+| alpha_38 | `kakushadze_alpha_38()` | 均值回歸 |
+| alpha_44 | `kakushadze_alpha_44()` | volume-price 相關 |
+| alpha_53 | `kakushadze_alpha_53()` | Williams %R 變體 |
+| alpha_101 | `kakushadze_alpha_101()` | 日內動量 |
+
+**基本面因子 (6)** — 含 Phase I1 Fama-French 補齊:
+
+| 因子 | 訊號 | 數據源 | 論文 |
+|------|------|--------|------|
+| value_pe | 低 P/E | FinMind | — |
+| value_pb | 低 P/B | FinMind | — |
+| quality_roe | 高 ROE | FinMind | — |
+| size | -log(market_cap)，小市值溢酬 | FinMind `market_cap` | Fama-French (1993) SMB |
+| investment | 負資產成長，保守投資溢酬 | FinMind `total_assets` | Fama-French (2015) CMA |
+| gross_profit | (Revenue - COGS) / Total Assets | FinMind 財報 | Novy-Marx (2013) |
 
 ### 4.3 數據源
 
@@ -156,9 +175,10 @@
 | SinopacQuoteManager | `sinopac_quote.py` | 即時行情訂閱 (tick/bidask STK + FOP callbacks) | ✅ 程式碼 |
 | ExecutionService | `execution_service.py` | 模式路由 (backtest/paper/live) + 下單前檢查 | ✅ |
 | OrderManager | `oms.py` | 訂單生命週期管理 + 成交記錄 | ✅ |
-| Market Hours | `market_hours.py` | 台股時段驗證 + 盤外委託佇列 | ✅ |
+| Market Hours | `market_hours.py` | 台股時段驗證 + 盤外委託佇列 + 國定假日排除 (TWTradingCalendar) | ✅ |
 | Reconcile | `reconcile.py` | EOD 持倉對帳 (diff + auto_correct) | ✅ |
 | StopOrderManager | `stop_order.py` | 軟體觸價委託 (stop-loss / stop-profit) | ✅ |
+| TWAPSplitter | `smart_order.py` | TWAP 拆單引擎 (大單拆 N 筆等量子單，降低 market impact) | ✅ |
 
 **SinopacBroker 擴展功能**:
 - `query_trading_limits()` — 交易額度/融資融券額度預檢
@@ -166,7 +186,7 @@
 - `check_dispositions()` — 處置股清單查詢
 - 非阻塞下單 (`timeout=0`, ~12ms vs ~136ms)
 
-### 4.6 組合最佳化（6 方法）
+### 4.6 組合最佳化（14 方法）
 
 | 方法 | 說明 |
 |------|------|
@@ -176,8 +196,15 @@
 | Mean-Variance (MVO) | Markowitz 均值變異數 |
 | Black-Litterman (BL) | 支援 `BLView` 主觀觀點 |
 | Hierarchical Risk Parity (HRP) | 階層式風險平價 |
+| Robust (Worst-case) | 橢圓不確定集穩健最佳化 |
+| Resampled (Michaud) | 蒙地卡羅重取樣平均 |
+| CVaR Optimization | 最小化 CVaR (Rockafellar-Uryasev LP 重構) |
+| Max Drawdown | 最小化最大回撤（歷史模擬 SLSQP） |
+| Global Minimum Variance (GMV) | 最小化組合波動率（獨立入口） |
+| Maximum Sharpe (MaxSharpe) | Dinkelbach 分數規劃嚴格 MSR |
+| Index Tracking | LASSO 稀疏追蹤（Benidis/Feng/Palomar） |
 
-**風險模型**: 歷史 / EWM / Ledoit-Wolf 收縮共變異數 + 邊際風險貢獻。
+**風險模型**: 歷史 / EWM / Ledoit-Wolf 收縮 / GARCH(1,1) / PCA 因子模型共變異數 + 邊際風險貢獻 + VaR/CVaR (歷史+參數法) + James-Stein 均值收縮。
 
 ### 4.7 戰術配置
 
@@ -195,14 +222,14 @@
 
 ## 5. API 架構
 
-### 5.1 REST 端點（14 路由模組, 54 端點）
+### 5.1 REST 端點（14 路由模組, 57 端點）
 
 | 模組 | 端點數 | 前綴 | 關鍵端點 |
 |------|--------|------|---------|
 | auth | 3 | `/api/v1/auth` | login, register, refresh |
 | admin | 5 | `/api/v1/admin` | 用戶 CRUD, 審計日誌, 配置 |
 | portfolio | 8 | `/api/v1/portfolio` | CRUD + rebalance-preview + 交易歷史 |
-| backtest | 5 | `/api/v1/backtest` | 回測 + walk-forward + 歷史結果 |
+| backtest | 8 | `/api/v1/backtest` | 回測 + walk-forward + randomized + PBO + stress-test + 歷史結果 |
 | strategies | 4 | `/api/v1/strategies` | 列表 + 啟停控制 |
 | orders | 2 | `/api/v1/orders` | 手動下單 + 訂單歷史 |
 | risk | 4 | `/api/v1/risk` | 規則狀態 + kill switch + 告警 |
@@ -278,17 +305,17 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 
 ## 7. 測試覆蓋
 
-### 7.1 後端測試（856 tests）
+### 7.1 後端測試（1,054 tests）
 
 | 分類 | 檔案數 | 測試數 | 說明 |
 |------|--------|--------|------|
-| Execution 層 | 7 | ~170 | SinopacBroker, QuoteManager, ExecutionService, MarketHours, Reconcile, StopOrder, ShioajiFeed |
-| Alpha 層 | 15 | ~163 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety)** |
-| 策略 + 回測 | 8 | ~120 | 各策略, 引擎, 分析, Walk-forward |
+| Execution 層 | 8 | ~184 | SinopacBroker, QuoteManager, ExecutionService, MarketHours, Reconcile, StopOrder, ShioajiFeed, **TWAPSplitter** |
+| Alpha 層 | 20 | ~225 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety/backtest_gate, OOS decay, net alpha filter)**, Kakushadze 101, Momentum Crash, **Fundamental Factors (size/investment/gross_profit)** |
+| 策略 + 回測 | 12 | ~147 | 各策略, 引擎, 分析, Walk-forward, Randomized, PBO, K-Fold, StressTest |
 | 風控 | 3 | ~60 | 規則, Kill Switch, Monitor |
 | API + 整合 | 6 | ~100 | REST 端點, Portfolio API, Auth, WebSocket |
 | 數據 | 5 | ~80 | Yahoo, FinMind, FRED, Shioaji, Scanner |
-| 領域模型 | 6 | ~50 | Order, Portfolio, Instrument, OMS |
+| 核心 + 領域模型 | 7 | ~56 | Order, Portfolio, Instrument, OMS, **TradingPipeline** |
 | 其他 | 7 | ~46 | Config, Notifications, 雜項 |
 
 ### 7.2 前端測試
@@ -372,12 +399,12 @@ volumes:
 
 | 功能 | 狀態 | 備註 |
 |------|------|------|
-| 回測引擎 | ✅ 完成 | 多資產/多幣別/FX 時序/40+ 指標/Walk-forward |
+| 回測引擎 | ✅ 完成 | 多資產/多幣別/FX 時序/40+ 指標/Walk-forward/Randomized/PBO(CSCV)/K-Fold/StressTest |
 | 策略框架 | ✅ 完成 | 9 策略 + Strategy ABC + Registry |
 | 數據源 | ✅ 完成 | Yahoo + FinMind + FRED + Shioaji (kbars/ticks/snapshot) |
-| Alpha 研究 | ✅ 完成 | 14 因子/中性化/正交化/Rolling IC/Pipeline/Regime/Attribution |
+| Alpha 研究 | ✅ 完成 | 24 因子 (含 10 Kakushadze 101)/中性化/正交化/Rolling IC/Pipeline/Regime/Attribution/Momentum Crash 防護 |
 | 戰術配置 | ✅ 完成 | 宏觀四因子 + 跨資產信號 + TacticalEngine |
-| 組合最佳化 | ✅ 完成 | 6 方法 + Ledoit-Wolf + 風險貢獻 |
+| 組合最佳化 | ✅ 完成 | 14 方法 (含 CVaR/MaxDD/Robust/Resampled/GMV/MaxSharpe/IndexTracking/SemiVariance) + LW/GARCH/Factor Cov + VaR/CVaR + James-Stein + 風險貢獻 |
 | 幣別對沖 | ✅ 完成 | 分級對沖 + HedgeRecommendation |
 | 兩層整合 | ✅ 完成 | MultiAssetStrategy (allocation → alpha → optimizer) |
 | 風控引擎 | ✅ 完成 | 10 規則 + Kill Switch + 跨資產規則 |
@@ -395,7 +422,7 @@ volumes:
 | SinopacBroker | ✅ 程式碼 | 下單/撤單/改單/持倉/帳務/成交回報/斷線重連 |
 | ExecutionService | ✅ 整合 | 模式路由 + AppState 接通 + startup 初始化 |
 | 非阻塞下單 | ✅ 程式碼 | `timeout=0` (~12ms) |
-| 交易時段管理 | ✅ 完成 | 盤前/盤中/零股/定盤 + 盤外佇列 |
+| 交易時段管理 | ✅ 完成 | 盤前/盤中/零股/定盤 + 盤外佇列 + **TWTradingCalendar (國定假日排除)** |
 | EOD 對帳 | ✅ 完成 | reconcile + auto_correct |
 | 觸價委託 | ✅ 完成 | StopOrderManager (stop-loss/profit) |
 | 融資融券 | ✅ 模型 | OrderCondition (Cash/Margin/Short/DayTrade) + StockOrderLot |
@@ -414,15 +441,16 @@ volumes:
 | AutoAlphaConfig | ✅ 完成 | 排程/篩選/安全閾值配置 (F1a) |
 | UniverseSelector | ✅ 完成 | Scanner × 靜態約束 × 處置股排除 (F1b) |
 | AlphaResearcher | ✅ 完成 | AlphaPipeline + Regime + 持久化 (F1c) |
-| AlphaDecisionEngine | ✅ 完成 | ICIR/Hit Rate 篩選 + Regime 調適 (F1d) |
+| AlphaDecisionEngine | ✅ 完成 | ICIR/Hit Rate 篩選 + Regime 調適 + **Net Alpha 過濾** (F1d) |
+| BacktestGate | ✅ 完成 | Stage 3.5: 執行前回測驗證 (Sharpe/成本門檻) |
 | AlphaExecutor | ✅ 完成 | weights→orders→risk→execution→performance (F1e) |
-| AlphaScheduler | ✅ 完成 | 7 排程 job: 08:30~13:35 (F1f) |
+| AlphaScheduler | ✅ 完成 | 8 排程 job: 08:30~13:35 + backtest gate (F1f) |
 | AlphaStore | ✅ 完成 | DB 持久化: ResearchSnapshot + FactorScore (F2a) |
 | AlertManager | ✅ 完成 | Regime/IC/回撤告警 → 通知 (F2b) |
-| SafetyChecker | ✅ 完成 | 回撤熔斷 5% + 連續虧損暫停 5 天 (F2c) |
+| SafetyChecker | ✅ 完成 | 回撤熔斷 5% + 連續虧損暫停 5 天 + **Kill Switch 恢復機制** (3 天冷靜→50%~100% 漸進恢復) (F2c) |
 | Auto-Alpha API | ✅ 完成 | 10 端點 (F3a) |
-| FactorPerformanceTracker | ✅ 完成 | 累計 IC + 回撤 per factor (F4b) |
-| DynamicFactorPool | ✅ 完成 | ICIR 排名自動新增/移除因子 (F4c) |
+| FactorPerformanceTracker | ✅ 完成 | 累計 IC + 回撤 per factor (F4b)；已整合至 AlphaDecisionEngine + AlphaScheduler |
+| DynamicFactorPool | ✅ 完成 | ICIR 排名自動新增/移除因子 (F4c)；已整合至 AlphaDecisionEngine.decide() + AlphaScheduler.run_full_cycle() |
 | REGIME_FACTOR_BIAS | ✅ 完成 | Bull/Bear/Sideways 因子偏好矩陣 (F4a) |
 | DB Migration (F2d) | 🟡 待實作 | Alembic 005_auto_alpha.py |
 | WS auto-alpha 頻道 (F3b) | ✅ 完成 | 即時推送流水線進度 (stage_started/stage_completed/decision/execution/alert/error) |
@@ -477,112 +505,196 @@ volumes:
 
 ## 11. 學術基準差距分析
 
-> 參考書籍：*Portfolio Optimization: Theory and Application* (D. P. Palomar, 608 頁)
-> 比對範圍：書中 15 章涵蓋的技術 vs 本系統現有實作
+> **參考書籍**：*Portfolio Optimization: Theory and Application* (D. P. Palomar, 608 頁, 15 章)
+> **參考論文**（已下載至 `docs/ref/`）：
+> - Rockafellar & Uryasev (2000). *Optimization of Conditional Value-at-Risk.* — CVaR 最佳化奠基論文
+> - Bailey, Borwein, López de Prado, Zhu (2015). *The Probability of Backtest Overfitting.* — CSCV 回測過擬合檢測
+> - López de Prado (2016). *Building Diversified Portfolios that Outperform Out of Sample.* — HRP 方法論
+> **P1 論文**（已下載至 `docs/ref/`）：
+> - Jorion (1986). *Bayes-Stein Estimation for Portfolio Analysis.* — 均值收縮
+> - Ledoit & Wolf (2004). *Honey, I Shrunk the Sample Covariance Matrix.* — 線性收縮（已實作）
+> - Ledoit & Wolf (2014). *Nonlinear Shrinkage of the Covariance Matrix for Portfolio Selection.* — 非線性收縮
+> - Wang, Zhou, Ying, Palomar (2024). *Efficient High-Order Portfolios Design via the Skew-t Distribution.* — MVSK
+> - Engle (1982). *Autoregressive Conditional Heteroscedasticity.* — ARCH/GARCH
+> - Benidis, Feng, Palomar (2018). *Sparse Portfolios for High-Dimensional Financial Index Tracking.* — 稀疏追蹤
+> **比對範圍**：書中 15 章 + 9 篇論文 vs 本系統現有實作
 
-### 11.1 數據建模層（書 Part I, Ch.2-5）
-
-| 書中技術 | 系統現況 | 差距 | 嚴重度 | 說明 |
-|----------|---------|------|--------|------|
-| 非高斯分布建模 (skewed-t, GH) | ❌ 未實作 | 缺少 | 中 | 現行假設常態分布；書中 Ch.2 強調金融數據有厚尾+偏態 |
-| Heavy-tailed ML 估計 (Tyler's M-estimator) | ❌ 未實作 | 缺少 | 中 | 替代 Gaussian ML，對離群值更穩健 |
-| 均值收縮估計 (James-Stein / grand-mean) | ❌ 未實作 | 缺少 | 中 | 書中 Ch.3 證明 JS 收縮 MSE 恆優於樣本均值 |
-| 共變異數收縮 (Ledoit-Wolf) | ✅ 已實作 | — | — | `risk_model.py` 支援 LW 收縮 |
-| 共變異數非線性收縮 (RMT-based) | ❌ 未實作 | 缺少 | 低 | Ledoit-Wolf (2017) 非線性版本，估計誤差更低 |
-| 因子模型共變異數 (PCA / Fama-French / Barra) | ⚠️ 部分 | 不足 | 中 | Alpha 因子用於信號但未用於共變異數分解；書中建議 Σ = BΣ_fB^T + Ψ |
-| Black-Litterman 觀點融合 | ✅ 已實作 | — | — | `BLView` + WLS 公式 |
-| GARCH / Stochastic Volatility | ❌ 未實作 | 缺少 | 中 | 書中 Ch.4 強調波動率聚集 (volatility clustering)，對動態風險管理重要 |
-| Kalman Filter 均值/波動率估計 | ❌ 未實作 | 缺少 | 低 | 書中推薦用於時變參數估計，替代滾動窗口 |
-| 圖模型 (Graph Learning for Covariance) | ❌ 未實作 | 缺少 | 低 | Ch.5 — 稀疏精度矩陣估計，學術前沿 |
-
-### 11.2 組合最佳化層（書 Part II, Ch.6-15）
+### 11.1 數據建模層（書 Part I, Ch.2–5）
 
 | 書中技術 | 系統現況 | 差距 | 嚴重度 | 說明 |
 |----------|---------|------|--------|------|
-| Equal Weight (1/N) | ✅ | — | — | `EQUAL_WEIGHT` |
-| Global Minimum Variance (GMV) | ⚠️ 近似 | 不足 | 低 | MVO 可達成，但無獨立 GMV 入口 |
-| Inverse Volatility | ✅ | — | — | `INVERSE_VOL` |
-| Risk Parity (等風險貢獻) | ✅ | — | — | `RISK_PARITY` |
-| Mean-Variance (Markowitz) | ✅ | — | — | `MEAN_VARIANCE` |
-| Maximum Sharpe Ratio | ⚠️ 近似 | 不足 | 低 | MVO 設 target_return=None 可近似，但非嚴格分數規劃 (Dinkelbach) |
-| Black-Litterman | ✅ | — | — | `BLACK_LITTERMAN` |
-| HRP (Hierarchical Risk Parity) | ✅ | — | — | `HRP` |
-| **高階矩組合 (MVSK)** | ❌ 未實作 | **缺少** | **高** | 書 Ch.9 — 納入偏態+峰態的最佳化，已有高效演算法 (SCA-Q-MVSK) |
-| **CVaR/ES 組合** | ❌ 未實作 | **缺少** | **高** | 書 Ch.10 — 條件風險值最佳化，業界風控標準 |
-| **Drawdown 組合 (CDaR/MaxDD)** | ❌ 未實作 | **缺少** | **中** | 書 Ch.10 — 以最大回撤為風險度量的最佳化 |
-| Downside Risk / Semi-variance | ❌ 未實作 | 缺少 | 中 | 書 Ch.10 — 只懲罰下行波動 |
-| Utility-Based (指數/對數/CRRA) | ❌ 未實作 | 缺少 | 低 | 書 Ch.7 — 效用函數最佳化 |
-| Kelly Criterion | ❌ 未實作 | 缺少 | 低 | 書 Ch.7 — 最大化長期幾何成長率 |
-| **Index Tracking (稀疏追蹤)** | ❌ 未實作 | **缺少** | **中** | 書 Ch.13 — 用少數標的複製指數 (sparse regression)，ETF 管理必備 |
-| Enhanced Index Tracking | ❌ 未實作 | 缺少 | 低 | 追蹤 + alpha |
-| **Robust 組合 (Worst-case)** | ❌ 未實作 | **缺少** | **高** | 書 Ch.14 — 參數不確定性下的穩健最佳化 |
-| Portfolio Resampling | ❌ 未實作 | 缺少 | 中 | Michaud resampling — 蒙地卡羅取樣後取平均 |
-| **Pairs Trading (協整合+Kalman)** | ⚠️ 基礎 | **不足** | **中** | 現有 `pairs_trading.py` 只用相關性；書 Ch.15 用協整合 + Kalman Filter + Ornstein-Uhlenbeck |
-| Graph-Based Portfolios (HERC, NCO) | ⚠️ 部分 | 不足 | 低 | HRP 已有，但缺 HERC (等風險貢獻版) 和 NCO (Nested Cluster) |
-| Deep Learning Portfolios | ❌ 未實作 | 缺少 | 低 | 書 Ch.16 — 端到端 DL 權重預測，學術前沿 |
+| 非高斯分布建模 (skewed-t, GH) | ❌ 未實作 | 缺少 | 中 | 書 Ch.2 證實金融數據有厚尾+偏態；系統隱含假設常態分布 |
+| Heavy-tailed ML 估計 (Tyler's M-estimator) | ❌ 未實作 | 缺少 | 中 | 替代 Gaussian ML，對離群值更穩健（參考 `fitHeavyTail` vignette） |
+| 均值收縮估計 (James-Stein / grand-mean) | ✅ Phase G2c | — | — | `shrink_mean()` in `risk_model.py`：Jorion (1986) 公式，`OptimizerConfig.shrink_mean` 整合 |
+| 共變異數收縮 (Ledoit-Wolf linear) | ✅ 已實作 | — | — | `risk_model.py` 支援 LW 線性收縮（target: scaled identity / diagonal） |
+| 共變異數非線性收縮 (RMT) | ❌ 未實作 | 缺少 | 中 | **Ledoit & Wolf (2014)**: 每個 eigenvalue 獨立收縮 d(λᵢ)=α/(λᵢ\|s(λᵢ)\|²), N=500 T=120 OOS variance 比線性低 10-20%. Python: `analytical_shrinkage` |
+| 因子模型共變異數 (PCA / Fama-French / Barra) | ✅ Phase G4b | — | — | `factor_model_covariance()` in `risk_model.py`：PCA 因子模型 Σ = BΣ_fB^T + Ψ |
+| Black-Litterman 觀點融合 | ✅ 已實作 | — | — | `BLView` + WLS 公式（書 Ch.3 eq.(3.19)） |
+| GARCH / Stochastic Volatility | ✅ Phase G4a | — | — | `garch_covariance()` in `risk_model.py`：GARCH(1,1) per-asset 波動率 → DCC-like 共變異數 |
+| Kalman Filter 均值/波動率估計 | ❌ 未實作 | 缺少 | 低 | 書 Ch.4 推薦替代滾動窗口，用於時變參數 |
+| 圖模型 (Graph Learning for Σ) | ❌ 未實作 | 缺少 | 低 | 書 Ch.5：稀疏精度矩陣估計，學術前沿 |
 
-### 11.3 回測方法論（書 Ch.8）
+### 11.2 組合最佳化層（書 Part II, Ch.6–15）
 
-| 書中技術 | 系統現況 | 差距 | 嚴重度 | 說明 |
-|----------|---------|------|--------|------|
-| Walk-forward Backtest | ✅ | — | — | `walk_forward.py` |
-| Vanilla (Train/Test Split) | ✅ | — | — | 標準回測 |
-| **Seven Sins 防護** | ⚠️ 部分 | 不足 | **高** | 見下方詳述 |
-| k-fold Cross-validation Backtest | ❌ 未實作 | 缺少 | 中 | 書中推薦替代單次回測 |
-| **Multiple Randomized Backtest** | ❌ 未實作 | **缺少** | **高** | 隨機子集資產+時段的多次回測，產出績效分布 (非單一數字) |
-| Synthetic Data Backtest (Stress Test) | ❌ 未實作 | 缺少 | 中 | 產生牛/熊市合成數據做壓力測試 |
-| Backtest Overfitting Detection | ❌ 未實作 | 缺少 | 中 | Bailey et al. (2017) PBO (Probability of Backtest Overfitting) |
+| 書中技術 | 系統現況 | 差距 | 嚴重度 | 論文/章節依據 |
+|----------|---------|------|--------|-------------|
+| Equal Weight (1/N) | ✅ | — | — | |
+| Global Minimum Variance (GMV) | ✅ Phase G5d | — | — | `OptimizationMethod.GMV` 獨立入口 |
+| Inverse Volatility | ✅ | — | — | |
+| Risk Parity | ✅ | — | — | 參考 `riskParityPortfolio` vignette 改進 |
+| Mean-Variance (Markowitz) | ✅ | — | — | |
+| Maximum Sharpe Ratio | ✅ Phase G5c | — | — | Dinkelbach 分數規劃 SLSQP 嚴格 MSR |
+| Black-Litterman | ✅ | — | — | |
+| HRP | ✅ | — | — | López de Prado (2016) — 已實作核心 |
+| **CVaR/ES 組合** | ✅ 已實作 | — | — | Rockafellar & Uryasev (2000) LP 重構；`compute_var/compute_cvar` + `_optimize_cvar`；BacktestResult 含 `var_95/cvar_95` |
+| **Drawdown 組合 (CDaR/MaxDD)** | ✅ 已實作 | — | — | `_optimize_max_drawdown` 歷史模擬 SLSQP |
+| Downside Risk / Semi-variance | ✅ Phase H2 | — | — | `OptimizationMethod.SEMI_VARIANCE` — semi-covariance SLSQP |
+| **MVSK 高階矩** | ❌ 未實作 | **缺少** | **中** | **Wang et al. (2024)**: RFPA 演算法, O(N²) 複雜度 (vs Q-MVSK O(N³)). 用 ghMST skew-t 分布建模, N=400 < 1 秒. CRRA utility λ=(1,ξ/2,ξ(ξ+1)/6,ξ(ξ+1)(ξ+2)/24), ξ=6. 見 `highOrderPortfolios` R 套件 |
+| **Robust 組合 (Worst-case)** | ✅ Phase G2a | — | — | `_optimize_robust` 橢圓不確定集 SLSQP |
+| **Index Tracking (稀疏追蹤)** | ✅ Phase G5b | — | — | `_optimize_index_tracking` LASSO 稀疏追蹤 (Benidis/Feng/Palomar) |
+| Portfolio Resampling | ✅ 已實作 | — | — | `_optimize_resampled` Michaud 蒙地卡羅重取樣 |
+| **Pairs Trading (協整合+Kalman)** | ✅ G6a+H3 | — | — | Engle-Granger 共整合 + OLS hedge ratio + Kalman Filter 動態 hedge ratio (`method="kalman"`) |
+| Graph-Based (HERC, NCO) | ⚠️ 部分 | 不足 | 低 | HRP 已有但缺 HERC/NCO |
+| Deep Learning Portfolios | ❌ 未實作 | 缺少 | 低 | 書 Ch.16：端到端 DL，學術實驗階段 |
+| Utility-Based / Kelly | ❌ 未實作 | 缺少 | 低 | 書 Ch.7 |
 
-**七宗罪防護現況**：
+### 11.3 回測方法論（書 Ch.8 + Bailey et al. 2015）
 
-| Sin | 描述 | 系統防護 | 狀態 |
-|-----|------|---------|------|
-| #1 Survivorship Bias | 使用存活標的回測 | 無：Yahoo/FinMind 數據含存活偏差 | ❌ |
-| #2 Look-ahead Bias | 未來資訊洩漏 | ✅：Context 時間截斷 + HistoricalFeed.set_current_date() | ✅ |
-| #3 Storytelling Bias | 事後合理化 | 無程式化防護（需使用者紀律） | ⚠️ |
-| #4 Data Snooping | 過度參數搜索 | 無：缺少 PBO / deflated Sharpe ratio 工具 | ❌ |
-| #5 Turnover & Cost | 忽略交易成本 | ✅：SimBroker per-instrument 費率 + 滑點 | ✅ |
-| #6 Outliers | 極端值影響 | ⚠️：因子有 winsorize，但回測引擎未處理價格異常 | ⚠️ |
-| #7 Shorting Cost | 忽略融券成本 | ⚠️：Order 模型支援融券，但回測未計算借券費 | ⚠️ |
+| 技術 | 系統現況 | 差距 | 嚴重度 | 論文依據 |
+|------|---------|------|--------|---------|
+| Walk-forward Backtest | ✅ | — | — | |
+| Vanilla (Train/Test Split) | ✅ | — | — | |
+| **Multiple Randomized Backtest** | ✅ Phase G3a | — | — | `src/backtest/randomized.py` + API `POST /api/v1/backtest/randomized`：隨機抽取資產子集 + 隨機時段 → N 次回測 → 績效分布 (Sharpe/Return/Drawdown) + P(Sharpe>0) |
+| **CSCV (PBO)** | ✅ Phase G3b | — | — | `src/backtest/overfitting.py` + API `POST /api/v1/backtest/pbo`：Bailey et al. (2017) CSCV 實作，S 等分 → C(S,S/2) 組合 → IS/OOS 排名比較 → PBO |
+| **Deflated Sharpe Ratio** | ✅ Phase H1 | — | — | `deflated_sharpe()` + `min_backtest_length()` — Bailey et al. (2014) 多重測試校正 |
+| **Minimum Backtest Length (MinBTL)** | ❌ 未實作 | **缺少** | **中** | **Bailey & López de Prado (2014)**: MinBTL = (1 + (1-γ₃SR̂+(γ₄-1)/4 SR̂²)(z_α/(SR̂-SR*))²). 給定 N 策略數→最短回測所需觀察數. 實作: ~15 行 Python. |
+| k-fold Cross-validation | ✅ Phase G3c | — | — | `src/backtest/kfold.py`：k 折時序交叉驗證，各折獨立 BacktestResult + avg/std Sharpe |
+| Synthetic Data Stress Test | ✅ Phase G3d | — | — | `src/backtest/stress_test.py` + API `POST /api/v1/backtest/stress-test`：4 預定義情境 (Bear Market / High Vol / Flash Crash / Regime Change) |
 
-### 11.4 績效衡量（書 Ch.6）
+**七宗罪防護現況**（書 Ch.8.2, Luo et al. 2014）：
 
-| 指標 | 系統現況 | 差距 |
-|------|---------|------|
-| Sharpe Ratio | ✅ | — |
-| Sortino Ratio | ✅ | — |
-| Calmar Ratio | ✅ | — |
-| Max Drawdown | ✅ | — |
-| Annualized Return/Vol | ✅ | — |
-| Information Ratio | ✅ | — |
-| **CVaR (Conditional VaR)** | ❌ | 缺少 — 業界尾部風險標準指標 |
-| **VaR (Value at Risk)** | ❌ | 缺少 |
-| Omega Ratio | ❌ | 缺少 |
-| Rolling Sharpe | ❌ | 缺少 — 書中建議用於檢視穩定性 |
-| Turnover 統計 | ✅ | — |
+| Sin | 描述 | 系統防護 | 狀態 | 改善方案 |
+|-----|------|---------|------|---------|
+| #1 Survivorship Bias | 用存活標的回測 | ✅ G8: 存活者偏差偵測 + 警告標記 | ⚠️ | 偵測+警告已實作；完整解需 point-in-time universe |
+| #2 Look-ahead Bias | 未來資訊洩漏 | ✅ Context 時間截斷 + `set_current_date()` | ✅ | — |
+| #3 Storytelling Bias | 事後合理化 | ✅ PBO (CSCV) 可客觀量化過擬合 | ✅ | — |
+| #4 Data Snooping | 過度參數搜索 | ✅ PBO + Randomized Backtest + k-fold CV + DSR | ✅ | — |
+| #5 Turnover & Cost | 忽略交易成本 | ✅ SimBroker per-instrument 費率 + sqrt 滑點 | ✅ | — |
+| #6 Outliers | 極端值影響 | ✅ G8: 因子 winsorize + 回測引擎價格異常偵測 | ✅ | — |
+| #7 Shorting Cost | ✅ G8b | SimConfig.short_borrow_rate 已實作，賣出時自動加計日借券成本 | ✅ | SimBroker `short_borrow_rate` 參數 (annual rate / 252) |
 
-### 11.5 優先改善建議
+### 11.4 HRP 改進空間（López de Prado 2016）
 
-根據書中理論重要性 × 實務影響，建議以下改善順序：
+現有 HRP 實作已涵蓋論文核心：hierarchical clustering → quasi-diagonalization → recursive bisection。
+但論文指出幾個系統尚未處理的細節：
 
-| 優先級 | 項目 | 書中章節 | 預估難度 | 價值 |
-|--------|------|---------|---------|------|
-| 🔴 P0 | CVaR 風險度量 + CVaR 組合最佳化 | Ch.10 | 中 | 業界標準尾部風險管理 |
-| 🔴 P0 | Robust 組合 (worst-case/ellipsoidal) | Ch.14 | 中 | 參數估計誤差下的穩健決策 |
-| 🔴 P0 | Multiple Randomized Backtest | Ch.8 | 低 | 避免單次回測誤判，輸出績效分布 |
-| 🟡 P1 | MVSK 高階矩組合 | Ch.9 | 高 | 納入偏態/峰態，改善非高斯環境績效 |
-| 🟡 P1 | 均值收縮估計 (James-Stein) | Ch.3 | 低 | 改善期望報酬估計，直接提升 MVO/BL |
-| 🟡 P1 | GARCH 波動率模型 | Ch.4 | 中 | 動態風險估計，改善 risk parity 即時性 |
-| 🟡 P1 | Index Tracking | Ch.13 | 中 | 稀疏追蹤指數，ETF/基金管理必備 |
-| 🟡 P1 | 因子模型共變異數 (PCA-structured) | Ch.3 | 中 | 大 N 小 T 下更穩定的共變異數估計 |
-| 🟢 P2 | Pairs Trading 升級 (協整合+Kalman) | Ch.15 | 中 | 現有策略只用相關性，需升級為嚴格統計套利 |
-| 🟢 P2 | Downside Risk / Semi-variance 組合 | Ch.10 | 低 | 只懲罰下行，更符合投資者心理 |
-| 🟢 P2 | Portfolio Resampling (Michaud) | Ch.14 | 低 | 蒙地卡羅取樣後取平均，減少參數敏感度 |
-| 🟢 P2 | k-fold / PBO 回測改良 | Ch.8 | 中 | 多折交叉驗證 + 過擬合概率檢測 |
-| 🔵 P3 | 非線性共變異數收縮 (RMT) | Ch.3 | 高 | Ledoit-Wolf 2017 改良版 |
-| 🔵 P3 | Graph-based 組合 (HERC/NCO) | Ch.12 | 中 | HRP 擴展 |
-| 🔵 P3 | Deep Learning Portfolios | Ch.16 | 高 | 端到端 DL，學術實驗階段 |
-| 🔵 P3 | Kelly Criterion | Ch.7 | 低 | 幾何成長率最大化 |
+| 論文要點 | 系統現況 | 改善 |
+|----------|---------|------|
+| Distance metric: d(i,j) = √(0.5(1-ρ_{i,j})) | ✅ 已使用相關距離 | — |
+| Linkage: single linkage | ⚠️ 需確認（scipy 預設 single） | 驗證 linkage 方法 |
+| Out-of-sample 穩定性 | 未驗證 | 用 Multiple Randomized Backtest 比較 HRP vs MVO |
+| Monte Carlo 模擬驗證 | 未做 | 論文用 10,000 次模擬證明 HRP > CLA；系統應複現 |
+
+### 11.5 績效衡量缺口（書 Ch.6 + Rockafellar 2000）
+
+| 指標 | 系統現況 | 差距 | 說明 |
+|------|---------|------|------|
+| Sharpe Ratio | ✅ | — | |
+| Sortino Ratio | ✅ | — | |
+| Calmar Ratio | ✅ | — | |
+| Max Drawdown | ✅ | — | |
+| Annualized Return/Vol | ✅ | — | |
+| Information Ratio | ✅ | — | |
+| Turnover 統計 | ✅ | — | |
+| **CVaR (Conditional VaR)** | ✅ Phase G1 | — | `compute_cvar()` 歷史+參數法；BacktestResult 含 `cvar_95` |
+| **VaR (Value at Risk)** | ✅ Phase G1 | — | `compute_var()` 歷史+參數法；BacktestResult 含 `var_95` |
+| **EVaR (Entropic VaR)** | ❌ | **缺少** | 書 Ch.10：比 CVaR 更嚴格的 coherent risk measure |
+| Omega Ratio | ✅ G7 | `compute_omega_ratio()` in analytics.py | |
+| Rolling Sharpe | ✅ G7 | `compute_rolling_sharpe()` in analytics.py (63-day window) | 書 Ch.6：穩定性檢視 |
+| **Deflated Sharpe Ratio** | ✅ H1 | `deflated_sharpe()` + `min_backtest_length()` in analytics.py | Bailey et al. (2014)：校正多重測試效應後的 Sharpe |
+
+### 11.6 優先改善建議（論文驅動）
+
+根據 3 篇 P0 論文的具體方法 × 系統缺口 × 實務價值：
+
+| 優先級 | 項目 | 論文/章節 | 狀態 | 預估難度 |
+|--------|------|---------|------|---------|
+| ✅ G1 | **CVaR 風險度量 + 最佳化** | Rockafellar & Uryasev (2000) | `OptimizationMethod.CVAR` + `compute_var/cvar` | 中 |
+| ✅ G3b | **CSCV 回測過擬合檢測 (PBO)** | Bailey et al. (2015) Algorithm 2.3 | `src/backtest/overfitting.py` | 中 |
+| ✅ G3a | **Multiple Randomized Backtest** | 書 Ch.8.4.4 | `src/backtest/randomized.py` | 低 |
+| ✅ G1 | **VaR/CVaR 績效指標** | Rockafellar (2000) | `var_95`, `cvar_95` in BacktestResult | 低 |
+| ✅ G2a | **Robust 組合 (worst-case)** | 書 Ch.14 | `_optimize_robust` 橢圓不確定集 | 中 |
+| ✅ G2b | **Portfolio Resampling (Michaud)** | 書 Ch.14 | `_optimize_resampled` | 低 |
+| ✅ G2c | **均值收縮 (James-Stein)** | 書 Ch.3 (Jorion 1986) | `shrink_mean()` in risk_model.py | 低 |
+| ✅ G4a | **GARCH 波動率** | 書 Ch.4 | `garch_covariance()` in risk_model.py | 中 |
+| ✅ G4b | **因子模型共變異數** | 書 Ch.3 eq.(3.15) | `factor_model_covariance()` PCA | 中 |
+| ✅ G5b | **Index Tracking** | 書 Ch.13 (Benidis/Feng/Palomar) | `_optimize_index_tracking` LASSO | 中 |
+| ✅ G5c | **Maximum Sharpe** | 書 Ch.6 (Dinkelbach) | `_optimize_max_sharpe` | 低 |
+| ✅ G5d | **GMV** | 書 Ch.6 | `OptimizationMethod.GMV` | 低 |
+| ✅ G6a | **Pairs Trading 共整合** | 書 Ch.15 | Engle-Granger + OLS hedge ratio | 中 |
+| ✅ G7 | **Omega Ratio + Rolling Sharpe** | — | `compute_omega_ratio/compute_rolling_sharpe` | 低 |
+| ✅ G8 | **回測防護 (存活偏差/借券/異常)** | 書 Ch.8.2 | survivorship_bias + short_borrow + outlier detect | 低 |
+| ✅ H1 | **Deflated Sharpe Ratio** | Bailey et al. (2014) §3 | `deflated_sharpe()` 校正 N_trials + skew/kurtosis | 低 |
+| ✅ H1 | **MinBTL** | Bailey et al. (2014) | `min_backtest_length()` 最短回測長度 given N trials | 低 |
+| 🟡 P1 | **MVSK 高階矩** | **Wang et al. (2024)**: RFPA O(N^2) + ghMST skew-t 建模 | ❌ 需移植 `highOrderPortfolios` R 套件 | 高 |
+| 🟡 P1 | **非高斯建模 (skewed-t)** | 書 Ch.2 + **Wang (2024)** ghMST fitting + `fitHeavyTail` | ❌ 穩健共變異數 + 厚尾 ML 估計 | 高 |
+| ✅ H2 | **Downside Risk / Semi-variance** | 書 Ch.10 | `OptimizationMethod.SEMI_VARIANCE` semi-covariance + SLSQP | 低 |
+| 🟡 P1 | **EVaR (Entropic VaR)** | 書 Ch.10 | ❌ 比 CVaR 更嚴格 | 中 |
+| ✅ H3 | **Kalman Filter 動態 hedge ratio** | 書 Ch.15 | `KalmanHedgeRatio` + `method='kalman'` in PairsTradingStrategy | 中 |
+| 🟢 P2 | **HERC / NCO** | 書 Ch.12 | ❌ HRP 擴展 | 中 |
+| 🟢 P2 | **非線性收縮** | **Ledoit & Wolf (2014)**: d(λ)=α/(λ\|s(λ)\|^2) via Marcenko-Pastur, N=500 T=120 OOS -10~20% | ❌ Python: `analytical_shrinkage` 可整合 | 中 |
+| 🔵 P3 | Deep Learning Portfolios | 書 Ch.16 | ❌ 學術實驗階段 | 高 |
+
+### 11.7 Alpha 因子研究差距分析（論文驅動）
+
+> 參考論文（已下載至 `docs/ref/papers/alpha/`）：10 篇
+
+#### 11.7.1 因子庫完整性
+
+| 論文 | 系統現有因子 | 缺少的因子 | 影響 |
+|------|------------|-----------|------|
+| **Fama & French (1993)** 3-factor | ✅ market (隱含), value_pe/pb (≈HML) | ❌ SMB (市值因子) — 系統無獨立 size factor | 中 |
+| **Fama & French (2015)** 5-factor | ✅ quality_roe (≈RMW), ✅ investment (CMA), ✅ size (SMB) | — Phase I1 完成 | **已完成** |
+| **Novy-Marx (2013)** gross profitability | ✅ gross_profit | — Phase I1 完成 | **已完成** |
+| **Kakushadze (2016)** 101 Alphas | 14/101 | ❌ 87 個公式可直接轉為 `factors.py` 函式。多數為 price-volume 因子，平均持有期 0.6-6.4 天，平均相關性僅 15.9%。 | **高** |
+
+**建議新增因子**（按影響力排序）：
+1. ~~`gross_profitability`~~ ✅ Phase I1 完成
+2. ~~`investment`~~ ✅ Phase I1 完成
+3. ~~`size`~~ ✅ Phase I1 完成
+4. 從 Kakushadze 101 中挑選低相關、高 Sharpe 的 10-20 個公式
+
+#### 11.7.2 因子篩選閾值
+
+| 論文 | 發現 | 系統影響 |
+|------|------|---------|
+| **Harvey et al. (2016)** | 審查 316 因子，多數為 data mining。建議 t-stat > **3.0**（非傳統 2.0）才算顯著。 | ✅ Phase I3：`DecisionConfig.min_icir` 從 0.3 提高至 **0.5**。 |
+| **McLean & Pontiff (2016)** | 學術發表後因子報酬**衰減 58%**。post-publication 平均 OOS alpha = 0.42 × in-sample alpha。 | ✅ Phase I3：`AlphaResearcher._report_to_scores()` 現在以 `icir * oos_decay_factor (0.42)` 作為 eligibility 判斷依據。 |
+| **DeMiguel et al. (2009)** | N>25 T<500 時 1/N 幾乎無法被最佳化打敗。 | ✅ Phase I3：`AlphaReport.vs_equal_weight_sharpe` 報告 composite L/S 與 EW 的 Sharpe 差異。 |
+
+#### 11.7.3 動態因子配置（Regime-aware）
+
+| 論文 | 發現 | 系統影響 |
+|------|------|---------|
+| **Asness et al. (2013)** Value+Momentum Everywhere | Value 和 momentum 在股票、債券、外匯、商品期貨中**普遍有效**，且兩者負相關（組合 Sharpe 更高）。 | `REGIME_FACTOR_BIAS` 中 momentum + value 應作為**核心組合**，跨資產 Alpha (`cross_asset.py`) 已有但未與 auto-alpha 整合。 |
+| **Daniel & Moskowitz (2016)** Momentum Crashes | Momentum crash 在**恐慌狀態**（市場下跌 + 高波動率）後發生，loser 組合有 option-like 凸性報酬。動態策略：σ_target / σ_realized 調整曝險，可**翻倍** Sharpe。 | `SafetyChecker` 應新增 **momentum crash 偵測**：(1) 市場跌幅 > 20% + VIX > 30 → 暫停 momentum 因子；(2) `REGIME_FACTOR_BIAS[BEAR]["momentum"]` 應從 0.5 降至 **0.2** 或 0。(3) 考慮 volatility-scaling：w_mom × (σ_target / σ_realized_20d)。 |
+
+#### 11.7.4 ML 方法（進階）
+
+| 論文 | 發現 | 系統影響 |
+|------|------|---------|
+| **Gu, Kelly, Xiu (2020)** ML Asset Pricing | Trees + Neural Nets **翻倍** 傳統方法的 Sharpe (1.35 vs ~0.6)。關鍵：非線性交互效應。Top 預測因子：momentum variants + liquidity + volatility。920+ 特徵，但主要信號集中在少數。 | 系統的 `AlphaDecisionEngine` 用線性 ICIR 加權。論文顯示**非線性方法大幅優於線性**。長期可考慮 gradient boosting 替代 IC 加權。但**短期內穩定性存疑**——論文的 OOS R² 僅 0.16-0.40%，且 top 特徵與系統已有因子高度重疊。 |
+
+#### 11.7.5 Alpha 研究論文收藏統計
+
+| 子領域 | 已下載 | 待下載 | 說明 |
+|--------|--------|--------|------|
+| 因子理論基礎 | 4/4 | 0 | Fama-French 93/15, Harvey 16, McLean-Pontiff 16 |
+| 因子組合與權重 | 3/3 | 0 | DeMiguel 09, Asness 13, Novy-Marx 13 |
+| IC 分析與公式 | 1/2 | 1 | Kakushadze 101 ✅; 缺 Kakushadze 4000 |
+| Regime 與動態 | 1/2 | 1 | Momentum Crashes ✅; 缺 Ang-Bekaert 04 (HMM) |
+| ML 方法 | 1/1 | 0 | Gu-Kelly-Xiu 20 ✅ |
+| 書籍 | 0/3 | 3 | Qian/Grinold-Kahn/López de Prado (教科書，非論文) |
 
 ---
 
@@ -599,6 +711,11 @@ volumes:
 | Phase E1 | 2026-03-25 | 交易執行核心 (SinopacBroker + ExecutionService + 對帳 + 交易時段) |
 | Phase E4 | 2026-03-25 | Shioaji 進階 (DataFeed + Scanner + 非阻塞 + 觸價 + 融資融券 + 額度預檢) |
 | Phase F | 2026-03-26 | 自動化 Alpha (F1a-f 核心引擎 + F2a-c 持久化/告警/安全 + F3a-c API + WS + Dashboard + F4a-c Regime/因子追蹤/動態池) |
+| Phase G | 2026-03-26 | 學術基準升級 (G1-G8: +7 最佳化方法 + GARCH/Factor Cov + VaR/CVaR + PBO/Randomized/k-fold/Stress + 共整合 Pairs + Omega/Rolling Sharpe + 回測防護) |
+| Phase H | 2026-03-26 | 實用精煉 (Deflated Sharpe + MinBTL + Semi-Variance + Kalman Filter Pairs), 1,006 tests |
+| Phase H | 2026-03-26 | 實用精煉 (H1: DSR+MinBTL, H2: Semi-Variance 最佳化, H3: Kalman Pairs Trading) |
+| Phase R1 | 2026-03-26 | Smart Order — TWAP 拆單引擎 (降低 market impact, ExecutionService 整合) |
+| Phase R3 | 2026-03-26 | Trading Pipeline 抽取 — `execute_one_bar()` 共用交易流程，BacktestEngine 改用 |
 
 ### 12.2 進行中 / 待辦
 
@@ -624,7 +741,7 @@ volumes:
 ```bash
 # 後端
 make install          # pip install -e ".[dev]"
-make test             # pytest tests/ -v (726 tests)
+make test             # pytest tests/ -v (1006 tests)
 make lint             # ruff check + mypy strict
 make dev              # API 熱重載 port 8000
 

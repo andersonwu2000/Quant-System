@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Callable
 
-from src.domain.models import (
+from src.core.models import (
     Order,
     Portfolio,
     RiskAlert,

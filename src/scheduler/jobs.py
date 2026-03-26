@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.config import TradingConfig
+    from src.core.config import TradingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ async def execute_rebalance(config: TradingConfig) -> None:
     """
     from src.api.state import get_app_state
     from src.data.sources import create_feed
-    from src.domain.models import Order
+    from src.core.models import Order
     from src.execution.oms import apply_trades
     from src.notifications.factory import create_notifier
     from src.strategy.engine import weights_to_orders

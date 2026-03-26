@@ -11,8 +11,8 @@ import pandas as pd
 from src.alpha.auto.config import AutoAlphaConfig
 from src.alpha.auto.decision import DecisionResult
 from src.alpha.pipeline import AlphaConfig, AlphaPipeline, FactorSpec
-from src.domain.models import Portfolio, Trade
-from src.execution.execution_service import ExecutionService
+from src.core.models import Portfolio, Trade
+from src.execution.service import ExecutionService
 from src.execution.oms import apply_trades
 from src.risk.engine import RiskEngine
 from src.strategy.engine import weights_to_orders
@@ -138,8 +138,12 @@ class AlphaExecutor:
                 target_weights=target_weights,
             )
 
-        # 6. Submit orders
-        trades: list[Trade] = execution_service.submit_orders(approved, portfolio)
+        # 6. Submit orders (skip in backtest mode — no current_bars available)
+        trades: list[Trade] = []
+        if execution_service.mode != "backtest":
+            trades = execution_service.submit_orders(approved, portfolio)
+        else:
+            logger.info("Backtest mode — skipping actual order submission (%d orders)", len(approved))
 
         # 7. Apply trades to portfolio
         if trades:

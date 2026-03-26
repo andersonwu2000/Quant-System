@@ -23,12 +23,12 @@ Keep updates minimal — only touch sections affected by the change.
 
 Multi-asset portfolio research and optimization system covering TW stocks, US stocks, ETFs (incl. bond/commodity ETF proxies), TW futures, US futures. Bond/commodity exposure via ETFs, not direct trading. No retail FX (Taiwan regulatory restriction). Current stage: equity alpha research layer complete, expanding to multi-asset architecture. Long-term goal: platform for individual investors and family asset management.
 
-Monorepo: Python backend + React web + React Native mobile. Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
+Monorepo: Python backend + React web + Android native (Kotlin/Compose). Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
 
 **Monorepo structure:**
 - `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (~120 files, ~20,000 LOC)
 - `apps/web/` — React 18 + Vite + Tailwind dashboard (incl. Alpha Research page)
-- `apps/mobile/` — React Native + Expo 52 mobile app (incl. Alpha tab)
+- `apps/android/` — Android native (Kotlin + Jetpack Compose + Material 3)
 - `apps/shared/` — `@quant/shared` TypeScript package (types, API client, WS manager, format utils)
 
 Frontend workspace managed by bun (`apps/package.json` workspaces).
@@ -36,8 +36,11 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 **Documentation:**
 - `docs/dev/SYSTEM_STATUS_REPORT.md` — System status report (module inventory, feature matrix, gap analysis)
 - `docs/dev/DEVELOPMENT_PLAN.md` — Development plan (Phase A~F: multi-asset infra → cross-asset alpha → optimizer → backtest → live → auto-alpha)
-- `docs/dev/MULTI_ASSET_ARCHITECTURE.md` — Multi-asset architecture design (instrument registry, allocation layer, portfolio optimizer)
-- `docs/dev/Project Requirements (Archived).md` — Archived project requirements
+- `docs/dev/DEVELOPMENT_LOG.md` — Development log (5-day history, key decisions, milestones)
+- `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md` — Multi-asset architecture design
+- `docs/dev/architecture/AUTOMATED_ALPHA_ARCHITECTURE.md` — Auto-alpha system design
+- `docs/dev/evaluations/BROKER_API_EVALUATION.md` — Broker API comparison (Shioaji chosen)
+- `docs/dev/archive/Project Requirements (Archived).md` — Archived project requirements
 - `docs/api-reference-zh.md` — API reference (Traditional Chinese)
 - `docs/developer-guide-zh.md` — Developer guide (Traditional Chinese)
 - `docs/user-guide-zh.md` — User guide (Traditional Chinese)
@@ -46,7 +49,7 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v (856 tests)
+make test                    # pytest tests/ -v (1006 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
@@ -67,11 +70,11 @@ python -m src.cli.main factors
 # === Frontend ===
 make install-apps            # bun install (all frontend packages)
 make web                     # web dev server (port 3000)
-make mobile                  # expo dev server
+cd apps/android && ./gradlew assembleDebug  # Android debug APK
 make web-build               # production build
 make web-typecheck           # tsc --noEmit
 make web-test                # vitest
-make mobile-typecheck        # tsc --noEmit
+cd apps/android && ./gradlew lintDebug  # Android lint
 
 # === Full stack ===
 make start                   # backend + web in parallel
@@ -94,14 +97,14 @@ Key design decisions:
 - **Timezone handling**: All DatetimeIndex data is normalized to tz-naive UTC. Both `HistoricalFeed.load()` and `YahooFeed._download()` strip timezone info.
 
 **Module boundaries** (detailed inventory in `docs/dev/SYSTEM_STATUS_REPORT.md` §4):
-- `src/domain/models.py` — **Unified** Instrument (frozen, with asset_class/sub_class/market/currency/multiplier/margin_rate/commission_rate/tax_rate), Bar, Position, Order, Portfolio (multi-currency: `cash_by_currency`, `nav_in_base(fx_rates)`, `currency_exposure()`), Trade. Enums: AssetClass (EQUITY/FUTURE/OPTION/ETF), Market (TW/US), SubClass, Side, OrderStatus.
+- `src/core/models.py` — **Unified** Instrument (frozen, with asset_class/sub_class/market/currency/multiplier/margin_rate/commission_rate/tax_rate), Bar, Position, Order, Portfolio (multi-currency: `cash_by_currency`, `nav_in_base(fx_rates)`, `currency_exposure()`), Trade. Enums: AssetClass (EQUITY/FUTURE/OPTION/ETF), Market (TW/US), SubClass, Side, OrderStatus. (`src/domain/models.py` re-exports for backward compat.)
 - `src/instrument/` — `InstrumentRegistry` (get/get_or_create/search/by_market/by_asset_class). Re-exports Instrument from domain. `_infer_instrument()` auto-detects asset type from symbol pattern. Cost templates (TW_STOCK_DEFAULTS, US_FUTURES_DEFAULTS, etc.).
 - `src/alpha/` — Alpha research layer (within-asset selection). `pipeline.py` orchestrates end-to-end: universe filtering → factor computation → neutralization → orthogonalization → composite signal → quantile backtest → cost-aware portfolio construction. `AlphaStrategy` adapter wraps pipeline as `Strategy`. `regime.py` classifies market regimes (shared with allocation layer). `auto/` (9 files: AutoAlphaConfig, UniverseSelector, AlphaResearcher, AlphaDecisionEngine, AlphaExecutor, AlphaScheduler, AlphaStore, AlertManager, SafetyChecker, FactorPerformanceTracker, DynamicFactorPool).
 - `src/allocation/` — Tactical asset allocation (between-asset selection). `macro_factors.py`: 4 macro factors (growth/inflation/rates/credit) from FRED z-scores. `cross_asset.py`: momentum/volatility/value per AssetClass. `tactical.py`: TacticalEngine combines strategic weights + macro + cross-asset + regime → `dict[AssetClass, float]`. API: `POST /api/v1/allocation`.
-- `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 6 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
-- `src/strategy/` — Strategy ABC (`on_bar()` → weights), factor library (pure functions), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
+- `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 13 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP/Robust/Resampled/CVaR/MaxDrawdown/GlobalMinVariance/MaxSharpe/IndexTracking), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage/GARCH/PCA factor model), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
+- `src/strategy/` — Strategy ABC (`on_bar()` → weights), `factors/` package (technical, fundamental, Kakushadze 101 alphas — pure functions), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
 - `src/risk/` — RiskEngine executes declarative rules; `kill_switch()` at 5% daily drawdown. RiskMonitor tracks metrics.
-- `src/execution/` — SimBroker (slippage, per-instrument commission/tax, T+N settlement), OMS (order lifecycle), SinopacBroker (Shioaji SDK wrapper), ExecutionService (mode-aware routing: backtest/paper/live), SinopacQuoteManager (tick/bidask subscription), market hours validation, EOD reconciliation.
+- `src/execution/` — `broker/base.py` (BrokerAdapter ABC, PaperBroker), `broker/simulated.py` (SimBroker — slippage, per-instrument commission/tax, T+N settlement), `broker/sinopac.py` (SinopacBroker — Shioaji SDK wrapper), `service.py` (ExecutionService — mode-aware routing: backtest/paper/live), `quote/sinopac.py` (SinopacQuoteManager — tick/bidask subscription), OMS (order lifecycle), market hours validation, EOD reconciliation.
 - `src/backtest/` — BacktestEngine (InstrumentRegistry integration, multi-currency detection), 40+ analytics, HTML/CSV reports, walk-forward, validation.
 - `src/data/` — DataFeed ABC (`get_bars`, `get_fx_rate`, `get_futures_chain`), YahooFeed (retry/rate-limit), FinMindFeed, FredDataSource (macro data), ParquetDiskCache.
 - `src/api/` — FastAPI REST + WebSocket, 14 route modules (incl. `/alpha`, `/allocation`, `/execution`, `/auto-alpha`), JWT auth, Prometheus.
@@ -147,7 +150,7 @@ Key design decisions:
 
 **WebSocket** (`src/api/ws.py`): channels — `portfolio`, `alerts`, `orders`, `market`. Token-based auth (optional in dev mode). Ping/pong keep-alive. Broadcast uses `asyncio.gather` with 5s timeout and dead connection cleanup. Note: `market` channel not yet connected to real-time data feed (TODO).
 
-**Logging** (`src/logging_config.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`.
+**Logging** (`src/core/logging.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`. (`src/logging_config.py` re-exports for backward compat.)
 
 ## Frontend Architecture
 
@@ -161,20 +164,20 @@ Key design decisions:
 
 **Platform adapters** (keep platform-specific code out of shared):
 - Web: `apps/web/src/core/api/client.ts` — localStorage for API key, browser-relative URLs, Vite proxy
-- Mobile: `apps/mobile/src/api/client.ts` — Expo SecureStore for credentials, configurable base URL
-- Color helpers (`pnlColor`) stay per-platform: web uses Tailwind classes, mobile uses hex colors
+- Android: `apps/android/` — Kotlin + Jetpack Compose + Hilt DI + OkHttp
 
-**Key pattern**: Web and mobile barrel files (`@core/api/index.ts`, etc.) re-export from `@quant/shared`. Feature code imports from `@core/*` — never directly from `@quant/shared`. This keeps feature code platform-unaware while allowing platform-specific extensions.
+**Key pattern**: Web barrel files (`@core/api/index.ts`, etc.) re-export from `@quant/shared`. Feature code imports from `@core/*` — never directly from `@quant/shared`.
 
-**Web pages** (8 feature pages):
+**Web pages** (11 feature pages):
 - Dashboard (`/`) — MarketTicker, NavChart, PositionTable (WebSocket real-time)
-- Backtest (`/backtest`) — UniversePicker, ParamsEditor, ResultChart, MonthlyHeatmap, CompareTable/Chart, HistoryPanel
-- Portfolio (`/portfolio`) — CRUD + rebalance preview
-- Orders (`/orders`) — OrderForm + order history
+- Trading (`/trading`) — Portfolio + Orders + Paper Trading (consolidated)
 - Strategies (`/strategies`) — List + start/stop controls
+- Research (`/research`) — Alpha + Backtest + Allocation (consolidated)
+- Auto-Alpha (`/auto-alpha`) — Auto-Alpha Dashboard + factor allocation + performance
 - Risk (`/risk`) — Rules, alerts, kill switch
-- Settings (`/settings`) — API key, password change, SystemMetrics
-- Admin (`/admin`) — User CRUD, audit logs, configuration
+- Guide (`/guide`) — 7-chapter interactive guide
+- Settings (`/settings`) — API key, password, Getting Started
+- Admin (`/admin`) — User CRUD, audit logs
 
 **Web UI patterns**:
 - Shared `<Card>` component for consistent card styling across all pages
@@ -185,19 +188,15 @@ Key design decisions:
 - `ErrorBoundary` + `RouteErrorBoundary` for error handling
 - Path aliases: `@core`, `@feat`, `@shared`, `@test`
 
-**Mobile patterns**:
-- Role-based access control via `useAuth` hook (`role`, `hasRole()`)
-- `OrderForm` component with Alert confirmation dialog
-- Role-gated features: Kill Switch (risk_manager), rule toggles (risk_manager)
-- Victory Native for charts (NavChart, BacktestChart, PositionPieChart)
-- `OfflineBanner` with expo-network detection
-- Hooks: `useAuth`, `usePortfolio`, `useOrders`, `useBacktest`, `useAlerts`, `useRealtimeData`
+**Android app** (`apps/android/`):
+- Kotlin + Jetpack Compose + Material 3
+- Hilt DI + OkHttp + Retrofit
+- Screens: Dashboard, Backtest, Strategies, Orders, Risk, Settings
+- SecureStorage for credentials, WebSocket real-time updates
 
-**Internationalization**: English + Traditional Chinese (en/zh). Context-based i18n with `useT` hook. Language preference persisted to localStorage (web) / SecureStore (mobile).
+**Internationalization**: English + Traditional Chinese (en/zh). Context-based i18n with `useT` hook (web). Language preference persisted to localStorage.
 
 **Web frontend tests**: Vitest with jsdom (`apps/web/vitest.config.ts`). Test files colocated (e.g. `BacktestPage.test.tsx`, `RiskPage.test.tsx`, `AdminPage.test.tsx`). E2E tests via Playwright (`apps/web/e2e/`).
-
-**Mobile tests**: Jest with React Native preset. Component tests in `src/components/__tests__/`, hook tests in `src/hooks/__tests__/`.
 
 ## Strategies
 
@@ -223,14 +222,14 @@ Key design decisions:
 
 **CI/CD** (`.github/workflows/ci.yml`) — 9 jobs:
 - `backend-lint` — ruff check + mypy strict
-- `backend-test` — pytest (856 tests)
+- `backend-test` — pytest (1006 tests)
 - `web-typecheck` — tsc --noEmit
 - `web-test` — vitest (depends on web-typecheck)
 - `web-build` — vite build (depends on web-typecheck)
 - `shared-test` — vitest for @quant/shared
-- `mobile-typecheck` — tsc --noEmit
-- `mobile-test` — jest
+- `android-build` — Gradle assembleDebug
 - `e2e-test` — Playwright chromium
+- `release` — GitHub Release + APK artifact (on push to master)
 
 **Scripts**:
 - `scripts/benchmark.py` — Performance benchmarking for backtests (quick/full modes)
@@ -238,7 +237,7 @@ Key design decisions:
 
 ## Configuration
 
-All config via `QUANT_` prefixed env vars or `.env` file (see `.env.example`). Defined in `src/config.py` as Pydantic Settings. Access via `get_config()` singleton; use `override_config()` in tests.
+All config via `QUANT_` prefixed env vars or `.env` file (see `.env.example`). Defined in `src/core/config.py` as Pydantic Settings. Access via `get_config()` singleton; use `override_config()` in tests. (`src/config.py` re-exports for backward compat.)
 
 Key config:
 - `mode`: `"backtest"` (default), `"paper"`, or `"live"` — operating mode
@@ -269,4 +268,4 @@ Key config:
 - **Rate limiting**: slowapi (memory-backed)
 - **Audit**: AuditMiddleware logs all mutations
 - **Container**: Non-root Docker user
-- **Mobile**: Expo SecureStore for credentials
+- **Android**: EncryptedSharedPreferences for credentials

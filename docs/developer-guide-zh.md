@@ -271,7 +271,7 @@ def my_factor(prices: pd.DataFrame, lookback: int = 20) -> pd.Series:
 
 ```python
 from src.risk.rules import RiskRule, MarketState
-from src.domain.models import Order, Portfolio, RiskDecision
+from src.core.models import Order, Portfolio, RiskDecision
 
 
 def max_sector_exposure(threshold: float = 0.30) -> RiskRule:
@@ -508,7 +508,7 @@ pytest tests/ --cov=src --cov-report=term-missing
 
 ```python
 from decimal import Decimal
-from src.domain.models import Instrument, Order, Portfolio, Position, Side
+from src.core.models import Instrument, Order, Portfolio, Position, Side
 
 def test_example():
     portfolio = Portfolio(cash=Decimal("1000000"))
@@ -526,7 +526,7 @@ def test_example():
 `src/config.py` 使用 Pydantic Settings 搭配單例模式：
 
 ```python
-from src.config import get_config, override_config, TradingConfig
+from src.core.config import get_config, override_config, TradingConfig
 
 # 讀取配置（僅載入一次，之後快取）
 config = get_config()

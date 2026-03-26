@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from src.api.auth import create_jwt_token, verify_jwt
 from src.api.password import hash_password, validate_password, verify_password
 from src.api.schemas import ChangePasswordRequest, MessageResponse
-from src.config import get_config
+from src.core.config import get_config
 from src.data.user_store import get_user_store
 
 from slowapi import Limiter

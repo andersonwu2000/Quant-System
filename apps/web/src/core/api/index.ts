@@ -57,4 +57,6 @@ export type {
   AutoAlphaPerformance,
   FactorScoreInfo,
   AutoAlphaSnapshot,
+  AutoAlphaAlert,
+  AutoAlphaConfig,
 } from "@quant/shared";

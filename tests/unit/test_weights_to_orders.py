@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from src.domain.models import Instrument, Portfolio
+from src.core.models import Instrument, Portfolio
 from src.strategy.engine import _get_lot_size, weights_to_orders
 
 

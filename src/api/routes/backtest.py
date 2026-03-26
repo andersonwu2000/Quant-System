@@ -21,6 +21,13 @@ from src.api.schemas import (
     BacktestRequest,
     BacktestResultResponse,
     BacktestSummaryResponse,
+    PBORequest,
+    PBOResponse,
+    RandomizedBacktestRequest,
+    RandomizedBacktestResponse,
+    StressTestRequest,
+    StressTestResponse,
+    StressTestScenarioResult,
     TradeRecordResponse,
     WalkForwardFoldResponse,
     WalkForwardRequest,
@@ -31,7 +38,7 @@ from src.backtest.engine import BacktestCancelled, BacktestConfig, BacktestEngin
 from src.backtest.walk_forward import WalkForwardAnalyzer, WFAConfig
 from src.data.store import DataStore
 from src.strategy.registry import resolve_strategy
-from src.config import get_config
+from src.core.config import get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/backtest", tags=["backtest"])
@@ -361,3 +368,171 @@ async def submit_walk_forward(
     return response
 
 
+@router.post("/randomized", response_model=RandomizedBacktestResponse)
+@_limiter.limit("5/minute")
+async def submit_randomized_backtest(
+    request: Request,
+    req: RandomizedBacktestRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> RandomizedBacktestResponse:
+    """Run randomized backtest to assess strategy robustness."""
+    config = get_config()
+
+    def _run() -> RandomizedBacktestResponse:
+        from src.backtest.randomized import (
+            RandomizedBacktestConfig,
+            run_randomized_backtest,
+        )
+
+        strategy_cls_params = req.params
+
+        def strategy_factory() -> Any:
+            return resolve_strategy(req.strategy, strategy_cls_params)
+
+        bt_config = BacktestConfig(
+            universe=req.universe,
+            start=req.start,
+            end=req.end,
+            initial_cash=req.initial_cash,
+            slippage_bps=req.slippage_bps,
+            commission_rate=req.commission_rate,
+            rebalance_freq=cast(Literal["daily", "weekly", "monthly"], req.rebalance_freq),
+        )
+        rand_config = RandomizedBacktestConfig(
+            n_iterations=req.n_iterations,
+            asset_sample_pct=req.asset_sample_pct,
+            time_sample_pct=req.time_sample_pct,
+        )
+        result = run_randomized_backtest(strategy_factory, bt_config, rand_config)
+        return RandomizedBacktestResponse(
+            iterations=result.iterations,
+            median_sharpe=result.median_sharpe,
+            sharpe_5th_pct=result.sharpe_5th_pct,
+            sharpe_95th_pct=result.sharpe_95th_pct,
+            probability_positive_sharpe=result.probability_positive_sharpe,
+        )
+
+    try:
+        response = await asyncio.wait_for(
+            asyncio.to_thread(_run),
+            timeout=config.backtest_timeout,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Randomized backtest timed out after {config.backtest_timeout}s",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return response
+
+
+@router.post("/pbo", response_model=PBOResponse)
+@_limiter.limit("10/minute")
+async def compute_pbo_endpoint(
+    request: Request,
+    req: PBORequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> PBOResponse:
+    """Compute Probability of Backtest Overfitting (CSCV)."""
+    import pandas as pd
+
+    from src.backtest.overfitting import compute_pbo
+
+    # Build DataFrame from the request matrix
+    if req.strategy_labels and len(req.strategy_labels) == len(req.returns_matrix):
+        columns = req.strategy_labels
+    else:
+        columns = [f"s{i}" for i in range(len(req.returns_matrix))]
+
+    try:
+        returns_df = pd.DataFrame(
+            {col: series for col, series in zip(columns, req.returns_matrix)}
+        )
+        result = compute_pbo(returns_df, n_partitions=req.n_partitions)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return PBOResponse(
+        pbo=result.pbo,
+        is_overfit=result.is_overfit,
+        n_combinations=result.n_combinations,
+    )
+
+
+@router.post("/stress-test", response_model=StressTestResponse)
+@_limiter.limit("5/minute")
+async def submit_stress_test(
+    request: Request,
+    req: StressTestRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> StressTestResponse:
+    """Run stress test scenarios on a strategy."""
+    config = get_config()
+
+    def _run() -> StressTestResponse:
+        from src.backtest.stress_test import (
+            ALL_SCENARIOS,
+            run_stress_test,
+        )
+
+        strategy_cls_params = req.params
+
+        def strategy_factory() -> Any:
+            return resolve_strategy(req.strategy, strategy_cls_params)
+
+        bt_config = BacktestConfig(
+            universe=req.universe,
+            start=req.start,
+            end=req.end,
+            initial_cash=req.initial_cash,
+            slippage_bps=req.slippage_bps,
+            commission_rate=req.commission_rate,
+            rebalance_freq=cast(Literal["daily", "weekly", "monthly"], req.rebalance_freq),
+        )
+
+        # Filter scenarios by name if specified
+        scenarios = None
+        if req.scenarios:
+            name_set = set(req.scenarios)
+            scenarios = [s for s in ALL_SCENARIOS if s.name in name_set]
+            if not scenarios:
+                raise ValueError(
+                    f"No matching scenarios. Available: "
+                    f"{[s.name for s in ALL_SCENARIOS]}"
+                )
+
+        results = run_stress_test(
+            strategy_factory, bt_config, scenarios=scenarios, seed=req.seed,
+        )
+
+        scenario_results = [
+            StressTestScenarioResult(
+                scenario=name,
+                total_return=r.total_return,
+                annual_return=r.annual_return,
+                sharpe=r.sharpe,
+                max_drawdown=r.max_drawdown,
+            )
+            for name, r in results.items()
+        ]
+        return StressTestResponse(results=scenario_results)
+
+    try:
+        response = await asyncio.wait_for(
+            asyncio.to_thread(_run),
+            timeout=config.backtest_timeout,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Stress test timed out after {config.backtest_timeout}s",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return response

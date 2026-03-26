@@ -135,7 +135,7 @@ class TestTelegramNotifier:
 
 class TestFactory:
     def test_explicit_discord(self) -> None:
-        from src.config import TradingConfig
+        from src.core.config import TradingConfig
 
         cfg = TradingConfig(
             notify_provider="discord",
@@ -146,7 +146,7 @@ class TestFactory:
         assert n.is_configured() is True
 
     def test_explicit_line(self) -> None:
-        from src.config import TradingConfig
+        from src.core.config import TradingConfig
 
         cfg = TradingConfig(
             notify_provider="line",
@@ -157,21 +157,21 @@ class TestFactory:
         assert n.is_configured() is True
 
     def test_auto_detect_discord(self) -> None:
-        from src.config import TradingConfig
+        from src.core.config import TradingConfig
 
         cfg = TradingConfig(discord_webhook_url="https://discord.com/api/webhooks/x/y")
         n = create_notifier(cfg)
         assert isinstance(n, DiscordNotifier)
 
     def test_auto_detect_line(self) -> None:
-        from src.config import TradingConfig
+        from src.core.config import TradingConfig
 
         cfg = TradingConfig(line_notify_token="tok")
         n = create_notifier(cfg)
         assert isinstance(n, LineNotifier)
 
     def test_no_config_returns_null(self) -> None:
-        from src.config import TradingConfig
+        from src.core.config import TradingConfig
 
         cfg = TradingConfig()
         n = create_notifier(cfg)

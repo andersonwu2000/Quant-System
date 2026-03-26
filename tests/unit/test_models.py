@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 
-from src.domain.models import (
+from src.core.models import (
     Instrument,
     Order,
     OrderCondition,

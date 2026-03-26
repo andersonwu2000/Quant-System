@@ -21,8 +21,8 @@ from src.api.auth import verify_ws_token
 from src.api.middleware import AuditMiddleware
 from src.api.routes import admin, allocation, alpha, auth, auto_alpha, backtest, execution, orders, portfolio, risk, scanner, strategies, system
 from src.api.ws import ws_manager
-from src.config import get_config
-from src.logging_config import setup_logging
+from src.core.config import get_config
+from src.core.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 def _seed_admin(config: object) -> None:
     """首次啟動時建立預設 admin 帳號（若不存在）。"""
-    from src.config import TradingConfig
+    from src.core.config import TradingConfig
     from src.data.store import metadata
     from src.data.user_store import get_user_store, _get_engine
     from src.api.password import hash_password

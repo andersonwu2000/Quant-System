@@ -82,7 +82,7 @@ async def submit_alpha_research(
             from src.alpha.construction import ConstructionConfig
             from src.alpha.neutralize import NeutralizeMethod
             from src.data.sources import create_feed
-            from src.config import get_config
+            from src.core.config import get_config
 
             config = get_config()
 

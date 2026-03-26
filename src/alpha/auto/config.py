@@ -7,19 +7,36 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Literal
 
-from src.alpha.pipeline import AlphaConfig
+from src.alpha.pipeline import AlphaConfig, FactorSpec
 from src.alpha.regime import MarketRegime
+
+
+def _default_alpha_config() -> AlphaConfig:
+    """Build AlphaConfig with all registered price-based factors."""
+    from src.strategy.research import FACTOR_REGISTRY
+
+    factors = [
+        FactorSpec(name=name, direction=1)
+        for name in FACTOR_REGISTRY
+    ]
+    return AlphaConfig(factors=factors)
 
 
 @dataclass
 class DecisionConfig:
     """Factor selection and weight decision parameters."""
 
-    min_icir: float = 0.3
+    min_icir: float = 0.5
     min_hit_rate: float = 0.52
     max_cost_drag: float = 200.0
     use_rolling_ic: bool = True
     regime_aware: bool = True
+    oos_decay_factor: float = 0.42  # McLean-Pontiff (2016): OOS alpha ~ 0.42x IS
+    require_positive_net_alpha: bool = True
+    momentum_crash_market_threshold: float = -0.20
+    momentum_crash_vol_multiplier: float = 2.0
+    volatility_scaling_enabled: bool = False
+    volatility_scaling_target: float = 0.15
 
 
 @dataclass
@@ -39,7 +56,7 @@ class AutoAlphaConfig:
 
     # Research
     lookback: int = 252
-    alpha_config: AlphaConfig = field(default_factory=AlphaConfig)
+    alpha_config: AlphaConfig = field(default_factory=lambda: _default_alpha_config())
 
     # Decision
     decision: DecisionConfig = field(default_factory=DecisionConfig)
@@ -52,6 +69,25 @@ class AutoAlphaConfig:
     max_consecutive_losses: int = 5
     ic_reversal_days: int = 10
     emergency_stop_drawdown: float = 0.05
+
+    # Kill switch recovery
+    kill_switch_cooldown_days: int = 3
+    kill_switch_recovery_position_pct: float = 0.50
+    kill_switch_recovery_ramp_days: int = 5
+
+    # Momentum crash protection (Daniel & Moskowitz 2016)
+    momentum_crash_market_threshold: float = -0.20
+    momentum_crash_vol_multiplier: float = 2.0
+
+    # Volatility scaling (optional)
+    volatility_scaling_enabled: bool = False
+    volatility_scaling_target: float = 0.15
+
+    # Backtest gate (Stage 3.5: verify before execution)
+    backtest_gate_enabled: bool = True
+    backtest_gate_lookback: int = 60
+    backtest_gate_min_sharpe: float = 0.0
+    backtest_gate_max_cost_pct: float = 0.05  # 5% annual cost ceiling
 
     # Convenience accessors that mirror flat attributes from DecisionConfig
     @property

@@ -58,14 +58,17 @@ def _build_pool(
 # ---------------------------------------------------------------------------
 
 class TestGetAllFactorNames:
-    def test_returns_all_14_factors(self) -> None:
-        """All 14 registered factors are returned."""
+    def test_returns_all_registered_factors(self) -> None:
+        """All registered factors are returned (FACTOR_REGISTRY + FUNDAMENTAL_REGISTRY)."""
         names = DynamicFactorPool.get_all_factor_names()
-        # FACTOR_REGISTRY has 11 + FUNDAMENTAL_REGISTRY has 3 = 14
-        assert len(names) == 14
+        # FACTOR_REGISTRY has 21 + FUNDAMENTAL_REGISTRY has 6 = 27
+        assert len(names) == 27
         assert "momentum" in names
         assert "value_pe" in names
         assert "quality_roe" in names
+        assert "size" in names
+        assert "investment" in names
+        assert "gross_profit" in names
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +206,7 @@ class TestChangesTracking:
         # Use only factors that exist in registry and have good ICIR
         all_names = DynamicFactorPool.get_all_factor_names()
         scores = {name: _make_score(name, icir=0.7) for name in all_names}
-        pool = _build_pool(scores, top_n=14, min_icir=0.2)
+        pool = _build_pool(scores, top_n=27, min_icir=0.2)
         result = pool.update_pool(lookback=10)
 
         # All factors active, no exclusions

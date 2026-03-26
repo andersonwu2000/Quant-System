@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from src.domain.models import Instrument, Order, OrderType, Side
+from src.core.models import Instrument, Order, OrderType, Side
 from src.execution.stop_order import StopOrderManager
 
 

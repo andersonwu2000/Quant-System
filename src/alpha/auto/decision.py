@@ -6,7 +6,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+import pandas as pd
+
 from src.alpha.auto.config import AutoAlphaConfig, FactorScore, ResearchSnapshot
+from src.alpha.auto.dynamic_pool import DynamicFactorPool
+from src.alpha.auto.factor_tracker import FactorPerformanceTracker
+from src.alpha.auto.store import AlphaStore
 from src.alpha.regime import MarketRegime
 
 logger = logging.getLogger(__name__)
@@ -24,7 +30,7 @@ REGIME_FACTOR_BIAS: dict[MarketRegime, dict[str, float]] = {
     MarketRegime.BEAR: {
         "volatility": 1.5,
         "value_pe": 1.3,
-        "momentum": 0.5,
+        "momentum": 0.1,
         "max_ret": 1.2,
     },
     MarketRegime.SIDEWAYS: {
@@ -61,6 +67,8 @@ class AlphaDecisionEngine:
         self,
         snapshot: ResearchSnapshot,
         current_weights: dict[str, float] | None = None,
+        store: AlphaStore | None = None,
+        market_returns: pd.Series | None = None,
     ) -> DecisionResult:
         """Produce a DecisionResult from a ResearchSnapshot.
 
@@ -70,14 +78,45 @@ class AlphaDecisionEngine:
             Daily research snapshot containing factor scores and regime.
         current_weights:
             Current portfolio weights (reserved for future turnover-aware logic).
+        store:
+            Optional AlphaStore for dynamic factor pool filtering.  When the
+            store contains >= 5 snapshots, ``FactorPerformanceTracker`` and
+            ``DynamicFactorPool`` are used to pre-filter factors before the
+            ICIR / hit-rate checks.
+        market_returns:
+            Optional daily market returns series for volatility scaling.
         """
         cfg = self._config
+
+        # Step 0 — dynamic factor pool pre-filter (if enough history)
+        pool_active: set[str] | None = None
+        pool_probation: list[str] = []
+        pool_excluded: list[str] = []
+
+        if store is not None:
+            snapshots = store.list_snapshots(limit=5)
+            if len(snapshots) >= 5:
+                tracker = FactorPerformanceTracker(store)
+                pool = DynamicFactorPool(tracker, cfg)
+                pool_result = pool.update_pool()
+                pool_active = set(pool_result.active)
+                pool_probation = pool_result.probation
+                pool_excluded = pool_result.excluded
+                logger.info(
+                    "DynamicFactorPool: %d active, %d probation, %d excluded",
+                    len(pool_result.active),
+                    len(pool_probation),
+                    len(pool_excluded),
+                )
 
         # Step 1 — filter factors
         eligible: list[str] = []
         raw_weights: dict[str, float] = {}
 
         for name, score in snapshot.factor_scores.items():
+            # If dynamic pool is active, skip factors not in the active set
+            if pool_active is not None and name not in pool_active:
+                continue
             if not self._passes_filter(score):
                 continue
             eligible.append(name)
@@ -105,6 +144,20 @@ class AlphaDecisionEngine:
                 multiplier = bias_map.get(name, 1.0)
                 raw_weights[name] = raw_weights[name] * multiplier
 
+        # Step 2b — volatility scaling for momentum (Daniel & Moskowitz 2016)
+        if (
+            cfg.volatility_scaling_enabled
+            and market_returns is not None
+            and len(market_returns) >= 20
+            and "momentum" in raw_weights
+        ):
+            realized_vol_20d = float(
+                market_returns.iloc[-20:].std() * np.sqrt(252)
+            )
+            if realized_vol_20d > 0:
+                scale = cfg.volatility_scaling_target / realized_vol_20d
+                raw_weights["momentum"] *= min(scale, 2.0)
+
         # Step 3 — normalise
         total = sum(raw_weights.values())
         if total > 0:
@@ -118,6 +171,14 @@ class AlphaDecisionEngine:
         ]
         if cfg.regime_aware:
             reason_parts.append("regime_bias=ON")
+        if pool_probation:
+            reason_parts.append(
+                f"probation=[{', '.join(pool_probation)}]"
+            )
+        if pool_excluded:
+            reason_parts.append(
+                f"pool_excluded={len(pool_excluded)}"
+            )
         reason = "; ".join(reason_parts)
 
         return DecisionResult(
@@ -215,8 +276,28 @@ class AlphaDecisionEngine:
     def _passes_filter(self, score: FactorScore) -> bool:
         """Return True if a factor passes all selection thresholds."""
         cfg = self._config
-        return (
-            score.icir > cfg.min_icir
-            and score.hit_rate > cfg.min_hit_rate
-            and score.cost_drag_bps < cfg.max_cost_drag
-        )
+
+        if score.icir <= cfg.min_icir:
+            return False
+        if score.hit_rate <= cfg.min_hit_rate:
+            return False
+        if score.cost_drag_bps >= cfg.max_cost_drag:
+            return False
+
+        # Net alpha check — reject if cost drag exceeds gross alpha
+        if cfg.decision.require_positive_net_alpha:
+            # Gross alpha proxy: IC * 10000 (converts correlation to bps)
+            gross_alpha_bps = abs(score.ic) * 10000
+            net_alpha_bps = gross_alpha_bps - score.cost_drag_bps
+            if net_alpha_bps <= 0:
+                logger.info(
+                    "Factor %s rejected: net_alpha=%.0f bps "
+                    "(gross=%.0f - cost=%.0f)",
+                    score.name,
+                    net_alpha_bps,
+                    gross_alpha_bps,
+                    score.cost_drag_bps,
+                )
+                return False
+
+        return True

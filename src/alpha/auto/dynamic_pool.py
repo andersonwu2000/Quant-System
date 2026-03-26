@@ -59,7 +59,7 @@ class DynamicFactorPool:
 
     @staticmethod
     def get_all_factor_names() -> list[str]:
-        """Return all 14 registered factor names (FACTOR_REGISTRY + FUNDAMENTAL_REGISTRY)."""
+        """Return all registered factor names (FACTOR_REGISTRY + FUNDAMENTAL_REGISTRY)."""
         names = sorted(set(list(FACTOR_REGISTRY.keys()) + list(FUNDAMENTAL_REGISTRY.keys())))
         return names
 

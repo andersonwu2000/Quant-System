@@ -154,7 +154,7 @@ def status() -> None:
     table.add_column("Status", style="green")
     table.add_column("Detail")
 
-    from src.config import get_config
+    from src.core.config import get_config
     config = get_config()
 
     table.add_row("Mode", config.mode, "")

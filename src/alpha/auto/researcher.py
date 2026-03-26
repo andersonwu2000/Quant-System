@@ -146,9 +146,14 @@ class AlphaResearcher:
                 for regime, ric in regime_result.ic_by_regime.items():
                     regime_ic[regime.value] = ric.ic_mean
 
-            # Eligibility check
+            # Eligibility check — apply OOS decay (McLean-Pontiff 2016)
+            adjusted_icir = abs(ic_result.icir) * cfg.decision.oos_decay_factor
+            logger.debug(
+                "Factor %s: IS ICIR=%.4f, OOS-adjusted ICIR=%.4f (decay=%.2f)",
+                name, ic_result.icir, adjusted_icir, cfg.decision.oos_decay_factor,
+            )
             eligible = (
-                abs(ic_result.icir) >= cfg.min_icir
+                adjusted_icir >= cfg.min_icir
                 and ic_result.hit_rate >= cfg.min_hit_rate
                 and cost_drag <= cfg.max_cost_drag
             )

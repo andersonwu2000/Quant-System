@@ -18,7 +18,7 @@ import pandas as pd
 from src.allocation.cross_asset import CrossAssetSignals
 from src.allocation.tactical import StrategicAllocation, TacticalEngine
 from src.alpha.regime import MarketRegime, classify_regimes
-from src.domain.models import AssetClass
+from src.core.models import AssetClass
 from src.portfolio.optimizer import (
     OptimizationMethod,
     OptimizerConfig,

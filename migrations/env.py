@@ -5,7 +5,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from src.config import get_config
+from src.core.config import get_config
 from src.data.store import metadata as target_metadata
 
 config = context.config

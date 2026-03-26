@@ -9,8 +9,120 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
-from src.domain.models import Order, Trade
+from src.core.models import Order, Trade
+from src.portfolio.risk_model import RiskModel
+
+
+# ── Deflated Sharpe Ratio (Bailey & López de Prado, 2014) ──────────
+
+_EULER_MASCHERONI = 0.5772156649015329
+
+
+def deflated_sharpe(
+    observed_sharpe: float,
+    n_trials: int,
+    T: int,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+) -> float:
+    """Deflated Sharpe Ratio — probability that observed SR is not a false positive.
+
+    Accounts for multiple testing (n_trials), non-normality (skewness, kurtosis),
+    and sample length (T). All Sharpe ratio values are annualized (daily × √252).
+
+    Based on Bailey & López de Prado (2014). Internally converts to
+    per-observation scale for the E[max SR] computation.
+
+    Args:
+        observed_sharpe: The observed annualized Sharpe ratio.
+        n_trials: Number of strategy trials / backtests conducted.
+        T: Number of return observations (trading days).
+        skewness: Skewness of returns (0 for normal).
+        kurtosis: Kurtosis of returns (3 for normal).
+
+    Returns:
+        Probability (0 to 1) that the observed SR is not due to chance.
+        DSR < 0.05 means likely overfit.
+    """
+    if T <= 1 or n_trials < 1:
+        return 0.0
+
+    N = max(n_trials, 1)
+
+    # Convert annualized SR to per-observation SR for internal calculations
+    sr = observed_sharpe / np.sqrt(252)
+
+    # Expected maximum per-observation SR under the null (all strategies SR=0)
+    # E[max SR] ≈ (1 - γ) × Φ⁻¹(1 - 1/N) + γ × Φ⁻¹(1 - 1/(N·e))
+    # This gives the expected max of N i.i.d. standard normal draws,
+    # scaled by SE of SR estimator (1/√T).
+    if N == 1:
+        e_max_sr = 0.0
+    else:
+        e_max_sr = float(
+            (1.0 - _EULER_MASCHERONI) * norm.ppf(1.0 - 1.0 / N)
+            + _EULER_MASCHERONI * norm.ppf(1.0 - 1.0 / (N * np.e))
+        ) * (1.0 / np.sqrt(T))
+
+    # Standard error of SR (accounting for non-normality)
+    # Lo (2002): Var(SR) ≈ (1 + 0.5·SR² - skew·SR + (kurt-3)/4·SR²) / (T-1)
+    se = float(np.sqrt(
+        (1.0 + 0.5 * sr**2 - skewness * sr + (kurtosis - 3.0) / 4.0 * sr**2)
+        / (T - 1)
+    ))
+
+    if se <= 0:
+        return 0.0
+
+    # DSR = Φ((observed_SR - E[max SR]) / SE)
+    z = (sr - e_max_sr) / se
+    return float(norm.cdf(z))
+
+
+def min_backtest_length(
+    n_trials: int,
+    target_sharpe: float = 1.0,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+    significance: float = 0.05,
+) -> int:
+    """Minimum Backtest Length — smallest T for SR to be statistically significant.
+
+    Given N trials, find the minimum number of observations T such that
+    DSR(observed=target_sharpe, N, T) >= (1 - significance).
+
+    Args:
+        n_trials: Number of strategy trials conducted.
+        target_sharpe: The Sharpe ratio we want to validate.
+        skewness: Skewness of returns.
+        kurtosis: Kurtosis of returns.
+        significance: Significance level (default 0.05).
+
+    Returns:
+        Minimum T (number of trading days).
+    """
+    if n_trials < 1 or target_sharpe <= 0:
+        return 2
+
+    threshold = 1.0 - significance
+
+    # Binary search for T
+    lo, hi = 2, 100000
+    # First check if even hi is not enough
+    if deflated_sharpe(target_sharpe, n_trials, hi, skewness, kurtosis) < threshold:
+        return hi
+
+    while lo < hi:
+        mid = (lo + hi) // 2
+        dsr = deflated_sharpe(target_sharpe, n_trials, mid, skewness, kurtosis)
+        if dsr >= threshold:
+            hi = mid
+        else:
+            lo = mid + 1
+
+    return lo
 
 
 @dataclass
@@ -41,9 +153,24 @@ class BacktestResult:
     total_commission: float
     turnover: float                 # 平均換手率
 
+    # ── VaR / CVaR ──
+    var_95: float = 0.0               # 日 95% VaR
+    cvar_95: float = 0.0              # 日 95% CVaR
+
+    # ── Omega / Rolling Sharpe ──
+    omega_ratio: float = 0.0           # Omega ratio (threshold=0)
+    rolling_sharpe: list[float] = field(default_factory=list)  # 63-day rolling Sharpe
+
     # ── 拒絕訂單統計 ──
     rejected_orders: int = 0
     rejected_notional: float = 0.0
+
+    # ── Deflated Sharpe Ratio ──
+    deflated_sharpe_ratio: float = 0.0    # DSR (computed when n_trials provided)
+
+    # ── 回測防禦警告 ──
+    survivorship_warnings: list[str] = field(default_factory=list)
+    price_warnings: list[str] = field(default_factory=list)
 
     # ── 時序數據 ──
     nav_series: pd.Series = field(repr=False, default_factory=pd.Series)
@@ -68,6 +195,8 @@ class BacktestResult:
             "",
             f"Max Drawdown:  {self.max_drawdown:.2%}",
             f"Max DD Days:   {self.max_drawdown_duration}",
+            f"VaR (95%):     {self.var_95:.4%}",
+            f"CVaR (95%):    {self.cvar_95:.4%}",
             "",
             f"Total Trades:  {self.total_trades}",
             f"Win Rate:      {self.win_rate:.1%}",
@@ -95,9 +224,53 @@ class BacktestResult:
             "total_trades": self.total_trades,
             "win_rate": self.win_rate,
             "total_commission": self.total_commission,
+            "var_95": self.var_95,
+            "cvar_95": self.cvar_95,
             "rejected_orders": self.rejected_orders,
             "rejected_notional": self.rejected_notional,
+            "omega_ratio": self.omega_ratio,
+            "rolling_sharpe": self.rolling_sharpe,
+            "deflated_sharpe_ratio": self.deflated_sharpe_ratio,
+            "survivorship_warnings": self.survivorship_warnings,
+            "price_warnings": self.price_warnings,
         }
+
+
+def compute_omega_ratio(returns: pd.Series, threshold: float = 0.0) -> float:
+    """Omega ratio: Σ max(r - threshold, 0) / Σ max(threshold - r, 0).
+
+    Returns inf if denominator is 0 (no losses), 0.0 if no data.
+    """
+    if returns.empty:
+        return 0.0
+    vals = np.asarray(returns.values, dtype=np.float64)
+    gains = np.sum(np.maximum(vals - threshold, 0.0))
+    losses = np.sum(np.maximum(threshold - vals, 0.0))
+    if losses == 0:
+        return float("inf") if gains > 0 else 0.0
+    return float(gains / losses)
+
+
+def compute_rolling_sharpe(returns: pd.Series, window: int = 63) -> list[float]:
+    """Rolling Sharpe ratio = rolling_mean / rolling_std * sqrt(252).
+
+    Returns list of length max(0, len(returns) - window + 1).
+    """
+    if len(returns) < window:
+        return []
+    rolling_mean = returns.rolling(window).mean()
+    rolling_std = returns.rolling(window).std()
+    # rolling produces NaN for first (window-1) entries
+    valid_mean = rolling_mean.iloc[window - 1:]
+    valid_std = rolling_std.iloc[window - 1:]
+    result: list[float] = []
+    annualize = np.sqrt(252)
+    for m, s in zip(valid_mean, valid_std):
+        if s > 0:
+            result.append(float(m / s * annualize))
+        else:
+            result.append(0.0)
+    return result
 
 
 def compute_analytics(
@@ -162,9 +335,17 @@ def compute_analytics(
     n_rejected = len(_rejected)
     rejected_notional = sum(float(o.notional) for o in _rejected)
 
+    # VaR / CVaR
+    var_95 = RiskModel.compute_var(daily_returns, confidence=0.95, method="historical")
+    cvar_95 = RiskModel.compute_cvar(daily_returns, confidence=0.95, method="historical")
+
     # 確定日期範圍
     start_date = str(nav_series.index[0].date()) if hasattr(nav_series.index[0], "date") else str(nav_series.index[0])
     end_date = str(nav_series.index[-1].date()) if hasattr(nav_series.index[-1], "date") else str(nav_series.index[-1])
+
+    # Omega ratio & rolling Sharpe
+    omega = compute_omega_ratio(daily_returns)
+    rolling_sh = compute_rolling_sharpe(daily_returns)
 
     return BacktestResult(
         strategy_name=strategy_name,
@@ -187,6 +368,10 @@ def compute_analytics(
         turnover=turnover,
         rejected_orders=n_rejected,
         rejected_notional=rejected_notional,
+        var_95=var_95,
+        cvar_95=cvar_95,
+        omega_ratio=omega,
+        rolling_sharpe=rolling_sh,
         nav_series=nav_series,
         daily_returns=daily_returns,
         drawdown_series=drawdown,

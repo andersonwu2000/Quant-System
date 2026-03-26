@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.domain.models import Instrument, Order, OrderStatus, OrderType, Portfolio, Side
-from src.execution.execution_service import ExecutionConfig, ExecutionService
+from src.core.models import Instrument, Order, OrderStatus, OrderType, Portfolio, Side
+from src.execution.service import ExecutionConfig, ExecutionService
 
 
 def _make_order(symbol: str = "2330") -> Order:
@@ -58,11 +58,11 @@ class TestExecutionServicePaper:
         svc = ExecutionService(config)
 
         # Make the import inside initialize() raise ImportError
-        import src.execution.execution_service as mod
+        import src.execution.service as mod
 
         def patched_init(self_inner: ExecutionService) -> bool:
             # Simulate ImportError on sinopac import
-            from src.execution.broker import PaperBroker
+            from src.execution.broker.base import PaperBroker
             self_inner._broker = PaperBroker()
             self_inner._initialized = True
             return True
@@ -80,8 +80,8 @@ class TestExecutionServicePaper:
         mock_sinopac = MagicMock()
         mock_sinopac.is_connected.return_value = True
 
-        with patch("src.execution.sinopac_broker.SinopacBroker", return_value=mock_sinopac), \
-             patch("src.execution.sinopac_broker.SinopacConfig"):
+        with patch("src.execution.broker.sinopac.SinopacBroker", return_value=mock_sinopac), \
+             patch("src.execution.broker.sinopac.SinopacConfig"):
             result = svc.initialize()
 
         assert result is True
@@ -97,8 +97,8 @@ class TestExecutionServicePaper:
 
         order = _make_order()
 
-        with patch("src.execution.execution_service.is_tradable", return_value=False), \
-             patch("src.execution.execution_service.get_current_session") as mock_session:
+        with patch("src.execution.service.is_tradable", return_value=False), \
+             patch("src.execution.service.get_current_session") as mock_session:
             mock_session.return_value = MagicMock(value="after_hours")
             trades = svc.submit_orders([order], Portfolio())
 
@@ -115,7 +115,7 @@ class TestExecutionServicePaper:
 
         order = _make_order()
 
-        with patch("src.execution.execution_service.is_tradable", return_value=False):
+        with patch("src.execution.service.is_tradable", return_value=False):
             trades = svc.submit_orders([order], Portfolio())
 
         assert trades == []

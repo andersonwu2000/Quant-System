@@ -4,8 +4,8 @@ import { useT } from "@core/i18n";
 import { fmtPct, fmtNum, fmtDate, fmtTime, pnlColor } from "@core/utils";
 import { Card, MetricCard, StatusBadge, ErrorAlert, Skeleton, useToast } from "@shared/ui";
 import { autoAlphaEndpoints } from "@core/api";
-import type { AutoAlphaStatus, AutoAlphaPerformance, AutoAlphaSnapshot } from "@core/api";
-import { Play, Square, Zap } from "lucide-react";
+import type { AutoAlphaStatus, AutoAlphaPerformance, AutoAlphaSnapshot, AutoAlphaAlert } from "@core/api";
+import { Play, Square, Zap, Loader2 } from "lucide-react";
 
 const REGIME_COLORS: Record<string, string> = {
   bull: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400",
@@ -13,18 +13,30 @@ const REGIME_COLORS: Record<string, string> = {
   sideways: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400",
 };
 
-interface AlertItem {
-  timestamp: string;
-  level: string;
-  message: string;
-}
+type AlertItem = AutoAlphaAlert;
+
+type RunProgress = {
+  taskId: string;
+  status: "downloading" | "researching" | "completed" | "failed";
+  symbolsLoaded?: number;
+  factorsComputed?: number;
+  selectedFactors?: string[];
+  regime?: string;
+  error?: string;
+};
+
+const STAGE_LABELS: Record<string, Record<string, string>> = {
+  en: { downloading: "Downloading market data...", researching: "Running factor analysis...", completed: "Completed", failed: "Failed" },
+  zh: { downloading: "下載市場數據中...", researching: "執行因子分析中...", completed: "完成", failed: "失敗" },
+};
 
 export function AutoAlphaPage() {
   const { t } = useT();
   const { toast } = useToast();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
+  const [runProgress, setRunProgress] = useState<RunProgress | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const {
     data: status,
@@ -101,20 +113,93 @@ export function AutoAlphaPage() {
     }
   };
 
+  // Cleanup poll + mountedRef on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   const handleRunNow = async () => {
     setActionLoading("runNow");
     try {
-      await autoAlphaEndpoints.runNow();
+      const resp = await autoAlphaEndpoints.runNow();
       if (!mountedRef.current) return;
-      toast("success", t.autoAlpha.runNow);
-      refreshStatus();
-      refreshHistory();
-      refreshPerf();
+      const taskId = resp.task_id;
+      setRunProgress({ taskId, status: "downloading" });
+
+      // Poll every 5 seconds, with error counter
+      if (pollRef.current) clearInterval(pollRef.current);
+      let pollErrors = 0;
+      pollRef.current = setInterval(async () => {
+        if (!mountedRef.current) { if (pollRef.current) clearInterval(pollRef.current); return; }
+        try {
+          const task = await autoAlphaEndpoints.taskStatus(taskId);
+          pollErrors = 0; // Reset on success
+          if (!mountedRef.current) return;
+          if (task.status === "completed") {
+            setRunProgress({
+              taskId,
+              status: "completed",
+              factorsComputed: task.factors_computed,
+              selectedFactors: task.selected_factors,
+              regime: task.regime,
+            });
+            if (pollRef.current) clearInterval(pollRef.current);
+            setActionLoading(null);
+            refreshStatus();
+            refreshHistory();
+            refreshPerf();
+            setTimeout(() => { if (mountedRef.current) setRunProgress(null); }, 5000);
+          } else if (task.status === "failed") {
+            setRunProgress({ taskId, status: "failed", error: task.error });
+            if (pollRef.current) clearInterval(pollRef.current);
+            setActionLoading(null);
+            setTimeout(() => { if (mountedRef.current) setRunProgress(null); }, 8000);
+          } else {
+            // Still running — update stage
+            const stage = task.stage === "researching" ? "researching" : "downloading";
+            setRunProgress((prev) => prev ? {
+              ...prev,
+              status: stage,
+              symbolsLoaded: task.symbols_loaded ?? prev.symbolsLoaded,
+            } : prev);
+          }
+        } catch {
+          pollErrors++;
+          if (pollErrors >= 3) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            if (!mountedRef.current) return;
+            try {
+              const st = await autoAlphaEndpoints.status();
+              if (st.last_run) {
+                setRunProgress({
+                  taskId,
+                  status: "completed",
+                  regime: st.regime ?? undefined,
+                  selectedFactors: st.selected_factors,
+                });
+                setActionLoading(null);
+                refreshStatus();
+                refreshHistory();
+                refreshPerf();
+                setTimeout(() => { if (mountedRef.current) setRunProgress(null); }, 5000);
+                return;
+              }
+            } catch { /* ignore */ }
+            setRunProgress({ taskId, status: "failed", error: "Lost connection to task" });
+            setActionLoading(null);
+            setTimeout(() => { if (mountedRef.current) setRunProgress(null); }, 5000);
+          }
+        }
+      }, 5000);
     } catch {
       if (!mountedRef.current) return;
       toast("error", t.common.requestFailed);
-    } finally {
-      if (mountedRef.current) setActionLoading(null);
+      setActionLoading(null);
+      setRunProgress(null);
     }
   };
 
@@ -145,8 +230,12 @@ export function AutoAlphaPage() {
             disabled={actionLoading !== null}
             className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors"
           >
-            <Zap size={14} />
-            {actionLoading === "runNow" ? "..." : t.autoAlpha.runNow}
+            {actionLoading === "runNow" ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Zap size={14} />
+            )}
+            {actionLoading === "runNow" ? t.autoAlpha.runNow + "..." : t.autoAlpha.runNow}
           </button>
           {status?.running ? (
             <button
@@ -169,6 +258,59 @@ export function AutoAlphaPage() {
           )}
         </div>
       </div>
+
+      {/* Run Progress Banner */}
+      {runProgress && (
+        <Card className={`p-4 border-l-4 ${
+          runProgress.status === "completed" ? "border-l-emerald-500 bg-emerald-500/5" :
+          runProgress.status === "failed" ? "border-l-red-500 bg-red-500/5" :
+          "border-l-amber-500 bg-amber-500/5"
+        }`}>
+          <div className="flex items-center gap-3">
+            {runProgress.status !== "completed" && runProgress.status !== "failed" && (
+              <Loader2 size={18} className="animate-spin text-amber-500" />
+            )}
+            <div className="flex-1">
+              <p className="font-medium text-sm">
+                {STAGE_LABELS[/[\u4e00-\u9fff]/.test(t.autoAlpha.title) ? "zh" : "en"]?.[runProgress.status] ?? runProgress.status}
+              </p>
+              {runProgress.status !== "completed" && runProgress.status !== "failed" && (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {runProgress.symbolsLoaded != null ? `${runProgress.symbolsLoaded} symbols loaded · ` : ""}
+                  This may take 2-5 minutes
+                </p>
+              )}
+              {runProgress.status === "completed" && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  {runProgress.factorsComputed ?? 0} factors analyzed
+                  {runProgress.regime && ` · Regime: ${runProgress.regime}`}
+                  {runProgress.selectedFactors && runProgress.selectedFactors.length > 0
+                    ? ` · Selected: ${runProgress.selectedFactors.join(", ")}`
+                    : " · No factors passed threshold"}
+                </p>
+              )}
+              {runProgress.status === "failed" && runProgress.error && (
+                <p className="text-xs text-red-500 mt-0.5">{runProgress.error}</p>
+              )}
+            </div>
+            {(runProgress.status === "completed" || runProgress.status === "failed") && (
+              <button onClick={() => setRunProgress(null)} className="text-slate-400 hover:text-slate-300 text-xs">
+                ✕
+              </button>
+            )}
+          </div>
+          {/* Progress bar — indeterminate animation */}
+          {runProgress.status !== "completed" && runProgress.status !== "failed" && (
+            <div className="mt-3 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden relative">
+              <div className="absolute inset-0 bg-amber-500/30 rounded-full animate-pulse" />
+              <div
+                className="h-full bg-amber-500 rounded-full transition-all duration-[3000ms] ease-linear"
+                style={{ width: runProgress.status === "researching" ? "75%" : "30%" }}
+              />
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Errors */}
       {statusError && <ErrorAlert message={statusError} onRetry={refreshStatus} />}
@@ -247,7 +389,7 @@ export function AutoAlphaPage() {
               </thead>
               <tbody>
                 {status.selected_factors.map((factor) => {
-                  const w = status.factor_weights[factor] ?? 0;
+                  const w = 1 / status.selected_factors.length; // Equal weight display when detailed weights unavailable
                   return (
                     <tr
                       key={factor}

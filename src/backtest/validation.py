@@ -15,6 +15,7 @@ import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import pandas as pd
 
 from src.backtest.analytics import BacktestResult
 
@@ -313,3 +314,128 @@ def run_all_quality_validations(
         check_determinism(strategy, config),
         check_sensitivity(strategy, config),
     ]
+
+
+# ─── 回測防禦（Seven Sins）──────────────────────────────
+
+
+def detect_survivorship_bias(
+    data: dict[str, pd.DataFrame],
+    start: str,
+    end: str,
+) -> list[str]:
+    """偵測潛在的存活者偏差。
+
+    檢查每個 symbol 的數據是否涵蓋完整回測期間。
+    若有 symbol 的數據起始較晚或提前結束，視為潛在存活者偏差。
+
+    Args:
+        data: {symbol: DataFrame} — 每個 symbol 的歷史數據
+        start: 回測起始日 (YYYY-MM-DD)
+        end: 回測結束日 (YYYY-MM-DD)
+
+    Returns:
+        警告訊息列表
+    """
+    if not data:
+        return []
+
+    warnings: list[str] = []
+    bt_start = pd.Timestamp(start)
+    bt_end = pd.Timestamp(end)
+
+    for symbol, df in data.items():
+        if df.empty:
+            warnings.append(f"{symbol}: no data available — possible delisted stock")
+            continue
+        sym_start = pd.Timestamp(df.index[0])
+        sym_end = pd.Timestamp(df.index[-1])
+
+        # 數據起始晚於回測起始 30 天以上
+        start_gap = (sym_start - bt_start).days
+        if start_gap > 30:
+            warnings.append(
+                f"{symbol}: data starts {sym_start.strftime('%Y-%m-%d')}, "
+                f"{start_gap} days after backtest start — possible late listing"
+            )
+
+        # 數據結束早於回測結束 30 天以上
+        end_gap = (bt_end - sym_end).days
+        if end_gap > 30:
+            warnings.append(
+                f"{symbol}: data ends {sym_end.strftime('%Y-%m-%d')}, "
+                f"{end_gap} days before backtest end — possible delisting"
+            )
+
+    return warnings
+
+
+def detect_price_outliers(
+    data: dict[str, pd.DataFrame],
+    threshold: float = 0.20,
+) -> list[str]:
+    """偵測價格異常值。
+
+    檢查項目：
+    1. 日報酬超過 ±threshold（例如 ±20%）
+    2. 零成交量日
+    3. 價格缺口（開盤價 vs 前日收盤價差距超過 threshold）
+
+    Args:
+        data: {symbol: DataFrame} — 每個 symbol 的 OHLCV 數據
+        threshold: 異常閾值（預設 0.20 = 20%）
+
+    Returns:
+        警告訊息列表
+    """
+    if not data:
+        return []
+
+    warnings: list[str] = []
+
+    for symbol, df in data.items():
+        if df.empty or "close" not in df.columns:
+            continue
+
+        # 1. 日報酬異常
+        returns = df["close"].pct_change().dropna()
+        extreme = returns[returns.abs() > threshold]
+        if len(extreme) > 0:
+            dates = [
+                d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)
+                for d in extreme.index[:5]
+            ]
+            warnings.append(
+                f"{symbol}: {len(extreme)} day(s) with return > ±{threshold:.0%} "
+                f"(first: {', '.join(dates)})"
+            )
+
+        # 2. 零成交量日
+        if "volume" in df.columns:
+            zero_vol = df[df["volume"] == 0]
+            if len(zero_vol) > 0:
+                dates = [
+                    d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)
+                    for d in zero_vol.index[:5]
+                ]
+                warnings.append(
+                    f"{symbol}: {len(zero_vol)} zero-volume day(s) "
+                    f"(first: {', '.join(dates)})"
+                )
+
+        # 3. 價格缺口（開盤價 vs 前日收盤價）
+        if "open" in df.columns and len(df) > 1:
+            prev_close = df["close"].shift(1)
+            gap = ((df["open"] - prev_close) / prev_close).dropna()
+            gap_extreme = gap[gap.abs() > threshold]
+            if len(gap_extreme) > 0:
+                dates = [
+                    d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)
+                    for d in gap_extreme.index[:5]
+                ]
+                warnings.append(
+                    f"{symbol}: {len(gap_extreme)} price gap(s) > ±{threshold:.0%} "
+                    f"(first: {', '.join(dates)})"
+                )
+
+    return warnings

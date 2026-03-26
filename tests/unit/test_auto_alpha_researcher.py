@@ -58,7 +58,7 @@ def _make_mock_report(
     quantile_results = {}
 
     for name in factor_names:
-        factor_ics[name] = _make_ic_result(name, 0.04, 0.8, 0.55)
+        factor_ics[name] = _make_ic_result(name, 0.04, 1.3, 0.55)
 
         to = MagicMock()
         to.avg_turnover = 0.15
@@ -104,7 +104,7 @@ class TestAlphaResearcherReportToScores:
         assert "volatility" in scores
         assert isinstance(scores["momentum"], FactorScore)
         assert scores["momentum"].ic == pytest.approx(0.04)
-        assert scores["momentum"].icir == pytest.approx(0.8)
+        assert scores["momentum"].icir == pytest.approx(1.3)
         assert scores["momentum"].hit_rate == pytest.approx(0.55)
 
     def test_eligibility_pass(self) -> None:
@@ -114,7 +114,7 @@ class TestAlphaResearcherReportToScores:
         report = _make_mock_report(["momentum"])
         scores = researcher._report_to_scores(report)
 
-        # ic=0.04, icir=0.8 > 0.3, hit_rate=0.55 > 0.52, cost=100 < 200
+        # icir=1.3, OOS adjusted=1.3*0.42=0.546 > 0.5, hit_rate=0.55 > 0.52, cost=100 < 200
         assert scores["momentum"].eligible is True
 
     def test_eligibility_fail_icir(self) -> None:

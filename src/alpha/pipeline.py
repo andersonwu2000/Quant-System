@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 from src.alpha.attribution import AttributionResult, attribute_returns
@@ -99,6 +100,8 @@ class AlphaReport:
     regime_series: pd.Series = field(default_factory=pd.Series)
     # 因子歸因
     attribution: AttributionResult | None = None
+    # Equal-weight benchmark comparison (DeMiguel 2009)
+    vs_equal_weight_sharpe: float | None = None
 
     def summary(self) -> str:
         lines = [
@@ -154,6 +157,10 @@ class AlphaReport:
                     count = ric.regime_counts.get(regime, 0)
                     parts.append(f"{regime.value}={ic.ic_mean:+.4f}(n={count})")
                 lines.append(f"  {name}: {', '.join(parts)}")
+
+        # Equal-weight benchmark comparison
+        if self.vs_equal_weight_sharpe is not None:
+            lines.append(f"  vs EW Sharpe diff: {self.vs_equal_weight_sharpe:+.2f}")
 
         # Attribution
         if self.attribution:
@@ -298,7 +305,8 @@ class AlphaPipeline:
             if not regime_series.empty:
                 for name, fv in neutralized.items():
                     dates_key = str(fv.index[0]) + "_" + str(fv.index[-1]) + "_" + str(len(fv))
-                    fwd = fwd_cache.get(dates_key) or compute_forward_returns(
+                    cached_fwd = fwd_cache.get(dates_key)
+                    fwd = cached_fwd if cached_fwd is not None else compute_forward_returns(
                         data, horizon=cfg.holding_period, dates=list(fv.index)
                     )
                     ric = compute_regime_ic(fv, fwd, regime_series, factor_name=name)
@@ -334,6 +342,24 @@ class AlphaPipeline:
                 composite_fv, fwd, n_quantiles=cfg.n_quantiles, factor_name="composite"
             )
 
+        # [8b] Equal-weight benchmark Sharpe comparison (DeMiguel 2009)
+        vs_equal_weight_sharpe: float | None = None
+        if composite_quantile is not None and composite_fv is not None and not composite_fv.empty:
+            try:
+                # Equal-weight portfolio: mean of all forward returns across symbols
+                ew_fwd = compute_forward_returns(data, horizon=cfg.holding_period, dates=list(composite_fv.index))
+                if not ew_fwd.empty:
+                    ew_returns = ew_fwd.mean(axis=1).dropna()
+                    if len(ew_returns) > 1 and ew_returns.std() > 0:
+                        ew_sharpe = float(ew_returns.mean() / ew_returns.std() * np.sqrt(252 / cfg.holding_period))
+                        vs_equal_weight_sharpe = composite_quantile.long_short_sharpe - ew_sharpe
+                        logger.info(
+                            "Composite L/S Sharpe=%.2f, EW Sharpe=%.2f, diff=%.2f",
+                            composite_quantile.long_short_sharpe, ew_sharpe, vs_equal_weight_sharpe,
+                        )
+            except Exception:
+                logger.warning("Equal-weight Sharpe comparison failed, skipping", exc_info=True)
+
         # [9] 因子歸因
         attribution: AttributionResult | None = None
         if composite_quantile is not None and composite_weights and len(quantile_results) > 1:
@@ -366,6 +392,7 @@ class AlphaPipeline:
             regime_ics=regime_ics,
             regime_series=regime_series,
             attribution=attribution,
+            vs_equal_weight_sharpe=vs_equal_weight_sharpe,
         )
 
     def generate_weights(

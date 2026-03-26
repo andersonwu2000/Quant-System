@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 
-from src.domain.models import Instrument, Order, Portfolio, Position, Side
+from src.core.models import Instrument, Order, Portfolio, Position, Side
 from src.risk.engine import RiskEngine
 from src.risk.rules import (
     MarketState,

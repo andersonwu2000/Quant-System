@@ -21,7 +21,7 @@ from src.alpha.regime import MarketRegime
 
 def _make_score(
     name: str,
-    icir: float = 0.5,
+    icir: float = 0.6,
     hit_rate: float = 0.55,
     cost_drag_bps: float = 100.0,
 ) -> FactorScore:
@@ -60,7 +60,7 @@ class TestFactorFiltering:
     def test_filter_by_icir(self) -> None:
         """Factors with ICIR below threshold are excluded."""
         scores = {
-            "momentum": _make_score("momentum", icir=0.5),  # pass
+            "momentum": _make_score("momentum", icir=0.6),  # pass
             "value_pe": _make_score("value_pe", icir=0.1),  # fail
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=False))
@@ -86,8 +86,8 @@ class TestFactorFiltering:
     def test_filter_by_cost_drag(self) -> None:
         """Factors with cost drag above threshold are excluded."""
         scores = {
-            "momentum": _make_score("momentum", cost_drag_bps=50.0),   # pass
-            "max_ret": _make_score("max_ret", cost_drag_bps=300.0),     # fail
+            "momentum": _make_score("momentum", icir=0.6, cost_drag_bps=50.0),   # pass
+            "max_ret": _make_score("max_ret", icir=0.6, cost_drag_bps=300.0),     # fail
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=False))
         engine = AlphaDecisionEngine(cfg)
@@ -126,9 +126,9 @@ class TestFactorFiltering:
     def test_boundary_icir_excluded(self) -> None:
         """Factors with ICIR exactly at threshold are excluded (strict >)."""
         scores = {
-            "boundary": _make_score("boundary", icir=0.3),
+            "boundary": _make_score("boundary", icir=0.5),
         }
-        cfg = AutoAlphaConfig(decision=DecisionConfig(min_icir=0.3, regime_aware=False))
+        cfg = AutoAlphaConfig(decision=DecisionConfig(min_icir=0.5, regime_aware=False))
         engine = AlphaDecisionEngine(cfg)
         result = engine.decide(_make_snapshot(scores))
 
@@ -149,9 +149,9 @@ class TestFactorFiltering:
         """Must pass ALL three criteria simultaneously."""
         scores = {
             # passes icir+hit_rate but fails cost_drag
-            "high_cost": _make_score("high_cost", icir=0.5, hit_rate=0.6, cost_drag_bps=250.0),
+            "high_cost": _make_score("high_cost", icir=0.6, hit_rate=0.6, cost_drag_bps=250.0),
             # passes all
-            "good": _make_score("good", icir=0.5, hit_rate=0.6, cost_drag_bps=100.0),
+            "good": _make_score("good", icir=0.6, hit_rate=0.6, cost_drag_bps=100.0),
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=False))
         engine = AlphaDecisionEngine(cfg)
@@ -170,8 +170,8 @@ class TestRegimeBias:
     def test_bull_regime_boosts_momentum(self) -> None:
         """In BULL, momentum should get a higher weight than without bias."""
         scores = {
-            "momentum": _make_score("momentum", icir=0.5),
-            "volatility": _make_score("volatility", icir=0.5),
+            "momentum": _make_score("momentum", icir=0.6),
+            "volatility": _make_score("volatility", icir=0.6),
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=True))
         engine = AlphaDecisionEngine(cfg)
@@ -183,8 +183,8 @@ class TestRegimeBias:
     def test_bear_regime_boosts_volatility(self) -> None:
         """In BEAR, volatility factor should get higher weight."""
         scores = {
-            "momentum": _make_score("momentum", icir=0.5),
-            "volatility": _make_score("volatility", icir=0.5),
+            "momentum": _make_score("momentum", icir=0.6),
+            "volatility": _make_score("volatility", icir=0.6),
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=True))
         engine = AlphaDecisionEngine(cfg)
@@ -196,8 +196,8 @@ class TestRegimeBias:
     def test_sideways_regime_boosts_mean_reversion(self) -> None:
         """In SIDEWAYS, mean reversion should get higher weight."""
         scores = {
-            "mean_reversion": _make_score("mean_reversion", icir=0.5),
-            "momentum": _make_score("momentum", icir=0.5),
+            "mean_reversion": _make_score("mean_reversion", icir=0.6),
+            "momentum": _make_score("momentum", icir=0.6),
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=True))
         engine = AlphaDecisionEngine(cfg)
@@ -208,8 +208,8 @@ class TestRegimeBias:
     def test_regime_aware_false_skips_adjustment(self) -> None:
         """regime_aware=False gives equal weights when ICIR is the same."""
         scores = {
-            "momentum": _make_score("momentum", icir=0.5),
-            "volatility": _make_score("volatility", icir=0.5),
+            "momentum": _make_score("momentum", icir=0.6),
+            "volatility": _make_score("volatility", icir=0.6),
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=False))
         engine = AlphaDecisionEngine(cfg)
@@ -221,8 +221,8 @@ class TestRegimeBias:
     def test_unknown_factor_gets_default_multiplier(self) -> None:
         """Factors not in REGIME_FACTOR_BIAS get multiplier 1.0."""
         scores = {
-            "custom_factor": _make_score("custom_factor", icir=0.5),
-            "momentum": _make_score("momentum", icir=0.5),
+            "custom_factor": _make_score("custom_factor", icir=0.6),
+            "momentum": _make_score("momentum", icir=0.6),
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=True))
         engine = AlphaDecisionEngine(cfg)
@@ -241,9 +241,9 @@ class TestWeightNormalisation:
 
     def test_weights_sum_to_one(self) -> None:
         scores = {
-            "a": _make_score("a", icir=0.5),
+            "a": _make_score("a", icir=0.6),
             "b": _make_score("b", icir=0.8),
-            "c": _make_score("c", icir=0.3001),
+            "c": _make_score("c", icir=0.5001),
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=False))
         engine = AlphaDecisionEngine(cfg)
@@ -253,9 +253,9 @@ class TestWeightNormalisation:
 
     def test_weights_sum_to_one_with_regime(self) -> None:
         scores = {
-            "momentum": _make_score("momentum", icir=0.6),
-            "volatility": _make_score("volatility", icir=0.4),
-            "rsi": _make_score("rsi", icir=0.35),
+            "momentum": _make_score("momentum", icir=0.7),
+            "volatility": _make_score("volatility", icir=0.6),
+            "rsi": _make_score("rsi", icir=0.55),
         }
         cfg = AutoAlphaConfig(decision=DecisionConfig(regime_aware=True))
         engine = AlphaDecisionEngine(cfg)

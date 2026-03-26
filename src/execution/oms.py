@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-from src.domain.models import Order, OrderStatus, Portfolio, Side, Trade
+from src.core.models import Order, OrderStatus, Portfolio, Side, Trade
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
 
     這是一個純函式，返回更新後的 Portfolio。
     """
-    from src.domain.models import Instrument, Position
+    from src.core.models import Instrument, Position
 
     for trade in trades:
         symbol = trade.symbol

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Callable
 
-from src.domain.models import Order, Portfolio, RiskDecision
+from src.core.models import Order, Portfolio, RiskDecision
 
 
 @dataclass

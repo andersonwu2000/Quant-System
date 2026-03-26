@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient
 
 from src.api.app import create_app
 from src.api.state import reset_app_state
-from src.config import TradingConfig, override_config
+from src.core.config import TradingConfig, override_config
 
 API_KEY = "test-portfolio-key"
 AUTH_HEADERS = {"X-API-Key": API_KEY}

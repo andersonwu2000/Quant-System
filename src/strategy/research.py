@@ -19,6 +19,202 @@ from src.strategy import factors as flib
 
 logger = logging.getLogger(__name__)
 
+
+# ── 向量化因子函式 ────────────────────────────────────────────────
+# 每個函式接收完整 OHLCV DataFrame，回傳完整 Series（每個日期一個值）。
+# 用於取代逐日窗口呼叫，將 O(N_dates) 降至 O(1) pandas 向量化操作。
+
+
+def _vec_momentum(df: pd.DataFrame, lookback: int = 252, skip: int = 21, **_: object) -> pd.Series:
+    # Per-window version uses iloc[-skip] and iloc[-lookback] on a window ending
+    # at the current date (inclusive). iloc[-1] is current, so iloc[-skip] is
+    # (skip-1) positions back, and iloc[-lookback] is (lookback-1) positions back.
+    close = df["close"]
+    return close.shift(skip - 1) / close.shift(lookback - 1) - 1
+
+
+def _vec_mean_reversion(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    close = df["close"]
+    ma = close.rolling(lookback).mean()
+    std = close.rolling(lookback).std()
+    z = (close - ma) / std.replace(0, np.nan)
+    return -z
+
+
+def _vec_volatility(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    returns = df["close"].pct_change()
+    result: pd.Series = returns.rolling(lookback).std() * np.sqrt(252)
+    return result
+
+
+def _vec_rsi(df: pd.DataFrame, period: int = 14, **_: object) -> pd.Series:
+    delta = df["close"].diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta.where(delta < 0, 0.0))
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def _vec_ma_cross(df: pd.DataFrame, fast: int = 10, slow: int = 50, **_: object) -> pd.Series:
+    close = df["close"]
+    ma_fast = close.rolling(fast).mean()
+    ma_slow = close.rolling(slow).mean()
+    return ma_fast / ma_slow.replace(0, np.nan) - 1
+
+
+def _vec_vpt(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    price_ret = df["close"].pct_change()
+    vol_change = df["volume"].pct_change()
+    return price_ret.rolling(lookback).corr(vol_change)
+
+
+def _vec_reversal(df: pd.DataFrame, lookback: int = 5, **_: object) -> pd.Series:
+    close = df["close"]
+    return -(close / close.shift(lookback) - 1)
+
+
+def _vec_illiquidity(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    ret_abs = df["close"].pct_change().abs()
+    dollar_vol = df["close"] * df["volume"]
+    dollar_vol = dollar_vol.replace(0, np.nan)
+    ratio = ret_abs / dollar_vol
+    return ratio.rolling(lookback).mean()
+
+
+def _vec_ivol(
+    df: pd.DataFrame,
+    lookback: int = 60,
+    market_returns: pd.Series | None = None,
+    **_: object,
+) -> pd.Series:
+    """向量化特質波動率：使用 rolling beta 去除市場因子後的殘差波動率。"""
+    close = df["close"]
+    stock_ret = close.pct_change()
+
+    if market_returns is None or market_returns.empty:
+        result: pd.Series = stock_ret.rolling(lookback).std() * np.sqrt(252)
+        return result
+
+    # 對齊
+    aligned = pd.DataFrame({"stock": stock_ret, "market": market_returns}).dropna()
+    if len(aligned) < lookback:
+        return pd.Series(dtype=float, index=df.index)
+
+    s = aligned["stock"]
+    m = aligned["market"]
+
+    # Rolling beta = cov(s, m) / var(m)
+    cov_sm = s.rolling(lookback).cov(m)
+    var_m = m.rolling(lookback).var()
+    beta = cov_sm / var_m.replace(0, np.nan)
+    alpha = s.rolling(lookback).mean() - beta * m.rolling(lookback).mean()
+
+    # Residual = stock - alpha - beta * market
+    residual = s - alpha - beta * m
+
+    # Rolling std of residuals
+    ivol: pd.Series = residual.rolling(lookback).std() * np.sqrt(252)
+    return ivol.reindex(df.index)
+
+
+def _vec_skewness(df: pd.DataFrame, lookback: int = 60, **_: object) -> pd.Series:
+    ret = df["close"].pct_change()
+    return ret.rolling(lookback).skew()
+
+
+def _vec_max_ret(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    ret = df["close"].pct_change()
+    return ret.rolling(lookback).max()
+
+
+# ── Kakushadze vectorized versions ──────────────────────────────────
+
+
+def _vec_alpha_2(df: pd.DataFrame, **_: object) -> pd.Series:
+    close, open_, volume = df["close"], df["open"], df["volume"]
+    delta_log_vol = np.log(volume).diff(2)
+    intraday_ret = (close - open_) / open_
+    corr: pd.Series = delta_log_vol.rank(pct=True).rolling(6).corr(intraday_ret.rank(pct=True))
+    return -corr
+
+
+def _vec_alpha_3(df: pd.DataFrame, **_: object) -> pd.Series:
+    open_, volume = df["open"], df["volume"]
+    return -open_.rank(pct=True).rolling(10).corr(volume.rank(pct=True))
+
+
+def _vec_alpha_6(df: pd.DataFrame, **_: object) -> pd.Series:
+    return -df["open"].rolling(10).corr(df["volume"])
+
+
+def _vec_alpha_12(df: pd.DataFrame, **_: object) -> pd.Series:
+    result: pd.Series = np.sign(df["volume"].diff(1)) * (-df["close"].diff(1))
+    return result
+
+
+def _vec_alpha_33(df: pd.DataFrame, **_: object) -> pd.Series:
+    raw = -(1 - (df["open"] / df["close"]))
+    return raw.rank(pct=True)
+
+
+def _vec_alpha_34(df: pd.DataFrame, **_: object) -> pd.Series:
+    returns = df["close"].pct_change()
+    std2 = returns.rolling(2).std()
+    std5 = returns.rolling(5).std()
+    ratio = std2 / std5.replace(0, np.nan)
+    delta_close = df["close"].diff(1)
+    component = (1 - ratio.rank(pct=True)) + (1 - delta_close.rank(pct=True))
+    return component.rank(pct=True)
+
+
+def _vec_alpha_38(df: pd.DataFrame, **_: object) -> pd.Series:
+    close, open_ = df["close"], df["open"]
+    ts_r = flib._ts_rank(close, 10)
+    ratio_rank = (close / open_).rank(pct=True)
+    return -ts_r.rank(pct=True) * ratio_rank
+
+
+def _vec_alpha_44(df: pd.DataFrame, **_: object) -> pd.Series:
+    return -df["high"].rolling(5).corr(df["volume"].rank(pct=True))
+
+
+def _vec_alpha_53(df: pd.DataFrame, **_: object) -> pd.Series:
+    close, high, low = df["close"], df["high"], df["low"]
+    denom = (close - low).replace(0, np.nan)
+    williams = ((close - low) - (high - close)) / denom
+    return -williams.diff(9)
+
+
+def _vec_alpha_101(df: pd.DataFrame, **_: object) -> pd.Series:
+    return (df["close"] - df["open"]) / ((df["high"] - df["low"]) + 0.001)
+
+
+VECTORIZED_FACTORS: dict[str, Callable[..., pd.Series]] = {
+    "momentum": _vec_momentum,
+    "mean_reversion": _vec_mean_reversion,
+    "volatility": _vec_volatility,
+    "rsi": _vec_rsi,
+    "ma_cross": _vec_ma_cross,
+    "vpt": _vec_vpt,
+    "reversal": _vec_reversal,
+    "illiquidity": _vec_illiquidity,
+    "ivol": _vec_ivol,
+    "skewness": _vec_skewness,
+    "max_ret": _vec_max_ret,
+    "alpha_2": _vec_alpha_2,
+    "alpha_3": _vec_alpha_3,
+    "alpha_6": _vec_alpha_6,
+    "alpha_12": _vec_alpha_12,
+    "alpha_33": _vec_alpha_33,
+    "alpha_34": _vec_alpha_34,
+    "alpha_38": _vec_alpha_38,
+    "alpha_44": _vec_alpha_44,
+    "alpha_53": _vec_alpha_53,
+    "alpha_101": _vec_alpha_101,
+}
+
 # ── 因子註冊表 ──────────────────────────────────────────────────
 
 FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
@@ -88,6 +284,66 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {"lookback": 20},
         "min_bars": 21,
     },
+    "alpha_2": {
+        "fn": flib.kakushadze_alpha_2,
+        "key": "alpha_2",
+        "default_kwargs": {},
+        "min_bars": 10,
+    },
+    "alpha_3": {
+        "fn": flib.kakushadze_alpha_3,
+        "key": "alpha_3",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_6": {
+        "fn": flib.kakushadze_alpha_6,
+        "key": "alpha_6",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_12": {
+        "fn": flib.kakushadze_alpha_12,
+        "key": "alpha_12",
+        "default_kwargs": {},
+        "min_bars": 3,
+    },
+    "alpha_33": {
+        "fn": flib.kakushadze_alpha_33,
+        "key": "alpha_33",
+        "default_kwargs": {},
+        "min_bars": 2,
+    },
+    "alpha_34": {
+        "fn": flib.kakushadze_alpha_34,
+        "key": "alpha_34",
+        "default_kwargs": {},
+        "min_bars": 8,
+    },
+    "alpha_38": {
+        "fn": flib.kakushadze_alpha_38,
+        "key": "alpha_38",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_44": {
+        "fn": flib.kakushadze_alpha_44,
+        "key": "alpha_44",
+        "default_kwargs": {},
+        "min_bars": 8,
+    },
+    "alpha_53": {
+        "fn": flib.kakushadze_alpha_53,
+        "key": "alpha_53",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_101": {
+        "fn": flib.kakushadze_alpha_101,
+        "key": "alpha_101",
+        "default_kwargs": {},
+        "min_bars": 1,
+    },
 }
 
 
@@ -102,17 +358,57 @@ def compute_market_returns(data: dict[str, pd.DataFrame]) -> pd.Series:
 
 @dataclass
 class FundamentalFactorDef:
-    """基本面因子定義。"""
+    """基本面因子定義。
+
+    Single-metric factors use ``metric_key`` (e.g. value_pe).
+    Multi-metric factors use ``metric_keys`` — the values are passed
+    positionally to ``fn`` in the order listed.
+    """
 
     name: str
     fn: Callable[..., float]
-    metric_key: str  # get_financials() 回傳 dict 中的 key
+    metric_key: str = ""  # get_financials() 回傳 dict 中的 key (single-metric)
+    metric_keys: list[str] = field(default_factory=list)  # multi-metric
+
+    def compute(self, financials: dict[str, float]) -> float | None:
+        """Compute factor value from a financials dict.
+
+        Returns None if required metrics are missing.
+        """
+        if self.metric_keys:
+            vals: list[float] = []
+            for k in self.metric_keys:
+                v = financials.get(k)
+                if v is None:
+                    return None
+                vals.append(v)
+            return self.fn(*vals)
+        # Single metric
+        metric_val = financials.get(self.metric_key)
+        if metric_val is None:
+            return None
+        return self.fn(metric_val)
 
 
 FUNDAMENTAL_REGISTRY: dict[str, FundamentalFactorDef] = {
     "value_pe": FundamentalFactorDef(name="value_pe", fn=flib.value_pe, metric_key="pe_ratio"),
     "value_pb": FundamentalFactorDef(name="value_pb", fn=flib.value_pb, metric_key="pb_ratio"),
     "quality_roe": FundamentalFactorDef(name="quality_roe", fn=flib.quality_roe, metric_key="roe"),
+    "size": FundamentalFactorDef(
+        name="size",
+        fn=lambda market_cap: -np.log(market_cap) if market_cap > 0 else 0.0,
+        metric_key="market_cap",
+    ),
+    "investment": FundamentalFactorDef(
+        name="investment",
+        fn=flib.investment_factor,
+        metric_keys=["total_assets_current", "total_assets_prev"],
+    ),
+    "gross_profit": FundamentalFactorDef(
+        name="gross_profit",
+        fn=flib.gross_profitability_factor,
+        metric_keys=["revenue", "cogs", "total_assets"],
+    ),
 }
 
 
@@ -143,9 +439,9 @@ def compute_fundamental_factor_values(
             except Exception:
                 logger.debug("Failed to get financials for %s on %s", sym, date_str, exc_info=True)
                 continue
-            metric_val = financials.get(fdef.metric_key)
-            if metric_val is not None:
-                row[sym] = fdef.fn(metric_val)
+            val = fdef.compute(financials)
+            if val is not None:
+                row[sym] = val
         if len(row) > 1:
             result_rows.append(row)
 
@@ -211,6 +507,82 @@ class CompositeResult:
 # ── 核心分析函式 ─────────────────────────────────────────────────
 
 
+def _compute_vectorized(
+    data: dict[str, pd.DataFrame],
+    factor_name: str,
+    dates: list[pd.Timestamp],
+    fn_kwargs: dict[str, Any],
+    min_bars: int,
+) -> pd.DataFrame:
+    """向量化快速路徑：每個標的只呼叫一次向量化函式，回傳完整 Series。"""
+    vec_fn = VECTORIZED_FACTORS[factor_name]
+
+    col_results: dict[str, pd.Series] = {}
+    for sym in sorted(data.keys()):
+        df = data[sym]
+        if len(df) < min_bars:
+            continue
+        series = vec_fn(df, **fn_kwargs)
+        if series is not None and not series.empty:
+            col_results[sym] = series
+
+    if not col_results:
+        return pd.DataFrame()
+
+    result_df = pd.DataFrame(col_results)
+    result_df = result_df.reindex(dates).dropna(how="all")
+    return result_df
+
+
+def _compute_per_window(
+    data: dict[str, pd.DataFrame],
+    factor_name: str,
+    dates: list[pd.Timestamp],
+    fn: Callable[..., Any],
+    key: str,
+    fn_kwargs: dict[str, Any],
+    min_bars: int,
+) -> pd.DataFrame:
+    """逐窗口慢速路徑：相容所有因子函式。"""
+    symbols = sorted(data.keys())
+    window = max(min_bars * 2, 300)
+
+    col_results: dict[str, pd.Series] = {}
+
+    for sym in symbols:
+        df = data[sym]
+        idx = df.index
+        if len(idx) < min_bars:
+            continue
+
+        valid_dates = [dt for dt in dates if dt in idx or (len(idx) > 0 and idx[0] <= dt)]
+
+        values: dict[pd.Timestamp, float] = {}
+        for dt in valid_dates:
+            pos = int(idx.searchsorted(dt, side="right"))
+            if pos < min_bars:
+                continue
+            start = max(0, pos - window)
+            bars = df.iloc[start:pos]
+            if len(bars) < min_bars:
+                continue
+            val = fn(bars, **fn_kwargs)
+            if isinstance(val, dict):
+                val = pd.Series(val)
+            if not val.empty and key in val.index:
+                values[dt] = float(val[key])
+
+        if values:
+            col_results[sym] = pd.Series(values)
+
+    if not col_results:
+        return pd.DataFrame()
+
+    result_df = pd.DataFrame(col_results)
+    result_df = result_df.reindex(dates).dropna(how="all")
+    return result_df
+
+
 def compute_factor_values(
     data: dict[str, pd.DataFrame],
     factor_name: str,
@@ -220,8 +592,8 @@ def compute_factor_values(
     """
     對多檔標的在多個日期計算因子值。
 
-    使用逐標的向量化策略：對每個標的只遍歷一次其價格序列，
-    而非原本的逐日×逐標的雙層迴圈。
+    優先使用向量化快速路徑（每個標的一次 pandas 向量化呼叫），
+    若該因子無向量化版本則退回逐窗口慢速路徑。
 
     Args:
         data: {symbol: OHLCV DataFrame}
@@ -239,9 +611,7 @@ def compute_factor_values(
     fn = reg["fn"]
     key = reg["key"]
     min_bars = reg["min_bars"]
-    fn_kwargs = {**reg["default_kwargs"], **kwargs}
-
-    symbols = sorted(data.keys())
+    fn_kwargs: dict[str, Any] = {**reg["default_kwargs"], **kwargs}
 
     # ivol 需要市場報酬代理（等權平均）
     if factor_name == "ivol" and "market_returns" not in fn_kwargs:
@@ -249,7 +619,7 @@ def compute_factor_values(
 
     if dates is None:
         all_dates: set[pd.Timestamp] | None = None
-        for sym in symbols:
+        for sym in sorted(data.keys()):
             sym_dates = set(data[sym].index)
             all_dates = sym_dates if all_dates is None else all_dates & sym_dates
         dates = sorted(all_dates or set())
@@ -257,45 +627,12 @@ def compute_factor_values(
     if not dates:
         return pd.DataFrame()
 
-    window = max(min_bars * 2, 300)
+    # 嘗試向量化快速路徑
+    if factor_name in VECTORIZED_FACTORS:
+        return _compute_vectorized(data, factor_name, dates, fn_kwargs, min_bars)
 
-    # 逐標的計算（外層迴圈是 symbol，內層用 searchsorted 快速定位）
-    # 這樣每個標的只需一次 index 對齊，避免 N_dates × N_symbols 的雙層迴圈
-    col_results: dict[str, pd.Series] = {}
-
-    for sym in symbols:
-        df = data[sym]
-        idx = df.index
-        if len(idx) < min_bars:
-            continue
-
-        # 找出此標的在 dates 中有數據的日期
-        valid_dates = [dt for dt in dates if dt in idx or (len(idx) > 0 and idx[0] <= dt)]
-
-        values: dict[pd.Timestamp, float] = {}
-        # 使用 searchsorted 批量定位，避免逐日 boolean mask
-        for dt in valid_dates:
-            pos = idx.searchsorted(dt, side="right")
-            if pos < min_bars:
-                continue
-            start = max(0, pos - window)
-            bars = df.iloc[start:pos]
-            if len(bars) < min_bars:
-                continue
-            val = fn(bars, **fn_kwargs)
-            if not val.empty:
-                values[dt] = float(val[key])
-
-        if values:
-            col_results[sym] = pd.Series(values)
-
-    if not col_results:
-        return pd.DataFrame()
-
-    result_df = pd.DataFrame(col_results)
-    # 只保留請求的日期，且至少有一個標的有值
-    result_df = result_df.reindex(dates).dropna(how="all")
-    return result_df
+    # 退回逐窗口慢速路徑
+    return _compute_per_window(data, factor_name, dates, fn, key, fn_kwargs, min_bars)
 
 
 def compute_forward_returns(

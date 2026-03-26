@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.domain.models import Instrument, Order, OrderStatus, OrderType, Side
-from src.execution.sinopac_broker import (
+from src.core.models import Instrument, Order, OrderStatus, OrderType, Side
+from src.execution.broker.sinopac import (
     SinopacBroker,
     SinopacConfig,
     SinopacOrderType,

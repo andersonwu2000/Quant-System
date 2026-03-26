@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.auth import verify_api_key, require_role
-from src.domain.models import Side
+from src.core.models import Side
 from src.api.schemas import (
     PortfolioCreateRequest,
     PortfolioDetailResponse,
@@ -24,9 +24,9 @@ from src.api.schemas import (
     SuggestedTrade,
 )
 from src.api.state import get_app_state
-from src.config import get_config
+from src.core.config import get_config
 from src.data.store import _create_engine, metadata
-from src.domain.repository import PortfolioRepository
+from src.core.repository import PortfolioRepository
 
 logger = logging.getLogger(__name__)
 

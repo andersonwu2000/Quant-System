@@ -22,13 +22,15 @@ import numpy as np
 import pandas as pd
 
 from src.backtest.analytics import BacktestResult, compute_analytics
+from src.backtest.validation import detect_price_outliers, detect_survivorship_bias
 from src.data.feed import HistoricalFeed
 from src.data.fundamentals import FundamentalsProvider
 from src.data.quality import check_bars
 from src.data.sources import create_feed, create_fundamentals
-from src.domain.models import Instrument, Order, Portfolio, Side
+from src.core.models import Instrument, Order, Portfolio, Side
+from src.core.trading_pipeline import execute_one_bar
 from src.execution.oms import apply_trades
-from src.execution.sim import SimBroker, SimConfig
+from src.execution.broker.simulated import SimBroker, SimConfig
 from src.instrument.registry import InstrumentRegistry
 from src.risk.engine import RiskEngine
 from src.risk.rules import MarketState
@@ -125,6 +127,21 @@ class BacktestEngine:
             logger.warning("Skipping %d suspect dates: %s", len(suspect_dates), sorted(suspect_dates)[:10])
 
         self._config = config
+
+        # ── G8: 回測防禦 — 存活者偏差 & 價格異常偵測 ──
+        raw_data: dict[str, pd.DataFrame] = {}
+        for sym in config.universe:
+            df = feed.get_bars(sym)
+            if not df.empty:
+                raw_data[sym] = df
+        survivorship_warnings = detect_survivorship_bias(raw_data, config.start, config.end)
+        price_warnings = detect_price_outliers(raw_data)
+        if survivorship_warnings:
+            for w in survivorship_warnings:
+                logger.warning("SURVIVORSHIP BIAS: %s", w)
+        if price_warnings:
+            for w in price_warnings:
+                logger.warning("PRICE OUTLIER: %s", w)
 
         # 載入股利數據（如果啟用）
         self._dividend_data: dict[str, dict[str, float]] = {}
@@ -299,6 +316,10 @@ class BacktestEngine:
             rejected_orders=sim_broker.rejected_log,
         )
 
+        # 附加防禦警告
+        result.survivorship_warnings = survivorship_warnings
+        result.price_warnings = price_warnings
+
         logger.info(
             "BACKTEST DONE [%s] return=%.2f%% sharpe=%.2f maxdd=%.2f%% trades=%d rejected=%d",
             run_id,
@@ -446,40 +467,53 @@ class BacktestEngine:
             fundamentals_provider=fundamentals,
         )
 
-        target_weights = strategy.on_bar(ctx)
-        if not target_weights:
-            return None
-
         # Determine available cash for settlement constraint
         avail_cash: Decimal | None = None
         if config.settlement_days > 0:
             avail_cash = portfolio.available_cash
 
-        orders = weights_to_orders(
-            target_weights, portfolio, prices,
-            instruments=self._instruments,
-            available_cash=avail_cash,
-            market_lot_sizes=config.market_lot_sizes,
-            fractional_shares=config.fractional_shares,
-        )
-
-        market_state = MarketState(prices=prices, daily_volumes=volumes)
-        approved = risk_engine.check_orders(orders, portfolio, market_state)
-
         if config.execution_delay == 0:
+            # Immediate execution — use shared trading pipeline
             current_bars = self._build_bar_dict(
                 prices, volumes, self._bar_cache.prev_close,
             )
-            trades = sim_broker.execute(approved, current_bars, bar_date)
-            if trades:
-                portfolio = apply_trades(portfolio, trades)
-                if config.settlement_days > 0:
-                    self._record_settlements(
-                        trades, bar_date, config.settlement_days,
-                        trading_dates, portfolio,
-                    )
+            trades = execute_one_bar(
+                strategy=strategy,
+                ctx=ctx,
+                portfolio=portfolio,
+                risk_engine=risk_engine,
+                prices=prices,
+                volumes=volumes,
+                current_bars=current_bars,
+                sim_broker=sim_broker,
+                instruments=self._instruments,
+                available_cash=avail_cash,
+                market_lot_sizes=config.market_lot_sizes,
+                fractional_shares=config.fractional_shares,
+                timestamp=bar_date,
+            )
+            if trades and config.settlement_days > 0:
+                self._record_settlements(
+                    trades, bar_date, config.settlement_days,
+                    trading_dates, portfolio,
+                )
             return portfolio, [], bool(trades)
         else:
+            # Deferred execution — generate orders only, execute on next bar
+            target_weights = strategy.on_bar(ctx)
+            if not target_weights:
+                return None
+
+            orders = weights_to_orders(
+                target_weights, portfolio, prices,
+                instruments=self._instruments,
+                available_cash=avail_cash,
+                market_lot_sizes=config.market_lot_sizes,
+                fractional_shares=config.fractional_shares,
+            )
+
+            market_state = MarketState(prices=prices, daily_volumes=volumes)
+            approved = risk_engine.check_orders(orders, portfolio, market_state)
             return portfolio, approved, bool(approved)
 
     def _snap_nav(self, portfolio: Portfolio, bar_date: datetime) -> dict[str, Any]:
@@ -569,7 +603,7 @@ class BacktestEngine:
         self, config: BacktestConfig
     ) -> tuple[HistoricalFeed, set[str], FundamentalsProvider | None]:
         """下載數據並載入 HistoricalFeed，使用配置的數據源。"""
-        from src.config import get_config
+        from src.core.config import get_config
 
         cfg = get_config()
         source = cfg.data_source
@@ -616,7 +650,7 @@ class BacktestEngine:
     def _get_trading_dates(
         self, feed: HistoricalFeed, config: BacktestConfig
     ) -> list[datetime]:
-        """取得交易日序列（取所有標的共有的日期）。"""
+        """取得交易日序列（取所有標的共有的日期，過濾 TWSE 假日）。"""
         all_dates: set[pd.Timestamp] | None = None
 
         for symbol in feed.get_universe():
@@ -634,7 +668,22 @@ class BacktestEngine:
 
         start = pd.Timestamp(config.start)
         end = pd.Timestamp(config.end)
-        return [d.to_pydatetime() for d in sorted_dates if start <= d <= end]
+        candidates = [d.to_pydatetime() for d in sorted_dates if start <= d <= end]
+
+        # 過濾 TWSE 假日（僅當 universe 包含台股標的時）
+        has_tw_symbols = any(
+            s.endswith(".TW") or s.endswith(".TWO")
+            for s in feed.get_universe()
+        )
+        if has_tw_symbols:
+            from src.core.calendar import get_tw_calendar
+
+            cal = get_tw_calendar()
+            candidates = [
+                d for d in candidates if cal.is_trading_day(d.date())
+            ]
+
+        return candidates
 
     def _build_matrices(
         self,

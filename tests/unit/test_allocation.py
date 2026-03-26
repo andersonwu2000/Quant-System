@@ -13,7 +13,7 @@ from src.allocation.tactical import (
     TacticalEngine,
 )
 from src.alpha.regime import MarketRegime
-from src.domain.models import AssetClass
+from src.core.models import AssetClass
 
 
 # ── MacroSignals ──────────────────────────────────────────

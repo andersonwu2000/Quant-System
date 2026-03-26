@@ -12,7 +12,7 @@ from src.api.auth import verify_api_key, require_role
 from src.api.schemas import ManualOrderRequest, OrderResponse
 from src.api.state import get_app_state
 from src.api.ws import ws_manager
-from src.domain.models import Instrument, Order, OrderStatus, OrderType, Side
+from src.core.models import Instrument, Order, OrderStatus, OrderType, Side
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 

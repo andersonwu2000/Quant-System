@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 
-from src.config import TradingConfig
+from src.core.config import TradingConfig
 from src.scheduler import SchedulerService
 
 

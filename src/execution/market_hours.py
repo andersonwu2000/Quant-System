@@ -92,6 +92,21 @@ def is_tradable(
     Returns:
         True 表示可以下單。
     """
+    from src.core.calendar import get_tw_calendar
+
+    # 先取得台灣時區的當前時間（用於日曆檢查）
+    if now is None:
+        now_tw = datetime.now(TW_TZ)
+    elif now.tzinfo is None:
+        now_tw = now.replace(tzinfo=TW_TZ)
+    else:
+        now_tw = now.astimezone(TW_TZ)
+
+    # 檢查是否為交易日（排除國定假日）
+    cal = get_tw_calendar()
+    if not cal.is_trading_day(now_tw.date()):
+        return False
+
     session = get_current_session(now)
     if session == TradingSession.REGULAR:
         return True

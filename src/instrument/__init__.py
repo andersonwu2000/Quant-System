@@ -1,6 +1,6 @@
 """Instrument Registry — 金融工具模型與查詢。"""
 
-from src.domain.models import AssetClass, Instrument, Market, SubClass
+from src.core.models import AssetClass, Instrument, Market, SubClass
 from src.instrument.model import Currency
 from src.instrument.registry import InstrumentRegistry
 

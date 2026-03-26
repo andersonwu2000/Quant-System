@@ -36,6 +36,8 @@ import type {
   AutoAlphaStatus,
   AutoAlphaPerformance,
   AutoAlphaSnapshot,
+  AutoAlphaAlert,
+  AutoAlphaConfig,
 } from "../types";
 
 export const auth = {
@@ -134,11 +136,24 @@ export const autoAlpha = {
   status: () => get<AutoAlphaStatus>("/api/v1/auto-alpha/status"),
   performance: () => get<AutoAlphaPerformance>("/api/v1/auto-alpha/performance"),
   history: (limit = 30) => get<AutoAlphaSnapshot[]>(`/api/v1/auto-alpha/history?limit=${limit}`),
-  alerts: (limit = 50) => get<any[]>(`/api/v1/auto-alpha/alerts?limit=${limit}`),
-  config: () => get<any>("/api/v1/auto-alpha/config"),
+  alerts: (limit = 50) => get<AutoAlphaAlert[]>(`/api/v1/auto-alpha/alerts?limit=${limit}`),
+  config: () => get<AutoAlphaConfig>("/api/v1/auto-alpha/config"),
+  updateConfig: (data: Partial<AutoAlphaConfig>) => put<AutoAlphaConfig>("/api/v1/auto-alpha/config", data),
   start: () => post<{ message: string }>("/api/v1/auto-alpha/start"),
   stop: () => post<{ message: string }>("/api/v1/auto-alpha/stop"),
   runNow: () => post<{ task_id: string }>("/api/v1/auto-alpha/run-now"),
+  taskStatus: (taskId: string) => get<{
+    task_id: string;
+    status: string;
+    stage?: string;
+    symbols_loaded?: number;
+    factors_computed?: number;
+    selected_factors?: string[];
+    regime?: string;
+    error?: string;
+    started?: string;
+    completed?: string;
+  }>(`/api/v1/auto-alpha/run-now/${taskId}`),
 };
 
 export const risk = {
