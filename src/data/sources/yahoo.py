@@ -64,9 +64,16 @@ class YahooFeed(DataFeed):
 
         df: pd.DataFrame = self._cache[cache_key]
 
+        # 空 DataFrame 直接回傳，避免 RangeIndex vs Timestamp 比較錯誤
+        if df.empty:
+            return df
+
         # 確保 index 是 DatetimeIndex（parquet 快取載入後可能退化）
-        if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+        if not isinstance(df.index, pd.DatetimeIndex):
             df.index = pd.to_datetime(df.index)
+        # 統一為 tz-naive，避免 tz-aware index (如 Asia/Taipei) 與 tz-naive Timestamp 比較報錯
+        if hasattr(df.index, "tz") and df.index.tz is not None:
+            df.index = df.index.tz_convert("UTC").tz_localize(None)
 
         if start is not None:
             df = df[df.index >= pd.Timestamp(start)]

@@ -45,6 +45,9 @@ class LocalMarketData:
             df: pd.DataFrame = pd.read_parquet(p)
             if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
                 df.index = pd.to_datetime(df.index)
+            # 統一為 tz-naive，避免與 tz-naive Timestamp 比較時報錯
+            if not df.empty and hasattr(df.index, "tz") and df.index.tz is not None:
+                df.index = df.index.tz_convert("UTC").tz_localize(None)
             return df
         except Exception:
             logger.debug("Failed to read %s", p)

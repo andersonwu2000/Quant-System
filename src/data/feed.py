@@ -111,9 +111,11 @@ class HistoricalFeed(DataFeed):
 
         df = self._data[symbol]
 
-        # 確保 index 是 DatetimeIndex，避免 numpy.ndarray vs Timestamp 比較錯誤
+        # 確保 index 是 tz-naive DatetimeIndex，避免 numpy.ndarray vs Timestamp 比較錯誤
         if not isinstance(df.index, pd.DatetimeIndex):
             df.index = pd.to_datetime(df.index)
+        if hasattr(df.index, "tz") and df.index.tz is not None:
+            df.index = df.index.tz_convert("UTC").tz_localize(None)
 
         # 因果性保證：截斷到 current_date
         if self._current_date is not None:

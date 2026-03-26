@@ -500,6 +500,7 @@ volumes:
 | D-42 | ✅ 已修復 | 中 | broadcast 無 backpressure | 同 channel 前次未完成時丟棄 + 批次 50 並行 |
 | D-43 | ✅ 已修復 | 低 | useWs 每次建立新 WSManager | singleton + refCount 共享機制 |
 | D-44 | ✅ 已修復 | 中 | backtest 結果全存記憶體 | 加入 1 小時自動過期清除 |
+| D-45 | ✅ 已修復 | 高 | 台股回測 tz-aware index 比較錯誤 | yfinance 回傳 Asia/Taipei 時區，多層防護確保 tz-naive (yahoo/finmind/feed/context/parquet_cache) |
 
 ---
 

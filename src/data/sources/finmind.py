@@ -76,9 +76,16 @@ class FinMindFeed(DataFeed):
 
         df: pd.DataFrame = self._cache[cache_key]
 
-        # 確保 index 是 DatetimeIndex（快取反序列化後可能退化）
-        if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+        # 空 DataFrame 直接回傳，避免 RangeIndex vs Timestamp 比較錯誤
+        if df.empty:
+            return df
+
+        # 確保 index 是 tz-naive DatetimeIndex（快取反序列化後可能退化）
+        if not isinstance(df.index, pd.DatetimeIndex):
             df.index = pd.to_datetime(df.index)
+            self._cache[cache_key] = df
+        if hasattr(df.index, "tz") and df.index.tz is not None:
+            df.index = df.index.tz_convert("UTC").tz_localize(None)
             self._cache[cache_key] = df
 
         if start is not None:

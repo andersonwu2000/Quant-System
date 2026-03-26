@@ -55,9 +55,11 @@ class Context:
         if df.empty:
             return df
 
-        # 確保 index 是 DatetimeIndex，避免 numpy.ndarray vs Timestamp 比較錯誤
+        # 確保 index 是 tz-naive DatetimeIndex，避免 numpy.ndarray vs Timestamp 比較錯誤
         if not isinstance(df.index, pd.DatetimeIndex):
             df.index = pd.to_datetime(df.index)
+        if hasattr(df.index, "tz") and df.index.tz is not None:
+            df.index = df.index.tz_convert("UTC").tz_localize(None)
 
         # 如果有 current_time，截斷未來數據
         if self._current_time is not None:
