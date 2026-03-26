@@ -486,13 +486,61 @@ class AlphaResearchAgent:
         with open(eval_path, "w", encoding="utf-8") as f:
             json.dump(asdict(eval_result), f, indent=2, ensure_ascii=False, default=str)
 
-        # Write discovery report if passed
+        # L5 通過 → 自動跑 StrategyValidator 13 項
         if traj.passed:
-            self._write_discovery_report(traj, eval_result)
+            validator_result = self._run_strategy_validator(hypothesis, eval_result)
+            traj.eval_results["validator_passed"] = validator_result.get("n_passed", 0)
+            traj.eval_results["validator_total"] = validator_result.get("n_total", 0)
+            self._write_discovery_report(traj, eval_result, validator_result)
 
         return traj
 
-    def _write_discovery_report(self, traj: ResearchTrajectory, eval_result: EvaluationResult) -> None:
+    def _run_strategy_validator(
+        self, hypothesis: Hypothesis, eval_result: EvaluationResult,
+    ) -> dict[str, Any]:
+        """自動跑 StrategyValidator 13 項。"""
+        logger.info("[Validator] Running 13-check validation for %s...", hypothesis.name)
+        try:
+            from src.backtest.validator import StrategyValidator, ValidationConfig
+            from src.alpha.auto.strategy_builder import build_revenue_variant
+            from scripts.run_strategy_backtest import discover_universe
+
+            # 用 relaxed revenue_momentum 作為策略載體
+            built = build_revenue_variant(min_yoy=10.0, max_holdings=20, enable_hedge=True)
+            universe = discover_universe()
+
+            config = ValidationConfig(
+                min_cagr=0.10, min_sharpe=0.5, max_drawdown=0.50,
+                n_trials=self.memory.total_rounds + 83,
+                oos_start="2025-07-01", oos_end="2025-12-31",
+            )
+
+            validator = StrategyValidator(config)
+            report = validator.validate(built.strategy, universe, "2018-01-01", "2025-06-30")
+
+            logger.info(
+                "[Validator] %s: %d/%d passed",
+                hypothesis.name, report.n_passed, report.n_total,
+            )
+
+            return {
+                "n_passed": report.n_passed,
+                "n_total": report.n_total,
+                "passed": report.passed,
+                "checks": [
+                    {"name": c.name, "passed": c.passed, "value": str(c.value)}
+                    for c in report.checks
+                ],
+                "summary": report.summary(),
+            }
+        except Exception as e:
+            logger.warning("[Validator] Failed: %s", e)
+            return {"n_passed": 0, "n_total": 13, "passed": False, "error": str(e)}
+
+    def _write_discovery_report(
+        self, traj: ResearchTrajectory, eval_result: EvaluationResult,
+        validator_result: dict[str, Any] | None = None,
+    ) -> None:
         """成果寫到 docs/dev/auto/。"""
         auto_dir = Path("docs/dev/auto")
         auto_dir.mkdir(parents=True, exist_ok=True)
@@ -508,7 +556,7 @@ class AlphaResearchAgent:
             f"**假說**: {traj.hypothesis.get('description', '')}",
             f"**學術依據**: {traj.hypothesis.get('academic_basis', '')}",
             "",
-            "## 評估結果",
+            "## L1-L5 快速評估",
             "",
             f"| 指標 | 值 |",
             f"|------|---:|",
@@ -518,13 +566,44 @@ class AlphaResearchAgent:
             f"| Turnover | {eval_result.avg_turnover:.1%} |",
             f"| Max Correlation | {eval_result.max_correlation:.3f} ({eval_result.correlated_with}) |",
             f"| Positive Years | {eval_result.positive_years}/{eval_result.total_years} |",
+        ]
+
+        # StrategyValidator 結果
+        if validator_result:
+            n_pass = validator_result.get("n_passed", 0)
+            n_total = validator_result.get("n_total", 13)
+            lines.extend([
+                "",
+                f"## StrategyValidator: {n_pass}/{n_total}",
+                "",
+            ])
+            checks = validator_result.get("checks", [])
+            if checks:
+                lines.append("| 檢查 | 值 | 結果 |")
+                lines.append("|------|---:|:----:|")
+                for c in checks:
+                    icon = "PASS" if c["passed"] else "FAIL"
+                    lines.append(f"| {c['name']} | {c['value']} | {icon} |")
+
+            if n_pass >= 10:
+                lines.extend([
+                    "",
+                    f"**{n_pass}/13 通過 — 可考慮進入 Paper Trading。**",
+                ])
+            else:
+                lines.extend([
+                    "",
+                    f"**{n_pass}/13 通過 — 需改進後再驗證。**",
+                ])
+
+        lines.extend([
             "",
             "## 下一步",
             "",
             "- [ ] 人工審閱假說邏輯",
-            "- [ ] 完整 StrategyValidator 驗證",
             "- [ ] 決定是否加入正式因子庫",
-        ]
+            "- [ ] 決定是否部署到 Paper Trading",
+        ])
 
         report_path.write_text("\n".join(lines), encoding="utf-8")
         logger.info("Discovery report: %s", report_path)
