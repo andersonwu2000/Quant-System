@@ -104,8 +104,14 @@ class BacktestEngine:
         config: BacktestConfig,
         progress_callback: Callable[[int, int], None] | None = None,
         cancel_event: threading.Event | None = None,
+        feed_override: HistoricalFeed | None = None,
     ) -> BacktestResult:
-        """執行回測。"""
+        """執行回測。
+
+        Args:
+            feed_override: 預載的 HistoricalFeed。若提供則跳過數據下載，
+                          直接使用此 feed（用於實驗框架的並行回測）。
+        """
         self._price_matrix = pd.DataFrame()
         self._open_matrix = pd.DataFrame()
         self._volume_matrix = pd.DataFrame()
@@ -120,7 +126,12 @@ class BacktestEngine:
         )
 
         # 1. 準備數據（含品質檢查）
-        feed, suspect_dates, fundamentals = self._load_data(config)
+        if feed_override is not None:
+            feed = feed_override
+            suspect_dates: set[str] = set()
+            fundamentals = None
+        else:
+            feed, suspect_dates, fundamentals = self._load_data(config)
         if not feed.get_universe():
             raise ValueError("No data loaded for any symbol in universe")
         if suspect_dates:

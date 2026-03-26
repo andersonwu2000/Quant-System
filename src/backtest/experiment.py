@@ -77,9 +77,18 @@ DEFAULT_PERIODS = [
 ]
 
 
-def _run_single_backtest(args: tuple[dict[str, Any], dict[str, Any], list[str]]) -> dict[str, Any]:
-    """Run a single backtest — designed for ProcessPoolExecutor."""
-    config_dict, period_dict, universe = args
+def _run_single_backtest(args: tuple[dict[str, Any], dict[str, Any], list[str], str]) -> dict[str, Any]:
+    """Run a single backtest — designed for ProcessPoolExecutor.
+
+    The 4th element of *args* is the path to a pickle file containing
+    pre-loaded market data (``dict[str, pd.DataFrame]``).  Workers read
+    this file instead of downloading from Yahoo Finance, avoiding rate
+    limits and ensuring consistent data across all runs.
+    """
+    config_dict, period_dict, universe, data_path = args
+
+    import pickle
+    from src.data.feed import HistoricalFeed
 
     # Reconstruct objects (can't pickle complex objects across processes)
     factors = [FactorSpec(name=f) for f in config_dict["factors"]]
@@ -111,7 +120,19 @@ def _run_single_backtest(args: tuple[dict[str, Any], dict[str, Any], list[str]])
 
     try:
         engine = BacktestEngine()
-        result = engine.run(strategy, bt_config)
+
+        # Load pre-downloaded data from pickle — no network calls
+        if data_path:
+            with open(data_path, "rb") as f:
+                all_data: dict[str, pd.DataFrame] = pickle.load(f)
+            # Inject into engine via HistoricalFeed (bypass YahooFeed download)
+            feed = HistoricalFeed()
+            for sym in universe:
+                if sym in all_data:
+                    feed.load(sym, all_data[sym])
+            result = engine.run(strategy, bt_config, feed_override=feed)
+        else:
+            result = engine.run(strategy, bt_config)
 
         return {
             "config_name": config_dict["name"],
@@ -192,14 +213,79 @@ def generate_coarse_grid() -> list[ExperimentConfig]:
     return configs
 
 
+def preload_data(
+    symbols: list[str],
+    start: str = "2019-01-01",
+    end: str = "2025-12-31",
+    data_dir: str = "data/market",
+) -> str:
+    """Pre-download market data to a local pickle file.
+
+    Checks local parquet cache first (``YahooFeed`` with ``ttl=0``).
+    Only downloads symbols not already cached.  Returns the path to
+    the pickle file that workers will read.
+
+    Args:
+        symbols: List of stock symbols to download.
+        start: Start date for historical data.
+        end: End date for historical data.
+        data_dir: Directory to store the pickle file.
+
+    Returns:
+        Path to the saved pickle file.
+    """
+    import os
+    import pickle
+    import time
+
+    from src.data.sources.yahoo import YahooFeed
+
+    os.makedirs(data_dir, exist_ok=True)
+    pkl_path = os.path.join(data_dir, "experiment_data.pkl")
+
+    # If pickle already exists and is recent enough, reuse it
+    if os.path.exists(pkl_path):
+        with open(pkl_path, "rb") as f:
+            existing: dict[str, pd.DataFrame] = pickle.load(f)
+        missing = [s for s in symbols if s not in existing]
+        if not missing:
+            logger.info("All %d symbols already in %s", len(symbols), pkl_path)
+            return pkl_path
+        logger.info("%d symbols missing from cache, downloading...", len(missing))
+    else:
+        existing = {}
+        missing = symbols
+
+    feed = YahooFeed(missing)
+    for sym in missing:
+        try:
+            bars = feed.get_bars(sym, start=start, end=end)
+            if not bars.empty:
+                existing[sym] = bars
+        except Exception:
+            logger.warning("Failed to download %s", sym)
+        time.sleep(0.3)
+
+    with open(pkl_path, "wb") as f:
+        pickle.dump(existing, f)
+
+    logger.info("Saved %d symbols to %s (%.1f MB)",
+                len(existing), pkl_path, os.path.getsize(pkl_path) / 1e6)
+    return pkl_path
+
+
 def run_experiment_grid(
     configs: list[ExperimentConfig],
     periods: list[PeriodConfig] | None = None,
     universes: dict[str, list[str]] | None = None,
     n_workers: int | None = None,
     progress_callback: Any = None,
+    data_path: str = "",
 ) -> pd.DataFrame:
     """Run full experiment grid with parallel backtesting.
+
+    Workers read pre-downloaded data from *data_path* (pickle file).
+    Call ``preload_data()`` first to ensure all symbols are available.
 
     Args:
         configs: List of experiment configurations.
@@ -207,6 +293,8 @@ def run_experiment_grid(
         universes: ``{"TW50": [...symbols...], "TW300": [...]}``.
         n_workers: Number of parallel workers (default: CPU count - 2).
         progress_callback: Optional ``callback(completed, total)``.
+        data_path: Path to pre-loaded data pickle.  If empty, workers
+            will download data themselves (slow, may hit rate limits).
 
     Returns:
         DataFrame with one row per (config, period) combination.
@@ -216,8 +304,15 @@ def run_experiment_grid(
     if n_workers is None:
         n_workers = max(1, mp.cpu_count() - 2)
 
+    # Auto-preload if data_path not provided
+    if not data_path and universes:
+        all_symbols = set()
+        for syms in universes.values():
+            all_symbols.update(syms)
+        data_path = preload_data(sorted(all_symbols))
+
     # Build task list
-    tasks: list[tuple[dict[str, Any], dict[str, Any], list[str]]] = []
+    tasks: list[tuple[dict[str, Any], dict[str, Any], list[str], str]] = []
     for config in configs:
         # Resolve universe
         universe = config.universe
@@ -246,10 +341,11 @@ def run_experiment_grid(
                 "start": period.start,
                 "end": period.end,
             }
-            tasks.append((config_dict, period_dict, universe))
+            tasks.append((config_dict, period_dict, universe, data_path))
 
     total = len(tasks)
-    logger.info("Starting experiment grid: %d tasks on %d workers", total, n_workers)
+    logger.info("Starting experiment grid: %d tasks on %d workers (data=%s)",
+                total, n_workers, data_path or "live download")
 
     results: list[dict[str, Any]] = []
     completed = 0
@@ -259,7 +355,7 @@ def run_experiment_grid(
         for future in as_completed(futures):
             completed += 1
             try:
-                result = future.result(timeout=300)  # 5 min timeout per backtest
+                result = future.result(timeout=300)
                 results.append(result)
             except Exception as e:
                 task = futures[future]

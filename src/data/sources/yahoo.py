@@ -40,7 +40,7 @@ class YahooFeed(DataFeed):
             from src.core.config import get_config
             cache_size = get_config().data_cache_size
         self._cache: LRUCache[str, pd.DataFrame] = LRUCache(maxsize=cache_size)
-        self._disk_cache = ParquetDiskCache(prefix="")
+        self._store = ParquetDiskCache()  # data/market/ 永久存儲
 
     def get_bars(
         self,
@@ -83,11 +83,16 @@ class YahooFeed(DataFeed):
         freq: str,
     ) -> pd.DataFrame:
         """從 Yahoo Finance 下載數據（優先使用本地快取）。"""
-        # 嘗試從快取讀取
-        cached = self._disk_cache.load(symbol, freq)
-        if cached is not None:
-            logger.info("Cache hit for %s (freq=%s)", symbol, freq)
-            return cached
+        # 嘗試從本地快取讀取
+        cached = self._store.load(symbol, freq)
+        if cached is not None and not cached.empty:
+            # 檢查快取是否涵蓋請求的日期範圍
+            covers_start = start is None or cached.index.min() <= pd.Timestamp(start)
+            covers_end = end is None or cached.index.max() >= pd.Timestamp(end) - pd.Timedelta(days=5)
+            if covers_start and covers_end:
+                logger.debug("Local cache hit for %s (freq=%s, %d bars)", symbol, freq, len(cached))
+                return cached
+            logger.info("Local cache for %s doesn't cover requested range, re-downloading", symbol)
 
         interval_map = {"1d": "1d", "1h": "1h", "5m": "5m", "1m": "1m"}
         interval = interval_map.get(freq, "1d")
@@ -150,7 +155,7 @@ class YahooFeed(DataFeed):
         df = df.dropna()
 
         # 寫入快取
-        self._disk_cache.save(symbol, freq, df)
+        self._store.save(symbol, freq, df)
 
         result_df: pd.DataFrame = df
         return result_df
@@ -208,7 +213,7 @@ class YahooFeed(DataFeed):
         end: str,
     ) -> pd.DataFrame:
         """從 Yahoo Finance 下載股利數據（優先使用本地快取）。"""
-        cached = self._disk_cache.load(symbol, "dividends")
+        cached = self._store.load(symbol, "dividends")
         if cached is not None:
             logger.info("Dividend cache hit for %s", symbol)
             return cached
@@ -234,7 +239,7 @@ class YahooFeed(DataFeed):
         # Convert Series to DataFrame for parquet caching and consistent type
         div_df: pd.DataFrame = divs.to_frame(name="dividend")
 
-        self._disk_cache.save(symbol, "dividends", div_df)
+        self._store.save(symbol, "dividends", div_df)
         return div_df
 
     def get_universe(self) -> list[str]:
