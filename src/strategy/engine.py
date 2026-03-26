@@ -53,6 +53,7 @@ def weights_to_orders(
     available_cash: Decimal | None = None,
     market_lot_sizes: dict[str, int] | None = None,
     fractional_shares: bool = False,
+    volumes: dict[str, Decimal] | None = None,
 ) -> list[Order]:
     """
     將目標權重轉換為訂單列表。
@@ -68,6 +69,9 @@ def weights_to_orders(
                           trading units per market. Instrument-level lot_size
                           takes priority if > 1.
         fractional_shares: If True, always use lot_size=1 (零股模式).
+        volumes: {symbol: Decimal} 20-day average daily volume. If provided,
+                 order quantity is capped at 10% of ADV to avoid excessive
+                 market impact.
     """
     if portfolio.nav <= 0:
         return []
@@ -113,6 +117,16 @@ def weights_to_orders(
         lot_size = _get_lot_size(symbol, inst, market_lot_sizes, fractional_shares)
         if lot_size > 0:
             qty = (qty // Decimal(str(lot_size))) * Decimal(str(lot_size))
+
+        # Volume cap: max 10% of 20-day ADV to limit market impact
+        if volumes and symbol in volumes:
+            adv = volumes[symbol]
+            if adv > 0:
+                max_qty = Decimal(str(int(float(adv) * 0.10)))
+                if lot_size > 0:
+                    max_qty = (max_qty // Decimal(str(lot_size))) * Decimal(str(lot_size))
+                if qty > max_qty and max_qty > 0:
+                    qty = max_qty
 
         if qty <= 0:
             continue

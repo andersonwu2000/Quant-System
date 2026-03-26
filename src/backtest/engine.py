@@ -522,6 +522,7 @@ class BacktestEngine:
                 available_cash=avail_cash,
                 market_lot_sizes=config.market_lot_sizes,
                 fractional_shares=config.fractional_shares,
+                volumes=volumes,
             )
 
             market_state = MarketState(prices=prices, daily_volumes=volumes)

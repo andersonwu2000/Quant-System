@@ -124,11 +124,17 @@ def _calc_rsi(bars: pd.DataFrame, period: int = 14) -> float | None:
 
 # Revenue + institutional factors need fundamentals provider
 def _calc_revenue_yoy(ctx: Context, symbol: str) -> float | None:
-    """Latest revenue YoY growth (%)."""
+    """Latest revenue YoY growth (%).
+
+    Applies 40-day publication lag: Taiwan monthly revenue is published
+    by the 10th of the following month (~40 days after the revenue month).
+    """
     if ctx._fundamentals is None:
         return None
-    end = pd.Timestamp(ctx.now()).strftime("%Y-%m-%d")
-    start = (pd.Timestamp(ctx.now()) - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
+    # 40-day lag: revenue for month M is not public until ~M+40d
+    usable_cutoff = pd.Timestamp(ctx.now()) - pd.DateOffset(days=40)
+    end = usable_cutoff.strftime("%Y-%m-%d")
+    start = (usable_cutoff - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
     rev_df = ctx._fundamentals.get_revenue(symbol, start, end)
     if rev_df.empty:
         return None
@@ -137,11 +143,16 @@ def _calc_revenue_yoy(ctx: Context, symbol: str) -> float | None:
 
 
 def _calc_revenue_acceleration(ctx: Context, symbol: str) -> float | None:
-    """Revenue 3M avg / 12M avg ratio."""
+    """Revenue 3M avg / 12M avg ratio.
+
+    Applies 40-day publication lag to avoid look-ahead bias.
+    """
     if ctx._fundamentals is None:
         return None
-    end = pd.Timestamp(ctx.now()).strftime("%Y-%m-%d")
-    start = (pd.Timestamp(ctx.now()) - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
+    # 40-day lag: revenue for month M is not public until ~M+40d
+    usable_cutoff = pd.Timestamp(ctx.now()) - pd.DateOffset(days=40)
+    end = usable_cutoff.strftime("%Y-%m-%d")
+    start = (usable_cutoff - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
     rev_df = ctx._fundamentals.get_revenue(symbol, start, end)
     if rev_df.empty or len(rev_df) < 12:
         return None
@@ -154,11 +165,16 @@ def _calc_revenue_acceleration(ctx: Context, symbol: str) -> float | None:
 
 
 def _calc_revenue_new_high(ctx: Context, symbol: str) -> float | None:
-    """1.0 if 3M avg revenue hits 12M high, else 0.0."""
+    """1.0 if 3M avg revenue hits 12M high, else 0.0.
+
+    Applies 40-day publication lag to avoid look-ahead bias.
+    """
     if ctx._fundamentals is None:
         return None
-    end = pd.Timestamp(ctx.now()).strftime("%Y-%m-%d")
-    start = (pd.Timestamp(ctx.now()) - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
+    # 40-day lag: revenue for month M is not public until ~M+40d
+    usable_cutoff = pd.Timestamp(ctx.now()) - pd.DateOffset(days=40)
+    end = usable_cutoff.strftime("%Y-%m-%d")
+    start = (usable_cutoff - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
     rev_df = ctx._fundamentals.get_revenue(symbol, start, end)
     if rev_df.empty or len(rev_df) < 12:
         return None

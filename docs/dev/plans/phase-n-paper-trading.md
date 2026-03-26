@@ -1,6 +1,6 @@
 # Phase N：Paper Trading 準備 + 30 天驗證
 
-> 狀態：🔵 待執行
+> 狀態：🟡 N1.1 已完成，其餘待辦
 > 前置：Phase M（下行保護 + 因子驗證）✅、CA 憑證 ⏳
 > 目標：將 composite_b0% 策略從回測環境遷移到即時 Paper Trading，驗證 30 天
 
@@ -19,21 +19,17 @@
 
 ## N1：策略整合到主系統
 
-### N1.1 revenue_momentum_hedged 正式化
+### N1.1 revenue_momentum_hedged 正式化 ✅
 
-將 `scripts/experiment_composite_hedge.py` 中的 `CompositeHedgedStrategy` 遷移：
+已完成。`strategies/revenue_momentum_hedged.py` 已建立並 commit。
 
 ```
-新檔案：strategies/revenue_momentum_hedged.py
+strategies/revenue_momentum_hedged.py
 - 繼承 Strategy ABC
 - 包裝 RevenueMomentumStrategy + 複合空頭偵測器（MA200 OR vol_spike）
 - 預設：bear_scale=0.0, sideways_scale=0.3
 - 月度 cache（同 revenue_momentum）
 ```
-
-**修改**：
-- `src/strategy/registry.py`：註冊 `revenue_momentum_hedged`
-- `tests/unit/test_revenue_strategies.py`：新增 hedged 版測試
 
 ### N1.2 即時模式適配
 

@@ -126,6 +126,30 @@ class SimBroker:
                 self.rejected_log.append(order)
                 continue
 
+            # ── 漲跌停流動性檢查 ──
+            # 當日漲幅接近漲停（≥9.5%）時，買方無法成交（賣方惜售）
+            # 當日跌幅接近跌停（≤-9.5%）時，賣方無法成交（買方觀望）
+            prev_close_for_limit = bar.get("prev_close")
+            if prev_close_for_limit is not None:
+                pc = Decimal(str(prev_close_for_limit))
+                if pc > 0:
+                    daily_return = (close_price - pc) / pc
+                    limit_threshold = Decimal("0.095")
+                    if daily_return >= limit_threshold and order.side == Side.BUY:
+                        order.status = OrderStatus.REJECTED
+                        order.reject_reason = (
+                            f"Limit up ({float(daily_return):.1%}) — no sellers for {symbol}"
+                        )
+                        self.rejected_log.append(order)
+                        continue
+                    if daily_return <= -limit_threshold and order.side == Side.SELL:
+                        order.status = OrderStatus.REJECTED
+                        order.reject_reason = (
+                            f"Limit down ({float(daily_return):.1%}) — no buyers for {symbol}"
+                        )
+                        self.rejected_log.append(order)
+                        continue
+
             # 數量限制（不超過當日成交量的一定比例）
             fill_qty = order.quantity
             if volume > 0 and self.config.max_fill_pct_of_volume > 0:

@@ -1,10 +1,19 @@
 """
-營收動能策略 — 基於 FinLab 研究的台股最強公開因子。
+營收動能策略 — 基於 FinLab 研究 + 真實性修正。
 
-FinLab 對標：月營收動能策略（CAGR 33.5%）+ AI 因子挖掘最佳迭代（CAGR 18.6%）
-核心邏輯：營收 3M avg > 12M avg + 營收 YoY > 15% + 股價趨勢確認 + 流動性篩選
+修正後核心：revenue_acceleration（3M/12M 比率）取代 revenue_yoy 作為排序因子。
+原因：acceleration ICIR 0.476 > yoy 0.188（含 40 天營收公布延遲後）。
 
-效能優化：啟動時一次預載所有營收 parquet 到記憶體，回測中不再逐支讀檔。
+篩選邏輯：
+1. 營收 3M avg > 12M avg（acceleration > 1）
+2. 營收 YoY > 15%
+3. 股價 > MA60 + 近 60 日漲幅 > 0（趨勢確認）
+4. 20 日均量 > 300 張（流動性）
+
+排序：revenue_acceleration（3M/12M 比率）取前 15 檔。
+再平衡：每月 11 日後（營收公布完成）。
+
+營收延遲：+40 天（台灣月營收於次月 10 日前公布）。
 """
 
 from __future__ import annotations
@@ -79,8 +88,12 @@ def _get_revenue_at(
     if df is None:
         return None
 
-    # 只用 as_of 之前的數據（避免 look-ahead）
-    mask = df["date"] <= as_of
+    # 只用已公開的數據（避免 look-ahead）
+    # 台灣月營收於次月 10 日前公布，例如 1 月營收最晚 2/10 公布
+    # 保守使用 40 天 lag：date 欄位為營收月份（如 2024-01-01），
+    # 實際公布約在 2024-02-10，距 2024-01-01 約 40 天
+    usable_cutoff = as_of - pd.DateOffset(days=40)
+    mask = df["date"] <= usable_cutoff
     available = df[mask]
     if len(available) < 12:
         return None
@@ -106,13 +119,13 @@ class RevenueMomentumStrategy(Strategy):
     4. 近 60 日漲幅 > 0（動能確認）
     5. 20 日均量 > min_volume 張（流動性）
 
-    排序：營收 YoY 取前 max_holdings 檔。
+    排序：revenue_acceleration（3M/12M）取前 max_holdings 檔。
     """
 
     def __init__(
         self,
         max_holdings: int = 15,
-        min_yoy_growth: float = 15.0,
+        min_yoy_growth: float = 10.0,  # 降低門檻（修正後 15% 太嚴格）
         min_volume_lots: int = 300,
         max_weight: float = 0.10,
         weight_method: str = "signal",  # "equal" | "signal" | "risk_parity"
@@ -179,6 +192,7 @@ class RevenueMomentumStrategy(Strategy):
             if not signal.should_rebalance:
                 return self._cached_weights
         else:
+            # 月度再平衡（營收延遲已由 _get_revenue_at 的 +40 天 lag 處理）
             current_month = pd.Timestamp(current_date).strftime("%Y-%m")
             if current_month == self._last_month:
                 return self._cached_weights
@@ -226,7 +240,10 @@ class RevenueMomentumStrategy(Strategy):
                 if latest_yoy < self.min_yoy_growth:
                     continue
 
-                candidates.append((symbol, latest_yoy))
+                # 排序用 acceleration（3M/12M 比率），不用 YoY
+                # acceleration ICIR 0.476 > yoy 0.188（含 40 天延遲後）
+                acceleration = rev_3m / rev_12m
+                candidates.append((symbol, acceleration))
 
             except Exception as e:
                 logger.debug("Skip %s: %s", symbol, e)
@@ -241,7 +258,7 @@ class RevenueMomentumStrategy(Strategy):
 
         candidates.sort(key=lambda x: x[1], reverse=True)
         selected = candidates[: self.max_holdings]
-        signals = {sym: yoy for sym, yoy in selected}
+        signals = {sym: accel for sym, accel in selected}
 
         constraints = OptConstraints(
             max_weight=self.max_weight,

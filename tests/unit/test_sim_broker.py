@@ -118,7 +118,7 @@ class TestZeroVolumeRejected:
 
 class TestPriceLimits:
     def test_price_limit_rejects_beyond_limit(self):
-        """Fill price exceeding price limit should be rejected."""
+        """Fill price exceeding price limit should be rejected (limit-up blocks BUY)."""
         broker = SimBroker(SimConfig(
             impact_model="fixed",
             slippage_bps=0,
@@ -132,13 +132,14 @@ class TestPriceLimits:
             quantity=Decimal("100"),
             price=Decimal("120"),
         )
-        # Current close = 120, prev_close = 100 => 120 exceeds 100*1.10 = 110
+        # Current close = 120, prev_close = 100 => +20% daily return
+        # Rejected by limit-up liquidity check (>=9.5% blocks BUY)
         bars = {"A": {"close": 120.0, "volume": 1e6, "prev_close": 100.0}}
         trades = broker.execute([order], bars)
 
         assert len(trades) == 0
         assert order.status == OrderStatus.REJECTED
-        assert "exceeds limit" in order.reject_reason
+        assert "Limit up" in order.reject_reason or "exceeds limit" in order.reject_reason
 
     def test_price_limit_allows_within_limit(self):
         """Fill price within price limit should execute normally."""
@@ -163,7 +164,7 @@ class TestPriceLimits:
         assert order.status == OrderStatus.FILLED
 
     def test_price_limit_sell_below_lower_bound(self):
-        """Sell fill price below lower limit should be rejected."""
+        """Sell at limit-down should be rejected (no buyers available)."""
         broker = SimBroker(SimConfig(
             impact_model="fixed",
             slippage_bps=0,
@@ -177,16 +178,17 @@ class TestPriceLimits:
             quantity=Decimal("100"),
             price=Decimal("80"),
         )
-        # Current close = 80, prev_close = 100 => 80 < 100*0.90 = 90
+        # Current close = 80, prev_close = 100 => -20% daily return
+        # Rejected by limit-down liquidity check (<=-9.5% blocks SELL)
         bars = {"A": {"close": 80.0, "volume": 1e6, "prev_close": 100.0}}
         trades = broker.execute([order], bars)
 
         assert len(trades) == 0
         assert order.status == OrderStatus.REJECTED
-        assert "exceeds limit" in order.reject_reason
+        assert "Limit down" in order.reject_reason or "exceeds limit" in order.reject_reason
 
     def test_no_price_limit_when_disabled(self):
-        """With price_limit_pct=0 (disabled), any price should be accepted."""
+        """With price_limit_pct=0 (disabled), moderate moves should be accepted."""
         broker = SimBroker(SimConfig(
             impact_model="fixed",
             slippage_bps=0,
@@ -198,9 +200,10 @@ class TestPriceLimits:
             instrument=Instrument(symbol="A"),
             side=Side.BUY,
             quantity=Decimal("100"),
-            price=Decimal("200"),
+            price=Decimal("105"),
         )
-        bars = {"A": {"close": 200.0, "volume": 1e6, "prev_close": 100.0}}
+        # +5% daily return — within liquidity threshold, no price_limit_pct check
+        bars = {"A": {"close": 105.0, "volume": 1e6, "prev_close": 100.0}}
         trades = broker.execute([order], bars)
 
         assert len(trades) == 1

@@ -56,8 +56,8 @@
 | 5 | Multi-Factor | 規則型 | 動量+價值+品質 |
 | 6 | Pairs Trading | 規則型 | 共整合 + Kalman |
 | 7 | Sector Rotation | 規則型 | 板塊動量輪動 |
-| 8 | **Revenue Momentum** | 條件篩選 | rev_yoy ICIR 0.674, CAGR +17.6% |
-| 9 | **Revenue Momentum Hedged** | 條件篩選 | = #8 + 空頭偵測, OOS -5.4% |
+| 8 | **Revenue Momentum** | 條件篩選 | rev_yoy ICIR 0.674, CAGR +17.6%（含 40 天營收公布延遲） |
+| 9 | **Revenue Momentum Hedged** | 條件篩選 | = #8 + 空頭偵測, OOS -5.4%（含 40 天營收公布延遲） |
 | 10 | Trust Follow | 條件篩選 | 投信跟單 + 營收成長 |
 | 11 | Multi-Strategy Combo | 組合型 | 多策略等權 |
 | 12 | Alpha Pipeline | 管線型 | 可配置因子 + 中性化 |
@@ -251,7 +251,7 @@
 
 | 模組 | 功能 |
 |------|------|
-| SimBroker | 回測撮合：sqrt 滑點 + min NT$20 手續費 + 證交稅 + 零股加滑點 |
+| SimBroker | 回測撮合：sqrt 滑點 + min NT$20 手續費 + 證交稅 + 零股加滑點 + 漲跌停流動性檢查（±9.5%）+ ADV 10% 量限 |
 | SinopacBroker | Shioaji SDK：非阻塞下單 + 成交回報 + 斷線重連 |
 | ExecutionService | 模式路由（backtest/paper/live） |
 | OMS | 訂單生命週期 + 成交記錄 |

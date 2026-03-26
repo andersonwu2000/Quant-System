@@ -10,7 +10,7 @@
 多資產投資組合研究與優化系統。Python 後端 + React Web + Android Native。
 156 後端檔案、~28K LOC、1,329 tests。83 個 Alpha 因子（66 技術 + 17 基本面）、14 種組合最佳化、11 個策略、10 條風控規則。
 
-**當前優先級**：Phase N — Paper Trading 準備。策略研究完成（rev_yoy ICIR 0.674, t=16.1），下行保護已實作（composite_b0%），進入實盤驗證階段。
+**當前優先級**：Phase N — Paper Trading 準備。真實性修正後策略績效：revenue_momentum CAGR +13.8% Sharpe 0.79（含 40 天營收延遲 + 漲跌停 + 成交量限制）。
 
 ---
 
@@ -147,10 +147,11 @@
 | 03-22~25 | Phase A~E（核心系統 + 交易架構） |
 | 03-26 | Phase F~I + R1-R4 + K（自動化 + 學術 + 因子 + 數據品質） |
 | 03-26 | Phase L：策略轉型 + 驗證 6/7（p=0.013） |
-| 03-27 | Phase M：下行保護（composite_b0%）+ 引擎優化 6.3x + 實驗 #9~#13 |
-| **TBD** | **Phase N：Paper Trading 準備（N1~N4）** |
-| TBD | Paper Trading 30 天驗證開始 |
-| TBD | Phase O：事件時機層 + 多策略組合 |
+| 03-27 | Phase M + 實驗 #9~#13（修正前數字，已歸檔） |
+| 03-27 | **真實性修正**：+40d 營收延遲 / 漲跌停 / ADV 限制 / 引擎驗證 15/17 |
+| 03-27 | **#14-#15**：修正後 CAGR +13.8% Sharpe 0.79，rev_accel ICIR 0.476，4/7 門檻 |
+| **TBD** | **Phase N：Paper Trading（策略邊緣可行，需實盤驗證）** |
+| TBD | Phase O：事件時機層（營收公布日觸發 → 縮短延遲）|
 | TBD | Phase J：跨資產自動化 |
 
 ---

@@ -75,6 +75,7 @@ def execute_one_bar(
         available_cash=available_cash,
         market_lot_sizes=market_lot_sizes,
         fractional_shares=fractional_shares,
+        volumes=volumes,
     )
     if not orders:
         return []

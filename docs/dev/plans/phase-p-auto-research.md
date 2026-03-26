@@ -1,6 +1,6 @@
 # Phase P：自動化 Alpha 研究 — Claude Code 24 小時因子挖掘
 
-> 狀態：🔵 設計完成，待實作
+> 狀態：🟢 P1-P5 已完成，P6-P7 待辦
 > 依據：AlphaAgent (KDD 2025) + QuantaAlpha (2026) + RD-Agent(Q) (Microsoft) + FactorMiner + WorldQuant BRAIN
 > 目標：讓 Claude Code 自主研究新因子，7×24 持續產出可驗證的 alpha 假說
 
@@ -324,13 +324,13 @@ data/research/
 
 | 步驟 | 內容 | 依賴 | 估計 |
 |:----:|------|------|:----:|
-| P1 | ExperienceMemory 類 + Trajectory 結構 | 無 | 30 min |
-| P2 | FactorEvaluator 類（包裝現有工具 + Fitness 公式） | 無 | 30 min |
-| P3 | alpha_research_agent.py 主循環 | P1 + P2 | 45 min |
-| P4 | 初始化 Memory（從 17 次實驗蒸餾） | P1 | 15 min |
-| P5 | 第一批假說模板（8 個 P0/P1 方向） | P3 | 30 min |
-| P6 | Claude Code CronCreate 排程 | P3 | 10 min |
-| P7 | 通知整合（fitness > 8 時） | P3 | 15 min |
+| P1 | ExperienceMemory 類 + Trajectory 結構 | 無 | ✅ 已完成 |
+| P2 | FactorEvaluator 類（包裝現有工具 + Fitness 公式） | 無 | ✅ 已完成 |
+| P3 | alpha_research_agent.py 主循環 | P1 + P2 | ✅ 已完成 |
+| P4 | 初始化 Memory（從 17 次實驗蒸餾） | P1 | ✅ 已完成 |
+| P5 | 第一批假說模板（8 個 P0/P1 方向） | P3 | ✅ 已完成（3 個研究因子） |
+| P6 | Claude Code CronCreate 排程 | P3 | 🔵 待辦 |
+| P7 | 通知整合（fitness > 8 時） | P3 | 🔵 待辦 |
 | **Total** | | | **~3 hr** |
 
 ---
