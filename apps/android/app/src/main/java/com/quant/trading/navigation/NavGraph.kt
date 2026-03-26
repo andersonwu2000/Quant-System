@@ -27,14 +27,14 @@ import com.quant.trading.ui.screens.trading.TradingScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuantNavHost(
-    storage: SecureStorage = hiltViewModel<NavViewModel>().storage,
-) {
+fun QuantNavHost() {
+    val navViewModel: NavViewModel = hiltViewModel()
+    val storage = navViewModel.storage
     val navController = rememberNavController()
     val startDest = if (storage.isAuthenticated()) Screen.Dashboard.route else Screen.Login.route
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val showBottomBar = currentRoute != Screen.Login.route
+    val showBottomBar = currentRoute != null && currentRoute != Screen.Login.route
 
     Scaffold(
         contentWindowInsets = WindowInsets.systemBars,
@@ -106,7 +106,7 @@ private fun BottomNavBar(
     var showMore by remember { mutableStateOf(false) }
 
     NavigationBar(tonalElevation = 2.dp) {
-        Screen.primaryTabs.forEach { screen ->
+        Screen.primaryTabs.filterNotNull().forEach { screen ->
             NavigationBarItem(
                 icon = { Icon(screen.icon, contentDescription = screen.label) },
                 label = {
@@ -131,6 +131,7 @@ private fun BottomNavBar(
                         onDismissRequest = { showMore = false },
                     ) {
                         Screen.moreTabs
+                            .filterNotNull()
                             .filter { it != Screen.Admin || role == "admin" }
                             .forEach { screen ->
                                 DropdownMenuItem(
@@ -152,7 +153,7 @@ private fun BottomNavBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             },
-            selected = Screen.moreTabs.any { it.route == currentRoute },
+            selected = Screen.moreTabs.filterNotNull().any { it.route == currentRoute },
             onClick = { showMore = !showMore },
         )
     }

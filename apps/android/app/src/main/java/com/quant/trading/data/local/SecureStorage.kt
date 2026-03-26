@@ -47,10 +47,15 @@ class SecureStorage @Inject constructor(
             )
         } catch (e: Exception) {
             Log.e(TAG, "EncryptedSharedPreferences failed, falling back to plain prefs", e)
-            // Delete corrupted prefs file to prevent repeated failures
+            // Delete the corrupted prefs FILE (not just clear()) to fully reset Keystore state.
+            // clear().apply() is async and may not complete; the underlying file can remain corrupted.
+            try {
+                val prefsFile = java.io.File(appContext.filesDir.parent, "shared_prefs/$PREFS_NAME.xml")
+                if (prefsFile.exists()) prefsFile.delete()
+            } catch (_: Exception) { /* best effort */ }
             try {
                 appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit().clear().apply()
+                    .edit().clear().commit()
             } catch (_: Exception) { /* best effort */ }
             // Fallback to unencrypted SharedPreferences
             appContext.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)

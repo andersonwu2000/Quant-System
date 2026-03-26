@@ -14,7 +14,10 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        // Pass null to prevent restoring stale Compose/Navigation state after process death.
+        // Without this, Android tries to restore the previous screen's state which can crash
+        // if EncryptedSharedPreferences or ViewModel init fails during restoration.
+        super.onCreate(null)
         enableEdgeToEdge()
         setContent {
             QuantTheme {

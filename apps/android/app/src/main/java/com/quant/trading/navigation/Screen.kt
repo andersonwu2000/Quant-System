@@ -33,8 +33,12 @@ sealed class Screen(
 
     companion object {
         /** Primary bottom nav items (max 5). */
-        val primaryTabs = listOf(Dashboard, Trading, Strategies, Research, Risk)
+        val primaryTabs: List<Screen> by lazy {
+            listOf(Dashboard, Trading, Strategies, Research, Risk)
+        }
         /** Items shown in the "More" overflow. */
-        val moreTabs = listOf(Guide, Settings, Admin)
+        val moreTabs: List<Screen> by lazy {
+            listOf(Guide, Settings, Admin)
+        }
     }
 }
