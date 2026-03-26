@@ -76,6 +76,11 @@ class FinMindFeed(DataFeed):
 
         df: pd.DataFrame = self._cache[cache_key]
 
+        # 確保 index 是 DatetimeIndex（快取反序列化後可能退化）
+        if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+            self._cache[cache_key] = df
+
         if start is not None:
             df = df[df.index >= pd.Timestamp(start)]
         if end is not None:

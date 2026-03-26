@@ -189,6 +189,10 @@ class YahooFeed(DataFeed):
         # Extract dividend column if DataFrame
         series = div_df["dividend"] if "dividend" in div_df.columns else div_df.iloc[:, 0]
 
+        # 確保 index 是 DatetimeIndex（快取反序列化後可能退化）
+        if not series.empty and not isinstance(series.index, pd.DatetimeIndex):
+            series.index = pd.to_datetime(series.index)
+
         # Filter to requested range
         mask = (series.index >= pd.Timestamp(start)) & (
             series.index <= pd.Timestamp(end)

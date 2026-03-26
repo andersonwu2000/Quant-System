@@ -79,6 +79,9 @@ class UniverseFilter:
         fundamentals: FundamentalsProvider | None,
     ) -> bool:
         """檢查單一標的是否通過所有篩選。"""
+        # 確保 index 是 DatetimeIndex（上游快取可能退化）
+        if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
         # 截斷到當前日期（時間因果性）
         visible = df.loc[df.index <= date]
         if visible.empty:

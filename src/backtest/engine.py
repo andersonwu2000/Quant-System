@@ -536,6 +536,9 @@ class BacktestEngine:
             return {}
 
         if self._fx_series is not None and not self._fx_series.empty:
+            # 確保 index 是 DatetimeIndex（快取反序列化後可能退化）
+            if not isinstance(self._fx_series.index, pd.DatetimeIndex):
+                self._fx_series.index = pd.to_datetime(self._fx_series.index)
             ts = pd.Timestamp(bar_date)
             # 查找 <= bar_date 的最近 FX rate
             mask = self._fx_series.index <= ts
