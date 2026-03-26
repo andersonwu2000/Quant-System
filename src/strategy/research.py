@@ -1292,11 +1292,12 @@ def compute_factor_values(
         fn_kwargs["market_returns"] = compute_market_returns(data)
 
     if dates is None:
-        all_dates: set[pd.Timestamp] | None = None
+        # 使用日期聯集：每支股票在自己有資料的日期上計算
+        # 交集（&）在大 universe（含不同上市/下市日期）時會得到空集
+        all_dates: set[pd.Timestamp] = set()
         for sym in sorted(data.keys()):
-            sym_dates = set(data[sym].index)
-            all_dates = sym_dates if all_dates is None else all_dates & sym_dates
-        dates = sorted(all_dates or set())
+            all_dates |= set(data[sym].index)
+        dates = sorted(all_dates)
 
     if not dates:
         return pd.DataFrame()
@@ -1323,11 +1324,11 @@ def compute_forward_returns(
     symbols = sorted(data.keys())
 
     if dates is None:
-        all_dates: set[pd.Timestamp] | None = None
+        # 使用日期聯集：大 universe（含不同上市/下市日期）時交集會是空集
+        all_dates: set[pd.Timestamp] = set()
         for sym in symbols:
-            sym_dates = set(data[sym].index)
-            all_dates = sym_dates if all_dates is None else all_dates & sym_dates
-        dates = sorted(all_dates or set())
+            all_dates |= set(data[sym].index)
+        dates = sorted(all_dates)
 
     if not dates:
         return pd.DataFrame()

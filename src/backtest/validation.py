@@ -367,6 +367,18 @@ def detect_survivorship_bias(
                 f"{end_gap} days before backtest end — possible delisting"
             )
 
+    # 定量摘要
+    n_total = len(data)
+    n_late = sum(1 for w in warnings if "late listing" in w)
+    n_delist = sum(1 for w in warnings if "delisting" in w)
+    if n_late or n_delist:
+        warnings.insert(
+            0,
+            f"Survivorship bias summary: {n_total} symbols, "
+            f"{n_delist} possible delistings, {n_late} late listings. "
+            f"Missing historical universe snapshots — true bias unknown.",
+        )
+
     return warnings
 
 
