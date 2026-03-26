@@ -261,24 +261,25 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
             if len(revenues) < 12:
                 continue
             recent_6 = revenues[-6:]
-            # Linear trend
+            # Linear trend: fit on indices 0..4, predict at index 5
             x = np.arange(len(recent_6))
-            slope = np.polyfit(x, recent_6, 1)[0]
-            predicted = recent_6[-1] + slope
+            coeffs = np.polyfit(x, recent_6, 1)  # [slope, intercept]
+            predicted_next = coeffs[0] * len(recent_6) + coeffs[1]
             actual = revenues[-1]
-            if predicted > 0:
-                results[sym] = float((actual - predicted) / predicted)
+            if predicted_next > 0:
+                results[sym] = float((actual - predicted_next) / predicted_next)
 '''
     elif "x_gross_margin" in name or "x_roe" in name or "x_operating" in name:
         code += '''
-            # Revenue YoY
+            # Revenue acceleration as proxy for interaction factors
+            # (true interaction needs financial_statement data not yet available)
             if len(revenues) < 12 or revenues[-12] <= 0:
                 continue
-            rev_yoy = revenues[-1] / revenues[-12] - 1
-
-            # For interaction factors, use rev_yoy as proxy
-            # (full implementation needs financial_statement data)
-            results[sym] = float(rev_yoy)
+            rev_3m = float(revenues[-3:].mean()) if len(revenues) >= 3 else 0
+            rev_12m = float(revenues[-12:].mean()) if len(revenues) >= 12 else 0
+            if rev_12m <= 0:
+                continue
+            results[sym] = float(rev_3m / rev_12m)
 '''
     else:
         code += '''
@@ -489,6 +490,8 @@ class AlphaResearchAgent:
             validator_result = self._run_strategy_validator(hypothesis, eval_result)
             traj.eval_results["validator_passed"] = validator_result.get("n_passed", 0)
             traj.eval_results["validator_total"] = validator_result.get("n_total", 0)
+            self.memory.save(self.memory_path)  # 存 validator 結果
+
             self._write_discovery_report(traj, eval_result, validator_result)
 
             # 判斷是否自動部署到 Paper Trading
@@ -525,7 +528,9 @@ class AlphaResearchAgent:
                     pass
             if c["name"] == "cagr":
                 try:
-                    strategy_cagr = float(c["value"].replace("%", "").replace("+", "")) / 100
+                    # value 格式如 "+10.05%" — 去掉 % 和 + 再轉 float
+                    val_str = str(c["value"]).strip().rstrip("%").lstrip("+")
+                    strategy_cagr = float(val_str) / 100
                 except (ValueError, TypeError):
                     pass
 
