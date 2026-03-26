@@ -16,10 +16,10 @@ import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy import event
 
-from src.domain.models import Trade
+from src.core.models import Trade
 
 if TYPE_CHECKING:
-    from src.domain.models import RiskAlert
+    from src.core.models import RiskAlert
 
 logger = logging.getLogger(__name__)
 

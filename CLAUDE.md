@@ -36,8 +36,11 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 **Documentation:**
 - `docs/dev/SYSTEM_STATUS_REPORT.md` — System status report (module inventory, feature matrix, gap analysis)
 - `docs/dev/DEVELOPMENT_PLAN.md` — Development plan (Phase A~F: multi-asset infra → cross-asset alpha → optimizer → backtest → live → auto-alpha)
-- `docs/dev/MULTI_ASSET_ARCHITECTURE.md` — Multi-asset architecture design (instrument registry, allocation layer, portfolio optimizer)
-- `docs/dev/Project Requirements (Archived).md` — Archived project requirements
+- `docs/dev/DEVELOPMENT_LOG.md` — Development log (5-day history, key decisions, milestones)
+- `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md` — Multi-asset architecture design
+- `docs/dev/architecture/AUTOMATED_ALPHA_ARCHITECTURE.md` — Auto-alpha system design
+- `docs/dev/evaluations/BROKER_API_EVALUATION.md` — Broker API comparison (Shioaji chosen)
+- `docs/dev/archive/Project Requirements (Archived).md` — Archived project requirements
 - `docs/api-reference-zh.md` — API reference (Traditional Chinese)
 - `docs/developer-guide-zh.md` — Developer guide (Traditional Chinese)
 - `docs/user-guide-zh.md` — User guide (Traditional Chinese)
@@ -94,14 +97,14 @@ Key design decisions:
 - **Timezone handling**: All DatetimeIndex data is normalized to tz-naive UTC. Both `HistoricalFeed.load()` and `YahooFeed._download()` strip timezone info.
 
 **Module boundaries** (detailed inventory in `docs/dev/SYSTEM_STATUS_REPORT.md` §4):
-- `src/domain/models.py` — **Unified** Instrument (frozen, with asset_class/sub_class/market/currency/multiplier/margin_rate/commission_rate/tax_rate), Bar, Position, Order, Portfolio (multi-currency: `cash_by_currency`, `nav_in_base(fx_rates)`, `currency_exposure()`), Trade. Enums: AssetClass (EQUITY/FUTURE/OPTION/ETF), Market (TW/US), SubClass, Side, OrderStatus.
+- `src/core/models.py` — **Unified** Instrument (frozen, with asset_class/sub_class/market/currency/multiplier/margin_rate/commission_rate/tax_rate), Bar, Position, Order, Portfolio (multi-currency: `cash_by_currency`, `nav_in_base(fx_rates)`, `currency_exposure()`), Trade. Enums: AssetClass (EQUITY/FUTURE/OPTION/ETF), Market (TW/US), SubClass, Side, OrderStatus. (`src/domain/models.py` re-exports for backward compat.)
 - `src/instrument/` — `InstrumentRegistry` (get/get_or_create/search/by_market/by_asset_class). Re-exports Instrument from domain. `_infer_instrument()` auto-detects asset type from symbol pattern. Cost templates (TW_STOCK_DEFAULTS, US_FUTURES_DEFAULTS, etc.).
 - `src/alpha/` — Alpha research layer (within-asset selection). `pipeline.py` orchestrates end-to-end: universe filtering → factor computation → neutralization → orthogonalization → composite signal → quantile backtest → cost-aware portfolio construction. `AlphaStrategy` adapter wraps pipeline as `Strategy`. `regime.py` classifies market regimes (shared with allocation layer). `auto/` (9 files: AutoAlphaConfig, UniverseSelector, AlphaResearcher, AlphaDecisionEngine, AlphaExecutor, AlphaScheduler, AlphaStore, AlertManager, SafetyChecker, FactorPerformanceTracker, DynamicFactorPool).
 - `src/allocation/` — Tactical asset allocation (between-asset selection). `macro_factors.py`: 4 macro factors (growth/inflation/rates/credit) from FRED z-scores. `cross_asset.py`: momentum/volatility/value per AssetClass. `tactical.py`: TacticalEngine combines strategic weights + macro + cross-asset + regime → `dict[AssetClass, float]`. API: `POST /api/v1/allocation`.
 - `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 13 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP/Robust/Resampled/CVaR/MaxDrawdown/GlobalMinVariance/MaxSharpe/IndexTracking), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage/GARCH/PCA factor model), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
-- `src/strategy/` — Strategy ABC (`on_bar()` → weights), factor library (pure functions), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
+- `src/strategy/` — Strategy ABC (`on_bar()` → weights), `factors/` package (technical, fundamental, Kakushadze 101 alphas — pure functions), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
 - `src/risk/` — RiskEngine executes declarative rules; `kill_switch()` at 5% daily drawdown. RiskMonitor tracks metrics.
-- `src/execution/` — SimBroker (slippage, per-instrument commission/tax, T+N settlement), OMS (order lifecycle), SinopacBroker (Shioaji SDK wrapper), ExecutionService (mode-aware routing: backtest/paper/live), SinopacQuoteManager (tick/bidask subscription), market hours validation, EOD reconciliation.
+- `src/execution/` — `broker/base.py` (BrokerAdapter ABC, PaperBroker), `broker/simulated.py` (SimBroker — slippage, per-instrument commission/tax, T+N settlement), `broker/sinopac.py` (SinopacBroker — Shioaji SDK wrapper), `service.py` (ExecutionService — mode-aware routing: backtest/paper/live), `quote/sinopac.py` (SinopacQuoteManager — tick/bidask subscription), OMS (order lifecycle), market hours validation, EOD reconciliation.
 - `src/backtest/` — BacktestEngine (InstrumentRegistry integration, multi-currency detection), 40+ analytics, HTML/CSV reports, walk-forward, validation.
 - `src/data/` — DataFeed ABC (`get_bars`, `get_fx_rate`, `get_futures_chain`), YahooFeed (retry/rate-limit), FinMindFeed, FredDataSource (macro data), ParquetDiskCache.
 - `src/api/` — FastAPI REST + WebSocket, 14 route modules (incl. `/alpha`, `/allocation`, `/execution`, `/auto-alpha`), JWT auth, Prometheus.
@@ -147,7 +150,7 @@ Key design decisions:
 
 **WebSocket** (`src/api/ws.py`): channels — `portfolio`, `alerts`, `orders`, `market`. Token-based auth (optional in dev mode). Ping/pong keep-alive. Broadcast uses `asyncio.gather` with 5s timeout and dead connection cleanup. Note: `market` channel not yet connected to real-time data feed (TODO).
 
-**Logging** (`src/logging_config.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`.
+**Logging** (`src/core/logging.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`. (`src/logging_config.py` re-exports for backward compat.)
 
 ## Frontend Architecture
 
@@ -234,7 +237,7 @@ Key design decisions:
 
 ## Configuration
 
-All config via `QUANT_` prefixed env vars or `.env` file (see `.env.example`). Defined in `src/config.py` as Pydantic Settings. Access via `get_config()` singleton; use `override_config()` in tests.
+All config via `QUANT_` prefixed env vars or `.env` file (see `.env.example`). Defined in `src/core/config.py` as Pydantic Settings. Access via `get_config()` singleton; use `override_config()` in tests. (`src/config.py` re-exports for backward compat.)
 
 Key config:
 - `mode`: `"backtest"` (default), `"paper"`, or `"live"` — operating mode

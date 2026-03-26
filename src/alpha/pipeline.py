@@ -305,7 +305,8 @@ class AlphaPipeline:
             if not regime_series.empty:
                 for name, fv in neutralized.items():
                     dates_key = str(fv.index[0]) + "_" + str(fv.index[-1]) + "_" + str(len(fv))
-                    fwd = fwd_cache.get(dates_key) or compute_forward_returns(
+                    cached_fwd = fwd_cache.get(dates_key)
+                    fwd = cached_fwd if cached_fwd is not None else compute_forward_returns(
                         data, horizon=cfg.holding_period, dates=list(fv.index)
                     )
                     ric = compute_regime_ic(fv, fwd, regime_series, factor_name=name)

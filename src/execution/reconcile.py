@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from src.domain.models import Portfolio
+from src.core.models import Portfolio
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ def auto_correct(
     Returns:
         修正記錄列表。
     """
-    from src.domain.models import Instrument, Position
+    from src.core.models import Instrument, Position
 
     corrections: list[str] = []
 

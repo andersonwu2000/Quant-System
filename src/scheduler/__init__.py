@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.config import TradingConfig
+    from src.core.config import TradingConfig
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from src.domain.models import AssetClass, Instrument, Market, SubClass
+from src.core.models import AssetClass, Instrument, Market, SubClass
 
 from src.instrument.registry import InstrumentRegistry, _infer_instrument
 

@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 
 from src.backtest.validation import detect_price_outliers, detect_survivorship_bias
-from src.domain.models import Instrument, Order, Side
-from src.execution.sim import SimBroker, SimConfig
+from src.core.models import Instrument, Order, Side
+from src.execution.broker.simulated import SimBroker, SimConfig
 
 
 # ─── Survivorship Bias (G8a) ─────────────────────────────

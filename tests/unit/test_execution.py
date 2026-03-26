@@ -3,10 +3,10 @@
 from decimal import Decimal
 
 
-from src.domain.models import Instrument, Order, OrderStatus, Portfolio, Position, Side
+from src.core.models import Instrument, Order, OrderStatus, Portfolio, Position, Side
 from src.execution.oms import OrderManager, apply_trades
-from src.execution.sim import SimBroker, SimConfig
-from src.domain.models import Trade
+from src.execution.broker.simulated import SimBroker, SimConfig
+from src.core.models import Trade
 
 
 class TestSimBroker:

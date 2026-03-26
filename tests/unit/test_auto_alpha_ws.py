@@ -14,7 +14,7 @@ from src.alpha.auto.executor import AlphaExecutor, ExecutionResult
 from src.alpha.auto.scheduler import AlphaScheduler, _broadcast_event
 from src.alpha.auto.universe import UniverseResult, UniverseSelector
 from src.alpha.regime import MarketRegime
-from src.domain.models import Portfolio
+from src.core.models import Portfolio
 
 
 # ---------------------------------------------------------------------------

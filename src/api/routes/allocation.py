@@ -68,7 +68,7 @@ async def compute_tactical_allocation(
         TacticalEngine,
     )
     from src.alpha.regime import MarketRegime, classify_regimes
-    from src.domain.models import AssetClass
+    from src.core.models import AssetClass
 
     # 1. 解析戰略配置
     ac_map = {

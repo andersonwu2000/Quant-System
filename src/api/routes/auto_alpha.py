@@ -373,11 +373,10 @@ async def run_now(
     def _run_cycle() -> None:
         from src.alpha.auto.researcher import AlphaResearcher
         from src.alpha.auto.scheduler import AlphaScheduler
-        from src.alpha.auto.store import AlphaStore
 
         try:
             with _tasks_lock:
-                _run_now_tasks[task_id] = {"status": "running", "started": datetime.now().isoformat()}
+                _run_now_tasks[task_id] = {"status": "running", "stage": "downloading", "started": datetime.now().isoformat()}
 
             cfg = state.auto_alpha_config
 
@@ -403,13 +402,16 @@ async def run_now(
                 except Exception:
                     pass
 
+            with _tasks_lock:
+                _run_now_tasks[task_id]["stage"] = "researching"
+                _run_now_tasks[task_id]["symbols_loaded"] = len(data)
+
             researcher = AlphaResearcher(cfg)
-            store = AlphaStore()
 
             scheduler = AlphaScheduler(
                 config=cfg,
                 researcher=researcher,
-                store=store,
+                store=state.alpha_store,  # Use global store so status endpoint can read it
             )
             result = scheduler.run_full_cycle(
                 data=data,
@@ -417,6 +419,12 @@ async def run_now(
                 execution_service=state.execution_service,
                 risk_engine=state.risk_engine,
             )
+
+            # Save snapshot to global store for status/history endpoints
+            snap = result.get("snapshot")
+            if snap is not None:
+                state.alpha_store.save_snapshot(snap)
+
             with _tasks_lock:
                 _run_now_tasks[task_id] = {
                     "status": "completed",
@@ -435,6 +443,38 @@ async def run_now(
     thread.start()
 
     return RunNowResponse(task_id=task_id, message="Auto-alpha cycle started in background")
+
+
+@router.get("/run-now/{task_id}")
+async def get_run_now_status(
+    task_id: str,
+    _auth: str = Depends(verify_api_key),
+) -> dict[str, Any]:
+    """Poll the status of a run-now background task."""
+    with _tasks_lock:
+        task = _run_now_tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    # Don't return the full result object (may be huge); just status + summary
+    resp: dict[str, Any] = {"task_id": task_id, "status": task.get("status", "unknown")}
+    if task.get("stage"):
+        resp["stage"] = task["stage"]
+    if task.get("symbols_loaded"):
+        resp["symbols_loaded"] = task["symbols_loaded"]
+    if task.get("error"):
+        resp["error"] = task["error"]
+    if task.get("completed"):
+        resp["completed"] = task["completed"]
+    if task.get("started"):
+        resp["started"] = task["started"]
+    result = task.get("result")
+    if result and isinstance(result, dict):
+        snap = result.get("snapshot")
+        if snap and hasattr(snap, "factor_scores"):
+            resp["factors_computed"] = len(snap.factor_scores)
+            resp["selected_factors"] = snap.selected_factors
+            resp["regime"] = snap.regime.value if hasattr(snap.regime, "value") else str(snap.regime)
+    return resp
 
 
 # ── WebSocket endpoint ────────────────────────────────────────

@@ -47,6 +47,9 @@ export type {
   AutoAlphaPerformance,
   FactorScoreInfo,
   AutoAlphaSnapshot,
+  AutoAlphaSnapshotDetail,
+  AutoAlphaAlert,
+  AutoAlphaConfig,
 } from "./types";
 
 // API client

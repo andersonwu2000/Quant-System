@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from src.execution.sinopac_quote import (
+from src.execution.quote.sinopac import (
     BidAskData,
     SinopacQuoteManager,
     TickData,

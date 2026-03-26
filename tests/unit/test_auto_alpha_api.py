@@ -16,7 +16,7 @@ from src.alpha.auto.config import AlphaAlert, FactorScore, ResearchSnapshot
 from src.alpha.regime import MarketRegime
 from src.api.app import create_app
 from src.api.state import get_app_state, reset_app_state
-from src.config import TradingConfig, override_config
+from src.core.config import TradingConfig, override_config
 
 API_KEY = "test-auto-alpha-key"
 AUTH_HEADERS = {"X-API-Key": API_KEY}

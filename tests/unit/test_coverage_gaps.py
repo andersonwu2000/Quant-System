@@ -17,7 +17,7 @@ from decimal import Decimal, InvalidOperation
 import numpy as np
 import pandas as pd
 
-from src.domain.models import (
+from src.core.models import (
     AssetClass,
     Instrument,
     Market,
@@ -29,7 +29,7 @@ from src.domain.models import (
     Side,
     SubClass,
 )
-from src.execution.sim import SimBroker, SimConfig
+from src.execution.broker.simulated import SimBroker, SimConfig
 from src.strategy.engine import weights_to_orders
 
 

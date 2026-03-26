@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from src.domain.models import Portfolio, RiskAlert, Severity
+from src.core.models import Portfolio, RiskAlert, Severity
 
 logger = logging.getLogger(__name__)
 

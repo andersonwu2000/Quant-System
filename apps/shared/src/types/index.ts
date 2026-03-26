@@ -338,9 +338,9 @@ export interface AutoAlphaStatus {
   running: boolean;
   status: string;
   last_run: string | null;
+  next_run: string | null;
   regime: string | null;
   selected_factors: string[];
-  factor_weights: Record<string, number>;
 }
 
 export interface AutoAlphaPerformance {
@@ -362,15 +362,57 @@ export interface FactorScoreInfo {
 }
 
 export interface AutoAlphaSnapshot {
+  id: string;
   date: string;
   regime: string;
   universe_size: number;
   selected_factors: string[];
-  factor_scores: Record<string, FactorScoreInfo>;
-  factor_weights: Record<string, number>;
   trades_count: number;
   turnover: number;
   daily_pnl: number | null;
+  cumulative_return: number | null;
+}
+
+export interface AutoAlphaSnapshotDetail extends AutoAlphaSnapshot {
+  universe: string[];
+  factor_scores: Record<string, FactorScoreInfo>;
+  factor_weights: Record<string, number>;
+  target_weights: Record<string, number>;
+}
+
+export interface AutoAlphaAlert {
+  timestamp: string;
+  level: string;
+  category: string;
+  message: string;
+  details: Record<string, unknown>;
+}
+
+export interface AutoAlphaConfig {
+  schedule: string;
+  eod_schedule: string;
+  universe_count: number;
+  min_adv: number;
+  min_listing_days: number;
+  exclude_disposition: boolean;
+  exclude_attention: boolean;
+  lookback: number;
+  max_turnover: number;
+  min_trade_value: number;
+  max_consecutive_losses: number;
+  emergency_stop_drawdown: number;
+  kill_switch_cooldown_days: number;
+  kill_switch_recovery_position_pct: number;
+  backtest_gate_enabled: boolean;
+  backtest_gate_lookback: number;
+  backtest_gate_min_sharpe: number;
+  decision: {
+    min_icir: number;
+    min_hit_rate: number;
+    max_cost_drag: number;
+    oos_decay_factor: number;
+    regime_aware: boolean;
+  };
 }
 
 // ── Saved Portfolio types ───────────────────────────────────────────────────

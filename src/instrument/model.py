@@ -14,7 +14,7 @@ from enum import Enum
 
 # ── 從 domain 重新匯出（統一模型） ──────────────────────
 
-from src.domain.models import AssetClass, Instrument, Market, SubClass
+from src.core.models import AssetClass, Instrument, Market, SubClass
 
 __all__ = [
     "AssetClass",

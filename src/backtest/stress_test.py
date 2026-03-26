@@ -19,7 +19,7 @@ import pandas as pd
 
 from src.backtest.analytics import BacktestResult
 from src.backtest.engine import BacktestConfig, BacktestEngine
-from src.config import get_config
+from src.core.config import get_config
 from src.data.feed import HistoricalFeed
 from src.data.sources import create_feed
 from src.strategy.base import Strategy
@@ -271,9 +271,9 @@ def _run_with_feed(
     from decimal import Decimal
 
     from src.backtest.analytics import compute_analytics
-    from src.domain.models import Instrument, Portfolio
+    from src.core.models import Instrument, Portfolio
     from src.execution.oms import apply_trades
-    from src.execution.sim import SimBroker, SimConfig
+    from src.execution.broker.simulated import SimBroker, SimConfig
     from src.instrument.registry import InstrumentRegistry
     from src.risk.engine import RiskEngine
     from src.strategy.base import Context

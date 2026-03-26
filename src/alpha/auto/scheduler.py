@@ -22,8 +22,8 @@ from src.alpha.auto.factor_tracker import FactorPerformanceTracker
 from src.alpha.auto.safety import SafetyChecker
 from src.alpha.auto.store import AlphaStore
 from src.alpha.auto.universe import UniverseResult, UniverseSelector
-from src.domain.models import Portfolio
-from src.execution.execution_service import ExecutionService
+from src.core.models import Portfolio
+from src.execution.service import ExecutionService
 from src.risk.engine import RiskEngine
 
 logger = logging.getLogger(__name__)

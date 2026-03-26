@@ -62,17 +62,18 @@
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
 | `src/alpha/` | 24 | ~4,250 | Alpha 研究：14 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
 | `src/backtest/` | 10 | ~3,500 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL |
-| `src/execution/` | 10 | ~2,000 | SinopacBroker + SimBroker (含融券借券成本) + ExecutionService + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 |
-| `src/strategy/` | 8 | ~2,000 | 策略 ABC + 因子庫 (27: 11 價格 + 10 Kakushadze 101 + 6 基本面) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
+| `src/execution/` | 15 | ~2,000 | `broker/` (base + simulated + sinopac) + `quote/` (sinopac) + `service.py` (ExecutionService) + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 + backward-compat shims |
+| `src/strategy/` | 11 | ~2,000 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 27 因子) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
 | `src/portfolio/` | 4 | ~1,260 | 組合最佳化 (14 方法: EW/InvVol/RP/MVO/BL/HRP/Robust/Resampled/CVaR/MaxDD/GMV/MaxSharpe/IndexTracking/SemiVariance) + 風險模型 (LW/GARCH/Factor Model Cov + VaR/CVaR 歷史+參數法) + James-Stein 均值收縮 + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
-| `src/domain/` | 3 | 653 | 領域模型：Instrument + Portfolio (多幣別) + Order (融資融券/零股) + Trade + RiskAlert |
+| `src/core/` | 4 | ~700 | 核心模型 (models.py) + 設定 (config.py) + 日誌 (logging.py) + Repository |
+| `src/domain/` | 3 | ~30 | Backward-compat shims (re-export from `src/core/`) |
 | `src/risk/` | 4 | 573 | 風控引擎 (10 規則) + Kill Switch + RiskMonitor |
 | `src/instrument/` | 3 | 331 | InstrumentRegistry + 自動推斷 (symbol → asset_class/market/currency) |
 | `src/cli/` | 2 | 299 | CLI: backtest / server / status / factors |
 | `src/notifications/` | 6 | 246 | Discord / LINE / Telegram 通知 |
 | `src/scheduler/` | 2 | 206 | APScheduler：排程 rebalance（已接通策略→風控→下單→通知） |
-| `src/` (根) | 2 | 226 | config.py (Pydantic Settings) + logging_config.py (structlog) |
+| `src/` (根) | 2 | ~10 | Backward-compat shims: config.py, logging_config.py (re-export from `src/core/`) |
 | `strategies/` | 8 | ~800 | 7 個內建策略 (pairs_trading: Engle-Granger 共整合 + OLS hedge ratio + Kalman Filter 動態 hedge ratio) |
 
 ---

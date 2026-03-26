@@ -2,8 +2,8 @@
 
 from decimal import Decimal
 
-from src.domain.models import Instrument, Order, OrderStatus, Side
-from src.execution.sim import SimBroker, SimConfig
+from src.core.models import Instrument, Order, OrderStatus, Side
+from src.execution.broker.simulated import SimBroker, SimConfig
 
 
 class TestFixedSlippageModel:

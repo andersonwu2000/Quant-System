@@ -27,9 +27,9 @@ from src.data.feed import HistoricalFeed
 from src.data.fundamentals import FundamentalsProvider
 from src.data.quality import check_bars
 from src.data.sources import create_feed, create_fundamentals
-from src.domain.models import Instrument, Order, Portfolio, Side
+from src.core.models import Instrument, Order, Portfolio, Side
 from src.execution.oms import apply_trades
-from src.execution.sim import SimBroker, SimConfig
+from src.execution.broker.simulated import SimBroker, SimConfig
 from src.instrument.registry import InstrumentRegistry
 from src.risk.engine import RiskEngine
 from src.risk.rules import MarketState
@@ -589,7 +589,7 @@ class BacktestEngine:
         self, config: BacktestConfig
     ) -> tuple[HistoricalFeed, set[str], FundamentalsProvider | None]:
         """下載數據並載入 HistoricalFeed，使用配置的數據源。"""
-        from src.config import get_config
+        from src.core.config import get_config
 
         cfg = get_config()
         source = cfg.data_source

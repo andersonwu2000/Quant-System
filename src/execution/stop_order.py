@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from src.domain.models import Order
+from src.core.models import Order
 
 
 @dataclass

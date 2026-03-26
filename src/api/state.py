@@ -15,8 +15,8 @@ from typing import Any
 from src.alpha.auto.config import AutoAlphaConfig
 from src.alpha.auto.store import AlphaStore
 from src.data.store import DataStore
-from src.domain.models import Portfolio
-from src.execution.execution_service import ExecutionService
+from src.core.models import Portfolio
+from src.execution.service import ExecutionService
 from src.execution.oms import OrderManager
 from src.execution.stop_order import StopOrderManager
 from src.risk.engine import RiskEngine

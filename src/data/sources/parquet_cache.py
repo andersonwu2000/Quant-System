@@ -26,7 +26,7 @@ class ParquetDiskCache:
         self._ttl = ttl
 
     def cache_path(self, symbol: str, freq: str) -> Path:
-        from src.config import get_config
+        from src.core.config import get_config
 
         cache_dir = Path(get_config().data_cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)

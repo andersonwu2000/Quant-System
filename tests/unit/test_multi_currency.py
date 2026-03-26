@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from src.domain.models import AssetClass, Instrument, Portfolio, Position
+from src.core.models import AssetClass, Instrument, Portfolio, Position
 
 
 def _make_instrument(symbol: str, currency: str = "TWD", ac: AssetClass = AssetClass.EQUITY) -> Instrument:

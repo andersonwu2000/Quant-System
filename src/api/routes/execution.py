@@ -238,7 +238,7 @@ async def get_trading_limits(
     if exec_svc.broker is None or not exec_svc.broker.is_connected():
         raise HTTPException(status_code=503, detail="Broker not connected")
 
-    from src.execution.sinopac_broker import SinopacBroker
+    from src.execution.broker.sinopac import SinopacBroker
 
     if not isinstance(exec_svc.broker, SinopacBroker):
         raise HTTPException(status_code=400, detail="Trading limits only available for SinopacBroker")
@@ -258,7 +258,7 @@ async def get_settlements(
     if exec_svc.broker is None or not exec_svc.broker.is_connected():
         raise HTTPException(status_code=503, detail="Broker not connected")
 
-    from src.execution.sinopac_broker import SinopacBroker
+    from src.execution.broker.sinopac import SinopacBroker
 
     if not isinstance(exec_svc.broker, SinopacBroker):
         raise HTTPException(status_code=400, detail="Settlements only available for SinopacBroker")
@@ -279,7 +279,7 @@ async def get_dispositions(
     if exec_svc.broker is None or not exec_svc.broker.is_connected():
         raise HTTPException(status_code=503, detail="Broker not connected")
 
-    from src.execution.sinopac_broker import SinopacBroker
+    from src.execution.broker.sinopac import SinopacBroker
 
     if not isinstance(exec_svc.broker, SinopacBroker):
         return {"codes": [], "count": 0}
@@ -350,7 +350,7 @@ async def create_stop_order(
 ) -> dict[str, Any]:
     """新增觸價委託。"""
     from src.api.state import get_app_state
-    from src.domain.models import Instrument, Order, OrderType, Side
+    from src.core.models import Instrument, Order, OrderType, Side
 
     state = get_app_state()
     mgr = state.stop_order_manager

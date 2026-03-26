@@ -11,7 +11,7 @@ from src.alpha.auto.config import AutoAlphaConfig
 from src.alpha.auto.decision import DecisionResult
 from src.alpha.auto.executor import AlphaExecutor, ExecutionResult
 from src.alpha.regime import MarketRegime
-from src.domain.models import Instrument, Order, Portfolio, Position, Side, Trade
+from src.core.models import Instrument, Order, Portfolio, Position, Side, Trade
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
-from src.config import get_config
+from src.core.config import get_config
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 bearer_scheme = HTTPBearer(auto_error=False)

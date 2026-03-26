@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from src.domain.models import Order, Trade
+from src.core.models import Order, Trade
 from src.portfolio.risk_model import RiskModel
 
 

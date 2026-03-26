@@ -243,7 +243,7 @@ class CreateUserRequest(BaseModel):
     @field_validator("role")
     @classmethod
     def _validate_role(cls, v: str) -> str:
-        from src.config import VALID_ROLES
+        from src.core.config import VALID_ROLES
         if v not in VALID_ROLES:
             raise ValueError(f"Invalid role: {v}. Must be one of: {sorted(VALID_ROLES)}")
         return v
@@ -258,7 +258,7 @@ class UpdateUserRequest(BaseModel):
     @classmethod
     def _validate_role(cls, v: str | None) -> str | None:
         if v is not None:
-            from src.config import VALID_ROLES
+            from src.core.config import VALID_ROLES
             if v not in VALID_ROLES:
                 raise ValueError(f"Invalid role: {v}. Must be one of: {sorted(VALID_ROLES)}")
         return v

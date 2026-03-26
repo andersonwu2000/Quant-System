@@ -37,7 +37,7 @@ class YahooFeed(DataFeed):
     ):
         self._universe = universe or []
         if cache_size is None:
-            from src.config import get_config
+            from src.core.config import get_config
             cache_size = get_config().data_cache_size
         self._cache: LRUCache[str, pd.DataFrame] = LRUCache(maxsize=cache_size)
         self._disk_cache = ParquetDiskCache(prefix="")

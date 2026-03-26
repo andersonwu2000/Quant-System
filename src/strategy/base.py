@@ -19,7 +19,7 @@ import pandas as pd
 
 from src.data.feed import DataFeed
 from src.data.fundamentals import FundamentalsProvider
-from src.domain.models import Portfolio
+from src.core.models import Portfolio
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,7 @@ from src.api.middleware import get_request_count
 from src.api.schemas import HealthResponse, SystemStatusResponse
 from src.api.state import get_app_state
 from src.api.ws import ws_manager
-from src.config import get_config
+from src.core.config import get_config
 
 router = APIRouter(prefix="/system", tags=["system"])
 

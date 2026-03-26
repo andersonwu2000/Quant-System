@@ -38,7 +38,7 @@ from src.backtest.engine import BacktestCancelled, BacktestConfig, BacktestEngin
 from src.backtest.walk_forward import WalkForwardAnalyzer, WFAConfig
 from src.data.store import DataStore
 from src.strategy.registry import resolve_strategy
-from src.config import get_config
+from src.core.config import get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/backtest", tags=["backtest"])

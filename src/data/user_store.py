@@ -9,7 +9,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from src.data.store import _create_engine, users_table
-from src.config import get_config
+from src.core.config import get_config
 
 logger = logging.getLogger(__name__)
 
