@@ -1,6 +1,7 @@
 # Phase P：自動化 Alpha 研究 — Claude Code 24 小時因子挖掘
 
 > 狀態：🟢 P1-P5 已完成，P6-P7 待辦
+> 性質：**實驗性** — 基礎設施已建好，但產出尚未通過完整策略驗證（Walk-Forward + OOS）
 > 依據：AlphaAgent (KDD 2025) + QuantaAlpha (2026) + RD-Agent(Q) (Microsoft) + FactorMiner + WorldQuant BRAIN
 > 目標：讓 Claude Code 自主研究新因子，7×24 持續產出可驗證的 alpha 假說
 

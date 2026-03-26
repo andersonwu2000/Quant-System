@@ -87,8 +87,22 @@
 
 ---
 
+## 驗證狀態
+
+> **誠實評估：策略回測邊緣，尚未實盤驗證。**
+
+- 驗證門檻通過率 3/7 — CAGR 未達 15%、WF p 值不顯著、OOS 為負
+- StrategyValidator 10/13（Phase Q relaxed 版）— DSR、成本佔比、factor decay 未通過
+- **零天 Paper Trading 實績** — 所有結論均來自回測
+- Auto-Alpha（Phase P）產出 3 個研究因子，尚未通過完整驗證
+
+回測可以告訴我們策略「可能」有效，但不能告訴我們策略「確實」有效。
+Quantopian 888 策略回測 vs 實盤 R² < 0.025 的教訓不應忽視。
+
+---
+
 ## 下一步
 
-1. **改用 revenue_acceleration 作為主因子**（ICIR 0.476 > revenue_yoy 0.188）
+1. ~~改用 revenue_acceleration 作為主因子~~ ✅ 已完成
 2. **營收公布日觸發**（每月 10 日後立即交易，縮短延遲）
-3. **Paper Trading 最終驗證**
+3. **Paper Trading 最終驗證** — 唯一能回答「策略是否真的有效」的方式

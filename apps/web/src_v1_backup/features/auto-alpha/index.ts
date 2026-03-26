@@ -1,1 +1,0 @@
-export { AutoAlphaPage } from "./AutoAlphaPage";

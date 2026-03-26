@@ -1,1 +1,0 @@
-export { AllocationPage } from "./AllocationPage";

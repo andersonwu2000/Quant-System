@@ -1,6 +1,6 @@
 # Phase N2：Web 前端重寫
 
-> 狀態：🟡 Step 1-4 已完成（未 commit），Step 5 待辦
+> 狀態：🟡 Step 1-4 已完成，Step 5 待辦
 > 架構文件：`docs/dev/architecture/WEB_ARCHITECTURE_V2.md`
 > 設計規範：`docs/dev/architecture/WEB_DESIGN_SYSTEM.md`
 > 目標：5 頁精簡 UI，dark-mode-first，shadcn/ui + Tremor
