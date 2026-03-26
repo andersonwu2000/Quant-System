@@ -6,7 +6,8 @@ import asyncio
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from src.api.auth import verify_api_key, require_role
 from src.api.schemas import ManualOrderRequest, OrderResponse
@@ -87,4 +88,71 @@ async def create_order(
     # Broadcast new order to "orders" WS channel (fire-and-forget)
     asyncio.create_task(ws_manager.broadcast("orders", response.model_dump()))
 
+    return response
+
+
+class UpdateOrderRequest(BaseModel):
+    price: float | None = None
+    quantity: float | None = None
+
+
+@router.put("/{order_id}", response_model=OrderResponse)
+async def update_order(
+    order_id: str,
+    req: UpdateOrderRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("trader")),
+) -> OrderResponse:
+    """改價或改量（僅限未成交訂單）。"""
+    state = get_app_state()
+    order = state.oms.get_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.is_terminal:
+        raise HTTPException(status_code=400, detail=f"Cannot modify order in {order.status.value} state")
+
+    # Update via broker if connected
+    exec_svc = state.execution_service
+    if exec_svc.broker and exec_svc.broker.is_connected():
+        from src.execution.broker.sinopac import SinopacBroker
+
+        if isinstance(exec_svc.broker, SinopacBroker):
+            price = Decimal(str(req.price)) if req.price is not None else None
+            qty = int(req.quantity) if req.quantity is not None else None
+            exec_svc.broker.update_order(order.client_order_id, price=price, quantity=qty)
+
+    # Update local order
+    if req.price is not None:
+        order.price = Decimal(str(req.price))
+    if req.quantity is not None:
+        order.quantity = Decimal(str(req.quantity))
+
+    response = _to_response(order)
+    asyncio.create_task(ws_manager.broadcast("orders", {**response.model_dump(), "action": "updated"}))
+    return response
+
+
+@router.delete("/{order_id}", response_model=OrderResponse)
+async def cancel_order(
+    order_id: str,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("trader")),
+) -> OrderResponse:
+    """取消訂單。"""
+    state = get_app_state()
+    order = state.oms.get_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.is_terminal:
+        raise HTTPException(status_code=400, detail=f"Cannot cancel order in {order.status.value} state")
+
+    # Cancel via broker if connected
+    exec_svc = state.execution_service
+    if exec_svc.broker and exec_svc.broker.is_connected() and order.client_order_id:
+        exec_svc.broker.cancel_order(order.client_order_id)
+
+    order.status = OrderStatus.CANCELLED
+
+    response = _to_response(order)
+    asyncio.create_task(ws_manager.broadcast("orders", {**response.model_dump(), "action": "cancelled"}))
     return response

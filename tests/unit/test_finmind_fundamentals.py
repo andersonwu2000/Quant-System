@@ -66,7 +66,7 @@ class TestGetFinancials:
     @patch("src.data.sources.finmind_fundamentals.FinMindFundamentals._get_dataloader")
     def test_get_financials_returns_metrics(self, mock_dl):
         loader = MagicMock()
-        loader.taiwan_stock_per.return_value = _make_per_response()
+        loader.taiwan_stock_per_pbr.return_value = _make_per_response()
         loader.taiwan_stock_financial_statement.return_value = (
             _make_financial_statement_response()
         )
@@ -85,7 +85,7 @@ class TestGetFinancials:
     @patch("src.data.sources.finmind_fundamentals.FinMindFundamentals._get_dataloader")
     def test_missing_data_returns_empty(self, mock_dl):
         loader = MagicMock()
-        loader.taiwan_stock_per.return_value = pd.DataFrame()
+        loader.taiwan_stock_per_pbr.return_value = pd.DataFrame()
         loader.taiwan_stock_financial_statement.return_value = pd.DataFrame()
         mock_dl.return_value = loader
 
@@ -149,7 +149,7 @@ class TestCacheTtl:
     def test_cache_ttl(self, mock_dl):
         """Cached data is returned on second call; expired data triggers re-fetch."""
         loader = MagicMock()
-        loader.taiwan_stock_per.return_value = _make_per_response()
+        loader.taiwan_stock_per_pbr.return_value = _make_per_response()
         loader.taiwan_stock_financial_statement.return_value = (
             _make_financial_statement_response()
         )
@@ -172,7 +172,7 @@ class TestCacheTtl:
     def test_expired_cache_refetches(self, mock_dl):
         """Manually expire cache to verify re-fetch."""
         loader = MagicMock()
-        loader.taiwan_stock_per.return_value = _make_per_response()
+        loader.taiwan_stock_per_pbr.return_value = _make_per_response()
         loader.taiwan_stock_financial_statement.return_value = (
             _make_financial_statement_response()
         )

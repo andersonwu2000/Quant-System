@@ -62,3 +62,37 @@ async def metrics(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
         "strategies_running": running,
         "active_backtests": active_backtests,
     }
+
+
+# ── System Alerts ──────────────────────────────────────────────
+
+from pydantic import BaseModel
+
+
+class SystemAlertItem(BaseModel):
+    timestamp: str
+    category: str  # "risk" | "execution" | "strategy" | "system"
+    level: str  # "info" | "warning" | "error"
+    message: str
+
+@router.get("/alerts", response_model=list[SystemAlertItem])
+async def get_system_alerts(
+    category: str | None = None,
+    limit: int = 50,
+    api_key: str = Depends(verify_api_key),
+) -> list[SystemAlertItem]:
+    """Get system-wide alerts across all modules."""
+    # Aggregate from risk alerts
+    alerts = []
+    try:
+        state = get_app_state()
+        for alert in state.risk_engine.alerts[-limit:]:
+            alerts.append(SystemAlertItem(
+                timestamp=str(getattr(alert, 'timestamp', '')),
+                category="risk",
+                level=getattr(alert, 'level', 'warning'),
+                message=str(alert),
+            ))
+    except Exception:
+        pass
+    return alerts[:limit]

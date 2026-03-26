@@ -61,5 +61,15 @@ def create_fundamentals(source: str, **kwargs: object) -> FundamentalsProvider |
 
         token = str(kwargs.get("token", ""))
         return FinMindFundamentals(token=token)
-    # yahoo, fubon, twse, etc. don't have fundamentals yet
+
+    # Yahoo mode: try FinMind fundamentals if token is available
+    if source == "yahoo":
+        from src.core.config import get_config
+
+        cfg = get_config()
+        if cfg.finmind_token:
+            from src.data.sources.finmind_fundamentals import FinMindFundamentals
+
+            return FinMindFundamentals(token=cfg.finmind_token)
+
     return None

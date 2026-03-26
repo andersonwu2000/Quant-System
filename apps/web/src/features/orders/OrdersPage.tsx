@@ -1,11 +1,12 @@
-import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { Fragment, useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useApi, useWs } from "@core/hooks";
 import { fmtCurrency, fmtPrice, fmtDate, fmtTime } from "@core/utils";
-import { Card, StatusBadge, ErrorAlert, TableSkeleton, ConnectionBanner, EmptyState } from "@shared/ui";
+import { Card, StatusBadge, ErrorAlert, TableSkeleton, ConnectionBanner, EmptyState, useToast } from "@shared/ui";
 import { useT } from "@core/i18n";
 import { useAuth } from "@core/auth";
 import { ordersApi } from "./api";
 import { OrderForm } from "./components/OrderForm";
+import { X, Pencil } from "lucide-react";
 
 const filterKeys = ["all", "filled", "pending", "cancelled", "rejected"] as const;
 
@@ -13,8 +14,13 @@ export function OrdersPage() {
   const { t } = useT();
   const { hasRole } = useAuth();
   const canTrade = hasRole("trader");
+  const { toast } = useToast();
   const [filter, setFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPrice, setEditPrice] = useState("");
+  const [editQty, setEditQty] = useState("");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const { data: orderList, loading, error, refresh } = useApi(
     () => ordersApi.list(filter === "all" ? undefined : filter),
     [filter],
@@ -46,6 +52,46 @@ export function OrdersPage() {
       [refresh],
     ),
   );
+
+  const handleCancel = async (orderId: string) => {
+    setActionLoading(orderId);
+    try {
+      await ordersApi.cancel(orderId);
+      toast("success", t.orders.cancelSuccess ?? "Order cancelled");
+      refresh();
+    } catch {
+      toast("error", t.common.requestFailed);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleEdit = (o: { id: string; price?: number | null; quantity: number }) => {
+    setEditingId(o.id);
+    setEditPrice(o.price != null ? String(o.price) : "");
+    setEditQty(String(o.quantity));
+  };
+
+  const handleEditSubmit = async () => {
+    if (!editingId) return;
+    setActionLoading(editingId);
+    try {
+      const data: { price?: number; quantity?: number } = {};
+      if (editPrice) data.price = parseFloat(editPrice);
+      if (editQty) data.quantity = parseFloat(editQty);
+      await ordersApi.update(editingId, data);
+      toast("success", t.orders.updateSuccess ?? "Order updated");
+      setEditingId(null);
+      refresh();
+    } catch {
+      toast("error", t.common.requestFailed);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const isOpenOrder = (status: string) =>
+    status === "SUBMITTED" || status === "PENDING" || status === "PARTIAL";
 
   const filterLabels = useMemo<Record<string, string>>(() => ({
     all: t.orders.all,
@@ -117,11 +163,13 @@ export function OrdersPage() {
                 <th className="text-right py-2">{t.orders.commission}</th>
                 <th className="text-left py-2">{t.orders.strategy}</th>
                 <th className="text-left py-2">{t.orders.status}</th>
+                {canTrade && <th className="text-center py-2">{t.orders.actions ?? "Actions"}</th>}
               </tr>
             </thead>
             <tbody>
               {orderList?.map((o) => (
-                <tr key={o.id} className="border-b border-slate-100 dark:border-surface-light/50 hover:bg-slate-50 dark:hover:bg-surface-light/30">
+                <Fragment key={o.id}>
+                <tr className="border-b border-slate-100 dark:border-surface-light/50 hover:bg-slate-50 dark:hover:bg-surface-light/30">
                   <td className="py-2 whitespace-nowrap">
                     <span className="text-slate-400">{fmtDate(o.created_at)}</span>{" "}
                     {fmtTime(o.created_at)}
@@ -139,7 +187,74 @@ export function OrdersPage() {
                   <td className="text-right py-2">{fmtCurrency(o.commission)}</td>
                   <td className="py-2 text-sm text-slate-400">{o.strategy_id}</td>
                   <td className="py-2"><StatusBadge status={o.status} /></td>
+                  {canTrade && (
+                    <td className="py-2 text-center">
+                      {isOpenOrder(o.status) && (
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleEdit(o)}
+                            disabled={actionLoading === o.id}
+                            title={t.orders.edit ?? "Edit"}
+                            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-surface-light text-slate-400 hover:text-blue-400 transition-colors"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleCancel(o.id)}
+                            disabled={actionLoading === o.id}
+                            title={t.orders.cancel ?? "Cancel"}
+                            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-surface-light text-slate-400 hover:text-red-400 transition-colors"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  )}
                 </tr>
+                {/* Inline edit row */}
+                {editingId === o.id && (
+                  <tr className="bg-blue-500/5">
+                    <td colSpan={canTrade ? 11 : 10} className="py-3 px-4">
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="text-slate-400">{t.orders.editOrder ?? "Edit order"}:</span>
+                        <label className="flex items-center gap-1">
+                          {t.orders.price}
+                          <input
+                            type="number"
+                            value={editPrice}
+                            onChange={(e) => setEditPrice(e.target.value)}
+                            placeholder="MKT"
+                            className="w-24 px-2 py-1 rounded bg-surface-light border border-slate-600 text-sm"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          {t.orders.qty}
+                          <input
+                            type="number"
+                            value={editQty}
+                            onChange={(e) => setEditQty(e.target.value)}
+                            className="w-20 px-2 py-1 rounded bg-surface-light border border-slate-600 text-sm"
+                          />
+                        </label>
+                        <button
+                          onClick={handleEditSubmit}
+                          disabled={actionLoading === o.id}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium text-white"
+                        >
+                          {t.common.save ?? "Save"}
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="px-3 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs font-medium text-white"
+                        >
+                          {t.common.cancel}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

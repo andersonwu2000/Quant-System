@@ -78,7 +78,7 @@ class FinMindFundamentals(FundamentalsProvider):
                     pd.Timestamp.now() - pd.DateOffset(days=30)
                 ).strftime("%Y-%m-%d")
 
-            per_df = dl.taiwan_stock_per(
+            per_df = dl.taiwan_stock_per_pbr(
                 **per_kwargs,
             )
 
@@ -291,5 +291,59 @@ class FinMindFundamentals(FundamentalsProvider):
 
         except Exception as e:
             logger.warning("Failed to get dividends for %s: %s", symbol, e)
+            self._set_cached(cache_key, empty)
+            return empty
+
+    def get_institutional(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+        """Get institutional investor buy/sell data from TaiwanStockInstitutionalInvestorsBuySell."""
+        bare_id = strip_tw_suffix(symbol)
+        cache_key = f"institutional_{bare_id}_{start}_{end}"
+
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+
+        empty = pd.DataFrame(columns=["date", "trust_net", "foreign_net", "dealer_net"])
+
+        try:
+            dl = self._get_dataloader()
+            df = dl.taiwan_stock_institutional_investors(
+                stock_id=bare_id, start_date=start, end_date=end
+            )
+
+            if df is None or df.empty:
+                self._set_cached(cache_key, empty)
+                return empty
+
+            # Calculate net = buy - sell for each row
+            df["net"] = df["buy"].astype(float) - df["sell"].astype(float)
+
+            # Institution name mappings
+            trust_names = ["Investment_Trust"]
+            foreign_names = ["Foreign_Investor", "Foreign_Dealer_Self"]
+            dealer_names = ["Dealer_self", "Dealer_Hedging"]
+
+            result_rows = []
+            for date_val, group in df.groupby("date"):
+                trust_net = group[group["name"].isin(trust_names)]["net"].sum()
+                foreign_net = group[group["name"].isin(foreign_names)]["net"].sum()
+                dealer_net = group[group["name"].isin(dealer_names)]["net"].sum()
+                result_rows.append({
+                    "date": date_val,
+                    "trust_net": float(trust_net),
+                    "foreign_net": float(foreign_net),
+                    "dealer_net": float(dealer_net),
+                })
+
+            result = pd.DataFrame(result_rows)
+            if not result.empty:
+                result["date"] = pd.to_datetime(result["date"])
+                result = result.sort_values("date").reset_index(drop=True)
+
+            self._set_cached(cache_key, result)
+            return result
+
+        except Exception as e:
+            logger.warning("Failed to get institutional data for %s: %s", symbol, e)
             self._set_cached(cache_key, empty)
             return empty

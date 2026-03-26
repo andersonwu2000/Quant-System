@@ -62,12 +62,12 @@ class TestFactorPerformanceBenchmark:
             compute_factor_values(data, factor_name, dates=dates)
         elapsed = time.perf_counter() - start
 
-        # Vectorized path: ~3s in isolation (vs ~42s for the old per-window path).
-        # Allow 30s to accommodate CI/parallel load and memory pressure from
-        # full test suite runs.
-        assert elapsed < 30.0, (
+        # Vectorized path: ~17s in isolation for 60+ factors (vs ~42s for the old
+        # per-window path with 21 factors). Allow 60s to accommodate CI/parallel
+        # load and memory pressure from full test suite runs.
+        assert elapsed < 60.0, (
             f"All {len(VECTORIZED_FACTORS)} vectorized factors took {elapsed:.2f}s "
-            f"(limit: 30s) for 50 stocks x {len(dates)} dates"
+            f"(limit: 60s) for 50 stocks x {len(dates)} dates"
         )
 
 

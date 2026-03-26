@@ -74,6 +74,41 @@ class SinopacQuoteManager:
         """設定 asyncio event loop（用於跨執行緒回調）。"""
         self._event_loop = loop
 
+    def set_broadcast_callback(
+        self,
+        callback: Callable[[TickData], Any],
+        loop: asyncio.AbstractEventLoop | None = None,
+    ) -> None:
+        """註冊 WebSocket broadcast 回調（線程安全）。
+
+        Tick callbacks come from Shioaji's background thread.  If *callback*
+        is a coroutine function the caller must supply an *loop* so we can
+        schedule it via ``run_coroutine_threadsafe``.  For plain sync
+        callbacks *loop* is not required.
+
+        Args:
+            callback: A sync function ``(TickData) -> None`` **or** an async
+                function whose coroutine will be scheduled on *loop*.
+            loop: The running asyncio event loop (required for async
+                callbacks).
+        """
+        if asyncio.iscoroutinefunction(callback):
+            if loop is None:
+                raise ValueError(
+                    "An asyncio event loop is required for async broadcast callbacks"
+                )
+
+            def _threadsafe_wrapper(tick: TickData) -> None:
+                asyncio.run_coroutine_threadsafe(callback(tick), loop)
+
+            self._tick_callbacks.append(_threadsafe_wrapper)
+        else:
+            self._tick_callbacks.append(callback)
+
+        if loop is not None:
+            self._event_loop = loop
+        logger.info("Broadcast callback registered")
+
     def on_tick(self, callback: Callable[[TickData], None]) -> None:
         """註冊 tick 回調。"""
         self._tick_callbacks.append(callback)

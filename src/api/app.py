@@ -19,7 +19,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from src.api.auth import verify_ws_token
 from src.api.middleware import AuditMiddleware
-from src.api.routes import admin, allocation, alpha, auth, auto_alpha, backtest, execution, orders, portfolio, risk, scanner, strategies, system
+from src.api.routes import admin, allocation, alpha, auth, auto_alpha, backtest, data, execution, orders, portfolio, risk, scanner, scheduler_routes, strategies, system
 from src.api.ws import ws_manager
 from src.core.config import get_config
 from src.core.logging import setup_logging
@@ -82,6 +82,58 @@ def create_app() -> FastAPI:
         state.execution_service = ExecSvc(exec_config)
         state.execution_service.initialize()
         logger.info("ExecutionService initialized: mode=%s", config.mode)
+
+        # ── Market channel + Realtime risk (paper/live only) ──
+        if config.mode in ("paper", "live"):
+            loop = asyncio.get_running_loop()
+
+            from src.execution.broker.sinopac import SinopacBroker
+            from src.execution.quote.sinopac import SinopacQuoteManager, TickData
+            from src.risk.realtime import RealtimeRiskMonitor
+
+            broker = state.execution_service.broker
+            quote_manager: SinopacQuoteManager | None = None
+
+            if isinstance(broker, SinopacBroker) and broker.api is not None:
+                quote_manager = SinopacQuoteManager(broker.api)
+                quote_manager.set_event_loop(loop)
+
+                # Broadcast ticks to WebSocket market channel
+                _qm = quote_manager  # bind for closure (always non-None here)
+
+                async def _ws_broadcast_tick(tick_data: TickData) -> None:
+                    payload = _qm.to_ws_payload(tick_data)
+                    await ws_manager.broadcast("market", payload)
+
+                quote_manager.set_broadcast_callback(_ws_broadcast_tick, loop)
+
+                # Subscribe to current portfolio positions
+                for symbol in list(state.portfolio.positions.keys()):
+                    quote_manager.subscribe(symbol)
+
+                logger.info(
+                    "Market channel: SinopacQuoteManager connected, %d symbols subscribed",
+                    len(state.portfolio.positions),
+                )
+
+            # Realtime risk monitor
+            realtime_risk = RealtimeRiskMonitor(
+                portfolio=state.portfolio,
+                risk_engine=state.risk_engine,
+                ws_manager=ws_manager,
+                loop=loop,
+            )
+            state.realtime_risk_monitor = realtime_risk  # type: ignore[attr-defined]
+
+            if quote_manager is not None:
+                # Register price update callback for risk monitoring
+                def _risk_on_tick(tick_data: TickData) -> None:
+                    realtime_risk.on_price_update(tick_data.symbol, tick_data.price)
+
+                quote_manager.on_tick(_risk_on_tick)
+
+            state.quote_manager = quote_manager  # type: ignore[attr-defined]
+            logger.info("RealtimeRiskMonitor initialized")
 
         async def _kill_switch_monitor() -> None:
             while True:
@@ -157,6 +209,8 @@ def create_app() -> FastAPI:
     app.include_router(system.router, prefix="/api/v1")
     app.include_router(execution.router, prefix="/api/v1")
     app.include_router(scanner.router, prefix="/api/v1")
+    app.include_router(data.router, prefix="/api/v1")
+    app.include_router(scheduler_routes.router, prefix="/api/v1")
 
     # WebSocket 端點（需要 token 認證）
     @app.websocket("/ws/{channel}")

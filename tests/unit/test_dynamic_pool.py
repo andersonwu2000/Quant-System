@@ -61,8 +61,8 @@ class TestGetAllFactorNames:
     def test_returns_all_registered_factors(self) -> None:
         """All registered factors are returned (FACTOR_REGISTRY + FUNDAMENTAL_REGISTRY)."""
         names = DynamicFactorPool.get_all_factor_names()
-        # FACTOR_REGISTRY has 21 + FUNDAMENTAL_REGISTRY has 6 = 27
-        assert len(names) == 27
+        # FACTOR_REGISTRY has 66 + FUNDAMENTAL_REGISTRY has 17 = 83
+        assert len(names) == 83
         assert "momentum" in names
         assert "value_pe" in names
         assert "quality_roe" in names

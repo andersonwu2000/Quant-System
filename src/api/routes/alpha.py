@@ -338,3 +338,192 @@ def _format_report(report: Any, task_id: str, req: AlphaRunRequest) -> dict[str,
         "start_date": req.start,
         "end_date": req.end,
     }
+
+
+# ── Regime Classification ──────────────────────────────────────
+
+class RegimeResponse(BaseModel):
+    regime: str
+    regime_series: dict[str, str] | None = None  # date -> regime
+
+
+@router.get("/regime", response_model=RegimeResponse)
+async def get_market_regime(
+    symbol: str = "0050.TW",
+    lookback: int = 60,
+    api_key: str = Depends(verify_api_key),
+) -> RegimeResponse:
+    """Get current market regime classification."""
+    try:
+        from src.alpha.regime import classify_regimes
+        from src.data.sources.yahoo import YahooFeed
+
+        feed = YahooFeed()
+        bars = feed.get_bars(symbol)
+        if bars.empty:
+            raise HTTPException(status_code=404, detail=f"No data for {symbol}")
+
+        returns = bars["close"].pct_change().dropna()
+        regimes = classify_regimes(returns)
+        current = str(regimes.iloc[-1]) if not regimes.empty else "unknown"
+
+        # Last 20 regime values
+        recent = {str(d.date()) if hasattr(d, 'date') else str(d): str(v) for d, v in regimes.tail(20).items()}
+
+        return RegimeResponse(regime=current, regime_series=recent)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Turnover Analysis ──────────────────────────────────────────
+
+class TurnoverRequest(BaseModel):
+    symbols: list[str]
+    factor_name: str
+    start: str
+    end: str
+    n_quantiles: int = 5
+    holding_period: int = 5
+    cost_bps: float = 30.0
+
+
+class TurnoverResponse(BaseModel):
+    factor_name: str
+    avg_turnover: float
+    cost_drag_annual_bps: float
+    net_alpha_bps: float
+
+
+@router.post("/turnover-analysis", response_model=TurnoverResponse)
+async def analyze_turnover(
+    req: TurnoverRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> TurnoverResponse:
+    """Analyze factor turnover and cost drag."""
+    try:
+        from src.alpha.turnover import analyze_factor_turnover
+        from src.strategy.research import compute_factor_values, compute_forward_returns, compute_ic
+        from src.data.sources.yahoo import YahooFeed
+
+        feed = YahooFeed(universe=req.symbols)
+        data = {}
+        for sym in req.symbols:
+            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            if not bars.empty:
+                data[sym] = bars
+
+        fv = compute_factor_values(data, req.factor_name)
+        fwd = compute_forward_returns(data, horizon=req.holding_period)
+        ic = compute_ic(fv, fwd)
+
+        result = analyze_factor_turnover(
+            fv, n_quantiles=req.n_quantiles, holding_period=req.holding_period,
+            cost_bps=req.cost_bps, gross_ic=ic.ic_mean, factor_name=req.factor_name,
+        )
+
+        return TurnoverResponse(
+            factor_name=req.factor_name,
+            avg_turnover=result.avg_turnover,
+            cost_drag_annual_bps=result.cost_drag_annual_bps,
+            net_alpha_bps=abs(ic.ic_mean) * 10000 - result.cost_drag_annual_bps,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── IC Analysis ────────────────────────────────────────────────
+
+class ICAnalysisRequest(BaseModel):
+    symbols: list[str]
+    factor_name: str
+    start: str
+    end: str
+    horizon: int = 5
+
+
+class ICAnalysisResponse(BaseModel):
+    factor_name: str
+    ic_mean: float
+    icir: float
+    hit_rate: float
+    ic_std: float
+
+
+@router.post("/ic-analysis", response_model=ICAnalysisResponse)
+async def compute_ic_analysis(
+    req: ICAnalysisRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> ICAnalysisResponse:
+    """Compute IC/ICIR for a factor."""
+    try:
+        from src.strategy.research import compute_factor_values, compute_forward_returns, compute_ic
+        from src.data.sources.yahoo import YahooFeed
+
+        feed = YahooFeed(universe=req.symbols)
+        data = {}
+        for sym in req.symbols:
+            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            if not bars.empty:
+                data[sym] = bars
+
+        fv = compute_factor_values(data, req.factor_name)
+        fwd = compute_forward_returns(data, horizon=req.horizon)
+        ic = compute_ic(fv, fwd)
+
+        return ICAnalysisResponse(
+            factor_name=req.factor_name,
+            ic_mean=ic.ic_mean,
+            icir=ic.icir,
+            hit_rate=ic.hit_rate,
+            ic_std=ic.ic_std,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Attribution ────────────────────────────────────────────────
+
+class AttributionRequest(BaseModel):
+    composite_returns: dict[str, float]  # date -> return
+    factor_returns: dict[str, dict[str, float]]  # factor_name -> {date -> return}
+    composite_weights: dict[str, float]  # factor_name -> weight
+    method: str = "weight_based"
+
+
+class AttributionResponse(BaseModel):
+    total_return: float
+    factor_contributions: dict[str, float]
+    residual_return: float
+
+
+@router.post("/attribution", response_model=AttributionResponse)
+async def compute_attribution(
+    req: AttributionRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> AttributionResponse:
+    """Decompose returns into factor contributions."""
+    try:
+        import pandas as pd
+        from src.alpha.attribution import attribute_returns
+
+        comp = pd.Series(req.composite_returns, dtype=float)
+        comp.index = pd.to_datetime(comp.index)
+
+        factor_ret = {}
+        for name, data in req.factor_returns.items():
+            s = pd.Series(data, dtype=float)
+            s.index = pd.to_datetime(s.index)
+            factor_ret[name] = s
+
+        result = attribute_returns(comp, factor_ret, req.composite_weights, method=req.method)
+
+        return AttributionResponse(
+            total_return=result.total_return,
+            factor_contributions=result.factor_contributions,
+            residual_return=result.residual_return,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -26,7 +26,7 @@ Multi-asset portfolio research and optimization system covering TW stocks, US st
 Monorepo: Python backend + React web + Android native (Kotlin/Compose). Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
 
 **Monorepo structure:**
-- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (~147 files, ~25,000 LOC)
+- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (~150 files, ~27,000 LOC)
 - `apps/web/` — React 18 + Vite + Tailwind dashboard (incl. Alpha Research page)
 - `apps/android/` — Android native (Kotlin + Jetpack Compose + Material 3)
 - `apps/shared/` — `@quant/shared` TypeScript package (types, API client, WS manager, format utils)
@@ -49,7 +49,7 @@ Frontend workspace managed by bun (`apps/package.json` workspaces).
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v (1138 tests)
+make test                    # pytest tests/ -v (1243 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
@@ -102,11 +102,11 @@ Key design decisions:
 - `src/alpha/` — Alpha research layer (within-asset selection). `pipeline.py` orchestrates end-to-end: universe filtering → factor computation → neutralization → orthogonalization → composite signal → quantile backtest → cost-aware portfolio construction. `AlphaStrategy` adapter wraps pipeline as `Strategy`. `regime.py` classifies market regimes (shared with allocation layer). `auto/` (9 files: AutoAlphaConfig, UniverseSelector, AlphaResearcher, AlphaDecisionEngine, AlphaExecutor, AlphaScheduler, AlphaStore, AlertManager, SafetyChecker, FactorPerformanceTracker, DynamicFactorPool).
 - `src/allocation/` — Tactical asset allocation (between-asset selection). `macro_factors.py`: 4 macro factors (growth/inflation/rates/credit) from FRED z-scores. `cross_asset.py`: momentum/volatility/value per AssetClass. `tactical.py`: TacticalEngine combines strategic weights + macro + cross-asset + regime → `dict[AssetClass, float]`. API: `POST /api/v1/allocation`.
 - `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 14 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP/Robust/Resampled/CVaR/MaxDrawdown/GlobalMinVariance/MaxSharpe/IndexTracking), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage/GARCH/PCA factor model), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
-- `src/strategy/` — Strategy ABC (`on_bar()` → weights), `factors/` package (technical.py + fundamental.py + kakushadze.py — 27 pure-function factors, vectorized), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
-- `src/risk/` — RiskEngine executes declarative rules; `kill_switch()` at 5% daily drawdown. RiskMonitor tracks metrics.
+- `src/strategy/` — Strategy ABC (`on_bar()` → weights), `factors/` package (technical.py + fundamental.py + kakushadze.py — 66 price-volume factors + 9 fundamental = 75 total, vectorized), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
+- `src/risk/` — RiskEngine executes declarative rules; `kill_switch()` at 5% daily drawdown. RiskMonitor tracks metrics. `RealtimeRiskMonitor` — tick-level intraday drawdown with tiered alerts (2%/3%/5%) and automatic kill switch.
 - `src/execution/` — `broker/` subpackage: `base.py` (BrokerAdapter ABC, PaperBroker), `simulated.py` (SimBroker — slippage, per-instrument commission/tax, T+N settlement), `sinopac.py` (SinopacBroker — Shioaji SDK wrapper). `quote/` subpackage: `sinopac.py` (SinopacQuoteManager — tick/bidask subscription). `service.py` (ExecutionService — mode-aware routing: backtest/paper/live), `smart_order.py` (TWAP splitter), OMS (order lifecycle), market hours validation, EOD reconciliation.
-- `src/backtest/` — BacktestEngine (InstrumentRegistry integration, multi-currency detection), 40+ analytics, HTML/CSV reports, walk-forward, validation.
-- `src/data/` — DataFeed ABC (`get_bars`, `get_fx_rate`, `get_futures_chain`), YahooFeed (retry/rate-limit), FinMindFeed, FredDataSource (macro data), ParquetDiskCache.
+- `src/backtest/` — BacktestEngine (InstrumentRegistry integration, multi-currency detection), 40+ analytics, HTML/CSV reports, walk-forward, validation, `experiment.py` (parallel grid backtesting — 256+ configs × 5 periods, 12-core ProcessPoolExecutor).
+- `src/data/` — DataFeed ABC (`get_bars`, `get_fx_rate`, `get_futures_chain`), YahooFeed (local-first: reads `data/market/*.parquet`, downloads only if missing), FinMindFeed, FredDataSource (macro data), LocalMarketData (permanent parquet store in `data/market/`).
 - `src/api/` — FastAPI REST + WebSocket, 14 route modules (incl. `/alpha`, `/allocation`, `/execution`, `/auto-alpha`), JWT auth, Prometheus.
 - `src/notifications/` — Discord / LINE / Telegram.
 - `src/scheduler/` — APScheduler (daily snapshots, weekly rebalance).
@@ -129,8 +129,11 @@ Key design decisions:
 - `GET /api/v1/portfolio/saved/{id}/trades` — Trade history
 - `GET /api/v1/strategies` — List available strategies
 - `POST /api/v1/orders` — Create order
+- `PUT /api/v1/orders/{id}` — Modify order (price/quantity)
+- `DELETE /api/v1/orders/{id}` — Cancel order
 - `GET /api/v1/risk/rules` — Risk rule status
 - `POST /api/v1/risk/kill-switch` — Kill switch control
+- `GET /api/v1/risk/realtime` — Real-time intraday drawdown + alerts
 - `GET /api/v1/system/health` — Health check
 - `GET /api/v1/execution/status` — Execution service status
 - `GET /api/v1/execution/market-hours` — Current trading session
@@ -148,7 +151,7 @@ Key design decisions:
 - CORS configured via `QUANT_ALLOWED_ORIGINS`
 - Prometheus metrics via `/metrics` endpoint
 
-**WebSocket** (`src/api/ws.py`): channels — `portfolio`, `alerts`, `orders`, `market`. Token-based auth (optional in dev mode). Ping/pong keep-alive. Broadcast uses `asyncio.gather` with 5s timeout and dead connection cleanup. Note: `market` channel not yet connected to real-time data feed (TODO).
+**WebSocket** (`src/api/ws.py`): channels — `portfolio`, `alerts`, `orders`, `market`. Token-based auth (optional in dev mode). Ping/pong keep-alive. Broadcast uses `asyncio.gather` with 5s timeout and dead connection cleanup. `market` channel connected to SinopacQuoteManager tick/bidask in paper/live mode. `RealtimeRiskMonitor` monitors intraday drawdown via tick callbacks.
 
 **Logging** (`src/core/logging.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`. (`src/logging_config.py` re-exports for backward compat.)
 
@@ -200,7 +203,7 @@ Key design decisions:
 
 ## Strategies
 
-9 strategies (7 built-in + 2 pipeline):
+11 strategies (9 built-in + 2 pipeline):
 
 | Strategy | File | Logic |
 |----------|------|-------|
@@ -211,6 +214,8 @@ Key design decisions:
 | Multi-Factor | `strategies/multi_factor.py` | Momentum + value + quality, risk-parity weighted |
 | Pairs Trading | `strategies/pairs_trading.py` | Statistical arbitrage on correlated instruments |
 | Sector Rotation | `strategies/sector_rotation.py` | Rotate capital by relative momentum across sectors |
+| Revenue Momentum | `strategies/revenue_momentum.py` | Monthly revenue momentum + price trend confirmation (FinLab-inspired, CAGR 33.5% benchmark) |
+| Trust Follow | `strategies/trust_follow.py` | Investment trust net buy + revenue growth (FinLab-inspired, CAGR 31.7% benchmark) |
 | Alpha | `src/alpha/strategy.py` | Configurable factor pipeline with neutralization + cost-aware construction |
 | Multi-Asset | `src/strategy/multi_asset.py` | Two-layer: tactical allocation → within-class selection → portfolio optimization |
 
@@ -222,7 +227,7 @@ Key design decisions:
 
 **CI/CD** (`.github/workflows/ci.yml`) — 9 jobs:
 - `backend-lint` — ruff check + mypy strict
-- `backend-test` — pytest (1138 tests)
+- `backend-test` — pytest (1243 tests)
 - `web-typecheck` — tsc --noEmit
 - `web-test` — vitest (depends on web-typecheck)
 - `web-build` — vite build (depends on web-typecheck)

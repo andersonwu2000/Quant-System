@@ -5,6 +5,7 @@ export const zh: Translations = {
   appVersion: "版本 v0.1.0",
   common: {
     cancel: "取消",
+    save: "儲存",
     submit: "送出",
     confirm: "確認",
     retry: "重試",
@@ -208,6 +209,12 @@ export const zh: Translations = {
     market: "市價",
     mktIfEmpty: "留空為市價",
     confirmTitle: "確認下單",
+    actions: "操作",
+    edit: "改單",
+    cancel: "取消",
+    editOrder: "修改訂單",
+    cancelSuccess: "訂單已取消",
+    updateSuccess: "訂單已修改",
   },
 
   // backtest

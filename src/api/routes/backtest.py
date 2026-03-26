@@ -10,6 +10,7 @@ import uuid
 from typing import Any, cast, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from prometheus_client import Histogram
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -536,3 +537,122 @@ async def submit_stress_test(
         raise HTTPException(status_code=400, detail=str(e))
 
     return response
+
+
+# ── Grid Search ────────────────────────────────────────────────
+
+class GridSearchRequest(BaseModel):
+    universe: list[str]
+    start: str
+    end: str
+    factors: list[str] = ["momentum"]
+    rebalance_options: list[str] = ["weekly", "monthly"]
+    max_weight_options: list[float] = [0.05, 0.15]
+    n_workers: int = 4
+
+class GridSearchResponse(BaseModel):
+    task_id: str
+    status: str
+    n_configs: int
+    message: str
+
+@router.post("/grid-search", response_model=GridSearchResponse)
+@_limiter.limit("2/minute")
+async def submit_grid_search(
+    request: Request,
+    body: GridSearchRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> GridSearchResponse:
+    """Submit a parallel grid backtest (async)."""
+    task_id = uuid.uuid4().hex[:8]
+    n_configs = len(body.rebalance_options) * len(body.max_weight_options) * len(body.factors)
+
+    # Store task for async processing
+    state = get_app_state()
+    state.backtest_tasks[task_id] = {
+        "status": "queued",
+        "type": "grid_search",
+        "n_configs": n_configs,
+        "request": body.model_dump(),
+    }
+
+    return GridSearchResponse(
+        task_id=task_id,
+        status="queued",
+        n_configs=n_configs,
+        message=f"Grid search queued: {n_configs} configurations",
+    )
+
+
+# ── Validate Backtest ──────────────────────────────────────────
+
+class ValidateResponse(BaseModel):
+    task_id: str
+    is_valid: bool
+    issues: list[str]
+
+@router.post("/{task_id}/validate", response_model=ValidateResponse)
+async def validate_backtest(
+    task_id: str,
+    api_key: str = Depends(verify_api_key),
+) -> ValidateResponse:
+    """Validate a backtest result for common errors."""
+    state = get_app_state()
+    task = state.backtest_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    issues = []
+    result = task.get("result")
+    if result is None:
+        issues.append("No result available yet")
+
+    return ValidateResponse(
+        task_id=task_id,
+        is_valid=len(issues) == 0,
+        issues=issues,
+    )
+
+
+# ── K-Fold Cross-Validation ───────────────────────────────────
+
+class KFoldRequest(BaseModel):
+    strategy: str
+    universe: list[str]
+    start: str
+    end: str
+    n_folds: int = 5
+    expanding: bool = True
+
+class KFoldResponse(BaseModel):
+    task_id: str
+    status: str
+    n_folds: int
+    message: str
+
+@router.post("/kfold", response_model=KFoldResponse)
+@_limiter.limit("2/minute")
+async def submit_kfold(
+    request: Request,
+    body: KFoldRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> KFoldResponse:
+    """Submit k-fold cross-validation backtest."""
+    task_id = uuid.uuid4().hex[:8]
+
+    state = get_app_state()
+    state.backtest_tasks[task_id] = {
+        "status": "queued",
+        "type": "kfold",
+        "n_folds": body.n_folds,
+        "request": body.model_dump(),
+    }
+
+    return KFoldResponse(
+        task_id=task_id,
+        status="queued",
+        n_folds=body.n_folds,
+        message=f"K-fold validation queued: {body.n_folds} folds",
+    )

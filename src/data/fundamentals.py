@@ -49,3 +49,12 @@ class FundamentalsProvider(ABC):
             DataFrame with columns: [date, amount]
             Empty DataFrame if unavailable.
         """
+
+    def get_institutional(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+        """Get institutional investor buy/sell data (trust, foreign, dealer separately).
+
+        Returns:
+            DataFrame with columns: [date, trust_net, foreign_net, dealer_net]
+            Values are net buy amounts in shares. Empty DataFrame if unavailable.
+        """
+        return pd.DataFrame(columns=["date", "trust_net", "foreign_net", "dealer_net"])

@@ -12,14 +12,21 @@ from src.alpha.regime import MarketRegime
 
 
 def _default_alpha_config() -> AlphaConfig:
-    """Build AlphaConfig with all registered price-based factors."""
-    from src.strategy.research import FACTOR_REGISTRY
+    """Build AlphaConfig with empirically validated factors for Taiwan stocks.
 
+    Based on experiments 1-12 (2026-03-26):
+    - RSI: ICIR 0.60 on large caps (best single factor after size stratification)
+    - momentum (5-month): ICIR 0.48 on large caps
+    - 20-day holding period optimal (5-day factors ineffective due to TW transaction costs)
+    - Full 66-factor scan: no factor passes ICIR 0.5 on broad universe without stratification
+    See docs/dev/test/ for detailed experiment logs.
+    """
     factors = [
-        FactorSpec(name=name, direction=1)
-        for name in FACTOR_REGISTRY
+        FactorSpec(name="rsi", direction=1),
+        FactorSpec(name="momentum", direction=1),
+        FactorSpec(name="momentum_6m", direction=1),
     ]
-    return AlphaConfig(factors=factors)
+    return AlphaConfig(factors=factors, holding_period=20)
 
 
 @dataclass
@@ -47,12 +54,14 @@ class AutoAlphaConfig:
     schedule: str = "50 8 * * 1-5"
     eod_schedule: str = "00 14 * * 1-5"
 
-    # Universe
+    # Universe — experiments show large-cap stratification is critical
+    # (RSI ICIR: 0.08 broad → 0.60 large-cap; see docs/dev/test/20260326_3.md)
     universe_count: int = 150
     min_adv: int = 500_000
     min_listing_days: int = 120
     exclude_disposition: bool = True
     exclude_attention: bool = False
+    size_filter: str = "large"  # "all", "large" (top 1/3), "small" (bottom 1/3)
 
     # Research
     lookback: int = 252
@@ -65,10 +74,11 @@ class AutoAlphaConfig:
     max_turnover: float = 0.30
     min_trade_value: float = 50_000
 
-    # Safety
+    # Safety — experiments show strict kill switch hurts (misses post-crash rebounds)
+    # Round 1: kill_switch=off outperforms 5% kill_switch (COVID P1: +93% vs forced exit)
     max_consecutive_losses: int = 5
     ic_reversal_days: int = 10
-    emergency_stop_drawdown: float = 0.05
+    emergency_stop_drawdown: float = 0.10  # Relaxed from 0.05 to 0.10 based on experiments
 
     # Kill switch recovery
     kill_switch_cooldown_days: int = 3

@@ -350,3 +350,177 @@ async def rebalance_preview(
         raise HTTPException(status_code=400, detail=str(e))
 
     return result
+
+
+# ── Portfolio Optimization ─────────────────────────────────────
+
+from pydantic import BaseModel
+
+
+class OptimizeRequest(BaseModel):
+    symbols: list[str]
+    start: str
+    end: str
+    method: str = "mean_variance"  # one of: equal_weight, inverse_vol, risk_parity, mean_variance, black_litterman, hrp, robust, resampled, cvar_optimization, max_drawdown, global_min_variance, max_sharpe, index_tracking, semi_variance
+    risk_free_rate: float = 0.015
+    target_return: float | None = None
+    max_weight: float = 0.30
+
+
+class OptimizeResponse(BaseModel):
+    weights: dict[str, float]
+    expected_return: float
+    volatility: float
+    sharpe_ratio: float
+    method: str
+
+
+@router.post("/optimize", response_model=OptimizeResponse)
+async def optimize_portfolio(req: OptimizeRequest, api_key: str = Depends(verify_api_key), _role: dict = Depends(require_role("researcher"))) -> OptimizeResponse:
+    """Run portfolio optimization with specified method."""
+    try:
+        from src.data.sources.yahoo import YahooFeed
+        from src.portfolio.optimizer import PortfolioOptimizer, OptimizerConfig, OptimizationMethod
+        import pandas as pd
+
+        feed = YahooFeed(universe=req.symbols)
+        returns_data = {}
+        for sym in req.symbols:
+            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            if not bars.empty:
+                returns_data[sym] = bars["close"].pct_change().dropna()
+
+        if len(returns_data) < 2:
+            raise HTTPException(status_code=400, detail="Need at least 2 symbols with data")
+
+        returns_df = pd.DataFrame(returns_data).dropna()
+        method_enum = OptimizationMethod(req.method)
+        config = OptimizerConfig(method=method_enum, risk_free_rate=req.risk_free_rate, max_weight=req.max_weight)
+        if req.target_return is not None:
+            config.target_return = req.target_return
+
+        optimizer = PortfolioOptimizer(config=config)
+        result = optimizer.optimize(returns_df)
+
+        return OptimizeResponse(
+            weights=result.weights,
+            expected_return=result.portfolio_return,
+            volatility=result.portfolio_risk,
+            sharpe_ratio=result.sharpe_ratio,
+            method=req.method,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Optimization failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RiskAnalysisRequest(BaseModel):
+    symbols: list[str]
+    start: str
+    end: str
+    weights: dict[str, float] | None = None
+    confidence: float = 0.95
+    cov_method: str = "ledoit_wolf"  # historical, ewm, ledoit_wolf, factor_model
+
+
+class RiskAnalysisResponse(BaseModel):
+    portfolio_volatility: float
+    var_95: float
+    cvar_95: float
+    risk_contributions: dict[str, float]
+    correlations: dict[str, dict[str, float]]
+
+
+@router.post("/risk-analysis", response_model=RiskAnalysisResponse)
+async def portfolio_risk_analysis(req: RiskAnalysisRequest, api_key: str = Depends(verify_api_key), _role: dict = Depends(require_role("researcher"))) -> RiskAnalysisResponse:
+    """Compute portfolio risk metrics."""
+    try:
+        from src.data.sources.yahoo import YahooFeed
+        from src.portfolio.risk_model import RiskModel, RiskModelConfig
+        import pandas as pd
+
+        feed = YahooFeed(universe=req.symbols)
+        returns_data = {}
+        for sym in req.symbols:
+            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            if not bars.empty:
+                returns_data[sym] = bars["close"].pct_change().dropna()
+
+        returns_df = pd.DataFrame(returns_data).dropna()
+        if returns_df.empty:
+            raise HTTPException(status_code=400, detail="No return data")
+
+        # Map cov_method string to RiskModelConfig flags
+        cov_config = RiskModelConfig()
+        if req.cov_method == "ewm":
+            cov_config.ewm_halflife = 63
+            cov_config.shrinkage = False
+        elif req.cov_method == "historical":
+            cov_config.shrinkage = False
+        elif req.cov_method == "ledoit_wolf":
+            cov_config.shrinkage = True
+        elif req.cov_method == "factor_model":
+            cov_config.factor_model = True
+
+        rm = RiskModel(config=cov_config)
+        cov = rm.estimate_covariance(returns_df)
+        corr = rm.estimate_correlation(returns_df)
+
+        weights = req.weights or {s: 1.0 / len(req.symbols) for s in req.symbols}
+        port_risk = rm.portfolio_risk(weights, cov)
+        risk_contrib = rm.risk_contribution(weights, cov)
+
+        port_returns = sum(returns_df[s] * weights.get(s, 0) for s in returns_df.columns)
+        var_val = RiskModel.compute_var(port_returns, req.confidence)
+        cvar_val = RiskModel.compute_cvar(port_returns, req.confidence)
+
+        return RiskAnalysisResponse(
+            portfolio_volatility=port_risk,
+            var_95=var_val,
+            cvar_95=cvar_val,
+            risk_contributions=risk_contrib,
+            correlations={s: {s2: float(corr.loc[s, s2]) for s2 in corr.columns} for s in corr.index},
+        )
+    except Exception as e:
+        logger.error("Risk analysis failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class HedgeRequest(BaseModel):
+    currency_exposure: dict[str, float]  # currency -> amount
+    total_nav: float
+
+
+class HedgeRecommendationResponse(BaseModel):
+    currency: str
+    exposure_pct: float
+    hedge_ratio: float
+    hedge_amount: float
+    reason: str
+
+
+@router.post("/hedge-recommendations", response_model=list[HedgeRecommendationResponse])
+async def get_hedge_recommendations(req: HedgeRequest, api_key: str = Depends(verify_api_key), _role: dict = Depends(require_role("researcher"))) -> list[HedgeRecommendationResponse]:
+    """Get currency hedge recommendations."""
+    try:
+        from src.portfolio.currency import CurrencyHedger
+
+        hedger = CurrencyHedger()
+        exposure = {k: Decimal(str(v)) for k, v in req.currency_exposure.items()}
+        recs = hedger.analyze(exposure, Decimal(str(req.total_nav)))
+
+        return [
+            HedgeRecommendationResponse(
+                currency=r.currency,
+                exposure_pct=float(r.gross_exposure / Decimal(str(req.total_nav)) * 100) if req.total_nav > 0 else 0.0,
+                hedge_ratio=float(r.hedge_ratio),
+                hedge_amount=float(r.hedged_amount),
+                reason=r.reason,
+            )
+            for r in recs
+        ]
+    except Exception as e:
+        logger.error("Hedge analysis failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

@@ -155,3 +155,74 @@ async def compute_tactical_allocation(
         regime=regime.value if isinstance(regime, MarketRegime) else str(regime),
         cross_asset_signals=ca_out,
     )
+
+
+# ── Macro Factors ──────────────────────────────────────────────
+
+class MacroFactorResponse(BaseModel):
+    factors: dict[str, float]
+    as_of: str
+
+
+@router.get("/macro-factors", response_model=MacroFactorResponse)
+async def get_macro_factors(
+    api_key: str = Depends(verify_api_key),
+) -> MacroFactorResponse:
+    """Get current macro factor z-scores from FRED."""
+    try:
+        from src.allocation.macro_factors import MacroFactorModel
+        import pandas as pd
+
+        model = MacroFactorModel()
+        signals = model.compute_signals()
+
+        return MacroFactorResponse(
+            factors=signals.to_dict(),
+            as_of=str(pd.Timestamp.now().date()),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Cross-Asset Signals ────────────────────────────────────────
+
+class CrossAssetResponse(BaseModel):
+    signals: dict[str, dict[str, float]]  # asset_class -> {signal_type -> value}
+
+
+@router.get("/cross-asset-signals", response_model=CrossAssetResponse)
+async def get_cross_asset_signals(
+    api_key: str = Depends(verify_api_key),
+) -> CrossAssetResponse:
+    """Get cross-asset momentum/volatility/value signals."""
+    try:
+        from src.allocation.cross_asset import CrossAssetSignals
+        from src.core.models import AssetClass
+        from src.data.sources.yahoo import YahooFeed
+
+        # Use representative ETFs as proxies for each asset class
+        proxies = {
+            AssetClass.EQUITY: "SPY",
+            AssetClass.ETF: "TLT",
+            AssetClass.FUTURE: "GLD",
+        }
+
+        feed = YahooFeed(universe=list(proxies.values()))
+        price_by_class: dict[AssetClass, Any] = {}
+        for ac, sym in proxies.items():
+            bars = feed.get_bars(sym)
+            if not bars.empty:
+                price_by_class[ac] = bars["close"]
+
+        cas = CrossAssetSignals()
+        detail = cas.compute_detail(price_by_class)
+
+        result = {}
+        for asset_class, signal_dict in detail.items():
+            result[str(asset_class.value) if hasattr(asset_class, 'value') else str(asset_class)] = {
+                k: float(v) for k, v in signal_dict.items()
+            }
+
+        return CrossAssetResponse(signals=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

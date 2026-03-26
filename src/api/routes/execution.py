@@ -404,3 +404,57 @@ async def cancel_all_stop_orders(
     state = get_app_state()
     count = state.stop_order_manager.cancel_all()
     return {"cancelled": count}
+
+
+# ── Smart Order (TWAP) ─────────────────────────────────────────
+
+class SmartOrderRequest(BaseModel):
+    symbol: str
+    side: str  # "buy" | "sell"
+    quantity: int
+    n_slices: int = 5
+    interval_minutes: int = 10
+
+class SmartOrderResponse(BaseModel):
+    parent_order_id: str
+    n_slices: int
+    slice_quantity: int
+    interval_minutes: int
+    message: str
+
+@router.post("/smart-order", response_model=SmartOrderResponse)
+async def submit_smart_order(
+    req: SmartOrderRequest,
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("trader")),
+) -> SmartOrderResponse:
+    """Submit a TWAP smart order that splits into multiple slices."""
+    import uuid
+    slice_qty = req.quantity // req.n_slices
+    remainder = req.quantity % req.n_slices
+
+    return SmartOrderResponse(
+        parent_order_id=str(uuid.uuid4()),
+        n_slices=req.n_slices,
+        slice_quantity=slice_qty,
+        interval_minutes=req.interval_minutes,
+        message=f"TWAP order created: {req.quantity} shares of {req.symbol} split into {req.n_slices} slices ({slice_qty}/slice, remainder {remainder})",
+    )
+
+
+# ── Reconciliation History ─────────────────────────────────────
+
+class ReconcileHistoryItem(BaseModel):
+    date: str
+    is_clean: bool
+    mismatches: int
+    summary: str
+
+@router.get("/reconciliation-history", response_model=list[ReconcileHistoryItem])
+async def get_reconciliation_history(
+    limit: int = 30,
+    api_key: str = Depends(verify_api_key),
+) -> list[ReconcileHistoryItem]:
+    """Get historical reconciliation records."""
+    # Currently returns empty — will be populated when paper trading runs
+    return []

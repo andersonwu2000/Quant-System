@@ -20,8 +20,10 @@ def _load_strategy_map() -> dict[str, type[Strategy]]:
     from strategies.momentum import MomentumStrategy
     from strategies.multi_factor import MultiFactorStrategy
     from strategies.pairs_trading import PairsTradingStrategy
+    from strategies.revenue_momentum import RevenueMomentumStrategy
     from strategies.rsi_oversold import RsiOversoldStrategy
     from strategies.sector_rotation import SectorRotationStrategy
+    from strategies.trust_follow import TrustFollowStrategy
     from src.alpha.strategy import AlphaStrategy
     from src.strategy.multi_asset import MultiAssetStrategy
 
@@ -33,6 +35,8 @@ def _load_strategy_map() -> dict[str, type[Strategy]]:
         "pairs_trading": PairsTradingStrategy,
         "multi_factor": MultiFactorStrategy,
         "sector_rotation": SectorRotationStrategy,
+        "revenue_momentum": RevenueMomentumStrategy,
+        "trust_follow": TrustFollowStrategy,
         "alpha": AlphaStrategy,
         "multi_asset": MultiAssetStrategy,
     }

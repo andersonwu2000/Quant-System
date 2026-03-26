@@ -3,6 +3,7 @@ export const en = {
   appVersion: "System v0.1.0",
   common: {
     cancel: "Cancel",
+    save: "Save",
     submit: "Submit",
     confirm: "Confirm",
     retry: "Retry",
@@ -206,6 +207,12 @@ export const en = {
     market: "Market",
     mktIfEmpty: "MKT if empty",
     confirmTitle: "Confirm Order",
+    actions: "Actions",
+    edit: "Edit",
+    cancel: "Cancel",
+    editOrder: "Edit order",
+    cancelSuccess: "Order cancelled",
+    updateSuccess: "Order updated",
   },
 
   // backtest

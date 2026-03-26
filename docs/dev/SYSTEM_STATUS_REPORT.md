@@ -5,7 +5,7 @@
 > **當前階段**: Phase A~I + R1-R4 完成, Shioaji 模擬整合通過
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v7.2
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v9.0
 
 ---
 
@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 149 (141 src + 8 strategies) |
+| 後端 Python 檔案 (src/ + strategies/) | 152 (142 src + 10 strategies) |
 | 後端 Python LOC | ~25,400 (24,573 + 786) |
-| 測試檔案 | 91 |
-| 測試 LOC | ~16,400 |
-| 測試數量 (pytest collected) | **1,159** |
+| 測試檔案 | 92 |
+| 測試 LOC | ~16,700 |
+| 測試數量 (pytest collected) | **1,264** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -60,15 +60,15 @@
 |------|--------|-----|----------|
 | `src/api/` | 22 | ~3,300 | REST API (14 路由, 74 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
-| `src/alpha/` | 24 | ~4,250 | Alpha 研究：27 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
+| `src/alpha/` | 24 | ~4,250 | Alpha 研究：66 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
 | `src/backtest/` | 11 | ~3,800 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL + **Experiment Grid (parallel backtesting across parameter combinations)** |
 | `src/execution/` | 16 | ~2,120 | `broker/` (base + simulated + sinopac) + `quote/` (sinopac) + `service.py` (ExecutionService) + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 + **TWAP 拆單 (`smart_order.py`)** + backward-compat shims |
-| `src/strategy/` | 12 | ~2,150 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 27 因子 + **GPU-accelerated factors via PyTorch CUDA**) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
+| `src/strategy/` | 12 | ~3,200 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 66 因子 + **GPU-accelerated factors via PyTorch CUDA**) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS — 60+ 向量化版本**) + Registry + MultiAssetStrategy |
 | `src/portfolio/` | 4 | ~1,260 | 組合最佳化 (14 方法: EW/InvVol/RP/MVO/BL/HRP/Robust/Resampled/CVaR/MaxDD/GMV/MaxSharpe/IndexTracking/SemiVariance) + 風險模型 (LW/GARCH/Factor Model Cov + VaR/CVaR 歷史+參數法) + James-Stein 均值收縮 + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
 | `src/core/` | 6 | ~930 | 核心模型 (models.py) + 設定 (config.py) + 日誌 (logging.py) + Repository + **TWTradingCalendar (calendar.py)** + **trading_pipeline.py (共用交易流程)** |
 | `src/domain/` | 3 | ~30 | Backward-compat shims (re-export from `src/core/`) |
-| `src/risk/` | 4 | 573 | 風控引擎 (10 規則) + Kill Switch + RiskMonitor |
+| `src/risk/` | 5 | ~700 | 風控引擎 (10 規則) + Kill Switch + RiskMonitor + **RealtimeRiskMonitor** |
 | `src/instrument/` | 3 | 331 | InstrumentRegistry + 自動推斷 (symbol → asset_class/market/currency) |
 | `src/cli/` | 2 | 299 | CLI: backtest / server / status / factors |
 | `src/notifications/` | 6 | 246 | Discord / LINE / Telegram 通知 |
@@ -80,7 +80,7 @@
 
 ## 4. 功能模組詳述
 
-### 4.1 策略引擎（9 個策略）
+### 4.1 策略引擎（11 個策略）
 
 | # | 策略 | 位置 | 邏輯 | 類型 |
 |---|------|------|------|------|
@@ -91,20 +91,22 @@
 | 5 | Multi-Factor | `strategies/multi_factor.py` | 動量+價值+品質 (risk-parity 加權) | 規則型 |
 | 6 | Pairs Trading | `strategies/pairs_trading.py` | 統計套利：Engle-Granger 共整合 + OLS hedge ratio / Kalman Filter 動態 hedge ratio (fallback 相關性) | 規則型 |
 | 7 | Sector Rotation | `strategies/sector_rotation.py` | 板塊相對動量輪動 | 規則型 |
-| 8 | Alpha Pipeline | `src/alpha/strategy.py` | 可配置因子管線 (中性化→正交化→IC 加權→建構) | 管線型 |
-| 9 | Multi-Asset | `src/strategy/multi_asset.py` | 兩層配置：戰術 → 資產內 Alpha → 組合最佳化 | 管線型 |
+| 8 | **Revenue Momentum** | `strategies/revenue_momentum.py` | **營收動能 + 價格確認（FinLab 研究驅動，CAGR 33.5% 對標）** | **條件篩選型** |
+| 9 | **Trust Follow** | `strategies/trust_follow.py` | **投信跟單 + 營收成長（FinLab 研究驅動，CAGR 31.7% 對標）** | **條件篩選型** |
+| 10 | Alpha Pipeline | `src/alpha/strategy.py` | 可配置因子管線 (中性化→正交化→IC 加權→建構) | 管線型 |
+| 11 | Multi-Asset | `src/strategy/multi_asset.py` | 兩層配置：戰術 → 資產內 Alpha → 組合最佳化 | 管線型 |
 
-### 4.2 Alpha 因子庫（27 因子）
+### 4.2 Alpha 因子庫（83 因子: 66 FACTOR_REGISTRY + 17 FUNDAMENTAL_REGISTRY）
 
-**價格因子 (11)**:
+**原始價格因子 (11)**:
 
 | 因子 | 函數 | 訊號方向 |
 |------|------|---------|
-| momentum | `momentum_factor()` | 正：追漲 |
-| mean_reversion | `mean_reversion_factor()` | 負：逆勢 |
-| volatility | `volatility_factor()` | 負：低波動溢酬 |
-| rsi | `rsi_factor()` | 負：超賣 |
-| ma_cross | `ma_cross_factor()` | 正：均線多頭 |
+| momentum | `momentum()` | 正：追漲 |
+| mean_reversion | `mean_reversion()` | 負：逆勢 |
+| volatility | `volatility()` | 負：低波動溢酬 |
+| rsi | `rsi()` | 負：超賣 |
+| ma_cross | `moving_average_crossover()` | 正：均線多頭 |
 | vpt | `volume_price_trend()` | 正：量價齊升 |
 | reversal | `short_term_reversal()` | 負：短期反轉 |
 | illiquidity | `amihud_illiquidity()` | 正：流動性溢酬 |
@@ -112,31 +114,70 @@
 | skewness | `skewness()` | 負：負偏態溢酬 |
 | max_ret | `max_return()` | 負：彩券效應 |
 
-**Kakushadze 101 精選 (10)** — Phase I2:
+**新增技術指標 (15)** — Bollinger/MACD/OBV/ADX/CCI/Williams/Stochastic/ATR 等:
 
-| 因子 | 函數 | 類型 |
+| 因子 | 函數 | 論文 |
 |------|------|------|
-| alpha_2 | `kakushadze_alpha_2()` | volume-price 相關 |
-| alpha_3 | `kakushadze_alpha_3()` | volume-price 相關 |
-| alpha_6 | `kakushadze_alpha_6()` | volume-price 相關 |
-| alpha_12 | `kakushadze_alpha_12()` | 量價反轉 |
-| alpha_33 | `kakushadze_alpha_33()` | 日內動量 |
-| alpha_34 | `kakushadze_alpha_34()` | 波動率 regime |
-| alpha_38 | `kakushadze_alpha_38()` | 均值回歸 |
-| alpha_44 | `kakushadze_alpha_44()` | volume-price 相關 |
-| alpha_53 | `kakushadze_alpha_53()` | Williams %R 變體 |
-| alpha_101 | `kakushadze_alpha_101()` | 日內動量 |
+| bollinger_pos | `bollinger_position()` | Bollinger (2001) |
+| macd_hist | `macd_signal()` | Appel (2005) |
+| obv_trend | `obv_trend()` | Granville (1963) |
+| adx | `adx()` | Wilder (1978) |
+| cci | `cci()` | Lambert (1980) |
+| williams_r | `williams_r()` | Williams (1979) |
+| stochastic_k | `stochastic_k()` | Lane (1984) |
+| atr_ratio | `atr_ratio()` | Wilder (1978) |
+| price_accel | `price_acceleration()` | Gu-Kelly-Xiu (2020) |
+| vol_momentum | `volume_momentum()` | Gervais et al. (2001) |
+| hl_range | `high_low_range()` | Parkinson (1980) |
+| close_to_high | `close_to_high()` | George-Hwang (2004) |
+| gap | `gap_factor()` | Branch-Ma (2012) |
+| intraday_ret | `intraday_return()` | Heston et al. (2010) |
+| overnight_ret | `overnight_return()` | Berkman et al. (2012) |
 
-**基本面因子 (6)** — 含 Phase I1 Fama-French 補齊:
+**學術因子 (10)** — Gu-Kelly-Xiu (2020) / Fama-French:
+
+| 因子 | 函數 | 論文 |
+|------|------|------|
+| momentum_1m | `momentum_1m()` | Jegadeesh-Titman (1993) |
+| momentum_6m | `momentum_6m()` | Jegadeesh-Titman (1993) |
+| momentum_12m | `momentum_12m()` | Jegadeesh-Titman (1993) |
+| lt_reversal | `long_term_reversal()` | De Bondt-Thaler (1985) |
+| beta | `beta_market()` | Sharpe (1964) CAPM |
+| idio_skew | `idiosyncratic_skewness()` | Harvey-Siddique (2000) |
+| max_daily_ret | `max_daily_return()` | Bali et al. (2011) |
+| turnover_vol | `turnover_volatility()` | Chordia et al. (2001) |
+| price_delay | `price_delay()` | Hou-Moskowitz (2005) |
+| zero_days | `zero_trading_days()` | Lesmond et al. (1999) |
+
+**Kakushadze 101 精選 (30)** — Phase I2 原始 10 + 新增 20:
+
+| 因子 | 類型 |
+|------|------|
+| alpha_1, #2, #3, #4, #6, #7, #8, #9, #10 | 動量/波動/量價 |
+| alpha_12, #13, #14, #15, #16, #17, #18 | 量價反轉/相關 |
+| alpha_19, #20, #22, #23, #24, #30 | 趨勢/均值回歸 |
+| alpha_33, #34, #35, #38, #40, #44, #53, #101 | 日內動量/波動率 regime |
+
+> 所有 66 個 OHLCV 因子均有向量化版本 (`VECTORIZED_FACTORS`)，50 支股票 x 120 日期 < 20 秒。
+
+**基本面因子 (14)** — 含 Phase I1 Fama-French + Phase K3 營收/籌碼:
 
 | 因子 | 訊號 | 數據源 | 論文 |
 |------|------|--------|------|
-| value_pe | 低 P/E | FinMind | — |
-| value_pb | 低 P/B | FinMind | — |
-| quality_roe | 高 ROE | FinMind | — |
-| size | -log(market_cap)，小市值溢酬 | FinMind `market_cap` | Fama-French (1993) SMB |
-| investment | 負資產成長，保守投資溢酬 | FinMind `total_assets` | Fama-French (2015) CMA |
+| value_pe | 低 P/E | FinMind PER | — |
+| value_pb | 低 P/B | FinMind PER | — |
+| quality_roe | 高 ROE | FinMind 財報 | — |
+| size | -log(market_cap)，小市值溢酬 | FinMind market_cap | Fama-French (1993) SMB |
+| investment | 負資產成長，保守投資溢酬 | FinMind total_assets | Fama-French (2015) CMA |
 | gross_profit | (Revenue - COGS) / Total Assets | FinMind 財報 | Novy-Marx (2013) |
+| **revenue_yoy** | **月營收 YoY 成長率（ICIR 0.317）** | FinMind 月營收 | — |
+| revenue_momentum | 連續 N 月正成長 | FinMind 月營收 | — |
+| dividend_yield | 高殖利率 | FinMind PER | — |
+| foreign_net | 外資 20 日淨買超 | FinMind 法人 | — |
+| trust_net | 投信 20 日淨買超 | FinMind 法人 | — |
+| director_change | 董監持股變化 | FinMind 持股 | — |
+| margin_change | 融資餘額變化（反向） | FinMind 融資融券 | — |
+| daytrading_ratio | 當沖比率（反向） | FinMind 當沖 | — |
 
 ### 4.3 數據源
 
@@ -172,7 +213,7 @@
 | PaperBroker | `broker.py` | 簡易紙上交易 stub | ✅ |
 | SimBroker | `sim.py` | 回測模擬撮合 (sqrt 滑點, per-instrument 費率, 漲跌停) | ✅ |
 | SinopacBroker | `sinopac_broker.py` | Shioaji SDK 封裝 (非阻塞下單, 成交回報, 斷線重連) | ✅ 程式碼 |
-| SinopacQuoteManager | `sinopac_quote.py` | 即時行情訂閱 (tick/bidask STK + FOP callbacks) | ✅ 程式碼 |
+| SinopacQuoteManager | `sinopac_quote.py` | 即時行情訂閱 (tick/bidask STK + FOP callbacks) + WS broadcast callback | ✅ 程式碼 |
 | ExecutionService | `execution_service.py` | 模式路由 (backtest/paper/live) + 下單前檢查 | ✅ |
 | OrderManager | `oms.py` | 訂單生命週期管理 + 成交記錄 | ✅ |
 | Market Hours | `market_hours.py` | 台股時段驗證 + 盤外委託佇列 + 國定假日排除 (TWTradingCalendar) | ✅ |
@@ -232,7 +273,7 @@
 | backtest | 8 | `/api/v1/backtest` | 回測 + walk-forward + randomized + PBO + stress-test + 歷史結果 |
 | strategies | 4 | `/api/v1/strategies` | 列表 + 啟停控制 |
 | orders | 2 | `/api/v1/orders` | 手動下單 + 訂單歷史 |
-| risk | 4 | `/api/v1/risk` | 規則狀態 + kill switch + 告警 |
+| risk | 5 | `/api/v1/risk` | 規則狀態 + kill switch + 告警 + **即時風控狀態 (`GET /realtime`)** |
 | alpha | 3 | `/api/v1/alpha` | Alpha 研究 + 因子查詢 |
 | allocation | 1 | `/api/v1/allocation` | 戰術配置計算 |
 | execution | 6 | `/api/v1/execution` | 執行狀態 + 交易時段 + 對帳 + Paper trading + 佇列 |
@@ -245,8 +286,8 @@
 |------|------|------|
 | `portfolio` | 持倉 + NAV 即時更新 | 策略執行 / 成交回報 |
 | `orders` | 訂單狀態變更 | OMS / SinopacBroker callback |
-| `alerts` | 風控告警 | RiskEngine / Kill Switch |
-| `market` | 即時行情 tick | SinopacQuoteManager (待接通) |
+| `alerts` | 風控告警 + 即時風控 drawdown 告警 | RiskEngine / Kill Switch / RealtimeRiskMonitor |
+| `market` | 即時行情 tick | SinopacQuoteManager → set_broadcast_callback() → WS broadcast |
 | `auto-alpha` | 自動 Alpha 流水線即時事件 | AlphaScheduler.run_full_cycle() |
 
 ### 5.3 安全機制
@@ -272,7 +313,7 @@
 |---|------|------|------|
 | 1 | Dashboard | `/` | NAV 走勢, 持倉表, MarketTicker (WS) |
 | 2 | Portfolio | `/portfolio` | 投資組合 CRUD + 再平衡預覽 + SavedPortfoliosPanel (建立/檢視/刪除/Rebalance Preview) |
-| 3 | Strategies | `/strategies` | 9 策略列表 + 啟停控制 |
+| 3 | Strategies | `/strategies` | 11 策略列表 + 啟停控制 |
 | 4 | Orders | `/orders` | OrderForm + 訂單歷史 |
 | 5 | Backtest | `/backtest` | UniversePicker + ParamsEditor + 績效圖表 + 月報熱力圖 |
 | 6 | Alpha | `/alpha` | AlphaConfigForm + 因子研究結果 |
@@ -312,7 +353,7 @@ Backtest tab 含 UniversePickerSheet（Material 3 bottom sheet），支援：
 | Execution 層 | 8 | ~184 | SinopacBroker, QuoteManager, ExecutionService, MarketHours, Reconcile, StopOrder, ShioajiFeed, **TWAPSplitter** |
 | Alpha 層 | 20 | ~225 | 因子, Pipeline, Regime, Attribution, Rolling IC, **Auto Alpha (config/universe/researcher/store/alerts/safety/backtest_gate, OOS decay, net alpha filter)**, Kakushadze 101, Momentum Crash, **Fundamental Factors (size/investment/gross_profit)** |
 | 策略 + 回測 | 12 | ~147 | 各策略, 引擎, 分析, Walk-forward, Randomized, PBO, K-Fold, StressTest |
-| 風控 | 3 | ~60 | 規則, Kill Switch, Monitor |
+| 風控 | 4 | ~79 | 規則, Kill Switch, Monitor, **RealtimeRiskMonitor (19 tests)** |
 | API + 整合 | 6 | ~100 | REST 端點, Portfolio API, Auth, WebSocket |
 | 數據 | 5 | ~80 | Yahoo, FinMind, FRED, Shioaji, Scanner |
 | 核心 + 領域模型 | 7 | ~56 | Order, Portfolio, Instrument, OMS, **TradingPipeline** |
@@ -482,7 +523,7 @@ volumes:
 | D-24 | ✅ | — | ShioajiFeed 數據源 (kbars/ticks/snapshot) | — |
 | D-25 | ✅ | — | ShioajiScanner + 處置/注意股排除 | — |
 | D-26 | ✅ | — | Order 融資融券/零股欄位 | — |
-| D-27 | 待辦 | 中 | WebSocket `market` 頻道未接入 SinopacQuoteManager | 前端無即時行情 |
+| D-27 | ✅ 已完成 | — | WebSocket `market` 頻道已接入 SinopacQuoteManager + RealtimeRiskMonitor | — |
 | D-28 | ✅ 已修復 | 低 | FastAPI `on_event` deprecated → lifespan handler | 已遷移至 lifespan context manager |
 | D-29 | ✅ 已修復 | 低 | CI backend-test count 過時 (326 vs 726) | CLAUDE.md 數字已更新 |
 | D-30 | ✅ | — | Auto-Alpha API routes (10 端點, Phase F3a) | — |
@@ -735,7 +776,9 @@ volumes:
 | Phase F DB Migration (F2d) | 🟡 P1 | — | Alembic 005_auto_alpha.py |
 | CA 憑證整合 | 🟡 P1 | **策略驗證通過** | deal callback + tick streaming |
 | Paper Trading 實測 | 🟡 P1 | CA 憑證 | 模擬帳戶跑完整循環 |
-| WS market 頻道接通 | 🟡 P1 | CA 憑證 | SinopacQuoteManager → broadcast |
+| WS market 頻道 | ✅ 已完成 | — | SinopacQuoteManager tick callback → WS broadcast("market") |
+| 即時風控 | ✅ 已完成 | — | RealtimeRiskMonitor (2%/3%/5% 分級告警) + GET /risk/realtime |
+| 訂單改單取消 | ✅ 已完成 | — | PUT/DELETE /orders/{id} + 前端按鈕 |
 | 期貨選擇權交易 | 🟢 P2 | — | FuturesPriceType + ComboOrder |
 | IB 美股對接 | 🟢 P2 | Paper Trading 穩定 | IBBroker(BrokerAdapter) |
 

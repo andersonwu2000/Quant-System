@@ -132,6 +132,304 @@ def _vec_max_ret(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series
 # ── Kakushadze vectorized versions ──────────────────────────────────
 
 
+def _vec_bollinger_pos(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    close = df["close"]
+    ma = close.rolling(lookback).mean()
+    std = close.rolling(lookback).std()
+    upper = ma + 2 * std
+    lower = ma - 2 * std
+    band_width = (upper - lower).replace(0, np.nan)
+    return ((close - lower) / band_width).clip(0, 1)
+
+
+def _vec_macd_hist(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9, **_: object) -> pd.Series:
+    close = df["close"]
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
+    return histogram / close.replace(0, np.nan)
+
+
+def _vec_obv_trend(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    close = df["close"]
+    volume = df["volume"]
+    obv = (np.sign(close.diff()) * volume).cumsum()
+    # Rolling slope via linear regression approximation
+    obv_ma = obv.rolling(lookback).mean()
+    # Simplified: (obv - obv_ma) / abs(obv_ma) as trend proxy
+    result: pd.Series = (obv - obv_ma) / obv_ma.abs().replace(0, np.nan)
+    return result
+
+
+def _vec_gap(df: pd.DataFrame, **_: object) -> pd.Series:
+    return df["open"] / df["close"].shift(1) - 1
+
+
+def _vec_intraday_ret(df: pd.DataFrame, **_: object) -> pd.Series:
+    return df["close"] / df["open"].replace(0, np.nan) - 1
+
+
+def _vec_overnight_ret(df: pd.DataFrame, **_: object) -> pd.Series:
+    return df["open"] / df["close"].shift(1) - 1
+
+
+def _vec_momentum_1m(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    return close / close.shift(21) - 1
+
+
+def _vec_momentum_6m(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    return close / close.shift(126) - 1
+
+
+def _vec_momentum_12m(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    return close.shift(21) / close.shift(252) - 1
+
+
+def _vec_lt_reversal(df: pd.DataFrame, lookback: int = 756, **_: object) -> pd.Series:
+    close = df["close"]
+    return -(close / close.shift(lookback) - 1)
+
+
+def _vec_max_daily_ret(df: pd.DataFrame, lookback: int = 21, **_: object) -> pd.Series:
+    ret = df["close"].pct_change()
+    return ret.rolling(lookback).max()
+
+
+def _vec_turnover_vol(df: pd.DataFrame, lookback: int = 60, **_: object) -> pd.Series:
+    volume = df["volume"]
+    vol_std = volume.rolling(lookback).std()
+    vol_mean = volume.rolling(lookback).mean().replace(0, np.nan)
+    return vol_std / vol_mean
+
+
+def _vec_zero_days(df: pd.DataFrame, lookback: int = 60, **_: object) -> pd.Series:
+    zero = (df["volume"] == 0).astype(float)
+    return zero.rolling(lookback).mean()
+
+
+def _vec_close_to_high(df: pd.DataFrame, lookback: int = 5, **_: object) -> pd.Series:
+    close = df["close"]
+    rolling_high = df["high"].rolling(lookback).max()
+    return close / rolling_high.replace(0, np.nan)
+
+
+def _vec_hl_range(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    hl = (df["high"] - df["low"]) / df["close"].replace(0, np.nan)
+    return hl.rolling(lookback).mean()
+
+
+def _vec_atr_ratio(df: pd.DataFrame, period: int = 14, **_: object) -> pd.Series:
+    high, low, close = df["high"], df["low"], df["close"]
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+    return atr / close.replace(0, np.nan)
+
+
+def _vec_vol_momentum(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    volume = df["volume"]
+    recent = volume.rolling(lookback).mean()
+    prior = volume.shift(lookback).rolling(lookback).mean()
+    return recent / prior.replace(0, np.nan) - 1
+
+
+def _vec_price_accel(df: pd.DataFrame, lookback: int = 20, **_: object) -> pd.Series:
+    returns = df["close"].pct_change()
+    accel = returns.diff()
+    return accel.rolling(lookback).mean()
+
+
+# ── Kakushadze vectorized — new alphas ──────────────────────────────
+
+
+def _vec_alpha_1(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    returns = close.pct_change()
+    std20 = returns.rolling(20).std()
+    inner = pd.Series(np.where(returns < 0, std20, close), index=close.index)
+    signed_power = inner ** 2
+    argmax5 = flib._ts_argmax(signed_power, 5)
+    result: pd.Series = argmax5.rank(pct=True) - 0.5
+    return result
+
+
+def _vec_alpha_4(df: pd.DataFrame, **_: object) -> pd.Series:
+    return -flib._ts_rank(df["low"].rank(pct=True), 9)
+
+
+def _vec_alpha_7(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    volume = df["volume"]
+    adv20 = volume.rolling(20).mean()
+    delta7 = close.diff(7)
+    abs_delta7 = delta7.abs()
+    ts_r = flib._ts_rank(abs_delta7, 60)
+    return pd.Series(
+        np.where(adv20 < volume, -ts_r * np.sign(delta7), -1.0),
+        index=close.index,
+    )
+
+
+def _vec_alpha_8(df: pd.DataFrame, **_: object) -> pd.Series:
+    open_ = df["open"]
+    returns = df["close"].pct_change()
+    sum_open5 = open_.rolling(5).sum()
+    sum_ret5 = returns.rolling(5).sum()
+    product = sum_open5 * sum_ret5
+    return -(product - product.shift(10)).rank(pct=True)
+
+
+def _vec_alpha_9(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    delta1 = close.diff(1)
+    min5 = delta1.rolling(5).min()
+    max5 = delta1.rolling(5).max()
+    return pd.Series(
+        np.where(min5 > 0, delta1, np.where(max5 < 0, delta1, -delta1)),
+        index=close.index,
+    )
+
+
+def _vec_alpha_10(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    delta1 = close.diff(1)
+    min4 = delta1.rolling(4).min()
+    max4 = delta1.rolling(4).max()
+    inner = pd.Series(
+        np.where(min4 > 0, delta1, np.where(max4 < 0, delta1, -delta1)),
+        index=close.index,
+    )
+    return inner.rank(pct=True)
+
+
+def _vec_alpha_13(df: pd.DataFrame, **_: object) -> pd.Series:
+    close, volume = df["close"], df["volume"]
+    cov = close.rank(pct=True).rolling(5).cov(volume.rank(pct=True))
+    return -cov.rank(pct=True)
+
+
+def _vec_alpha_14(df: pd.DataFrame, **_: object) -> pd.Series:
+    close, open_, volume = df["close"], df["open"], df["volume"]
+    returns = close.pct_change()
+    delta_ret3 = returns.diff(3)
+    corr = open_.rolling(10).corr(volume)
+    return -delta_ret3.rank(pct=True) * corr
+
+
+def _vec_alpha_15(df: pd.DataFrame, **_: object) -> pd.Series:
+    high, volume = df["high"], df["volume"]
+    corr = high.rank(pct=True).rolling(3).corr(volume.rank(pct=True))
+    ranked_corr = corr.rank(pct=True)
+    return -ranked_corr.rolling(3).sum()
+
+
+def _vec_alpha_16(df: pd.DataFrame, **_: object) -> pd.Series:
+    high, volume = df["high"], df["volume"]
+    cov = high.rank(pct=True).rolling(5).cov(volume.rank(pct=True))
+    return -cov.rank(pct=True)
+
+
+def _vec_alpha_17(df: pd.DataFrame, **_: object) -> pd.Series:
+    close, volume = df["close"], df["volume"]
+    adv20 = volume.rolling(20).mean()
+    ts_r_close = flib._ts_rank(close, 10)
+    delta_delta = close.diff(1).diff(1)
+    vol_ratio = volume / adv20.replace(0, np.nan)
+    ts_r_vol = flib._ts_rank(vol_ratio, 5)
+    return -ts_r_close.rank(pct=True) * delta_delta.rank(pct=True) * ts_r_vol.rank(pct=True)
+
+
+def _vec_alpha_18(df: pd.DataFrame, **_: object) -> pd.Series:
+    close, open_ = df["close"], df["open"]
+    diff = close - open_
+    std_abs = diff.abs().rolling(5).std()
+    corr = close.rolling(10).corr(open_)
+    return -(std_abs + diff + corr).rank(pct=True)
+
+
+def _vec_alpha_19(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    returns = close.pct_change()
+    delta7 = close.diff(7)
+    delay7 = close.shift(7)
+    sign_part = np.sign((close - delay7) + delta7)
+    sum_ret = returns.rolling(250).sum()
+    raw = -sign_part * (1 + (1 + sum_ret).rank(pct=True))
+    return pd.Series(raw, index=df.index)
+
+
+def _vec_alpha_20(df: pd.DataFrame, **_: object) -> pd.Series:
+    open_, high, close, low = df["open"], df["high"], df["close"], df["low"]
+    r1 = (open_ - high.shift(1)).rank(pct=True)
+    r2 = (open_ - close.shift(1)).rank(pct=True)
+    r3 = (open_ - low.shift(1)).rank(pct=True)
+    return r1 * r2 * r3
+
+
+def _vec_alpha_22(df: pd.DataFrame, **_: object) -> pd.Series:
+    high, close, volume = df["high"], df["close"], df["volume"]
+    corr = high.rolling(5).corr(volume)
+    delta_corr = corr.diff(5)
+    std_rank = close.rolling(20).std().rank(pct=True)
+    return -delta_corr * std_rank
+
+
+def _vec_alpha_23(df: pd.DataFrame, **_: object) -> pd.Series:
+    high = df["high"]
+    sma20 = high.rolling(20).mean()
+    delta2 = high.diff(2)
+    return pd.Series(
+        np.where(sma20 < high, -delta2, 0.0),
+        index=high.index,
+    )
+
+
+def _vec_alpha_24(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    sma100 = close.rolling(100).mean()
+    delta_sma = sma100.diff(100)
+    delay100 = close.shift(100)
+    ratio = delta_sma / delay100.replace(0, np.nan)
+    ts_min100 = close.rolling(100).min()
+    delta3 = close.diff(3)
+    return pd.Series(
+        np.where(ratio <= 0.05, -(close - ts_min100), -delta3),
+        index=close.index,
+    )
+
+
+def _vec_alpha_30(df: pd.DataFrame, **_: object) -> pd.Series:
+    close = df["close"]
+    s1 = np.sign(close.diff(1))
+    s2 = np.sign(close.shift(1).diff(1))
+    s3 = np.sign(close.shift(2).diff(1))
+    result: pd.Series = s1 * s2 * s3
+    return result
+
+
+def _vec_alpha_35(df: pd.DataFrame, **_: object) -> pd.Series:
+    close, high, low, volume = df["close"], df["high"], df["low"], df["volume"]
+    returns = close.pct_change()
+    tr1 = flib._ts_rank(volume, 32)
+    tr2 = flib._ts_rank(close + high - low, 16)
+    tr3 = flib._ts_rank(returns, 32)
+    return tr1 * (1 - tr2) * (1 - tr3)
+
+
+def _vec_alpha_40(df: pd.DataFrame, **_: object) -> pd.Series:
+    high, volume = df["high"], df["volume"]
+    std_high = high.rolling(10).std()
+    corr = high.rolling(10).corr(volume)
+    return -std_high.rank(pct=True) * corr
+
+
 def _vec_alpha_2(df: pd.DataFrame, **_: object) -> pd.Series:
     close, open_, volume = df["close"], df["open"], df["volume"]
     delta_log_vol = np.log(volume).diff(2)
@@ -192,6 +490,7 @@ def _vec_alpha_101(df: pd.DataFrame, **_: object) -> pd.Series:
 
 
 VECTORIZED_FACTORS: dict[str, Callable[..., pd.Series]] = {
+    # Original technical
     "momentum": _vec_momentum,
     "mean_reversion": _vec_mean_reversion,
     "volatility": _vec_volatility,
@@ -203,6 +502,27 @@ VECTORIZED_FACTORS: dict[str, Callable[..., pd.Series]] = {
     "ivol": _vec_ivol,
     "skewness": _vec_skewness,
     "max_ret": _vec_max_ret,
+    # New technical — vectorizable
+    "bollinger_pos": _vec_bollinger_pos,
+    "macd_hist": _vec_macd_hist,
+    "obv_trend": _vec_obv_trend,
+    "atr_ratio": _vec_atr_ratio,
+    "price_accel": _vec_price_accel,
+    "vol_momentum": _vec_vol_momentum,
+    "hl_range": _vec_hl_range,
+    "close_to_high": _vec_close_to_high,
+    "gap": _vec_gap,
+    "intraday_ret": _vec_intraday_ret,
+    "overnight_ret": _vec_overnight_ret,
+    # Academic momentum variants
+    "momentum_1m": _vec_momentum_1m,
+    "momentum_6m": _vec_momentum_6m,
+    "momentum_12m": _vec_momentum_12m,
+    "lt_reversal": _vec_lt_reversal,
+    "max_daily_ret": _vec_max_daily_ret,
+    "turnover_vol": _vec_turnover_vol,
+    "zero_days": _vec_zero_days,
+    # Original Kakushadze
     "alpha_2": _vec_alpha_2,
     "alpha_3": _vec_alpha_3,
     "alpha_6": _vec_alpha_6,
@@ -213,6 +533,27 @@ VECTORIZED_FACTORS: dict[str, Callable[..., pd.Series]] = {
     "alpha_44": _vec_alpha_44,
     "alpha_53": _vec_alpha_53,
     "alpha_101": _vec_alpha_101,
+    # New Kakushadze
+    "alpha_1": _vec_alpha_1,
+    "alpha_4": _vec_alpha_4,
+    "alpha_7": _vec_alpha_7,
+    "alpha_8": _vec_alpha_8,
+    "alpha_9": _vec_alpha_9,
+    "alpha_10": _vec_alpha_10,
+    "alpha_13": _vec_alpha_13,
+    "alpha_14": _vec_alpha_14,
+    "alpha_15": _vec_alpha_15,
+    "alpha_16": _vec_alpha_16,
+    "alpha_17": _vec_alpha_17,
+    "alpha_18": _vec_alpha_18,
+    "alpha_19": _vec_alpha_19,
+    "alpha_20": _vec_alpha_20,
+    "alpha_22": _vec_alpha_22,
+    "alpha_23": _vec_alpha_23,
+    "alpha_24": _vec_alpha_24,
+    "alpha_30": _vec_alpha_30,
+    "alpha_35": _vec_alpha_35,
+    "alpha_40": _vec_alpha_40,
 }
 
 # ── 因子註冊表 ──────────────────────────────────────────────────
@@ -344,6 +685,279 @@ FACTOR_REGISTRY: dict[str, dict[str, Any]] = {
         "default_kwargs": {},
         "min_bars": 1,
     },
+    # ── New Technical Indicators ──────────────────────────────────
+    "bollinger_pos": {
+        "fn": flib.bollinger_position,
+        "key": "bollinger_pos",
+        "default_kwargs": {"lookback": 20},
+        "min_bars": 20,
+    },
+    "macd_hist": {
+        "fn": flib.macd_signal,
+        "key": "macd_hist",
+        "default_kwargs": {"fast": 12, "slow": 26, "signal": 9},
+        "min_bars": 35,
+    },
+    "obv_trend": {
+        "fn": flib.obv_trend,
+        "key": "obv_trend",
+        "default_kwargs": {"lookback": 20},
+        "min_bars": 21,
+    },
+    "adx": {
+        "fn": flib.adx,
+        "key": "adx",
+        "default_kwargs": {"period": 14},
+        "min_bars": 29,
+    },
+    "cci": {
+        "fn": flib.cci,
+        "key": "cci",
+        "default_kwargs": {"period": 20},
+        "min_bars": 20,
+    },
+    "williams_r": {
+        "fn": flib.williams_r,
+        "key": "williams_r",
+        "default_kwargs": {"period": 14},
+        "min_bars": 14,
+    },
+    "stochastic_k": {
+        "fn": flib.stochastic_k,
+        "key": "stochastic_k",
+        "default_kwargs": {"period": 14},
+        "min_bars": 14,
+    },
+    "atr_ratio": {
+        "fn": flib.atr_ratio,
+        "key": "atr_ratio",
+        "default_kwargs": {"period": 14},
+        "min_bars": 15,
+    },
+    "price_accel": {
+        "fn": flib.price_acceleration,
+        "key": "price_accel",
+        "default_kwargs": {"lookback": 20},
+        "min_bars": 22,
+    },
+    "vol_momentum": {
+        "fn": flib.volume_momentum,
+        "key": "vol_momentum",
+        "default_kwargs": {"lookback": 20},
+        "min_bars": 21,
+    },
+    "hl_range": {
+        "fn": flib.high_low_range,
+        "key": "hl_range",
+        "default_kwargs": {"lookback": 20},
+        "min_bars": 20,
+    },
+    "close_to_high": {
+        "fn": flib.close_to_high,
+        "key": "close_to_high",
+        "default_kwargs": {"lookback": 5},
+        "min_bars": 5,
+    },
+    "gap": {
+        "fn": flib.gap_factor,
+        "key": "gap",
+        "default_kwargs": {},
+        "min_bars": 2,
+    },
+    "intraday_ret": {
+        "fn": flib.intraday_return,
+        "key": "intraday_ret",
+        "default_kwargs": {},
+        "min_bars": 1,
+    },
+    "overnight_ret": {
+        "fn": flib.overnight_return,
+        "key": "overnight_ret",
+        "default_kwargs": {},
+        "min_bars": 2,
+    },
+    # ── Academic Factors ──────────────────────────────────────────
+    "momentum_1m": {
+        "fn": flib.momentum_1m,
+        "key": "momentum_1m",
+        "default_kwargs": {},
+        "min_bars": 22,
+    },
+    "momentum_6m": {
+        "fn": flib.momentum_6m,
+        "key": "momentum_6m",
+        "default_kwargs": {},
+        "min_bars": 127,
+    },
+    "momentum_12m": {
+        "fn": flib.momentum_12m,
+        "key": "momentum_12m",
+        "default_kwargs": {},
+        "min_bars": 253,
+    },
+    "lt_reversal": {
+        "fn": flib.long_term_reversal,
+        "key": "lt_reversal",
+        "default_kwargs": {"lookback": 756},
+        "min_bars": 757,
+    },
+    "beta": {
+        "fn": flib.beta_market,
+        "key": "beta",
+        "default_kwargs": {"lookback": 252},
+        "min_bars": 253,
+    },
+    "idio_skew": {
+        "fn": flib.idiosyncratic_skewness,
+        "key": "idio_skew",
+        "default_kwargs": {"lookback": 60},
+        "min_bars": 61,
+    },
+    "max_daily_ret": {
+        "fn": flib.max_daily_return,
+        "key": "max_daily_ret",
+        "default_kwargs": {"lookback": 21},
+        "min_bars": 22,
+    },
+    "turnover_vol": {
+        "fn": flib.turnover_volatility,
+        "key": "turnover_vol",
+        "default_kwargs": {"lookback": 60},
+        "min_bars": 60,
+    },
+    "price_delay": {
+        "fn": flib.price_delay,
+        "key": "price_delay",
+        "default_kwargs": {"lookback": 5},
+        "min_bars": 60,
+    },
+    "zero_days": {
+        "fn": flib.zero_trading_days,
+        "key": "zero_days",
+        "default_kwargs": {"lookback": 60},
+        "min_bars": 60,
+    },
+    # ── New Kakushadze Alphas ─────────────────────────────────────
+    "alpha_1": {
+        "fn": flib.kakushadze_alpha_1,
+        "key": "alpha_1",
+        "default_kwargs": {},
+        "min_bars": 26,
+    },
+    "alpha_4": {
+        "fn": flib.kakushadze_alpha_4,
+        "key": "alpha_4",
+        "default_kwargs": {},
+        "min_bars": 11,
+    },
+    "alpha_7": {
+        "fn": flib.kakushadze_alpha_7,
+        "key": "alpha_7",
+        "default_kwargs": {},
+        "min_bars": 68,
+    },
+    "alpha_8": {
+        "fn": flib.kakushadze_alpha_8,
+        "key": "alpha_8",
+        "default_kwargs": {},
+        "min_bars": 16,
+    },
+    "alpha_9": {
+        "fn": flib.kakushadze_alpha_9,
+        "key": "alpha_9",
+        "default_kwargs": {},
+        "min_bars": 7,
+    },
+    "alpha_10": {
+        "fn": flib.kakushadze_alpha_10,
+        "key": "alpha_10",
+        "default_kwargs": {},
+        "min_bars": 6,
+    },
+    "alpha_13": {
+        "fn": flib.kakushadze_alpha_13,
+        "key": "alpha_13",
+        "default_kwargs": {},
+        "min_bars": 7,
+    },
+    "alpha_14": {
+        "fn": flib.kakushadze_alpha_14,
+        "key": "alpha_14",
+        "default_kwargs": {},
+        "min_bars": 15,
+    },
+    "alpha_15": {
+        "fn": flib.kakushadze_alpha_15,
+        "key": "alpha_15",
+        "default_kwargs": {},
+        "min_bars": 8,
+    },
+    "alpha_16": {
+        "fn": flib.kakushadze_alpha_16,
+        "key": "alpha_16",
+        "default_kwargs": {},
+        "min_bars": 7,
+    },
+    "alpha_17": {
+        "fn": flib.kakushadze_alpha_17,
+        "key": "alpha_17",
+        "default_kwargs": {},
+        "min_bars": 22,
+    },
+    "alpha_18": {
+        "fn": flib.kakushadze_alpha_18,
+        "key": "alpha_18",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
+    "alpha_19": {
+        "fn": flib.kakushadze_alpha_19,
+        "key": "alpha_19",
+        "default_kwargs": {},
+        "min_bars": 252,
+    },
+    "alpha_20": {
+        "fn": flib.kakushadze_alpha_20,
+        "key": "alpha_20",
+        "default_kwargs": {},
+        "min_bars": 3,
+    },
+    "alpha_22": {
+        "fn": flib.kakushadze_alpha_22,
+        "key": "alpha_22",
+        "default_kwargs": {},
+        "min_bars": 30,
+    },
+    "alpha_23": {
+        "fn": flib.kakushadze_alpha_23,
+        "key": "alpha_23",
+        "default_kwargs": {},
+        "min_bars": 22,
+    },
+    "alpha_24": {
+        "fn": flib.kakushadze_alpha_24,
+        "key": "alpha_24",
+        "default_kwargs": {},
+        "min_bars": 104,
+    },
+    "alpha_30": {
+        "fn": flib.kakushadze_alpha_30,
+        "key": "alpha_30",
+        "default_kwargs": {},
+        "min_bars": 6,
+    },
+    "alpha_35": {
+        "fn": flib.kakushadze_alpha_35,
+        "key": "alpha_35",
+        "default_kwargs": {},
+        "min_bars": 34,
+    },
+    "alpha_40": {
+        "fn": flib.kakushadze_alpha_40,
+        "key": "alpha_40",
+        "default_kwargs": {},
+        "min_bars": 12,
+    },
 }
 
 
@@ -391,6 +1005,7 @@ class FundamentalFactorDef:
 
 
 FUNDAMENTAL_REGISTRY: dict[str, FundamentalFactorDef] = {
+    # ── Fama-French 風格因子 ──
     "value_pe": FundamentalFactorDef(name="value_pe", fn=flib.value_pe, metric_key="pe_ratio"),
     "value_pb": FundamentalFactorDef(name="value_pb", fn=flib.value_pb, metric_key="pb_ratio"),
     "quality_roe": FundamentalFactorDef(name="quality_roe", fn=flib.quality_roe, metric_key="roe"),
@@ -408,6 +1023,65 @@ FUNDAMENTAL_REGISTRY: dict[str, FundamentalFactorDef] = {
         name="gross_profit",
         fn=flib.gross_profitability_factor,
         metric_keys=["revenue", "cogs", "total_assets"],
+    ),
+    # ── 營收因子 ──
+    "revenue_yoy": FundamentalFactorDef(
+        name="revenue_yoy",
+        fn=flib.revenue_yoy_factor,
+        metric_key="revenue_yoy_growth",
+    ),
+    "revenue_momentum": FundamentalFactorDef(
+        name="revenue_momentum",
+        fn=flib.revenue_momentum_factor,
+        metric_key="revenue_consecutive_growth",
+    ),
+    # ── 營收進階因子（FinLab 研究驅動）──
+    "revenue_new_high": FundamentalFactorDef(
+        name="revenue_new_high",
+        fn=flib.revenue_new_high_factor,
+        metric_key="revenue_3m_is_12m_high",
+    ),
+    "revenue_acceleration": FundamentalFactorDef(
+        name="revenue_acceleration",
+        fn=flib.revenue_acceleration_factor,
+        metric_key="revenue_3m_over_12m_ratio",
+    ),
+    "trust_cumulative": FundamentalFactorDef(
+        name="trust_cumulative",
+        fn=flib.trust_cumulative_factor,
+        metric_key="trust_10d_cumulative_net",
+    ),
+    # ── 殖利率因子 ──
+    "dividend_yield": FundamentalFactorDef(
+        name="dividend_yield",
+        fn=flib.dividend_yield_factor,
+        metric_key="dividend_yield",
+    ),
+    # ── 籌碼面因子 ──
+    "foreign_net": FundamentalFactorDef(
+        name="foreign_net",
+        fn=flib.foreign_net_factor,
+        metric_key="foreign_net_normalized",
+    ),
+    "trust_net": FundamentalFactorDef(
+        name="trust_net",
+        fn=flib.trust_net_factor,
+        metric_key="trust_net_normalized",
+    ),
+    "director_change": FundamentalFactorDef(
+        name="director_change",
+        fn=flib.director_change_factor,
+        metric_key="director_holding_change",
+    ),
+    "margin_change": FundamentalFactorDef(
+        name="margin_change",
+        fn=flib.margin_change_factor,
+        metric_key="margin_balance_change_ratio",
+    ),
+    "daytrading_ratio": FundamentalFactorDef(
+        name="daytrading_ratio",
+        fn=flib.daytrading_ratio_factor,
+        metric_key="daytrading_volume_ratio",
     ),
 }
 

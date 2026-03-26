@@ -167,5 +167,92 @@ class TestFundamentalRegistryEntries:
         assert val is None
 
     def test_total_registry_count(self) -> None:
-        """FUNDAMENTAL_REGISTRY now has 6 entries (3 original + 3 new)."""
-        assert len(FUNDAMENTAL_REGISTRY) == 6
+        """FUNDAMENTAL_REGISTRY now has 14 entries (6 original + 8 new Phase K3)."""
+        assert len(FUNDAMENTAL_REGISTRY) == 17
+
+    def test_new_factors_registered(self) -> None:
+        """All Phase K3 new factors are in registry."""
+        new_keys = [
+            "revenue_yoy", "revenue_momentum", "dividend_yield",
+            "foreign_net", "trust_net", "director_change",
+            "margin_change", "daytrading_ratio",
+        ]
+        for key in new_keys:
+            assert key in FUNDAMENTAL_REGISTRY, f"{key} not in FUNDAMENTAL_REGISTRY"
+
+
+# ---------------------------------------------------------------------------
+# Phase K3: New fundamental factor functions
+# ---------------------------------------------------------------------------
+
+
+class TestRevenueFactors:
+    def test_revenue_yoy_normal(self) -> None:
+        from src.strategy.factors.fundamental import revenue_yoy_factor
+        assert revenue_yoy_factor(15.0) == 15.0
+
+    def test_revenue_yoy_clipped_high(self) -> None:
+        from src.strategy.factors.fundamental import revenue_yoy_factor
+        assert revenue_yoy_factor(999.0) == 500.0
+
+    def test_revenue_yoy_negative(self) -> None:
+        from src.strategy.factors.fundamental import revenue_yoy_factor
+        assert revenue_yoy_factor(-50.0) == -50.0
+
+    def test_revenue_momentum_normal(self) -> None:
+        from src.strategy.factors.fundamental import revenue_momentum_factor
+        assert revenue_momentum_factor(6.0) == 6.0
+
+    def test_revenue_momentum_clipped(self) -> None:
+        from src.strategy.factors.fundamental import revenue_momentum_factor
+        assert revenue_momentum_factor(15.0) == 12.0
+
+    def test_revenue_momentum_zero(self) -> None:
+        from src.strategy.factors.fundamental import revenue_momentum_factor
+        assert revenue_momentum_factor(0.0) == 0.0
+
+
+class TestDividendYieldFactor:
+    def test_normal(self) -> None:
+        from src.strategy.factors.fundamental import dividend_yield_factor
+        assert dividend_yield_factor(5.0) == 5.0
+
+    def test_zero(self) -> None:
+        from src.strategy.factors.fundamental import dividend_yield_factor
+        assert dividend_yield_factor(0.0) == 0.0
+
+    def test_clipped(self) -> None:
+        from src.strategy.factors.fundamental import dividend_yield_factor
+        assert dividend_yield_factor(25.0) == 20.0
+
+
+class TestChipFactors:
+    def test_foreign_net_normal(self) -> None:
+        from src.strategy.factors.fundamental import foreign_net_factor
+        assert foreign_net_factor(0.3) == 0.3
+
+    def test_foreign_net_clipped(self) -> None:
+        from src.strategy.factors.fundamental import foreign_net_factor
+        assert foreign_net_factor(5.0) == 1.0
+
+    def test_trust_net(self) -> None:
+        from src.strategy.factors.fundamental import trust_net_factor
+        assert trust_net_factor(-0.5) == -0.5
+
+    def test_director_change_negative(self) -> None:
+        from src.strategy.factors.fundamental import director_change_factor
+        assert director_change_factor(-2.0) == -2.0
+
+    def test_margin_change_inverted(self) -> None:
+        from src.strategy.factors.fundamental import margin_change_factor
+        # positive margin change → negative score (inverted)
+        assert margin_change_factor(0.5) == -0.5
+
+    def test_daytrading_ratio_inverted(self) -> None:
+        from src.strategy.factors.fundamental import daytrading_ratio_factor
+        # high daytrading → negative score
+        assert daytrading_ratio_factor(0.3) == -0.3
+
+    def test_daytrading_ratio_zero(self) -> None:
+        from src.strategy.factors.fundamental import daytrading_ratio_factor
+        assert daytrading_ratio_factor(0.0) == 0.0

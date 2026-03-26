@@ -59,3 +59,34 @@ async def stop_strategy(strategy_id: str, api_key: str = Depends(verify_api_key)
         raise HTTPException(status_code=404, detail=f"Strategy {strategy_id} not found")
     state.strategies[strategy_id]["status"] = "stopped"
     return MessageResponse(message=f"Strategy {strategy_id} stopped")
+
+
+# ── Factor Registry ────────────────────────────────────────────
+
+from pydantic import BaseModel
+
+
+class FactorInfoResponse(BaseModel):
+    name: str
+    type: str  # "technical" | "fundamental"
+    min_bars: int | None = None
+
+
+@router.get("/factors", response_model=list[FactorInfoResponse])
+async def list_factors(api_key: str = Depends(verify_api_key)) -> list[FactorInfoResponse]:
+    """List all registered alpha factors."""
+    from src.strategy.research import FACTOR_REGISTRY, FUNDAMENTAL_REGISTRY
+
+    results = []
+    for name, info in sorted(FACTOR_REGISTRY.items()):
+        results.append(FactorInfoResponse(
+            name=name,
+            type="technical",
+            min_bars=info.get("min_bars"),
+        ))
+    for name in sorted(FUNDAMENTAL_REGISTRY.keys()):
+        results.append(FactorInfoResponse(
+            name=name,
+            type="fundamental",
+        ))
+    return results

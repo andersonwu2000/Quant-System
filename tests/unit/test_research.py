@@ -52,10 +52,26 @@ def _make_multi_stock_data(
 class TestFactorRegistry:
     def test_known_factors(self):
         expected = {
+            # Original technical
             "momentum", "mean_reversion", "volatility", "rsi", "ma_cross", "vpt",
             "reversal", "illiquidity", "ivol", "skewness", "max_ret",
+            # New technical indicators
+            "bollinger_pos", "macd_hist", "obv_trend", "adx", "cci",
+            "williams_r", "stochastic_k", "atr_ratio", "price_accel",
+            "vol_momentum", "hl_range", "close_to_high", "gap",
+            "intraday_ret", "overnight_ret",
+            # Academic factors
+            "momentum_1m", "momentum_6m", "momentum_12m", "lt_reversal",
+            "beta", "idio_skew", "max_daily_ret", "turnover_vol",
+            "price_delay", "zero_days",
+            # Original Kakushadze
             "alpha_2", "alpha_3", "alpha_6", "alpha_12", "alpha_33",
             "alpha_34", "alpha_38", "alpha_44", "alpha_53", "alpha_101",
+            # New Kakushadze
+            "alpha_1", "alpha_4", "alpha_7", "alpha_8", "alpha_9",
+            "alpha_10", "alpha_13", "alpha_14", "alpha_15", "alpha_16",
+            "alpha_17", "alpha_18", "alpha_19", "alpha_20", "alpha_22",
+            "alpha_23", "alpha_24", "alpha_30", "alpha_35", "alpha_40",
         }
         assert expected == set(FACTOR_REGISTRY.keys())
 

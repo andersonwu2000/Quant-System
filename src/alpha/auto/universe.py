@@ -103,6 +103,11 @@ class UniverseSelector:
         if data:
             filtered = self._apply_static_constraints(filtered, data)
 
+        # Stage 4: size stratification (experiments show this is critical for IC)
+        size_filter = getattr(cfg, "size_filter", "all")
+        if size_filter != "all" and data and filtered:
+            filtered = self._apply_size_filter(filtered, data, size_filter)
+
         return UniverseResult(
             symbols=filtered,
             excluded_disposition=excluded_disposition,
@@ -140,3 +145,37 @@ class UniverseSelector:
             result.append(sym)
 
         return result
+
+    @staticmethod
+    def _apply_size_filter(
+        candidates: list[str],
+        data: dict[str, pd.DataFrame],
+        size_filter: str,
+    ) -> list[str]:
+        """Filter by market cap tercile. Experiments (20260326_3.md) show
+        RSI ICIR jumps from 0.08 (all) to 0.60 (large-cap) after stratification."""
+        import numpy as np
+
+        mcaps: dict[str, float] = {}
+        for sym in candidates:
+            if sym not in data:
+                continue
+            df = data[sym]
+            if df.empty or "close" not in df.columns or "volume" not in df.columns:
+                continue
+            recent = df.tail(20)
+            mcap = float(recent["close"].mean() * recent["volume"].mean())
+            if mcap > 0 and not np.isnan(mcap):
+                mcaps[sym] = mcap
+
+        if len(mcaps) < 9:
+            return candidates  # Too few for stratification
+
+        sorted_syms = sorted(mcaps.items(), key=lambda x: x[1], reverse=True)
+        n = len(sorted_syms) // 3
+
+        if size_filter == "large":
+            return [s for s, _ in sorted_syms[:n]]
+        elif size_filter == "small":
+            return [s for s, _ in sorted_syms[2 * n:]]
+        return candidates

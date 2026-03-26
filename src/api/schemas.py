@@ -205,6 +205,15 @@ class RiskAlertResponse(BaseModel):
     message: str
 
 
+class RealtimeRiskResponse(BaseModel):
+    nav_current: float
+    nav_high: float
+    intraday_drawdown: float
+    alerts_sent: int
+    alerts_total: int
+    last_update: str | None = None
+
+
 # ─── System ──────────────────────────────────────
 
 class SystemStatusResponse(BaseModel):

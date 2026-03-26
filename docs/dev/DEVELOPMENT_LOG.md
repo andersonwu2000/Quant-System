@@ -297,24 +297,44 @@ Day 5:  + Auto-Alpha + 學術最佳化 (14 方法) + 27 因子 + R1-R4 重構 + 
 
 **決策**: 新增 Stage 3.5 Validation Backtest（架構已設計，待實作）。
 
-**驗證內容**: Sharpe>0、勝過 1/N、手續費<alpha、PBO<50%。
+### 2026-03-26：Alpha 策略驗證完成 — 15 次實驗的最終結論
+
+**過程**: 從 10 支大型股 → 142 支寬 universe → 66 因子 → 籌碼面 → 分層策略 → 嚴格統計檢驗，共 15 次實驗。
+
+**結論**:
+- **台股 142 支、66 個 price-volume + 9 個籌碼面因子：沒有任何因子通過 ICIR 0.5 門檻**
+- 最佳策略 (mom6m + turnover_vol 大型股) 毛超額 +7.3%/年，但成本拖累 6.6% → **淨超額僅 +0.7%**
+- **統計不顯著** (t=0.24, p=0.81)，**OOS 為負** (-3.2%)
+- 1/N 等權在台股很難被公開數據因子打敗（DeMiguel 2009 驗證）
+- 實驗報告見 `docs/dev/test/20260326_1.md` ~ `20260326_6.md`
+
+### 2026-03-26：即時行情 + 風控即時化完成
+
+- WebSocket `market` 頻道接入 SinopacQuoteManager tick/bidask broadcast ✅
+- `RealtimeRiskMonitor` — 逐 tick 更新 NAV、分級告警 (2%/3%/5%)、kill switch ✅
+- `GET /api/v1/risk/realtime` 端點 ✅
+- 19 tests passed ✅
+
+### 2026-03-26：Auto-Alpha 系統改善（基於實驗結論）
+
+- 預設因子從 66 個改為 3 個（RSI + momentum + momentum_6m）
+- 預設大型股分層（size_filter="large"）
+- Emergency DD 放寬 5% → 10%（Kill switch 太嚴會錯過反彈）
+- run-now 優先讀本地 Parquet 快取
+- 訂單管理新增改單/取消功能（PUT/DELETE /orders/{id}）
 
 ---
 
 ## 已知限制與待辦
 
-### 當前最高優先級
-- **Alpha 策略盈利驗證** — 擴大 universe → IC 分析 → Walk-forward → PBO 檢測（見 DEVELOPMENT_PLAN.md §3）
+### 策略研究現狀
+- **台股公開數據的量化 alpha 天花板約 +0.7%/年（淨超額，統計不顯著）**
+- 需要即時/獨家數據源（即時法人、分析師預期修正）才可能突破
+- 或接受 1/N + 月度再平衡 + DD control 作為基線策略
 
-### 阻塞項（需外部資源）
-- Shioaji CA 憑證 → 等策略驗證通過後申請（deal callback + tick streaming + 紙上交易完整循環）
-- PostgreSQL production 環境 → 目前僅 SQLite dev
-
-### 學術差距（來自論文分析）
-- MVSK 高階矩最佳化 (Wang et al. 2024) — O(N²) RFPA 演算法待移植
-- 非高斯建模 (skewed-t / Tyler's M-estimator)
-- 非線性共變異數收縮 (Ledoit-Wolf 2014)
-- Kakushadze 101 Alphas — 81 個公式待擴充 (已實作 10 + 排除 10)
+### 阻塞項
+- Shioaji CA 憑證 → deal callback + tick streaming 完整循環
+- PostgreSQL production → 目前僅 SQLite
 
 ### 工程待辦
 - ~~FastAPI `on_event` deprecated → lifespan handler~~ ✅ D-28
@@ -322,6 +342,7 @@ Day 5:  + Auto-Alpha + 學術最佳化 (14 方法) + 27 因子 + R1-R4 重構 + 
 - Auto-Alpha DB migration (Alembic 005)
 - ~~台股回測 tz-aware / empty DataFrame crash~~ ✅ D-45
 - ngrok domain 被舊 agent 佔用 → 已改用 Tailscale
+- Stage 3.5 Validation Backtest 實作
 
 ---
 
