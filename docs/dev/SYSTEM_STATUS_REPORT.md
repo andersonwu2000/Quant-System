@@ -1,11 +1,11 @@
 # 系統現況追蹤報告書
 
 > **報告日期**: 2026-03-26
-> **版本**: v7.0
-> **當前階段**: Phase A~L 完成（L 驗證 6/7, p=0.013）, Phase L+ 待執行（下行保護 + 數據修復）
+> **版本**: v8.0
+> **當前階段**: Phase A~M 完成, Phase N（Paper Trading 準備）待執行
 > **代碼庫**: 2026-03-22 起始，master 分支
 > **架構設計**: `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v12.0
+> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md` v13.0
 
 ---
 

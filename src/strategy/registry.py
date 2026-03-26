@@ -27,6 +27,7 @@ def _load_strategy_map() -> dict[str, type[Strategy]]:
     from strategies.rsi_oversold import RsiOversoldStrategy
     from strategies.sector_rotation import SectorRotationStrategy
     from strategies.trust_follow import TrustFollowStrategy
+    from strategies.revenue_momentum_hedged import RevenueMomentumHedgedStrategy
     from strategies.multi_strategy_combo import MultiStrategyCombo
     from src.alpha.strategy import AlphaStrategy
     from src.strategy.multi_asset import MultiAssetStrategy
@@ -41,6 +42,7 @@ def _load_strategy_map() -> dict[str, type[Strategy]]:
         "sector_rotation": SectorRotationStrategy,
         "revenue_momentum": RevenueMomentumStrategy,
         "trust_follow": TrustFollowStrategy,
+        "revenue_momentum_hedged": RevenueMomentumHedgedStrategy,
         "multi_strategy_combo": MultiStrategyCombo,
         "alpha": AlphaStrategy,
         "multi_asset": MultiAssetStrategy,

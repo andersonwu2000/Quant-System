@@ -1,106 +1,143 @@
-# Phase N：Paper Trading → 實盤準備
+# Phase N：Paper Trading 準備 + 30 天驗證
 
 > 狀態：🔵 待執行
-> 前置：Phase L（策略回測驗證通過 §L4 標準）
-> 目標：策略驗證通過後，進入 Paper Trading 完整循環，驗證 execution 層
+> 前置：Phase M（下行保護 + 因子驗證）✅、CA 憑證 ⏳
+> 目標：將 composite_b0% 策略從回測環境遷移到即時 Paper Trading，驗證 30 天
 
 ---
 
 ## 背景
 
-Phase L 策略回測通過驗證標準（CAGR > 15%, Sharpe > 0.7, PBO < 50%）後，需在模擬環境中驗證：
-- 排程觸發 → 因子計算 → 訊號生成 → 下單 → 回報 → 對帳 → 通知
-- Shioaji API 模擬模式已驗證（2026-03-26），但完整循環尚未跑通
+策略研究完成：
+- rev_yoy ICIR 0.674, t=16.1, p<0.000001（13 次實驗）
+- composite_b0% StrategyValidator 10/13（OOS -3.7%）
+- 引擎 676 支 × 7Y 55 秒
+
+**剩餘風險在實盤端**：Quantopian 888 策略回測 vs 實盤 R² < 0.025。
 
 ---
 
-## N1：CA 憑證申請 + Shioaji 完整模式
+## N1：策略整合到主系統
 
-### N1.1 CA 憑證
+### N1.1 revenue_momentum_hedged 正式化
 
-- 向永豐金申請正式 CA 憑證
-- 設定至 `.env`：`QUANT_SHIOAJI_CA_PATH`, `QUANT_SHIOAJI_CA_PASSWORD`
-- 啟用：deal callback（成交回報）、tick streaming（逐筆行情）
+將 `scripts/experiment_composite_hedge.py` 中的 `CompositeHedgedStrategy` 遷移：
 
-### N1.2 Shioaji 完整模式測試
-
-| 功能 | 模擬已驗證 | CA 後新增 |
-|------|:---------:|:--------:|
-| 登入 | ✅ | — |
-| 下單（ROD/IOC） | ✅ | — |
-| 帳務查詢 | ✅ | — |
-| Scanner | ✅ | — |
-| Deal callback | ❌ | ✅ |
-| Tick streaming | ❌ | ✅ |
-| 改單/刪單 | ✅ | — |
-
----
-
-## N2：Paper Trading 完整循環
-
-### N2.1 排程配置
-
-```python
-# 月度策略排程（營收公布後）
-# 每月 11 日 08:50（盤前）觸發
-schedule: "50 8 11 * *"
-
-# 流程：
-# 1. 讀取最新月營收（data/fundamental/）
-# 2. 計算篩選條件
-# 3. 產生目標持倉
-# 4. 與現有持倉比對 → 產生交易清單
-# 5. 透過 Shioaji 下單（Paper mode）
-# 6. 等待成交回報
-# 7. 更新 Portfolio
-# 8. 發送通知（Discord/LINE）
+```
+新檔案：strategies/revenue_momentum_hedged.py
+- 繼承 Strategy ABC
+- 包裝 RevenueMomentumStrategy + 複合空頭偵測器（MA200 OR vol_spike）
+- 預設：bear_scale=0.0, sideways_scale=0.3
+- 月度 cache（同 revenue_momentum）
 ```
 
-### N2.2 EOD 對帳
+**修改**：
+- `src/strategy/registry.py`：註冊 `revenue_momentum_hedged`
+- `tests/unit/test_revenue_strategies.py`：新增 hedged 版測試
 
-每日收盤後：
-- 比對 Shioaji 帳務 vs 系統 Portfolio
-- 差異 > 1% 發送警告
-- 記錄日誌到 `data/paper_trading_log/`
+### N1.2 即時模式適配
 
-### N2.3 風控整合
+| 問題 | 解法 |
+|------|------|
+| 誰觸發 `on_bar()`？ | APScheduler 每月 11 日（營收公布後 T+1） |
+| Context 即時數據？ | LiveContext：YahooFeed + FinMind 營收 parquet |
+| 市場環境偵測？ | 0050.TW 即時行情（Shioaji 或 Yahoo） |
+| 權重 → 訂單？ | `weights_to_orders()` + ExecutionService paper mode |
 
-- RealtimeRiskMonitor 已有 2%/3%/5% 分級
-- Kill Switch 冷靜期恢復機制（5 天冷靜 → 50% → 100%）
-- 月度 DD > 10% → 暫停策略 1 個月
+**修改**：
+- `src/scheduler/jobs.py`：新增 `monthly_rebalance_job()`
+- 確認 ExecutionService paper mode 可接收 weight dict 並下單
 
----
+### N1.3 整股下單
 
-## N3：Paper Trading 驗證標準
-
-| 指標 | 門檻 | 驗證期間 |
-|------|------|---------|
-| 系統穩定性 | 連續 30 天無 crash | 1 個月 |
-| 排程觸發成功率 | > 95% | 1 個月 |
-| 下單成功率 | > 99% | 1 個月 |
-| EOD 對帳一致性 | 差異 < 0.1% | 1 個月 |
-| Paper P&L vs 回測 | 方向一致 | 1 個月 |
-| 通知及時性 | 延遲 < 5 分鐘 | 1 個月 |
+- `tw_lot_size` = 1000（整張）
+- 1000 萬 × 6.67%/檔 ≈ 66.7 萬/檔 → 大部分台股 1~10 張
 
 ---
 
-## N4：實盤前 Checklist
+## N2：月營收自動更新
 
-全部通過後才可進入實盤：
+| 項目 | 說明 |
+|------|------|
+| 排程 | APScheduler 每月 11 日 09:00 觸發 |
+| 範圍 | `--symbols-from-market --dataset revenue` |
+| 增量 | 新增 `--update` 模式，只補最新月份 |
+| 驗證 | 下載後檢查 parquet 完整性 |
+| 觸發 | 下載完成後觸發策略重新選股 |
 
-- [ ] Phase L 回測驗證通過（§L4 全部指標）
-- [ ] Paper Trading 連續 30 天穩定
-- [ ] EOD 對帳一致
-- [ ] 風控機制在 Paper Trading 中被正確觸發過至少一次
-- [ ] 交易成本估算 vs 實際（Paper）偏差 < 20%
-- [ ] 使用者確認策略風險並簽署（人工確認）
+---
+
+## N3：通知 + 監控
+
+### 交易事件通知
+
+| 事件 | 通知內容 |
+|------|---------|
+| 月度選股 | 新標的 + 目標權重 |
+| 下單 | 標的、方向、數量、價格 |
+| 成交 | 成交價、滑點 |
+| Kill Switch | 原因、NAV、drawdown |
+| 連線異常 | 斷線/重連 |
+
+### 每日快照
+
+每日 13:35 記錄 NAV、持倉、P&L → `data/paper_trading/snapshots/{date}.json`
+
+---
+
+## N4：對帳 + 績效追蹤
+
+### 每日對帳
+
+比對策略目標 vs Shioaji 實際持倉，偏差 > 5% 告警。
+
+### 回測 vs 實盤比對
+
+同期回測結果 vs Paper Trading，量化：
+- 報酬 R²（目標 > 0.8）
+- 平均滑點（目標 < 10 bps）
+
+### 30 天驗證標準
+
+| 指標 | 門檻 |
+|------|------|
+| 回測 vs 實盤 R² | > 0.8 |
+| 實際滑點 | < 10 bps |
+| 系統穩定性 | 0 次未處理異常 |
+| 連線成功率 | > 99% |
+| 策略執行率 | 100%（每月按時選股） |
+
+---
+
+## N5：CA 憑證整合
+
+1. 申請 CA → 下載 .pfx
+2. 設定 `.env`：`QUANT_SINOPAC_CA_PATH` + `QUANT_SINOPAC_CA_PASSWORD`
+3. 測試 deal callback
+4. 整合 OMS → WebSocket 通知
+5. 完整循環：登入 → 選股 → 下單 → 回報 → 對帳 → 通知
 
 ---
 
 ## 執行順序
 
 ```
-L4 回測通過 → N1（CA 憑證）→ N2（Paper Trading 循環）→ N3（驗證 30 天）→ N4（Checklist）
-                                                                              ↓
-                                                                     實盤（需使用者明確授權）
+N1（策略整合）+ N2（營收更新）+ N3（通知）←── 不需 CA，可先做
+                    │
+N5（CA 憑證）──→ 完整循環測試 ──→ N4（對帳）
+                    │
+              30 天 Paper Trading
 ```
+
+---
+
+## 關鍵檔案
+
+| 檔案 | 變更 | 階段 |
+|------|------|:----:|
+| `strategies/revenue_momentum_hedged.py` | **新檔案** | N1 |
+| `src/strategy/registry.py` | +1 策略 | N1 |
+| `src/scheduler/jobs.py` | 月度排程 + 營收更新 | N1/N2 |
+| `scripts/download_finmind_data.py` | 增量更新 | N2 |
+| `src/notifications/` | 交易事件通知 | N3 |
+| `scripts/daily_reconciliation.py` | **新檔案** | N4 |

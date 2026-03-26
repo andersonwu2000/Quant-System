@@ -14,17 +14,21 @@ from src.alpha.regime import MarketRegime
 def _default_alpha_config() -> AlphaConfig:
     """Build AlphaConfig with empirically validated factors for Taiwan stocks.
 
-    Based on experiments 1-12 (2026-03-26):
-    - RSI: ICIR 0.60 on large caps (best single factor after size stratification)
-    - momentum (5-month): ICIR 0.48 on large caps
-    - 20-day holding period optimal (5-day factors ineffective due to TW transaction costs)
-    - Full 66-factor scan: no factor passes ICIR 0.5 on broad universe without stratification
-    See docs/dev/test/ for detailed experiment logs.
+    Based on experiments 1-13 (2026-03-27):
+    - revenue_yoy: ICIR 0.674, t=16.1, p<0.000001 (best single factor)
+    - 10/10 years positive IC (2016-2025), no decay
+    - Multi-factor combos provide <3% improvement over single factor
+    - Price factors (momentum/volatility) HARM performance when combined
+    - Recommended: revenue_yoy single factor + condition filtering (FilterStrategy)
+    See docs/dev/test/20260327_12.md and 20260327_13.md.
+
+    Note: For Paper/Live trading, use revenue_momentum_hedged strategy
+    (FilterStrategy + composite regime hedge) instead of this AlphaPipeline config.
+    This config is retained for backward compatibility with the AlphaPipeline path.
     """
     factors = [
-        FactorSpec(name="rsi", direction=1),
-        FactorSpec(name="momentum", direction=1),
-        FactorSpec(name="momentum_6m", direction=1),
+        FactorSpec(name="revenue_yoy", direction=1),
+        FactorSpec(name="revenue_acceleration", direction=1),
     ]
     return AlphaConfig(factors=factors, holding_period=20)
 
