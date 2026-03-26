@@ -300,17 +300,20 @@
 │  ┌─────────────────────────────────────────────────────┐        │
 │  │  Path 1: Monthly Revenue (Paper Trading 主路徑)      │        │
 │  │                                                      │        │
-│  │  每月 11 日 08:30  monthly_revenue_update()          │        │
-│  │    → 下載 FinMind 最新月營收 parquet                  │        │
+│  │  每月 11 日 08:30  revenue_pipeline (chained)        │        │
+│  │    Step 1: monthly_revenue_update()                  │        │
+│  │      → 下載 FinMind 最新月營收 parquet               │        │
+│  │      → 失敗重試 1 次 → 仍失敗則通知 + 跳過          │        │
+│  │    Step 2: monthly_revenue_rebalance() (僅 Step 1 成功) │     │
+│  │      → revenue_momentum_hedged.on_bar()              │        │
+│  │        → 空頭偵測（MA200 OR vol_spike）              │        │
+│  │        → 篩選：acceleration>1, YoY>10%, MA60, 均量   │        │
+│  │        → 排序：revenue_acceleration（3M/12M）        │        │
+│  │        → 取前 15 檔 → weights_to_orders()            │        │
+│  │        → RiskEngine → ExecutionService → 通知         │        │
+│  │        → 存 selection + trade log                     │        │
 │  │                                                      │        │
-│  │  每月 11 日 09:05  monthly_revenue_rebalance()       │        │
-│  │    → revenue_momentum_hedged.on_bar()                │        │
-│  │      → 空頭偵測（MA200 OR vol_spike）                │        │
-│  │      → 篩選：acceleration>1, YoY>10%, MA60, 均量     │        │
-│  │      → 排序：revenue_acceleration（3M/12M）          │        │
-│  │      → 取前 15 檔 → weights_to_orders()              │        │
-│  │      → RiskEngine → ExecutionService → 通知           │        │
-│  │                                                      │        │
+│  │  全局 asyncio.Lock 防止併發                           │        │
 │  │  Config: QUANT_REVENUE_SCHEDULER_ENABLED             │        │
 │  └─────────────────────────────────────────────────────┘        │
 │                                                                 │

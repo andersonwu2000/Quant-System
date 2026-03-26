@@ -1,6 +1,6 @@
 # Phase R：程式碼庫整頓 + 實用性提升
 
-> 狀態：🟡 R1-R5 完成，R6-R9 待執行
+> 狀態：🟡 R1-R6 + R10 完成，R7-R9 進行中
 > 目標：解決架構審查缺點 + 將系統從「能跑回測」推進到「能驗證策略」
 
 ---
@@ -69,7 +69,7 @@ Phase P 投入大量工程但產出尚未驗證。應標記為實驗性，避免
 
 ---
 
-## R6：清理無效的 config 選項 🔵 待執行
+## R6：清理無效的 config 選項 ✅ 完成
 
 `src/core/config.py` 的 `data_source` 欄位包含 `"fubon"` 和 `"twse"`，但 `src/data/sources/` 沒有對應實作。
 
@@ -81,7 +81,7 @@ Phase P 投入大量工程但產出尚未驗證。應標記為實驗性，避免
 
 ---
 
-## R7：聚焦 revenue_momentum → Paper Trading 驗證路徑 🔵 待執行
+## R7：聚焦 revenue_momentum → Paper Trading 驗證路徑 🟡 進行中
 
 這是整個系統實用性的關鍵路徑。目標：**走通一條從回測到實盤的完整閉環。**
 
@@ -166,6 +166,46 @@ revenue_momentum
 
 ---
 
+## R10：自動化管線設計缺陷修正 ✅ 完成
+
+### R10.1 營收更新 → 再平衡因果鏈（最嚴重）
+
+**問題**：`monthly_revenue_update`（08:30）和 `monthly_revenue_rebalance`（09:05）是獨立 cron，靠 35 分鐘時間差保證順序。如果下載失敗或超時，rebalance 會用舊數據選股且不自知。
+
+**修正**：update 成功後直接觸發 rebalance，失敗則跳過並告警。移除 rebalance 的獨立 cron。
+
+### R10.2 硬編碼日期 `--start 2024-01-01`
+
+**問題**：`jobs.py:155` 寫死起始日期，不會自動擴展。
+
+**修正**：改為動態計算（當前日期 - 2 年）。
+
+### R10.3 三條路徑互斥無程式碼保證
+
+**問題**：註解說三條路徑不可同時運行，但沒有 lock。併發寫入同一個 Portfolio 會出問題。
+
+**修正**：加入 `asyncio.Lock`，任一路徑執行中時其他路徑等待或跳過。
+
+### R10.4 General Rebalance 空 portfolio fallback
+
+**問題**：`execute_rebalance` 用 `portfolio.positions.keys()` 當 universe，portfolio 為空時策略拿不到數據。`monthly_revenue_rebalance` 有 fallback 但 general 沒有。
+
+**修正**：統一 fallback 邏輯到共用函式。
+
+### R10.5 執行結果持久化
+
+**問題**：trade 結果只有 log，系統重啟後歷史紀錄消失。
+
+**修正**：每次 rebalance 後存 trade log 到 `data/paper_trading/trades/{date}.json`。
+
+### R10.6 失敗重試 + 告警升級
+
+**問題**：所有 job exception 靜默吞掉，不重試、不升級告警。
+
+**修正**：update 失敗 → 重試 1 次 → 失敗則發通知 + 跳過 rebalance。
+
+---
+
 ## 不在此 Phase 處理
 
 | 項目 | 原因 |
@@ -180,10 +220,11 @@ revenue_momentum
 ## 執行順序
 
 ```
-R6（清理 config，5 分鐘）
-  → R7.1（完成 Phase N 剩餘，約 1-2 天開發）
-    → R7.2（30 天 Paper Trading，持續）
-      → R7.3（根據結果決定下一步）
+R6（清理 config）✅
+  → R10（管線缺陷修正）← 現在
+    → R7.1（完成 Phase N 剩餘）
+      → R7.2（30 天 Paper Trading）
+        → R7.3（根據結果決定下一步）
 
 R8（持續原則，立即生效）
 R9（數據品質，與 R7 並行）

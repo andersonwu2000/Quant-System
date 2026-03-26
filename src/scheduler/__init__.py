@@ -20,6 +20,7 @@ accordingly.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -28,6 +29,9 @@ if TYPE_CHECKING:
     from src.core.config import TradingConfig
 
 logger = logging.getLogger(__name__)
+
+# R10.3: 全局執行鎖 — 防止多條路徑併發操作同一個 Portfolio
+_pipeline_lock = asyncio.Lock()
 
 
 class SchedulerService:
@@ -72,26 +76,18 @@ class SchedulerService:
             kwargs={"config": config},
         )
 
-        # ── Jobs 2 & 3: Monthly revenue (gated by revenue_scheduler_enabled) ──
+        # ── Job 2: Monthly revenue — update then rebalance (chained, R10.1) ──
         if config.revenue_scheduler_enabled:
-            revenue_update_trigger = CronTrigger.from_crontab(config.revenue_update_cron)
+            revenue_trigger = CronTrigger.from_crontab(config.revenue_update_cron)
             self._scheduler.add_job(  # type: ignore[union-attr]
-                self._revenue_update_job,
-                trigger=revenue_update_trigger,
-                id="revenue_update",
-            )
-
-            revenue_rebalance_trigger = CronTrigger.from_crontab(config.revenue_rebalance_cron)
-            self._scheduler.add_job(  # type: ignore[union-attr]
-                self._revenue_rebalance_job,
-                trigger=revenue_rebalance_trigger,
-                id="revenue_rebalance",
+                self._revenue_update_then_rebalance,
+                trigger=revenue_trigger,
+                id="revenue_pipeline",
                 kwargs={"config": config},
             )
             logger.info(
-                "Revenue jobs registered — update: %s, rebalance: %s",
+                "Revenue pipeline registered — cron: %s (update → rebalance chained)",
                 config.revenue_update_cron,
-                config.revenue_rebalance_cron,
             )
 
         self._scheduler.start()  # type: ignore[union-attr]
@@ -109,34 +105,55 @@ class SchedulerService:
         return self._running
 
     async def _rebalance_job(self, config: TradingConfig) -> None:
-        """Execute rebalance: run strategy -> generate suggestions -> notify."""
-        logger.info("Scheduled rebalance triggered at %s", datetime.now())
+        """Execute rebalance with pipeline lock (R10.3)."""
+        if _pipeline_lock.locked():
+            logger.warning("Pipeline lock held, skipping scheduled rebalance")
+            return
+        async with _pipeline_lock:
+            logger.info("Scheduled rebalance triggered at %s", datetime.now())
+            try:
+                from src.scheduler.jobs import execute_rebalance
 
-        try:
-            from src.scheduler.jobs import execute_rebalance
+                await execute_rebalance(config)
+            except Exception:
+                logger.exception("Scheduled rebalance failed")
 
-            await execute_rebalance(config)
-        except Exception:
-            logger.exception("Scheduled rebalance failed")
+    async def _revenue_update_then_rebalance(self, config: TradingConfig) -> None:
+        """Monthly revenue: update data → rebalance (chained, R10.1).
 
-    async def _revenue_update_job(self) -> None:
-        """Monthly revenue data update (11th of month, 08:30)."""
-        logger.info("Scheduled revenue update triggered at %s", datetime.now())
+        If update fails after retry, rebalance is skipped and alert is sent.
+        Uses pipeline lock to prevent concurrent execution (R10.3).
+        """
+        if _pipeline_lock.locked():
+            logger.warning("Pipeline lock held, skipping revenue pipeline")
+            return
+        async with _pipeline_lock:
+            logger.info("Revenue pipeline started at %s", datetime.now())
 
-        try:
-            from src.scheduler.jobs import monthly_revenue_update
+            # Step 1: Update data
+            from src.scheduler.jobs import monthly_revenue_update, monthly_revenue_rebalance
 
-            await monthly_revenue_update()
-        except Exception:
-            logger.exception("Scheduled revenue update failed")
+            update_ok = await monthly_revenue_update(max_retries=1)
 
-    async def _revenue_rebalance_job(self, config: TradingConfig) -> None:
-        """Monthly revenue rebalance (11th of month, 09:05)."""
-        logger.info("Scheduled revenue rebalance triggered at %s", datetime.now())
+            if not update_ok:
+                # R10.6: update 失敗 → 通知 + 跳過 rebalance
+                logger.error("Revenue update failed — skipping rebalance")
+                try:
+                    from src.notifications.factory import create_notifier
+                    notifier = create_notifier(config)
+                    if notifier.is_configured():
+                        await notifier.send(
+                            "Revenue Update FAILED",
+                            "Monthly revenue data update failed after retry. "
+                            "Rebalance skipped. Check logs.",
+                        )
+                except Exception:
+                    logger.debug("Failed to send update-failure notification", exc_info=True)
+                return
 
-        try:
-            from src.scheduler.jobs import monthly_revenue_rebalance
-
-            await monthly_revenue_rebalance(config)
-        except Exception:
-            logger.exception("Scheduled revenue rebalance failed")
+            # Step 2: Rebalance (only if update succeeded)
+            logger.info("Revenue update OK — proceeding to rebalance")
+            try:
+                await monthly_revenue_rebalance(config)
+            except Exception:
+                logger.exception("Revenue rebalance failed after successful update")
