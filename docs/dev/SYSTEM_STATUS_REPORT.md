@@ -42,11 +42,11 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 (src/ + strategies/) | 147 (139 src + 8 strategies) |
-| 後端 Python LOC | ~25,000 (24,173 + 786) |
-| 測試檔案 | 89 |
-| 測試 LOC | ~16,000 |
-| 測試數量 (pytest collected) | **1,138** |
+| 後端 Python 檔案 (src/ + strategies/) | 149 (141 src + 8 strategies) |
+| 後端 Python LOC | ~25,400 (24,573 + 786) |
+| 測試檔案 | 91 |
+| 測試 LOC | ~16,400 |
+| 測試數量 (pytest collected) | **1,159** |
 | Web 前端檔案 (.tsx/.ts) | 126 |
 | Web 前端 LOC | 9,277 |
 | Android 檔案 (.kt) | 40+ |
@@ -61,9 +61,9 @@
 | `src/api/` | 22 | ~3,300 | REST API (14 路由, 74 端點) + WebSocket (5 頻道) + JWT/RBAC 認證 + 限流 + 審計 |
 | `src/data/` | 15 | 2,334 | 4 數據源 (Yahoo/FinMind/FRED/Shioaji) + Scanner + 磁碟快取 + 基本面 |
 | `src/alpha/` | 24 | ~4,250 | Alpha 研究：27 因子 + 中性化 + 正交化 + Rolling IC + 分位數回測 + Pipeline (含 EW Sharpe 比較) + Regime + Attribution + **自動化 Alpha (config/universe/researcher/decision/executor/scheduler/factor_tracker/dynamic_pool/backtest_gate, OOS decay 校正, net alpha 過濾)** |
-| `src/backtest/` | 10 | ~3,500 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL |
+| `src/backtest/` | 11 | ~3,800 | 回測引擎：多資產/多幣別/FX 時序 + 40+ 績效指標 (含 Omega/Rolling Sharpe/VaR/CVaR/DSR) + HTML/CSV 報表 + Walk-forward + Randomized Backtest + PBO (CSCV) + K-Fold CV + Stress Test + **回測防禦 (存活者偏差偵測/價格異常偵測/融券借券成本)** + Deflated Sharpe Ratio + MinBTL + **Experiment Grid (parallel backtesting across parameter combinations)** |
 | `src/execution/` | 16 | ~2,120 | `broker/` (base + simulated + sinopac) + `quote/` (sinopac) + `service.py` (ExecutionService) + OMS + 行情訂閱 + 對帳 + 交易時段 + 觸價委託 + **TWAP 拆單 (`smart_order.py`)** + backward-compat shims |
-| `src/strategy/` | 11 | ~2,000 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 27 因子) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
+| `src/strategy/` | 12 | ~2,150 | 策略 ABC + `factors/` package (technical/fundamental/kakushadze — 27 因子 + **GPU-accelerated factors via PyTorch CUDA**) + 最佳化器 (3) + 研究工具 (multi-metric FundamentalFactorDef, **向量化因子計算 VECTORIZED_FACTORS**) + Registry + MultiAssetStrategy |
 | `src/portfolio/` | 4 | ~1,260 | 組合最佳化 (14 方法: EW/InvVol/RP/MVO/BL/HRP/Robust/Resampled/CVaR/MaxDD/GMV/MaxSharpe/IndexTracking/SemiVariance) + 風險模型 (LW/GARCH/Factor Model Cov + VaR/CVaR 歷史+參數法) + James-Stein 均值收縮 + 幣別對沖 |
 | `src/allocation/` | 4 | 713 | 戰術配置：宏觀四因子 + 跨資產信號 (動量/波動率/價值) + 戰術引擎 |
 | `src/core/` | 6 | ~930 | 核心模型 (models.py) + 設定 (config.py) + 日誌 (logging.py) + Repository + **TWTradingCalendar (calendar.py)** + **trading_pipeline.py (共用交易流程)** |
@@ -709,18 +709,20 @@ volumes:
 
 ### 12.2 進行中 / 待辦
 
+> **原則**：策略驗證優先於生產環境整合。如果策略 Sharpe < 0，連上生產環境只會更快虧錢。
+
 | 項目 | 優先級 | 前置條件 | 說明 |
 |------|--------|---------|------|
-| Phase F 前端 (F3b-c) | ✅ 完成 | — | WS auto-alpha 頻道 + Web Auto-Alpha Dashboard |
+| **Alpha 策略盈利驗證** | **🔴 P0** | **Shioaji API Key ✅** | **擴大 universe(150+) → IC 分析 → Walk-forward → PBO 檢測。見 DEVELOPMENT_PLAN.md §3** |
+| Stage 3.5 Validation Backtest | 🔴 P0 | — | Decision→Execution 之間加入回測閘門 |
+| cost_drag 嚴格過濾 | 🔴 P0 | — | cost_drag > 預期 alpha → 排除因子 |
+| Kill Switch 冷靜期恢復 | 🟡 P1 | — | 5 天冷靜後半倉恢復，非永久停止 |
 | Phase F DB Migration (F2d) | 🟡 P1 | — | Alembic 005_auto_alpha.py |
-| Shioaji 生產環境 | 🔴 P0 | CA 憑證 | deal callback + tick streaming 驗證 |
-| WS market 頻道接通 | 🟡 P1 | CA 憑證 | SinopacQuoteManager → broadcast |
+| CA 憑證整合 | 🟡 P1 | **策略驗證通過** | deal callback + tick streaming |
 | Paper Trading 實測 | 🟡 P1 | CA 憑證 | 模擬帳戶跑完整循環 |
-| 期貨選擇權交易 | 🟡 P1 | — | FuturesPriceType + ComboOrder |
-| 期貨展期模擬 | 🟢 P2 | — | R1/R2 連續合約 + roll cost |
-| IB 美股對接 | 🟢 P2 | Shioaji 完成 | IBBroker(BrokerAdapter) |
-| 擴展績效歸因 | 🟢 P2 | — | 資產配置 + 選股 + 匯率歸因 |
-| CI 更新 | 🟢 P2 | — | 更新 test count, 修復 deprecation |
+| WS market 頻道接通 | 🟡 P1 | CA 憑證 | SinopacQuoteManager → broadcast |
+| 期貨選擇權交易 | 🟢 P2 | — | FuturesPriceType + ComboOrder |
+| IB 美股對接 | 🟢 P2 | Paper Trading 穩定 | IBBroker(BrokerAdapter) |
 
 ---
 

@@ -261,10 +261,40 @@ Day 5:  + Auto-Alpha + 學術最佳化 (14 方法) + 27 因子 + R1-R4 重構 + 
 
 ---
 
+## 關鍵決策紀錄
+
+### 2026-03-26：策略驗證優先於生產環境整合
+
+**問題**: Shioaji API Key 已取得，是否應該立即申請 CA 憑證進入生產環境？
+
+**決策**: **否。先驗證 Alpha 策略盈利能力。**
+
+**理由**:
+- CA 憑證是執行品質的改善（成交回報、即時行情），不是盈利能力的保證
+- 如果策略 Sharpe < 0，連上生產環境只會更快虧錢
+- 首次實測 10 支台股，只有 momentum (IC=+0.157) 有信號，但 universe 太小統計不可靠
+- ICIR 門檻 0.5 符合 Harvey et al. (2016) t>3.0 標準，不應下調
+- 問題在 universe 規模（10 支太少），不是門檻設定
+
+**下一步**: 用 Shioaji Scanner 取 150+ 支台股跑完整 Alpha 驗證 → 通過後再申請 CA 憑證
+
+### 2026-03-26：Decision → Execution 之間需要回測閘門
+
+**問題**: Auto-Alpha 的 Decision 選出因子後直接進入 Execution，沒有驗證近期 OOS 表現。
+
+**決策**: 新增 Stage 3.5 Validation Backtest（架構已設計，待實作）。
+
+**驗證內容**: Sharpe>0、勝過 1/N、手續費<alpha、PBO<50%。
+
+---
+
 ## 已知限制與待辦
 
+### 當前最高優先級
+- **Alpha 策略盈利驗證** — 擴大 universe → IC 分析 → Walk-forward → PBO 檢測（見 DEVELOPMENT_PLAN.md §3）
+
 ### 阻塞項（需外部資源）
-- Shioaji CA 憑證 → deal callback + tick streaming + 紙上交易完整循環 (API Key 已取得，模擬通過)
+- Shioaji CA 憑證 → 等策略驗證通過後申請（deal callback + tick streaming + 紙上交易完整循環）
 - PostgreSQL production 環境 → 目前僅 SQLite dev
 
 ### 學術差距（來自論文分析）
