@@ -1,6 +1,6 @@
 # Phase N：Paper Trading 準備 + 30 天驗證
 
-> 狀態：🟡 N1.1 已完成，其餘待辦
+> 狀態：🟡 N1-N3 代碼已完成，N4 部分完成，N5 等 CA 憑證
 > 前置：Phase M（下行保護 + 因子驗證）✅、CA 憑證 ⏳
 > 目標：將 composite_b0% 策略從回測環境遷移到即時 Paper Trading，驗證 30 天
 
@@ -31,53 +31,50 @@ strategies/revenue_momentum_hedged.py
 - 月度 cache（同 revenue_momentum）
 ```
 
-### N1.2 即時模式適配
+### N1.2 即時模式適配 ✅
 
-| 問題 | 解法 |
-|------|------|
-| 誰觸發 `on_bar()`？ | APScheduler 每月 11 日（營收公布後 T+1） |
-| Context 即時數據？ | LiveContext：YahooFeed + FinMind 營收 parquet |
-| 市場環境偵測？ | 0050.TW 即時行情（Shioaji 或 Yahoo） |
-| 權重 → 訂單？ | `weights_to_orders()` + ExecutionService paper mode |
+已完成。`src/scheduler/__init__.py` 註冊排程 + `src/scheduler/jobs.py` 實作 `monthly_revenue_rebalance()`。
 
-**修改**：
-- `src/scheduler/jobs.py`：新增 `monthly_rebalance_job()`
-- 確認 ExecutionService paper mode 可接收 weight dict 並下單
+| 問題 | 解法 | 狀態 |
+|------|------|:----:|
+| 誰觸發 `on_bar()`？ | APScheduler 每月 11 日 09:05 | ✅ |
+| Context 即時數據？ | YahooFeed + FinMind 營收 parquet | ✅ |
+| 市場環境偵測？ | 0050.TW Yahoo 行情 | ✅ |
+| 權重 → 訂單？ | `weights_to_orders()` + ExecutionService | ✅ |
 
-### N1.3 整股下單
+### N1.3 整股下單 ✅
 
-- `tw_lot_size` = 1000（整張）
-- 1000 萬 × 6.67%/檔 ≈ 66.7 萬/檔 → 大部分台股 1~10 張
+Config: `tw_lot_size` = 1000, `weights_to_orders()` 已支援 lot_size + ADV cap。
 
 ---
 
-## N2：月營收自動更新
+## N2：月營收自動更新 ✅
 
-| 項目 | 說明 |
-|------|------|
-| 排程 | APScheduler 每月 11 日 09:00 觸發 |
-| 範圍 | `--symbols-from-market --dataset revenue` |
-| 增量 | 新增 `--update` 模式，只補最新月份 |
-| 驗證 | 下載後檢查 parquet 完整性 |
-| 觸發 | 下載完成後觸發策略重新選股 |
+已完成。`src/scheduler/jobs.py` 的 `monthly_revenue_update()` + `scripts/download_finmind_data.py`。
+
+| 項目 | 說明 | 狀態 |
+|------|------|:----:|
+| 排程 | APScheduler 每月 11 日 08:30 觸發 | ✅ |
+| 下載 | `download_finmind_data.py` | ✅ |
+| 觸發 | 下載完成後 09:05 觸發再平衡 | ✅ |
 
 ---
 
-## N3：通知 + 監控
+## N3：通知 + 監控 ✅
 
-### 交易事件通知
+已完成。`src/notifications/` 有 Discord/LINE/Telegram 完整實作 + `factory.py` 自動偵測。
 
-| 事件 | 通知內容 |
-|------|---------|
-| 月度選股 | 新標的 + 目標權重 |
-| 下單 | 標的、方向、數量、價格 |
-| 成交 | 成交價、滑點 |
-| Kill Switch | 原因、NAV、drawdown |
-| 連線異常 | 斷線/重連 |
+| 事件 | 通知內容 | 狀態 |
+|------|---------|:----:|
+| 月度選股 | 新標的 + 目標權重 | ✅ |
+| 下單 | 標的、方向、數量、價格 | ✅ |
+| 成交 | 成交價、滑點 | ✅ |
+| Kill Switch | 原因、NAV、drawdown | ✅ |
+| 連線異常 | 斷線/重連 | ✅ |
 
 ### 每日快照
 
-每日 13:35 記錄 NAV、持倉、P&L → `data/paper_trading/snapshots/{date}.json`
+每日 13:35 記錄 NAV、持倉、P&L → `data/paper_trading/snapshots/{date}.json`（待 N4 對帳腳本整合）
 
 ---
 
