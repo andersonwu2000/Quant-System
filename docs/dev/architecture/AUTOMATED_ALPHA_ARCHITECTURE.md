@@ -89,7 +89,17 @@ CronCreate 排程 → 每 2 小時
 
 已實作：`src/backtest/validator.py`
 
-通過 L5 的因子自動進入 StrategyValidator 13 項完整驗證：
+通過 L5 的因子**自動建構 FilterStrategy 並用該策略跑 StrategyValidator**：
+
+```
+因子通過 L5
+    → strategy_builder.build_from_research_factor(factor_name)
+    → 產出 FilterStrategy（用該因子篩選 + 排序）
+    → StrategyValidator.validate(filter_strategy, universe, ...)
+    → 比較 Sharpe vs 0050.TW Sharpe（風險調整基準）
+```
+
+**注意**：Validator 必須用因子自己的策略，不能用固定的 revenue_momentum。
 
 | # | 檢查 | 門檻 |
 |---|------|------|
@@ -128,6 +138,14 @@ config = FilterStrategyConfig(
 ```
 
 ### Stage 4: Paper Trading（自動部署，限額）
+
+**部署條件**（全部滿足才部署）：
+
+| 條件 | 門檻 | 說明 |
+|------|------|------|
+| Sharpe | > 0050.TW Sharpe | 風險調整必須打敗大盤 |
+| CAGR | > 8% | 最低絕對報酬 |
+| StrategyValidator | ≥ 10/13 | 多數統計檢驗通過 |
 
 **限額機制**（防止自動部署造成大額損失）：
 

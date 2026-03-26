@@ -13,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.alpha.filter_strategy import FilterCondition, FilterStrategy, FilterStrategyConfig
 from src.strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
@@ -38,39 +37,90 @@ def build_from_research_factor(
     min_volume_lots: int = 300,
     max_weight: float = 0.10,
 ) -> BuiltStrategy:
-    """從研究因子自動建構 FilterStrategy。
+    """從研究因子自動建構策略。
 
-    Parameters
-    ----------
-    factor_name : 因子名稱（需在 src/strategy/factors/research/ 中有對應 .py）
-    direction : 因子方向（+1 = 高分好，-1 = 低分好）
-    top_n : 取前 N 檔
-    min_volume_lots : 最低日均量（張）
-    max_weight : 單一持股上限
+    動態載入 src/strategy/factors/research/{factor_name}.py 中的
+    compute_{factor_name}() 函式，包裝成 Strategy 子類。
     """
-    operator = "gt" if direction > 0 else "lt"
-    threshold = 0.0  # 基本門檻：因子值 > 0（正向）
+    import importlib.util
+    from pathlib import Path
 
-    config = FilterStrategyConfig(
-        filters=[
-            FilterCondition(
-                factor_name=factor_name,
-                operator=operator,
-                threshold=threshold,
-            ),
-            FilterCondition(
-                factor_name="volume_20d_avg",
-                operator="gt",
-                threshold=float(min_volume_lots),
-            ),
-        ],
-        rank_by=factor_name,
-        top_n=top_n,
-        rebalance="monthly",
-        max_weight=max_weight,
-    )
+    import pandas as pd
 
-    strategy = FilterStrategy(config)
+    from src.strategy.base import Context, Strategy as StrategyBase
+    from src.strategy.optimizer import signal_weight, OptConstraints
+
+    factor_path = Path("src/strategy/factors/research") / f"{factor_name}.py"
+    if not factor_path.exists():
+        raise FileNotFoundError(f"Research factor not found: {factor_path}")
+
+    # Dynamic import
+    spec = importlib.util.spec_from_file_location(f"research_{factor_name}", factor_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {factor_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    compute_fn = getattr(mod, f"compute_{factor_name}", None)
+    if compute_fn is None:
+        raise AttributeError(f"No compute_{factor_name}() in {factor_path}")
+
+    class ResearchFactorStrategy(StrategyBase):
+        """Auto-built strategy from research factor."""
+
+        def __init__(self) -> None:
+            self._last_month = ""
+            self._cached: dict[str, float] = {}
+
+        def name(self) -> str:
+            return f"auto_{factor_name}"
+
+        def on_bar(self, ctx: Context) -> dict[str, float]:
+            current_date = ctx.now()
+            month = pd.Timestamp(current_date).strftime("%Y-%m")
+            if month == self._last_month:
+                return self._cached
+
+            as_of = pd.Timestamp(current_date)
+            candidates: list[tuple[str, float]] = []
+
+            for sym in ctx.universe():
+                try:
+                    bars = ctx.bars(sym, lookback=60)
+                    if len(bars) < 20:
+                        continue
+                    vol = float(bars["volume"].iloc[-20:].mean())
+                    if vol < min_volume_lots * 1000:
+                        continue
+                except Exception:
+                    continue
+
+                try:
+                    values = compute_fn([sym], as_of)
+                    val = values.get(sym)
+                    if val is None:
+                        continue
+                    if direction > 0 and val <= 0:
+                        continue
+                    if direction < 0 and val >= 0:
+                        continue
+                    candidates.append((sym, abs(val)))
+                except Exception:
+                    continue
+
+            self._last_month = month
+            if not candidates:
+                self._cached = {}
+                return {}
+
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            selected = candidates[:top_n]
+            signals = {s: v for s, v in selected}
+            weights = signal_weight(signals, OptConstraints(max_weight=max_weight, max_total_weight=0.95))
+            self._cached = weights
+            return weights
+
+    strategy = ResearchFactorStrategy()
 
     return BuiltStrategy(
         name=f"auto_{factor_name}",
@@ -81,7 +131,6 @@ def build_from_research_factor(
             "top_n": top_n,
             "min_volume_lots": min_volume_lots,
             "max_weight": max_weight,
-            "operator": operator,
         },
         strategy=strategy,
         source="auto_research",

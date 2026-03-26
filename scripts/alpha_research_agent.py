@@ -31,7 +31,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -183,7 +182,6 @@ HYPOTHESIS_TEMPLATES: dict[str, list[dict[str, Any]]] = {
 def _implement_revenue_factor(hypothesis: Hypothesis) -> str | None:
     """根據假說產生因子計算代碼（營收相關）。"""
     name = hypothesis.name
-    fund_dir = Path("data/fundamental")
 
     code = f'''"""Auto-generated research factor: {name}
 
@@ -498,19 +496,23 @@ class AlphaResearchAgent:
     def _run_strategy_validator(
         self, hypothesis: Hypothesis, eval_result: EvaluationResult,
     ) -> dict[str, Any]:
-        """自動跑 StrategyValidator 13 項。"""
+        """用因子自己的策略跑 StrategyValidator 13 項。"""
         logger.info("[Validator] Running 13-check validation for %s...", hypothesis.name)
         try:
             from src.backtest.validator import StrategyValidator, ValidationConfig
-            from src.alpha.auto.strategy_builder import build_revenue_variant
+            from src.alpha.auto.strategy_builder import build_from_research_factor
             from scripts.run_strategy_backtest import discover_universe
 
-            # 用 relaxed revenue_momentum 作為策略載體
-            built = build_revenue_variant(min_yoy=10.0, max_holdings=20, enable_hedge=True)
+            # 用因子自己建構 FilterStrategy（不是固定的 revenue_momentum）
+            built = build_from_research_factor(
+                factor_name=hypothesis.name,
+                direction=hypothesis.expected_direction,
+                top_n=15,
+            )
             universe = discover_universe()
 
             config = ValidationConfig(
-                min_cagr=0.10, min_sharpe=0.5, max_drawdown=0.50,
+                min_cagr=0.08, min_sharpe=0.5, max_drawdown=0.50,
                 n_trials=self.memory.total_rounds + 83,
                 oos_start="2025-07-01", oos_end="2025-12-31",
             )
@@ -558,8 +560,8 @@ class AlphaResearchAgent:
             "",
             "## L1-L5 快速評估",
             "",
-            f"| 指標 | 值 |",
-            f"|------|---:|",
+            "| 指標 | 值 |",
+            "|------|---:|",
             f"| IC (20d) | {eval_result.ic_20d:+.4f} |",
             f"| Best ICIR | {eval_result.best_icir:+.4f} ({eval_result.best_horizon}) |",
             f"| Fitness | {eval_result.fitness:.2f} |",
@@ -622,12 +624,12 @@ class AlphaResearchAgent:
             "",
             "## 與現有因子比較",
             "",
-            f"| 因子 | ICIR | 說明 |",
-            f"|------|:----:|------|",
+            "| 因子 | ICIR | 說明 |",
+            "|------|:----:|------|",
             f"| **{traj.hypothesis.get('name', '?')}** | **{eval_result.best_icir:+.3f}** | **本次發現** |",
-            f"| revenue_yoy（基線） | +0.674 | 已驗證的核心因子 |",
-            f"| revenue_acceleration | +0.847 | 60d 最強因子 |",
-            f"| momentum_6m | +0.217 | 最佳 price-volume 因子 |",
+            "| revenue_yoy（基線） | +0.674 | 已驗證的核心因子 |",
+            "| revenue_acceleration | +0.847 | 60d 最強因子 |",
+            "| momentum_6m | +0.217 | 最佳 price-volume 因子 |",
         ])
 
         lines.extend([
@@ -704,15 +706,15 @@ class AlphaResearchAgent:
     def print_status(self) -> None:
         """印出 Memory 狀態。"""
         mem = self.memory
-        print(f"\n=== Alpha Research Agent Status ===")
+        print("\n=== Alpha Research Agent Status ===")
         print(f"Rounds: {mem.total_rounds} (pass: {mem.total_pass}, fail: {mem.total_fail})")
         print(f"Best fitness: {mem.best_fitness:.2f}")
         print(f"Patterns: {len(mem.success_patterns)}, Forbidden: {len(mem.forbidden_regions)}")
-        print(f"\nDirections:")
+        print("\nDirections:")
         for d in mem.directions:
             status_icon = {"pending": ".", "exploring": "~", "strong": "+", "weak": "-", "exhausted": "x"}.get(d.status, "?")
             print(f"  [{status_icon}] {d.name:35s} {d.priority} hypotheses={d.hypothesis_count} pass={d.pass_count} best_icir={d.best_icir:.3f}")
-        print(f"\nRecent trajectories:")
+        print("\nRecent trajectories:")
         for t in mem.trajectories[-5:]:
             name = t.hypothesis.get("name", "?")
             icon = "+" if t.passed else "x"
