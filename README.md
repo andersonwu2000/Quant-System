@@ -1,50 +1,89 @@
 # Quant Trading System
 
-量化交易系統平台 — 採用 Monorepo 架構，整合 Python 後端、React 網頁儀表板與 React Native 行動應用程式。預設對接台灣股市（手續費 0.1425%、證交稅 0.3%），透過 Yahoo Finance 支援全球市場。
+多資產投資組合研究與最佳化平台 — Monorepo 架構，整合 Python 後端、React 網頁儀表板與 Android 原生應用。預設對接台灣股市（手續費 0.1425%、證交稅 0.3%），透過 Yahoo Finance / FinMind 支援全球市場。
 
 ## 功能特色
 
-- **策略引擎** — 以目標權重驅動，內建 Momentum / Mean Reversion 策略，可自訂擴充
-- **回測引擎** — 嚴格時間因果律，模擬滑點、手續費、稅金，產出 Sharpe / Sortino / Max Drawdown 等績效指標
-- **風險管理** — 6 條宣告式規則（持倉上限、單筆限額、日回撤、肥手指偵測…）+ Kill Switch 緊急停損
-- **即時監控** — WebSocket 推送投組、警報、訂單、行情四頻道
-- **多端應用** — Web 儀表板（中/英雙語）+ 行動 App，共用 `@quant/shared` 型別與 API Client
-- **使用者管理** — 資料庫帳號系統 + Admin GUI，PBKDF2 密碼雜湊，帳號鎖定防暴力破解
-- **REST API** — FastAPI 非同步框架，JWT 認證，五層角色權限（viewer → admin），支援帳密 / API Key 雙模登入
-- **CLI 工具** — 回測執行、啟動服務、系統狀態查詢、因子列表
+### 策略與因子
+- **83 個 Alpha 因子** — 66 技術因子（動量、均值回歸、RSI、Kakushadze 101 精選等）+ 17 基本面因子（PE/PB/ROE/營收動能/殖利率/法人籌碼）
+- **9 種策略** — Momentum、MA Crossover、Mean Reversion、RSI Oversold、Multi-Factor、Pairs Trading、Sector Rotation、Alpha Pipeline、Multi-Asset
+- **條件篩選策略** — 營收動能 + 投信跟單，支援 boolean filter 模式
+
+### 投資組合最佳化
+- **14 種最佳化方法** — 等權、反波動、風險平價、MVO、Black-Litterman、HRP、Robust、Resampled、CVaR、MaxDrawdown、MaxSharpe、全域最小變異、指數追蹤、半變異數
+- **風險模型** — 歷史/EWM/Ledoit-Wolf 收縮/GARCH/PCA 因子模型共變異數 + VaR/CVaR + 邊際風險貢獻
+- **幣別對沖** — 分層對沖比率 + 建議
+
+### 回測與研究
+- **回測引擎** — 嚴格時間因果律，模擬滑點、手續費、稅金（含最低手續費 NT$20）、T+N 交割
+- **Alpha Pipeline** — IC/ICIR 分析、中性化、正交化、Rolling IC 加權、分位數回測、成本感知建構
+- **實驗框架** — 平行 grid backtest（256+ 配置 × 5 期間）、Walk-Forward、CSCV/PBO 過擬合檢測
+- **自動化 Alpha** — 排程執行、動態因子池、安全閘門、因子績效追蹤
+
+### 風險管理
+- **10 條宣告式規則** — 持倉上限、單筆限額、日回撤、肥手指偵測、Kill Switch + 冷靜期恢復
+- **即時風控** — 2%/3%/5% 分級預警、WebSocket 推送
+
+### 執行層
+- **Shioaji 券商整合** — 永豐金 API（下單/帳務/Scanner/即時行情）
+- **TWAP 拆單** — 大單自動分割
+- **Paper Trading** — 模擬交易完整循環
+
+### 數據
+- **多源接入** — Yahoo Finance、FinMind（8 種台股數據集）、FRED 宏觀數據、Shioaji 即時行情
+- **本地優先** — data/market/ Parquet 永久存儲，避免重複下載
+- **數據品質** — 7 項 OHLCV 檢查 + 除權息精確比對 + 基本面異常值過濾 + 停牌偵測
+
+### 平台
+- **103 個 API 端點** — FastAPI 非同步框架，JWT + API Key 雙模認證，五層角色權限
+- **WebSocket** — portfolio / alerts / orders / market 四頻道即時推送
+- **Web 儀表板** — React 18 + Vite + Tailwind，11 頁面，中/英雙語
+- **Android App** — Kotlin + Jetpack Compose + Material 3
+- **CLI 工具** — 回測、服務啟動、狀態查詢、因子列表
+- **通知** — Discord / LINE / Telegram
 
 ## 技術棧
 
 | 層級 | 技術 |
 |------|------|
 | 後端 | Python 3.12、FastAPI、SQLAlchemy、Alembic |
-| 資料庫 | PostgreSQL 16 |
+| 資料庫 | PostgreSQL 16（開發用 SQLite） |
 | 網頁前端 | React 18、Vite、Tailwind CSS、TypeScript |
-| 行動應用 | React Native 0.76、Expo 52、TypeScript |
+| Android | Kotlin、Jetpack Compose、Material 3、Hilt DI |
 | 共用套件 | `@quant/shared`（bun workspace） |
-| 資料來源 | Yahoo Finance（含本地檔案快取） |
-| 部署 | Docker、Docker Compose、GitHub Actions CI |
+| 資料來源 | Yahoo Finance、FinMind、FRED、Shioaji |
+| 券商 | Shioaji（永豐金證券 API） |
+| 部署 | Docker、Docker Compose、GitHub Actions CI（9 jobs） |
+| 測試 | pytest（1,298 tests）、Vitest、Playwright E2E |
 
 ## 專案結構
 
 ```
-├── src/                  # Python 後端核心
-│   ├── api/              #   FastAPI 路由、認證、WebSocket
-│   ├── backtest/         #   回測引擎與績效分析
-│   ├── strategy/         #   策略基底類別、因子庫、最佳化器
-│   ├── risk/             #   風險引擎與宣告式規則
-│   ├── execution/        #   模擬券商（SimBroker）、訂單管理系統
-│   ├── data/             #   資料來源（Yahoo Finance）與儲存
-│   ├── domain/           #   領域模型（Position, Order, Portfolio...）
-│   └── cli/              #   命令列介面（Typer）
-├── strategies/           # 使用者自訂策略
-├── tests/                # 單元測試與整合測試（pytest）
-├── migrations/           # 資料庫遷移（Alembic）
+├── src/                      # Python 後端（~150 檔，~27K LOC）
+│   ├── api/                  #   FastAPI 路由（15 模組，103 端點）、認證、WebSocket
+│   ├── alpha/                #   Alpha 研究：Pipeline、Regime、Attribution、自動化
+│   ├── allocation/           #   戰術配置：宏觀因子、跨資產信號
+│   ├── portfolio/            #   最佳化（14 方法）、風險模型、幣別對沖
+│   ├── strategy/             #   策略基底、因子庫（83 因子）、研究工具
+│   ├── backtest/             #   回測引擎、實驗框架、報告產生
+│   ├── risk/                 #   風險引擎、即時監控
+│   ├── execution/            #   SimBroker、SinopacBroker、TWAP、OMS
+│   ├── data/                 #   DataFeed ABC、Yahoo/FinMind/FRED/Shioaji
+│   ├── core/                 #   模型、設定、日誌、交易日曆、Trading Pipeline
+│   ├── notifications/        #   Discord / LINE / Telegram
+│   └── scheduler/            #   APScheduler 排程
+├── strategies/               # 使用者自訂策略（9 個內建）
+├── tests/                    # 單元測試（1,298 tests）
+├── scripts/                  # 工具腳本（因子分析、數據下載、回測實驗）
+├── migrations/               # 資料庫遷移（Alembic）
+├── data/
+│   ├── market/               # 本地 OHLCV Parquet（149 檔）
+│   └── fundamental/          # 基本面 + 籌碼面 Parquet（408 檔）
 ├── apps/
-│   ├── shared/           # @quant/shared — 共用型別、API Client、WebSocket、工具函式
-│   ├── web/              # React 網頁儀表板
-│   └── mobile/           # React Native 行動應用
-└── doc/                  # 專案文件
+│   ├── shared/               # @quant/shared — 共用型別、API Client、WebSocket
+│   ├── web/                  # React 網頁儀表板（11 頁面）
+│   └── android/              # Android 原生應用（Kotlin + Compose）
+└── docs/                     # 文件 + 實驗報告 + 開發計畫
 ```
 
 ## 快速開始
@@ -52,29 +91,27 @@
 ### 環境需求
 
 - Python 3.12+
-- [uv](https://docs.astral.sh/uv/)（Python 套件管理器）
 - [bun](https://bun.sh/)（前端套件管理器）
-- PostgreSQL 16（或使用 Docker）
+- PostgreSQL 16（或使用 Docker / SQLite 開發）
 
 ### 安裝
 
 ```bash
 # 取得原始碼
-git clone https://github.com/andersonwu2000/Portfolio.git
-cd Portfolio
+git clone https://github.com/andersonwu2000/Quant-System.git
+cd Quant-System
 
 # 安裝後端依賴
-uv sync
-uv sync --extra dev   # 包含開發工具（pytest, ruff, mypy）
+pip install -r requirements.txt
 
 # 安裝前端依賴
 make install-apps
 
 # 設定環境變數
 cp .env.example .env
-# 編輯 .env，設定 QUANT_DATABASE_URL、QUANT_API_KEY 等
+# 編輯 .env，設定 QUANT_API_KEY、QUANT_FINMIND_TOKEN 等
 
-# 資料庫遷移（本地 PostgreSQL）
+# 資料庫遷移
 make migrate
 ```
 
@@ -90,81 +127,40 @@ docker compose up -d    # 啟動 API（port 8000）+ PostgreSQL
 # 全端啟動（後端 + 網頁前端）
 make start
 
-# 或分別啟動：
-make dev                # 後端 API，支援熱重載（port 8000）
-make web                # 網頁前端開發伺服器（port 3000）
-make mobile             # Expo 行動端開發伺服器
+# 或分別啟動
+make dev                # 後端 API，熱重載（port 8000）
+make web                # 網頁前端（port 3000）
 
-# Windows 使用者
+# Windows
 scripts/start.bat       # 在獨立視窗中啟動後端與前端
 ```
-
-## 行動裝置連線（Tailscale）
-
-Android APP 透過 [Tailscale](https://tailscale.com/) VPN 組網連線至後端伺服器，無需開放公網 port 或設定 ngrok，在任何網路環境下皆可使用。
-
-### 前置條件
-
-- 電腦與手機皆已安裝 Tailscale 並登入同一帳號
-- 兩台裝置在 Tailscale 管理介面中為 **Connected** 狀態
-
-### 步驟
-
-1. **查詢電腦的 Tailscale IP**
-
-   ```bash
-   tailscale status
-   ```
-
-   輸出範例：
-   ```
-   100.68.158.90   surface       you@  windows  -
-   100.125.91.16   your-phone    you@  android  -
-   ```
-
-   記住電腦的 IP（如 `100.68.158.90`）。
-
-2. **啟動後端伺服器**
-
-   ```bash
-   # 綁定 0.0.0.0 讓 Tailscale 網卡可存取
-   python -B -m uvicorn src.api.app:app --host 0.0.0.0 --port 8000
-   ```
-
-3. **驗證連線**
-
-   從手機或另一台 Tailscale 裝置測試：
-   ```bash
-   curl http://100.68.158.90:8000/api/v1/system/health
-   # 應回傳 {"status":"ok","version":"0.1.0"}
-   ```
-
-4. **設定 Android APP**
-
-   開啟 APP → 登入畫面 → 填入：
-   - **Server URL**：`http://<電腦的 Tailscale IP>:8000`（如 `http://100.68.158.90:8000`）
-   - **帳號**：`admin`
-   - **密碼**：`Admin1234`（或切換至 API Key 模式輸入 `dev-key`）
-
-### 注意事項
-
-- 新增 Tailscale 裝置後，需將其 IP 加入 `apps/android/app/src/main/res/xml/network_security_config.xml` 的 cleartext 白名單，否則 Android 會拒絕 HTTP 明文連線
-- 後端啟動時建議加 `-B` 旗標避免載入過期的 Python bytecache
-- Tailscale 的 100.x.x.x 位址在裝置重新加入網路後不會改變，可視為固定 IP
 
 ## 使用方式
 
 ### 執行回測
 
 ```bash
-# 透過 CLI
+# CLI
 python -m src.cli.main backtest \
   --strategy momentum \
-  -u AAPL -u MSFT -u GOOGL \
+  -u 2330.TW -u 2317.TW -u 2454.TW \
   --start 2023-01-01 --end 2024-12-31
 
-# 透過 Make（台股範例）
-make backtest ARGS="--strategy mean_reversion -u 2330.TW -u 2317.TW --start 2023-01-01 --end 2024-12-31"
+# Make
+make backtest ARGS="--strategy mean_reversion -u AAPL -u MSFT --start 2023-01-01 --end 2024-12-31"
+```
+
+### 因子分析
+
+```bash
+# 全因子 IC 分析（66 技術因子 × TW50）
+python -m scripts.run_factor_analysis
+
+# 基本面因子 IC 分析（17 因子 × 142 台股）
+python -m scripts.run_fundamental_analysis
+
+# FinMind 數據下載
+python -m scripts.download_finmind_data --dataset all --start 2019-01-01
 ```
 
 ### CLI 指令
@@ -176,40 +172,122 @@ python -m src.cli.main status     # 查詢系統狀態
 python -m src.cli.main factors    # 列出可用因子
 ```
 
-### API 端點
+## API 端點
 
-基礎路徑：`http://localhost:8000/api/v1`
+基礎路徑：`http://localhost:8000/api/v1`（共 103 個端點）
+
+### 認證與管理
 
 | 端點 | 說明 |
 |------|------|
-| `POST /auth/login` | 登入取得 JWT Token（支援帳密或 API Key） |
-| `POST /auth/logout` | 登出並撤銷 Token |
-| `GET /admin/users` | 使用者列表（admin only） |
-| `POST /admin/users` | 建立使用者（admin only） |
-| `PUT /admin/users/{id}` | 修改使用者角色/狀態（admin only） |
-| `DELETE /admin/users/{id}` | 刪除使用者（admin only） |
-| `POST /admin/users/{id}/reset-password` | 重設密碼（admin only） |
-| `GET /portfolio` | 投資組合概覽 |
-| `GET /portfolio/positions` | 所有持倉明細 |
-| `GET /strategies` | 策略列表 |
-| `POST /strategies/{id}/start` | 啟動策略 |
-| `POST /strategies/{id}/stop` | 停止策略 |
-| `POST /backtest` | 提交非同步回測任務 |
-| `GET /backtest/{task_id}` | 查詢回測結果 |
+| `POST /auth/login` | 登入（帳密 / API Key） |
+| `POST /auth/logout` | 登出撤銷 Token |
+| `GET /admin/users` | 使用者列表 |
+| `POST /admin/users` | 建立使用者 |
+
+### 投資組合
+
+| 端點 | 說明 |
+|------|------|
+| `GET /portfolio` | 投組概覽 |
+| `GET /portfolio/positions` | 持倉明細 |
+| `POST /portfolio/saved` | 建立持久化投組 |
+| `POST /portfolio/optimize` | **14 種最佳化方法** |
+| `POST /portfolio/risk-analysis` | VaR/CVaR/風險貢獻 |
+| `POST /portfolio/hedge-recommendations` | 幣別對沖建議 |
+
+### Alpha 研究
+
+| 端點 | 說明 |
+|------|------|
+| `POST /alpha` | 提交 Alpha 研究任務 |
+| `POST /alpha/ic-analysis` | 單因子 IC/ICIR 分析 |
+| `POST /alpha/turnover-analysis` | 換手率 + 成本拖累 |
+| `POST /alpha/attribution` | 報酬歸因分解 |
+| `GET /alpha/regime` | 市場狀態分類 |
+
+### 回測
+
+| 端點 | 說明 |
+|------|------|
+| `POST /backtest` | 提交回測 |
+| `POST /backtest/walk-forward` | Walk-Forward 分析 |
+| `POST /backtest/grid-search` | 平行 Grid Backtest |
+| `POST /backtest/kfold` | K-Fold 交叉驗證 |
+| `POST /backtest/pbo` | PBO 過擬合檢測 |
+
+### 風險管理
+
+| 端點 | 說明 |
+|------|------|
 | `GET /risk/rules` | 風控規則列表 |
-| `PUT /risk/rules/{name}` | 啟用/停用規則 |
-| `POST /risk/kill-switch` | 緊急停損開關 |
-| `GET /orders` | 訂單紀錄（支援分頁與篩選） |
-| `GET /system/health` | 健康檢查（免認證） |
-| `GET /system/status` | 系統狀態 |
-| `GET /system/metrics` | 系統指標 |
-| `WS /ws/{channel}` | 即時推送（portfolio / alerts / orders / market） |
+| `PUT /risk/config` | 更新風控閾值 |
+| `POST /risk/kill-switch` | 緊急停損 |
+| `GET /risk/realtime` | 即時風控狀態 |
+
+### 策略
+
+| 端點 | 說明 |
+|------|------|
+| `GET /strategies` | 策略列表 |
+| `GET /strategies/factors` | **83 個因子 Registry** |
+| `POST /strategies/{id}/start` | 啟動策略 |
+
+### 執行
+
+| 端點 | 說明 |
+|------|------|
+| `GET /execution/status` | 執行狀態 |
+| `POST /execution/smart-order` | TWAP 拆單 |
+| `GET /execution/market-hours` | 交易時段 |
+
+### 數據
+
+| 端點 | 說明 |
+|------|------|
+| `POST /data/quality-check` | 數據品質檢查 |
+| `GET /data/fundamentals/{symbol}` | 基本面指標 |
+| `GET /data/cache-status` | 本地快取狀態 |
+| `GET /data/macro/{indicator}` | FRED 宏觀數據 |
+
+### 配置與戰術
+
+| 端點 | 說明 |
+|------|------|
+| `POST /allocation` | 戰術資產配置 |
+| `GET /allocation/macro-factors` | 宏觀因子 z-scores |
+| `GET /allocation/cross-asset-signals` | 跨資產信號 |
+
+### 自動化 Alpha
+
+| 端點 | 說明 |
+|------|------|
+| `GET /auto-alpha/status` | 運行狀態 |
+| `POST /auto-alpha/run-now` | 立即執行 |
+| `GET /auto-alpha/factor-pool` | 動態因子池 |
+| `GET /auto-alpha/safety-gates` | 安全閘門 |
+
+### 掃描器
+
+| 端點 | 說明 |
+|------|------|
+| `GET /scanner/top-volume` | 成交量排行 |
+| `GET /scanner/active-universe` | 活躍股票池 |
+
+### 系統
+
+| 端點 | 說明 |
+|------|------|
+| `GET /system/health` | 健康檢查 |
+| `GET /system/alerts` | 系統告警 |
+| `GET /scheduler/jobs` | 排程任務 |
+| `POST /scheduler/notify` | 手動通知 |
+| `WS /ws/{channel}` | WebSocket 即時推送 |
 
 ## 新增策略
 
-1. 在 `strategies/` 目錄建立新檔案：
-
 ```python
+# strategies/my_strategy.py
 from src.strategy.base import Strategy, Context
 
 class MyStrategy(Strategy):
@@ -218,96 +296,74 @@ class MyStrategy(Strategy):
         return "my_strategy"
 
     def on_bar(self, ctx: Context) -> dict[str, float]:
-        # 回傳目標權重，例如 {"AAPL": 0.5, "MSFT": 0.5}
-        prices = ctx.get_prices()
-        # ... 你的策略邏輯 ...
-        return weights
+        # 回傳目標權重
+        return {"2330.TW": 0.5, "2317.TW": 0.5}
 ```
 
-2. 在 `src/api/routes/backtest.py` 與 `src/cli/main.py` 的 `_resolve_strategy()` 中註冊新策略。
+在 `src/api/routes/backtest.py` 與 `src/cli/main.py` 的 `_resolve_strategy()` 中註冊。
 
-## 環境變數設定
+## 環境變數
 
 所有設定透過 `QUANT_` 前綴環境變數或 `.env` 檔案管理，詳見 `.env.example`。
 
-| 變數名稱 | 預設值 | 說明 |
-|----------|--------|------|
+| 變數 | 預設 | 說明 |
+|------|------|------|
 | `QUANT_MODE` | `backtest` | 運行模式：`backtest` / `paper` / `live` |
-| `QUANT_DATABASE_URL` | — | PostgreSQL 連線字串 |
-| `QUANT_DATA_SOURCE` | `yahoo` | 資料來源：`yahoo` / `fubon` / `twse` |
-| `QUANT_API_PORT` | `8000` | API 伺服器埠號 |
-| `QUANT_API_KEY` | — | API 認證金鑰（admin 角色） |
-| `QUANT_API_KEY_ROLES` | `{}` | 額外 API Key→角色映射（JSON） |
-| `QUANT_MAX_FAILED_LOGINS` | `5` | 帳號鎖定前最大失敗次數 |
-| `QUANT_LOCKOUT_MINUTES` | `15` | 帳號鎖定時間（分鐘） |
+| `QUANT_DATA_SOURCE` | `yahoo` | 資料來源：`yahoo` / `finmind` / `shioaji` |
+| `QUANT_FINMIND_TOKEN` | — | FinMind API Token（提高速率限制） |
+| `QUANT_API_KEY` | — | API 認證金鑰 |
 | `QUANT_COMMISSION_RATE` | `0.001425` | 券商手續費率 |
-| `QUANT_MAX_POSITION_PCT` | `0.05` | 單一持倉權重上限（5%） |
-| `QUANT_MAX_DAILY_DRAWDOWN_PCT` | `0.03` | 日內回撤上限（3%） |
+| `QUANT_MAX_POSITION_PCT` | `0.05` | 單一持倉權重上限 |
+| `QUANT_MAX_DAILY_DRAWDOWN_PCT` | `0.03` | 日內回撤上限 |
 | `QUANT_DEFAULT_SLIPPAGE_BPS` | `5.0` | 滑點（基點） |
 | `QUANT_LOG_LEVEL` | `INFO` | 日誌等級 |
-| `QUANT_LOG_FORMAT` | `text` | 日誌格式：`text` / `json` |
 
 ## 開發指引
 
-### 常用指令
-
 ```bash
-make test              # 執行全部測試
-make lint              # 程式碼檢查（ruff + mypy strict）
-make web-typecheck     # 網頁前端 TypeScript 型別檢查
-make mobile-typecheck  # 行動端 TypeScript 型別檢查
+make test              # 執行全部測試（1,298 tests）
+make lint              # ruff + mypy strict
+make web-typecheck     # TypeScript 型別檢查
+make web-test          # Vitest
 ```
 
-### 權限角色
-
-系統支援五層角色，高層級自動包含低層級的所有權限：
+### 角色權限
 
 | 角色 | 權限 |
 |------|------|
-| `viewer` | 唯讀（檢視投組、策略、訂單、風控） |
-| `researcher` | 唯讀 + 提交回測 |
-| `trader` | 交易下單 + 啟停策略 |
-| `risk_manager` | 風控規則管理 + 緊急熔斷 |
-| `admin` | 全部權限 + 使用者管理 |
-
-管理員可透過 Web UI（`/admin`）或 API 管理使用者帳號。系統支援兩種登入方式：
-- **帳號密碼** — 適用於人工操作，密碼以 PBKDF2-SHA256 雜湊儲存
-- **API Key** — 適用於自動化腳本/機器人，透過環境變數設定
+| `viewer` | 唯讀 |
+| `researcher` | + 回測、因子分析 |
+| `trader` | + 下單、啟停策略 |
+| `risk_manager` | + 風控規則、Kill Switch |
+| `admin` | 全部 + 使用者管理 |
 
 ### 架構設計
 
 ```
-DataFeed → Strategy.on_bar() → 目標權重 → RiskEngine → SimBroker → Trade → Portfolio 更新
+DataFeed → Strategy.on_bar() → 目標權重 → RiskEngine → Broker → Trade → Portfolio
 ```
 
-核心設計原則：
-
 - **策略回傳權重字典**（`dict[str, float]`），不直接產生訂單
-- **風控規則為純函式工廠** — 無繼承，循序評估，首條 REJECT 即中止
-- **時間因果律** — 回測中 `Context` 將資料截斷至當前時間點，防止未來資訊洩漏
-- **金額一律使用 `Decimal`** — 禁止 `float` 處理金融數據
-- **平台適配器模式** — 各平台注入自身的 `ClientAdapter`，共用邏輯集中在 `@quant/shared`
-
-### 風控規則
-
-| 規則 | 說明 | 預設閾值 |
-|------|------|----------|
-| `max_position_weight` | 單一標的持倉權重上限 | 5% |
-| `max_order_notional` | 單筆訂單占 NAV 比例上限 | 2% |
-| `daily_drawdown_limit` | 日內回撤警戒線 | 3% |
-| `fat_finger_check` | 價格異常偏離偵測 | 5% |
-| `max_daily_trades` | 每日交易次數上限 | 100 筆 |
-| `max_order_vs_adv` | 訂單量占日均成交量比例 | 10% |
+- **風控規則為純函式工廠** — 循序評估，首條 REJECT 即中止
+- **時間因果律** — `Context` 截斷資料至當前時間點
+- **金額一律 `Decimal`** — 禁止 `float` 處理金融數據
+- **本地優先** — data/market/ Parquet 永久存儲，有就用本地
 
 ### CI/CD
 
-GitHub Actions 自動化流程包含：
+GitHub Actions 9 jobs：backend-lint、backend-test、web-typecheck、web-test、web-build、shared-test、android-build、e2e-test、release（含 APK）
 
-- **backend-lint** — ruff 檢查 + mypy 嚴格模式
-- **backend-test** — pytest 單元測試
-- **web-typecheck** — TypeScript 型別檢查
-- **web-build** — 正式環境建置（依賴 typecheck 通過）
-- **mobile-typecheck** — 行動端 TypeScript 型別檢查
+## 文件
+
+| 文件 | 說明 |
+|------|------|
+| `docs/dev/DEVELOPMENT_PLAN.md` | 開發計畫 v10（Phase A~N） |
+| `docs/dev/SYSTEM_STATUS_REPORT.md` | 系統狀態報告 |
+| `docs/dev/plans/` | 各階段詳細計畫書 |
+| `docs/dev/test/` | 實驗報告（15+ 次因子分析） |
+| `docs/api-reference-zh.md` | API 參考（繁中） |
+| `docs/developer-guide-zh.md` | 開發者指南（繁中） |
+| `docs/user-guide-zh.md` | 使用者指南（繁中） |
 
 ## 授權
 
