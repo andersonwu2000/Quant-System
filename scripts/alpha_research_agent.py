@@ -1213,8 +1213,8 @@ class AlphaResearchAgent:
                 "| Factor | ICIR(5d) | ICIR(20d) | ICIR(60d) | Hit%(20d) |",
                 "|--------|:--------:|:---------:|:---------:|:---------:|",
                 f"| **{traj.hypothesis.get('name', '?')}** | {icir_5:+.3f} | **{icir_20:+.3f}** | {icir_60:+.3f} | {hit_20:.1f}% |",
-                "| revenue_acceleration (#16 基準) | +0.202 | +0.240 | +0.426 | 63.9% |",
-                "| revenue_new_high (#16 基準) | +0.246 | +0.207 | +0.364 | 61.3% |",
+                "| revenue_acceleration (基準) | +0.292 | +0.438 | +0.582 | 67.3% |",
+                "| revenue_new_high (基準) | +0.249 | +0.374 | +0.435 | 67.3% |",
                 "",
                 f"**大規模 ICIR(20d) = {icir_20:+.3f} — {'PASS (≥0.20)' if passed else 'FAIL (<0.20)'}**",
             ])
