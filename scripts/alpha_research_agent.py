@@ -457,6 +457,12 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
         logger.info("[Factor] %s already exists — skipping auto-generation", factor_path)
     else:
         factor_path.write_text(code, encoding="utf-8")
+        # git add 防止清理時丟失（不 commit，讓使用者決定）
+        import subprocess
+        subprocess.run(
+            ["git", "add", str(factor_path)],
+            capture_output=True, timeout=10, cwd=str(Path(__file__).resolve().parent.parent),
+        )
     return str(factor_path)
 
 
@@ -1382,11 +1388,14 @@ class AlphaResearchAgent:
         symbols = list(data.keys())
 
         # Compute at multiple dates (monthly samples)
+        # 需要 ≥ 7 年覆蓋才能讓 L3 yearly_stability 有效
         all_dates = sorted(set().union(*(d.index for d in data.values())))
         sample_dates = all_dates[::20]  # every 20 trading days
+        # 取最近 200 個取樣點 ≈ 4000 交易日 ≈ ~16 年（確保 yearly_stability 有足夠年份）
+        n_samples = min(200, len(sample_dates))
 
         rows = []
-        for dt in sample_dates[-120:]:  # last ~2400 trading days
+        for dt in sample_dates[-n_samples:]:  # last ~2400 trading days
             try:
                 values = compute_fn(symbols, pd.Timestamp(dt))
                 if values:
