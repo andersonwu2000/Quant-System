@@ -36,8 +36,8 @@ Host (Windows 11)
 │       └── watchdog.py
 │
 └── Docker Container: autoresearch-agent
-    ├── /app/repo/          (bind mount, READ-ONLY)  ← 整個 repo
     ├── /app/data/          (bind mount, READ-ONLY)  ← data/ 目錄
+    ├── /app/src/           (bind mount, READ-ONLY)  ← src/ 模組（evaluate.py 依賴）
     ├── /app/work/          (named volume, READ-WRITE) ← agent 工作區
     │   ├── factor.py       ← agent 唯一可改的代碼
     │   ├── results.tsv     ← 實驗日誌
@@ -54,7 +54,7 @@ A: 不在容器內跑 Claude Code。改為：
 - Claude Code 在 **host** 上執行（loop.ps1）
 - Claude Code 的 Edit tool 寫入 host 上的 bind mount 目錄
 - `python evaluate.py` 透過 `docker exec` 在容器內執行
-- 容器本身 **無網路**（`network_mode: none`）
+- 容器使用 `internal` network（僅能存取 host API，無外網）
 
 ```
 Host Claude Code                    Docker Container
@@ -188,7 +188,6 @@ if [ ! -d "$WORK_DIR/.git" ]; then
     git init
     echo "results.tsv" > .gitignore
     echo "run.log" >> .gitignore
-    echo "watchdog.log" >> .gitignore
     git add factor.py .gitignore
     git commit -m "init: autoresearch workspace"
 fi
@@ -318,17 +317,22 @@ def main():
         if unexpected:
             log(f"WARNING: unexpected files in work/: {unexpected}")
 
-        # 5. P-03: 連續 crash 偵測（追蹤次數，非僅單次）
+        # 5. P-03: 連續 crash 偵測（用 mtime 判斷是否有新的 run）
         run_log = WORK_DIR / "run.log"
         if run_log.exists():
-            content = run_log.read_text(encoding="utf-8", errors="ignore")
-            if "--- CRASH ---" in content:
-                consecutive_crashes += 1
-                log(f"WARNING: evaluate.py crashed ({consecutive_crashes} consecutive)")
-                if consecutive_crashes >= 5:
-                    log("ALERT: 5+ consecutive crashes — agent may be stuck in crash loop!")
-            else:
-                consecutive_crashes = 0  # reset on successful run
+            mtime = run_log.stat().st_mtime
+            if not hasattr(main, '_last_runlog_mtime'):
+                main._last_runlog_mtime = 0
+            if mtime > main._last_runlog_mtime:  # run.log 被更新了
+                main._last_runlog_mtime = mtime
+                content = run_log.read_text(encoding="utf-8", errors="ignore")
+                if "--- CRASH ---" in content:
+                    consecutive_crashes += 1
+                    log(f"WARNING: evaluate.py crashed ({consecutive_crashes} consecutive)")
+                    if consecutive_crashes >= 5:
+                        log("ALERT: 5+ consecutive crashes — agent may be stuck in crash loop!")
+                else:
+                    consecutive_crashes = 0  # reset on successful run
 
         # 6. 磁碟用量
         total_size = sum(
@@ -386,54 +390,53 @@ docker/autoresearch/
     └── results.tsv
 ```
 
-### Step 2：建構並啟動（~10 分鐘）
+### Step 2：建構 image（~5 分鐘）
+
+**建構前須修改 evaluate.py：** `_auto_submit` 的 URL 從 `127.0.0.1` 改為
+讀取環境變數，容器內預設用 `host.docker.internal`：
+
+```python
+# evaluate.py L739 修改為：
+api_url = os.environ.get("API_URL", "http://127.0.0.1:8000")
+resp = requests.post(f"{api_url}/api/v1/auto-alpha/submit-factor", ...)
+```
+
+docker-compose.yml 加入環境變數：
+```yaml
+environment:
+  - API_URL=http://host.docker.internal:8000
+```
 
 ```powershell
 cd D:\Finance\docker\autoresearch
 docker compose build
-docker compose up -d
-
-# 驗證
-docker exec autoresearch-agent python -c "import numpy; print('OK')"
-docker exec autoresearch-agent ls /app/data/market/ | head -5
-docker exec autoresearch-agent touch /app/data/test  # 應該失敗（唯讀）
 ```
 
-### Step 3：初始化工作區 + 測試（~15 分鐘）
+### Step 3：初始化工作區 + 啟動容器（~10 分鐘）
 
-工作區初始化由 `entrypoint.sh` 自動完成（N-05: 單一入口，不重複）。
+entrypoint.sh 統一處理：初始化 work/ → 啟動容器 → 驗證健康。
 
 ```powershell
-# 執行 entrypoint.sh（初始化 work/ + 啟動容器）
 bash docker/autoresearch/entrypoint.sh
 ```
 
-### Step 4：測試（~10 分鐘）
+### Step 4：驗證 + 安全測試（~10 分鐘）
 
 ```powershell
-# 單次測試
+# 功能測試
+docker exec autoresearch-agent python -c "import numpy; print('OK')"
 docker exec autoresearch-agent python /app/evaluate.py
+
+# 安全測試（以下應全部失敗）
+docker exec autoresearch-agent touch /app/data/hack.txt     # 唯讀 volume
+docker exec autoresearch-agent pip install requests          # read_only root
+docker exec autoresearch-agent python -c "import urllib.request; urllib.request.urlopen('https://google.com')"  # internal network，無外網
+
+# 隔離測試
+cd D:\Finance && git status  # 主 repo 應乾淨
 
 # 啟動 Claude Code loop
 powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop-docker.ps1
-```
-
-### Step 5：驗證安全隔離（~10 分鐘）
-
-```powershell
-# 容器內嘗試寫入唯讀目錄 → 應失敗
-docker exec autoresearch-agent touch /app/data/hack.txt
-docker exec autoresearch-agent touch /app/repo/hack.txt
-
-# 容器內嘗試安裝套件 → 應失敗（read_only root）
-docker exec autoresearch-agent pip install requests
-
-# 容器內嘗試存取網路 → 應失敗
-docker exec autoresearch-agent python -c "import urllib.request; urllib.request.urlopen('https://google.com')"
-
-# work/ 目錄的 git reset 不影響主 repo
-cd D:\Finance
-git status  # 應乾淨
 ```
 
 ## 6. 日常操作
@@ -463,11 +466,10 @@ L5 通過
         → < 13/15 → 記錄但不部署
 ```
 
-Phase Y 需要確保的是 Docker 環境下 _auto_submit 仍能運作：
-- evaluate.py 在容器內執行，容器無網路（`network_mode: none`）
-- _auto_submit 需要 HTTP 存取 `127.0.0.1:8000`
-- **解法：** 容器網路改為 `network_mode: host` 或用 docker network
-  連接 API server，僅開放 localhost:8000
+Docker 環境下 _auto_submit 運作方式：
+- 容器使用 `internal` network + `host.docker.internal` 存取 host API
+- evaluate.py 中的 URL 需改為 `http://host.docker.internal:8000/...`
+- 無外網存取，僅能連到 host
 
 人類介入點：
 - Paper Trading 運行 3 個月後，審查績效決定是否上線 live
@@ -481,7 +483,7 @@ Phase Y 需要確保的是 Docker 環境下 _auto_submit 仍能運作：
 | 需要安裝 Docker Desktop | Windows 11 Pro 支援 Hyper-V，安裝一次即可。 |
 | evaluate.py 更新需重建容器 | 不頻繁，且 `docker compose build` 很快（cache）。 |
 | 首次 docker compose build 較慢 | 需下載 python:3.12-slim + pip install，約 2-5 分鐘。後續有 cache。 |
-| 不解決 OOS 過擬合 | 這是方法論問題，不是隔離問題。由 evaluate.py L5 處理。 |
+| OOS 過擬合靠 evaluate.py 處理 | L5 只輸出 pass/fail（不洩漏數值），但長期仍有間接洩漏風險。容器隔離不解決此問題。 |
 | _auto_submit 需 API 存取 | 容器用 `internal` network + `host.docker.internal` 存取 host API server。無外網。evaluate.py 的 URL 需改為 `http://host.docker.internal:8000/...`。 |
 | 不解決成本問題 | Claude API 費用在 host 端產生，與容器無關。 |
 
@@ -498,7 +500,7 @@ Phase Y 需要確保的是 Docker 環境下 _auto_submit 仍能運作：
 | **OOS 信號衰退** | 連續 10 個 L4 通過但 L5 失敗 | 警告：可能開始過擬合 OOS |
 | **資料過期** | 最新市場資料 > 3 個月前 | 停止，先更新資料 |
 
-Watchdog 負責偵測飽和與 OOS 衰退，寫入 watchdog.log 並在 console 警告。
+Watchdog 負責偵測飽和與 OOS 衰退，輸出至 stdout（`docker logs autoresearch-watchdog` 查看）。
 成本控制需要人類在 Anthropic dashboard 設定用量上限。
 
 ## 9. 時程估計
