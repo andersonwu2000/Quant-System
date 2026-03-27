@@ -713,9 +713,12 @@ def main() -> None:
 
     if results["passed"]:
         print("\nstatus: PASSED (L5+ OOS validated)")
-        # Write deployment report (no API dependency)
-        _write_report(results)
-        # Auto-submit to system pipeline for Validator + deploy
+        # Run Validator 15-check locally (no API dependency)
+        validator_report = _run_validator(results)
+        # Write report only if Validator passes deployment threshold
+        if validator_report and validator_report.get("deployed"):
+            _write_report(results, validator_report)
+        # Also try auto-submit to API (for paper deploy, if running)
         _auto_submit(results)
     elif results["composite_score"] > 0:
         print(f"\nstatus: evaluated ({results['level']})")
@@ -723,11 +726,88 @@ def main() -> None:
         print("\nstatus: no_signal")
 
 
-def _write_report(results: dict) -> None:
-    """Write a factor report to docs/research/autoresearch/ when L5 passes.
+def _run_validator(results: dict) -> dict | None:
+    """Run StrategyValidator 15-check locally. No API dependency."""
+    try:
+        from src.backtest.validator import StrategyValidator, ValidationConfig
+        from src.strategy.base import Context, Strategy as StrategyBase
+        from factor import compute_factor
+        import inspect
 
-    No API dependency — runs purely from evaluate.py output.
-    """
+        print("\n--- VALIDATOR (15 checks) ---")
+
+        config = ValidationConfig(
+            n_trials=1, oos_start="2025-01-01", oos_end="2025-12-31",
+            initial_cash=10_000_000, min_universe_size=50,
+            wf_train_years=2,
+        )
+
+        # Build a minimal Strategy wrapper around compute_factor
+        _sig = inspect.signature(compute_factor)
+        _is_3arg = len([p for p in _sig.parameters.values()
+                        if p.default is inspect.Parameter.empty]) >= 3
+
+        class _FactorStrategy(StrategyBase):
+            name = "autoresearch_candidate"
+            def on_bar(self, ctx: Context) -> dict[str, float]:
+                symbols = list(ctx.current_prices.keys())
+                if _is_3arg:
+                    data = {
+                        "bars": {s: ctx.feed.get_bars(s) for s in symbols},
+                        "revenue": {},
+                        "institutional": {},
+                        "pe": {}, "pb": {}, "roe": {},
+                    }
+                    if hasattr(ctx, "fundamentals") and ctx.fundamentals:
+                        data["revenue"] = getattr(ctx.fundamentals, "revenue", {})
+                        data["institutional"] = getattr(ctx.fundamentals, "institutional", {})
+                    values = compute_factor(symbols, ctx.current_time, data)
+                else:
+                    values = compute_factor(symbols, ctx.current_time)
+                if not values:
+                    return {}
+                sorted_syms = sorted(values, key=lambda s: values[s], reverse=True)
+                top_n = max(len(sorted_syms) // 5, 5)
+                selected = sorted_syms[:top_n]
+                w = 1.0 / len(selected)
+                return {s: w for s in selected}
+
+        strategy = _FactorStrategy()
+        universe = _load_universe(large=False)
+
+        validator = StrategyValidator(config)
+        report = validator.validate(strategy, universe, EVAL_START, EVAL_END)
+
+        n_passed = report.n_passed
+        n_total = report.n_total
+        checks = report.checks
+
+        # Print results
+        for c in checks:
+            mark = "PASS" if c.passed else "FAIL"
+            print(f"  [{mark}] {c.name}: {c.value} (threshold: {c.threshold})")
+        print(f"\nvalidator: {n_passed}/{n_total}")
+
+        # Deployment threshold: >= 14 (excl DSR) + DSR >= 0.70
+        n_excl_dsr = sum(1 for c in checks if c.passed or c.name == "deflated_sharpe")
+        dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
+        deployed = n_excl_dsr >= 14 and dsr_val >= 0.70
+
+        print(f"deploy_eligible: {deployed}")
+
+        return {
+            "n_passed": n_passed,
+            "n_total": n_total,
+            "deployed": deployed,
+            "checks": [(c.name, c.passed, str(c.value), str(c.threshold)) for c in checks],
+        }
+    except Exception as e:
+        print(f"\n[WARN] Validator failed: {e}")
+        return None
+
+
+def _write_report(results: dict, validator_report: dict) -> None:
+    """Write a factor report only when Validator passes deployment threshold."""
     try:
         report_dir = PROJECT_ROOT / "docs" / "research" / "autoresearch"
         report_dir.mkdir(parents=True, exist_ok=True)
@@ -757,10 +837,13 @@ def _write_report(results: dict) -> None:
         ts = time.strftime("%Y%m%d_%H%M%S")
         report_path = report_dir / f"{ts}_{name_safe}.md"
 
+        vr = validator_report
+        n_p, n_t = vr["n_passed"], vr["n_total"]
+
         content = (
             f"# Factor Report: {name}\n\n"
             f"> Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"> Status: L5 OOS Validated | Validator: pending\n\n"
+            f"> Status: **DEPLOYED** | Validator: {n_p}/{n_t}\n\n"
             f"## Metrics\n\n"
             f"| Metric | Value |\n"
             f"|--------|-------|\n"
@@ -772,7 +855,16 @@ def _write_report(results: dict) -> None:
             f"| Turnover | {results['avg_turnover']} |\n"
             f"| Large-scale ICIR | {results['large_icir_20d']} |\n"
             f"| Max Correlation | {results['max_correlation']} ({results['correlated_with']}) |\n\n"
-            f"## ICIR by Horizon\n\n"
+            f"## Validator Results ({n_p}/{n_t})\n\n"
+            f"| Check | Result | Value | Threshold |\n"
+            f"|-------|--------|-------|----------|\n"
+        )
+        for cname, cpassed, cval, cthresh in vr["checks"]:
+            mark = "PASS" if cpassed else "FAIL"
+            content += f"| {cname} | {mark} | {cval} | {cthresh} |\n"
+
+        content += (
+            f"\n## ICIR by Horizon\n\n"
             f"| Horizon | ICIR |\n"
             f"|---------|------|\n"
         )

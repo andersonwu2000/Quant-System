@@ -17,7 +17,8 @@ WORKDIR /app
 # - PROJECT_ROOT: evaluate.py uses this to find data/, research/ etc.
 # - PYTHONPATH: so `from factor import compute_factor` finds /app/work/factor.py
 ENV PROJECT_ROOT=/app
-ENV PYTHONPATH=/app/work
+ENV PYTHONPATH=/app/work:/app
+ENV QUANT_MODE=backtest
 
 # Non-root user with writable work dir
 RUN useradd -m -s /bin/bash researcher && \

@@ -20,6 +20,7 @@ services:
       - /tmp:size=512m
     volumes:
       - ../../data:/app/data:ro
+      - ../../src:/app/src:ro
       - ./work:/app/work
 
   watchdog:
