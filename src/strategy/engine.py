@@ -76,14 +76,13 @@ def weights_to_orders(
     if portfolio.nav <= 0:
         return []
 
-    # Filter NaN/inf/None weights
+    # Filter NaN/inf/None weights (keep 0.0 — it means close position)
     import math
     target_weights = {
         k: v for k, v in target_weights.items()
         if v is not None and isinstance(v, (int, float)) and math.isfinite(v)
     }
-    if not target_weights:
-        return []
+    # Don't early-return on empty target — existing positions need to be closed
 
     # 驗證總權重不超過合理上限。
     # Threshold = 1.5: allows up to 50% gross leverage (e.g. 130/30 strategy)
