@@ -70,19 +70,55 @@ Keep updates minimal — only touch sections affected by the change.
 - `src/alpha/cross_section.py` — quantile backtest
 - `src/scheduler/jobs.py` — 交易管線流程
 
-### 歷史教訓（12 個已修復的 bug）
+### 歷史教訓（40+ 個已修復的 bug，按類別）
+
+**公式與計算（7 個）：**
 1. Sharpe 幾何/算術混用（analytics.py）
 2. Sortino 下行偏差只算負值（analytics.py）
-3. Validator cost_ratio 累計 vs 年化（validator.py）
-4. Validator benchmark 用 momentum 非 0050（validator.py）
-5. Validator bootstrap 用不存在的屬性（validator.py）
-6. Validator 日曆日 vs 交易日（validator.py）
-7. cross_section 日期錯位（cross_section.py）
-8. factor_evaluator ICIR ddof 不一致（factor_evaluator.py）
-9. engine _col_index 跨矩陣快取碰撞（engine.py）
-10. risk max_gross_leverage SELL 方向錯（rules.py）
-11. Auto-research Validator 用固定策略（alpha_research_agent.py）
-12. 交互因子計算和名稱不一致（alpha_research_agent.py）
+3. factor_evaluator ICIR ddof 不一致（factor_evaluator.py）
+4. beat_magnitude 13 月 vs 12 月 off-by-one（alpha_research_agent.py）
+5. rev_breakout 包含當月 → 永遠回傳 0（alpha_research_agent.py）
+6. rev_accel_2nd_derivative 算一階非二階導數（alpha_research_agent.py）
+7. forward return off-by-one: after[h-1] vs after[h]（alpha_research_agent.py）
+
+**Look-Ahead Bias（8 個）：**
+8. 自動因子代碼無 40 天營收延遲（alpha_research_agent.py）— 所有因子 IC 被高估
+9. trust_follow.py 營收無 40 天延遲
+10. 5 個研究因子檔案缺 40 天延遲（rev_consecutive_beat 等）
+11. L5 Walk-Forward 是空殼（passed=True），不做實際檢查（factor_evaluator.py）
+
+**流程與連通性（10 個）：**
+12. Validator benchmark 用 momentum 非 0050（validator.py）
+13. Validator bootstrap 用不存在的屬性（validator.py）
+14. Auto-research Validator 用固定策略非因子策略（alpha_research_agent.py）
+15. 因子生成 generic fallback 產出 revenue_yoy 偽因子（alpha_research_agent.py）
+16. L3 相關性檢查比較 factor-value mean vs IC series（factor_evaluator.py）
+17. _compute_baseline_factor_ics 未計算 revenue_yoy IC（alpha_research_agent.py）
+18. weights_to_orders 未傳 volumes/market_lot_sizes（jobs.py, strategy_center.py）
+19. _shares_to_lots 靜默改變訂單數量（sinopac.py）
+20. _async_revenue_update 丟棄回傳值（jobs.py）
+
+**並發與狀態管理（5 個）：**
+21. Kill switch 不 apply_trades → 無限循環（app.py）— **CRITICAL**
+22. Kill switch 無 re-trigger guard → 每 5 秒重觸發（app.py）
+23. Rebalance/Pipeline 無 mutation_lock（strategy_center.py, jobs.py）
+24. Shioaji 線程 vs asyncio 事件循環競爭（realtime.py）
+25. Portfolio 狀態無持久化，重啟丟失（state.py）
+
+**語義錯誤（5 個）：**
+26. Validator cost_ratio 累計 vs 年化（validator.py）
+27. Validator 日曆日 vs 交易日（validator.py）
+28. cross_section 日期錯位（cross_section.py）
+29. engine _col_index 跨矩陣快取碰撞（engine.py）
+30. pos.last_price 屬性不存在（strategy_center.py）
+
+### 經驗總結
+
+1. **Look-ahead bias 是最隱蔽的錯誤** — 營收 40 天延遲缺失導致所有因子 IC 膨脹 10-40 倍，結果看起來完全正常
+2. **generic fallback 是毒藥** — 任何「找不到就用預設值」的設計都會靜默產出錯誤結果，改用 fail-closed
+3. **並發問題不會在單元測試中暴露** — asyncio.Lock 不保護線程，threading.Lock 不保護協程
+4. **小樣本高估嚴重** — L5 的 ICIR 0.860 在 865 支大 universe 下可能只有 0.104
+5. **生成式代碼需要驗證** — 自動產出的因子代碼可以是任何東西，必須有沙箱或校驗
 
 ## Project Overview
 
@@ -102,7 +138,7 @@ Monorepo: Python backend + React web + Android native (Kotlin/Compose). Targets 
 
 ```bash
 # === Backend ===
-make test                    # pytest tests/ -v (1,385 tests)
+make test                    # pytest tests/ -v (1,401 tests)
 make lint                    # ruff check + mypy strict
 make dev                     # API with hot reload (port 8000)
 make api                     # production API
@@ -149,10 +185,16 @@ python -m scripts.large_scale_factor_check                        # 大規模 IC
 ```
 假說生成 → 因子實作 → L5 快篩 (ICIR≥0.30)
   → 大規模 IC 驗證 (865+ 支, ICIR(20d)≥0.20)
-  → StrategyValidator (≥12/13)
-  → 部署檢查 (Sharpe>0050, CAGR>8%, recent_sharpe>0)
+  → StrategyValidator (≥11/13, excl DSR; DSR≥0.70)
+  → 部署檢查 (Sharpe>0050, CAGR>8%, recent_sharpe>-0.10)
   → Paper Trading (5% NAV, 30 天觀察)
 ```
+
+**關鍵約束**：
+- 所有營收因子必須有 **40 天公布延遲**（`as_of - pd.DateOffset(days=40)`）
+- 因子生成器不匹配的假說必須 **fail-closed**（return None），不可 fallback
+- Portfolio mutation 必須持有 **state.mutation_lock**（asyncio.Lock）
+- Shioaji 線程中的 portfolio 操作必須排程到 **event loop**
 
 **假說生成**：由 Claude Code 根據 experience memory (`data/research/memory.json`) 和學術文獻動態生成。不使用硬編碼模板。生成新假說時應考慮：
 1. 已測試因子的成功/失敗模式

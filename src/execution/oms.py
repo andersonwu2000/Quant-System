@@ -60,54 +60,52 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
     將成交記錄應用到投資組合，更新持倉和現金。
 
     注意：此函式直接 mutate portfolio 物件並回傳它（非純函式）。
+    Thread-safe: 使用 portfolio.lock 防止和 update_market_prices 的 race condition。
     """
     from src.core.models import Instrument, Position
 
-    for trade in trades:
-        symbol = trade.symbol
+    with portfolio.lock:
+        for trade in trades:
+            symbol = trade.symbol
 
-        # 更新現金
-        notional = trade.quantity * trade.price
-        if trade.side == Side.BUY:
-            portfolio.cash -= notional + trade.commission
-        else:
-            portfolio.cash += notional - trade.commission
-
-        # 更新持倉
-        if symbol in portfolio.positions:
-            pos = portfolio.positions[symbol]
+            # 更新現金
+            notional = trade.quantity * trade.price
             if trade.side == Side.BUY:
-                # 加倉
-                total_cost = pos.avg_cost * pos.quantity + trade.price * trade.quantity
-                new_qty = pos.quantity + trade.quantity
-                pos.avg_cost = total_cost / new_qty if new_qty > 0 else Decimal("0")
-                pos.quantity = new_qty
+                portfolio.cash -= notional + trade.commission
             else:
-                # 減倉（不允許賣超持倉）
-                if trade.quantity > pos.quantity:
-                    logger.warning(
-                        "SELL qty %s > position %s for %s — capping to position size",
-                        trade.quantity, pos.quantity, symbol,
+                portfolio.cash += notional - trade.commission
+
+            # 更新持倉
+            if symbol in portfolio.positions:
+                pos = portfolio.positions[symbol]
+                if trade.side == Side.BUY:
+                    total_cost = pos.avg_cost * pos.quantity + trade.price * trade.quantity
+                    new_qty = pos.quantity + trade.quantity
+                    pos.avg_cost = total_cost / new_qty if new_qty > 0 else Decimal("0")
+                    pos.quantity = new_qty
+                else:
+                    if trade.quantity > pos.quantity:
+                        logger.warning(
+                            "SELL qty %s > position %s for %s — capping to position size",
+                            trade.quantity, pos.quantity, symbol,
+                        )
+                        trade.quantity = pos.quantity
+                    pos.quantity -= trade.quantity
+
+                pos.market_price = trade.price
+
+                if pos.quantity <= 0:
+                    del portfolio.positions[symbol]
+            else:
+                if trade.side == Side.BUY:
+                    portfolio.positions[symbol] = Position(
+                        instrument=Instrument(symbol=symbol),
+                        quantity=trade.quantity,
+                        avg_cost=trade.price,
+                        market_price=trade.price,
                     )
-                    trade.quantity = pos.quantity
-                pos.quantity -= trade.quantity
 
-            pos.market_price = trade.price
-
-            # 如果數量歸零或因浮點比較為極小值，移除持倉
-            if pos.quantity <= 0:
-                del portfolio.positions[symbol]
-        else:
-            if trade.side == Side.BUY:
-                portfolio.positions[symbol] = Position(
-                    instrument=Instrument(symbol=symbol),
-                    quantity=trade.quantity,
-                    avg_cost=trade.price,
-                    market_price=trade.price,
-                )
-            # 賣出不存在的持倉 = 做空（暫不支持）
-
-    portfolio.as_of = trades[-1].timestamp if trades else portfolio.as_of
+        portfolio.as_of = trades[-1].timestamp if trades else portfolio.as_of
 
     # Persist portfolio state for crash recovery (paper/live mode)
     from src.core.config import get_config

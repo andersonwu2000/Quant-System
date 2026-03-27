@@ -78,6 +78,21 @@ def _has_completed_run_today() -> bool:
     return False
 
 
+def _has_completed_run_this_month() -> bool:
+    """#2: 月度策略用 — 檢查本月是否已完成過 pipeline（防重啟後重複再平衡）。"""
+    month_prefix = datetime.now().strftime("%Y-%m")
+    if not PIPELINE_RUNS_DIR.exists():
+        return False
+    for path in PIPELINE_RUNS_DIR.glob(f"{month_prefix}*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if record.get("status") in ("completed", "ok"):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def check_crashed_runs() -> list[dict[str, Any]]:
     """Check for pipeline runs with status='started' (indicates a crash).
 

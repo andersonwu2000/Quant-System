@@ -95,7 +95,15 @@
 
 > **deflated_sharpe 說明**：自動研究累計測試 90+ 因子後，n_trials 導致 DSR 原始門檻 0.95 結構性不可能通過。改為寬鬆門檻 ≥ 0.70（低於 0.70 仍視為過擬合風險，阻擋部署）。
 
-### 3.3 報告流程
+### 3.3 關鍵約束（2026-03-27 大規模審計後確立）
+
+1. **營收 40 天延遲**：所有營收因子必須用 `as_of - pd.DateOffset(days=40)` 截斷。缺此延遲會導致 IC 膨脹 10-40 倍（look-ahead bias）
+2. **因子生成 fail-closed**：不匹配的假說必須 return None，不可 fallback 到 revenue_yoy
+3. **L5 Walk-Forward 必須實際計算**：前半/後半 IC 比較，不可 `passed = True` 空殼
+4. **大規模 IC 和 L1-L5 forward return 必須一致**：都用 `close[as_of+h] / close[as_of] - 1`
+5. **月度取樣用最近交易日**：不可直接用月末日期（可能不是交易日）
+
+### 3.4 報告流程
 
 L5 通過後，不論後續是否通過，都寫報告到 `docs/dev/auto/{factor_name}.md`。
 報告包含：L5 結果、大規模 IC 表格（含基準對比）、Validator 13 項、部署判定。

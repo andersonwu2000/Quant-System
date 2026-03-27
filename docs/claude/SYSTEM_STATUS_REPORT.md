@@ -1,10 +1,10 @@
 # 系統現況追蹤報告書
 
 > **日期**: 2026-03-27
-> **版本**: v11.0
-> **階段**: Phase A~M 完成, N/N2/P/Q 部分完成, R 進行中
-> **進度總覽**: `docs/dev/PHASE_TRACKER.md`
-> **開發計畫**: `docs/dev/DEVELOPMENT_PLAN.md`
+> **版本**: v12.0
+> **階段**: Phase A~S 完成, N/P 進行中
+> **進度總覽**: `docs/dev/plans/`
+> **開發計畫**: `docs/dev/plans/`（各 Phase 獨立計畫書）
 
 ---
 
@@ -14,7 +14,7 @@
 |------|------|
 | 後端 Python 檔案 | ~160 |
 | 後端 LOC | ~29,000 |
-| 測試數量 | **1,385** |
+| 測試數量 | **1,401**（含 16 個管線整合測試） |
 | API 端點 | **117**（16 路由模組） |
 | Alpha 因子 | **83**（66 技術 + 17 基本面） |
 | 策略 | **13** |
@@ -329,11 +329,12 @@ Research Pipeline（獨立，不操作 Portfolio）
 | K（數據品質） | ✅ | |
 | L（策略轉型） | ✅ | 6/7 驗證通過 |
 | M（下行保護） | ✅ | |
-| N（Paper Trading） | 🟡 | N1.1 完成，N2-N5 待辦 |
+| N（Paper Trading） | 🟢 | Portfolio 持久化、kill switch 清倉、mutation lock、pipeline timeout |
 | N2（Web 重寫） | 🟡 | Step 1-4 完成，Step 5 待辦 |
-| P（自動因子挖掘） | 🟢 | P1-P5 完成（實驗性），P6-P7 待辦 |
-| Q（策略精煉） | 🟡 | Q1 代碼已實作（10/13），Q2-Q3 待辦 |
-| R（整頓 + 實用性） | 🟡 | R1-R6 完成，R7-R9 待執行 |
+| P（自動因子挖掘） | 🟢 | 完整管線：L5 → 大規模 IC → Validator → Deploy。40+ bug 已修 |
+| Q（策略精煉） | 🟡 | Q1 代碼已實作（12/13），Q2-Q3 待辦 |
+| R（整頓 + 實用性） | 🟢 | 4 輪代碼審計完成 |
+| S（管線統一） | ✅ | execute_pipeline 取代 3 個舊 job |
 
 ---
 
@@ -341,9 +342,11 @@ Research Pipeline（獨立，不操作 Portfolio）
 
 | 項目 | 狀態 | 影響 |
 |------|------|------|
-| CA 憑證（永豐金） | ⏳ 申請中 | 阻塞 Phase N5（完整實盤循環） |
-| Paper Trading 30 天驗證 | 🟡 就緒 | Shioaji 連線成功，策略產出正常 |
-| 策略驗證 | ✅ 12/13 通過 | vs 0050 失敗，其餘全過 |
+| CA 憑證（永豐金） | ⏳ 申請中 | 阻塞 live mode（非 simulation） |
+| Paper Trading 運行中 | ✅ | Shioaji simulation + portfolio 持久化 + kill switch 清倉 |
+| 策略驗證 | ✅ 12/13 通過 | revenue_momentum_hedged |
+| 自動因子研究 | 🟡 | 40d lag 修正後所有因子 L1 失敗，需新假說 |
+| Shioaji async fill callback | ⏳ | 非 simulation mode 的異步成交回報未接線 |
 
 ---
 
@@ -385,9 +388,14 @@ Research Pipeline（獨立，不操作 Portfolio）
 
 17 份實驗報告，詳見 `docs/dev/test/RESEARCH_SUMMARY.md`。
 
-**修正後核心結論**（含 40 天營收延遲）：
-- revenue_acceleration ICIR 0.476（修正後最強因子）
-- revenue_yoy ICIR 0.188（修正前 0.674，被高估 72%）
-- revenue_momentum Validator 10/13 通過（relaxed 版）
-- 策略邊緣可行（CAGR +14.3%, Sharpe 0.89），OOS 為負
-- **Paper Trading 就緒（2026-03-27）— Shioaji 連線成功，策略選股正常，待啟動 API server**
+**核心結論**（含 40 天營收延遲 + 大規模驗證）：
+- revenue_acceleration 大規模 ICIR(20d) +0.240, ICIR(60d) +0.426（#16 基準，全因子最強）
+- revenue_new_high 大規模 ICIR(20d) +0.207, ICIR(60d) +0.364（第二強）
+- revenue_momentum_hedged Validator 12/13（paper trading 主策略）
+- 自動發現因子在修正 look-ahead bias 後全部 L1 失敗（IC < 0.02）
+- Paper Trading 已上線：portfolio 持久化、kill switch 清倉、mutation lock
+
+**2026-03-27 大規模代碼審計（4 輪，40+ bug）：**
+- 修正了 look-ahead bias、因子生成 generic fallback、kill switch 無限循環
+- 新增 portfolio 持久化、pipeline 崩潰恢復、mutation lock、16 個整合測試
+- 詳見 CLAUDE.md 歷史教訓

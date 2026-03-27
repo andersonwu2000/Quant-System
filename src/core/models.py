@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -179,13 +180,18 @@ class Order:
 
 @dataclass
 class Portfolio:
-    """投資組合 — 持倉 + 現金。"""
+    """投資組合 — 持倉 + 現金。
+
+    Thread safety: use `lock` for any mutation from non-asyncio threads
+    (e.g. Shioaji tick callback). Asyncio code should use state.mutation_lock.
+    """
     positions: dict[str, Position] = field(default_factory=dict)  # key=symbol
     cash: Decimal = Decimal("1000000")
     as_of: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     initial_cash: Decimal = Decimal("1000000")
     nav_sod: Decimal = Decimal("0")  # start-of-day NAV（回測引擎更新）
     pending_settlements: list[tuple[str, Decimal]] = field(default_factory=list)  # (settle_date_str, amount)
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # #1: cross-thread safety
 
     @property
     def available_cash(self) -> Decimal:
@@ -301,10 +307,11 @@ class Portfolio:
         return weights
 
     def update_market_prices(self, prices: dict[str, Decimal]) -> None:
-        """用最新市價更新所有持倉。"""
-        for symbol, price in prices.items():
-            if symbol in self.positions:
-                self.positions[symbol].market_price = price
+        """用最新市價更新所有持倉。Thread-safe via self.lock。"""
+        with self.lock:
+            for symbol, price in prices.items():
+                if symbol in self.positions:
+                    self.positions[symbol].market_price = price
 
 
 # ─── 風控相關 ──────────────────────────────────────────

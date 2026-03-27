@@ -99,6 +99,30 @@ DataFeed → Strategy.on_bar() → 目標權重 → RiskEngine → SimBroker/Bro
 
 所有設定透過 `QUANT_` 前綴環境變數或 `.env` 檔案。見 `src/core/config.py` 和 `.env.example`。
 
+## Paper Trading 架構（2026-03-27 建立）
+
+**狀態管理**：
+- Portfolio 狀態持久化到 `data/paper_trading/portfolio_state.json`（atomic write）
+- 每次 `apply_trades()` 後自動存檔，啟動時自動載入
+- `nav_sod` 持久化以維持 daily drawdown 計算
+
+**並發模型**：
+- `state.mutation_lock`（asyncio.Lock）保護所有 portfolio mutation
+- 三條 mutation 路徑：rebalance API、scheduled pipeline、kill switch monitor
+- Shioaji tick callback 從背景線程觸發 → `asyncio.run_coroutine_threadsafe` 排程到 event loop
+- `threading.Lock` 保護 `RealtimeRiskMonitor.on_price_update` 的價格更新（不涉及 cash/positions）
+
+**Kill Switch**：
+- 雙路徑：`_kill_switch_monitor`（5 秒輪詢）+ `RealtimeRiskMonitor`（tick 驅動）
+- re-trigger guard：`state.kill_switch_fired` flag，需 `POST /risk/kill-switch/reset` 手動重置
+- 觸發後：停止策略 → 清倉（submit_orders + apply_trades）→ 持久化 → WebSocket 廣播
+
+**Pipeline**：
+- `asyncio.wait_for(timeout)` 防掛死
+- 執行記錄（JSON）：started/completed/failed/crashed
+- 啟動時偵測 crashed 記錄
+- 月度冪等性檢查（同日不重跑）
+
 ## 安全性
 
 JWT (HS256) + API Key 雙模式認證，5 級角色階層，PBKDF2 密碼雜湊，token 撤銷，帳號鎖定，限流，稽核日誌，非 root 容器。
