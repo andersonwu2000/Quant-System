@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from pathlib import Path
 
 import numpy as np
@@ -101,8 +102,8 @@ def _get_revenue_at(
         return None
 
     revenues = available["revenue"].values
-    rev_3m = float(np.mean(revenues[-3:])) if len(revenues) >= 3 else 0
-    rev_12m = float(np.mean(revenues[-12:])) if len(revenues) >= 12 else 0
+    rev_3m = float(np.mean(np.asarray(revenues[-3:]))) if len(revenues) >= 3 else 0
+    rev_12m = float(np.mean(np.asarray(revenues[-12:]))) if len(revenues) >= 12 else 0
 
     yoy_vals = available["yoy_growth"].dropna().values
     latest_yoy = float(yoy_vals[-1]) if len(yoy_vals) > 0 else 0
@@ -150,7 +151,7 @@ class RevenueMomentumStrategy(Strategy):
         self._last_month: str = ""
         self._cached_weights: dict[str, float] = {}
         self._rev_cache: dict[str, pd.DataFrame] | None = None
-        self._event_rebalancer = None
+        self._event_rebalancer: Any = None
 
     def name(self) -> str:
         return "revenue_momentum"
@@ -270,7 +271,7 @@ class RevenueMomentumStrategy(Strategy):
         if self.weight_method == "signal":
             weights = signal_weight(signals, constraints)
         elif self.weight_method == "risk_parity":
-            weights = risk_parity(signals, constraints)
+            weights = risk_parity(signals, {}, constraints)
         else:
             weights = equal_weight(signals, constraints)
 

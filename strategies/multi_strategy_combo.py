@@ -87,8 +87,8 @@ class MultiStrategyCombo(Strategy):
         merged: dict[str, float] = {}
         for i, (strat, alloc) in enumerate(zip(self.strategies, strategy_allocs)):
             sub_w = sub_weights_list[i]
-            for sym, w in sub_w.items():
-                merged[sym] = merged.get(sym, 0.0) + w * alloc
+            for sym, wt in sub_w.items():
+                merged[sym] = merged.get(sym, 0.0) + wt * alloc
 
         # 4. 正規化（總權重不超過 0.95）
         total = sum(merged.values())

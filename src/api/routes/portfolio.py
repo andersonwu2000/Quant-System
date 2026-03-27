@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
@@ -375,7 +375,7 @@ class OptimizeResponse(BaseModel):
 
 
 @router.post("/optimize", response_model=OptimizeResponse)
-async def optimize_portfolio(req: OptimizeRequest, api_key: str = Depends(verify_api_key), _role: dict = Depends(require_role("researcher"))) -> OptimizeResponse:
+async def optimize_portfolio(req: OptimizeRequest, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("researcher"))) -> OptimizeResponse:
     """Run portfolio optimization with specified method."""
     try:
         from src.data.sources.yahoo import YahooFeed
@@ -433,7 +433,7 @@ class RiskAnalysisResponse(BaseModel):
 
 
 @router.post("/risk-analysis", response_model=RiskAnalysisResponse)
-async def portfolio_risk_analysis(req: RiskAnalysisRequest, api_key: str = Depends(verify_api_key), _role: dict = Depends(require_role("researcher"))) -> RiskAnalysisResponse:
+async def portfolio_risk_analysis(req: RiskAnalysisRequest, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("researcher"))) -> RiskAnalysisResponse:
     """Compute portfolio risk metrics."""
     try:
         from src.data.sources.yahoo import YahooFeed
@@ -471,7 +471,7 @@ async def portfolio_risk_analysis(req: RiskAnalysisRequest, api_key: str = Depen
         port_risk = rm.portfolio_risk(weights, cov)
         risk_contrib = rm.risk_contribution(weights, cov)
 
-        port_returns = sum(returns_df[s] * weights.get(s, 0) for s in returns_df.columns)
+        port_returns = cast("pd.Series[Any]", sum(returns_df[s] * weights.get(s, 0) for s in returns_df.columns))
         var_val = RiskModel.compute_var(port_returns, req.confidence)
         cvar_val = RiskModel.compute_cvar(port_returns, req.confidence)
 
@@ -501,7 +501,7 @@ class HedgeRecommendationResponse(BaseModel):
 
 
 @router.post("/hedge-recommendations", response_model=list[HedgeRecommendationResponse])
-async def get_hedge_recommendations(req: HedgeRequest, api_key: str = Depends(verify_api_key), _role: dict = Depends(require_role("researcher"))) -> list[HedgeRecommendationResponse]:
+async def get_hedge_recommendations(req: HedgeRequest, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("researcher"))) -> list[HedgeRecommendationResponse]:
     """Get currency hedge recommendations."""
     try:
         from src.portfolio.currency import CurrencyHedger
@@ -513,7 +513,7 @@ async def get_hedge_recommendations(req: HedgeRequest, api_key: str = Depends(ve
         return [
             HedgeRecommendationResponse(
                 currency=r.currency,
-                exposure_pct=float(r.gross_exposure / Decimal(str(req.total_nav)) * 100) if req.total_nav > 0 else 0.0,
+                exposure_pct=float(r.gross_exposure / Decimal(str(req.total_nav)) * Decimal(100)) if req.total_nav > 0 else 0.0,
                 hedge_ratio=float(r.hedge_ratio),
                 hedge_amount=float(r.hedged_amount),
                 reason=r.reason,

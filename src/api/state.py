@@ -59,6 +59,7 @@ def save_portfolio(portfolio: Portfolio) -> None:
         state = {
             "cash": str(portfolio.cash),
             "initial_cash": str(portfolio.initial_cash),
+            "nav_sod": str(portfolio.nav_sod),  # #7: persist for daily_drawdown
             "positions": positions,
         }
         tmp_path = _PERSIST_PATH.with_suffix(".tmp")
@@ -96,6 +97,7 @@ def load_portfolio() -> Portfolio | None:
         portfolio = Portfolio(
             cash=Decimal(raw["cash"]),
             initial_cash=Decimal(raw.get("initial_cash", raw["cash"])),
+            nav_sod=Decimal(raw.get("nav_sod", "0")),  # #7: restore for daily_drawdown
             positions=positions,
         )
         logger.info(

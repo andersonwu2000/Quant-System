@@ -88,7 +88,7 @@ async def get_system_alerts(
     alerts = []
     try:
         state = get_app_state()
-        for alert in state.risk_engine.alerts[-limit:]:
+        for alert in state.risk_engine._alerts[-limit:]:
             alerts.append(SystemAlertItem(
                 timestamp=str(getattr(alert, 'timestamp', '')),
                 category="risk",
