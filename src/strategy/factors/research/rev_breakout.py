@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_zscore_12m
+"""Auto-generated research factor: rev_breakout
 
-12 月 z-score（shorter window, more responsive）
-Academic basis: SUE with varying lookback
-Direction: revenue_surprise_magnitude
+本月營收突破近 12 月最高值的幅度
+Academic basis: 52-week high effect applied to revenue
+Direction: earnings_surprise_proxy
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_zscore_12m(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_zscore_12m for all symbols at as_of date."""
+def compute_rev_breakout(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_breakout for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,14 +53,14 @@ def compute_rev_zscore_12m(symbols: list[str], as_of: pd.Timestamp) -> dict[str,
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 12:
+            if len(revenues) < 13:
                 continue
-            recent = revenues[-12:]
-            mean = float(np.mean(recent))
-            std = float(np.std(recent, ddof=1))
-            if std <= 0:
+            # 排除當月，取過去 12 個月的最高值
+            past_max = float(np.max(revenues[-13:-1]))
+            if past_max <= 0:
                 continue
-            results[sym] = float((revenues[-1] - mean) / std)
+            # 當月超越過去 12 月高點的幅度（0 if below）
+            results[sym] = float(max(0, revenues[-1] / past_max - 1))
 
         except Exception:
             continue

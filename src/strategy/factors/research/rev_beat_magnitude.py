@@ -1,8 +1,8 @@
 """Auto-generated research factor: rev_beat_magnitude
 
-test
-Academic basis: 
-Direction: test
+超越去年同月的幅度加權（大幅超越權重更高）
+Academic basis: Non-linear earnings surprise response
+Direction: revenue_surprise_magnitude
 """
 
 from __future__ import annotations

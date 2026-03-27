@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_zscore_12m
+"""Auto-generated research factor: rev_positive_streak
 
-12 月 z-score（shorter window, more responsive）
-Academic basis: SUE with varying lookback
-Direction: revenue_surprise_magnitude
+連續幾個月營收正成長（動量持續性）
+Academic basis: Streak effects in momentum
+Direction: revenue_stability
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_zscore_12m(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_zscore_12m for all symbols at as_of date."""
+def compute_rev_positive_streak(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_positive_streak for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,14 +53,15 @@ def compute_rev_zscore_12m(symbols: list[str], as_of: pd.Timestamp) -> dict[str,
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 12:
+            if len(revenues) < 6:
                 continue
-            recent = revenues[-12:]
-            mean = float(np.mean(recent))
-            std = float(np.std(recent, ddof=1))
-            if std <= 0:
-                continue
-            results[sym] = float((revenues[-1] - mean) / std)
+            streak = 0
+            for i in range(len(revenues) - 1, 0, -1):
+                if revenues[i] > revenues[i - 1]:
+                    streak += 1
+                else:
+                    break
+            results[sym] = float(streak)
 
         except Exception:
             continue

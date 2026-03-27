@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_zscore_12m
+"""Auto-generated research factor: rev_consecutive_beat
 
-12 月 z-score（shorter window, more responsive）
-Academic basis: SUE with varying lookback
-Direction: revenue_surprise_magnitude
+連續 N 月營收超越去年同月的月數
+Academic basis: Earnings consistency premium
+Direction: revenue_acceleration_2nd_order
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_zscore_12m(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_zscore_12m for all symbols at as_of date."""
+def compute_rev_consecutive_beat(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_consecutive_beat for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,14 +53,13 @@ def compute_rev_zscore_12m(symbols: list[str], as_of: pd.Timestamp) -> dict[str,
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 12:
+            if len(revenues) < 24:
                 continue
-            recent = revenues[-12:]
-            mean = float(np.mean(recent))
-            std = float(np.std(recent, ddof=1))
-            if std <= 0:
-                continue
-            results[sym] = float((revenues[-1] - mean) / std)
+            count = 0
+            for i in range(max(len(revenues)-12, 12), len(revenues)):
+                if revenues[i-12] > 0 and revenues[i] > revenues[i-12]:
+                    count += 1
+            results[sym] = float(count)
 
         except Exception:
             continue
