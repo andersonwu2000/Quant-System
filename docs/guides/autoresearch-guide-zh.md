@@ -20,13 +20,17 @@ powershell -ExecutionPolicy Bypass -File docker/autoresearch/init.ps1
 
 這會：建立工作區 → 建構 Docker image → 啟動容器 → 驗證健康。
 
-### 啟動研究
+### 啟動研究（推薦）
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop-docker.ps1
+powershell -ExecutionPolicy Bypass -File scripts/autoresearch/run.ps1
 ```
 
-Agent 會自動開始跑實驗，session 結束後自動重啟。
+一鍵啟動全部：Docker 容器 + 狀態報告（每 10 分鐘）+ 因子研究循環。
+
+狀態報告自動更新到 `docs/research/autoresearch/status.md`。
+
+> 也可以只跑研究不跑報告：`powershell -File scripts/autoresearch/loop-docker.ps1`
 
 ### 停止研究
 
