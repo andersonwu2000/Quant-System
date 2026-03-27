@@ -54,7 +54,10 @@ def compute_factor(
 
             # === Baseline: 12-1 Momentum ===
             # Skip most recent 21 days (short-term reversal)
-            ret_12m = float(close.iloc[-22] / close.iloc[-252] - 1)
+            base = float(close.iloc[-252])
+            if base <= 0:
+                continue
+            ret_12m = float(close.iloc[-22] / base - 1)
             results[sym] = ret_12m
 
         except Exception:

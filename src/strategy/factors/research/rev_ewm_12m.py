@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_accel_4m_9m
+"""Auto-generated research factor: rev_ewm_12m
 
-4M/9M ratio
-Academic basis: Revenue momentum with varying windows
-Direction: multi_period_momentum
+12M exponential weighted mean
+Academic basis: Exponential smoothing
+Direction: time_decay_revenue
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_accel_4m_9m(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_accel_4m_9m for all symbols at as_of date."""
+def compute_rev_ewm_12m(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_ewm_12m for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,13 +53,11 @@ def compute_rev_accel_4m_9m(symbols: list[str], as_of: pd.Timestamp) -> dict[str
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 9:
+            if len(revenues) < 12:
                 continue
-            rev_short = float(np.mean(revenues[-4:]))
-            rev_long = float(np.mean(revenues[-9:]))
-            if rev_long <= 0:
-                continue
-            results[sym] = float(rev_short / rev_long)
+            import pandas as _pd
+            ewm_val = float(_pd.Series(revenues[-12:]).ewm(span=12).mean().iloc[-1])
+            results[sym] = float(ewm_val)
 
         except Exception:
             continue

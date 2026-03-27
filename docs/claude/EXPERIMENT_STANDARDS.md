@@ -123,10 +123,14 @@
 4. **大規模 IC 和 L1-L5 forward return 必須一致**：都用 `close[as_of+h] / close[as_of] - 1`
 5. **月度取樣用最近交易日**：不可直接用月末日期（可能不是交易日）
 
-### 3.4 報告流程
+### 3.4 報告流程（autoresearch 模式）
 
-L5 通過後，不論後續是否通過，都寫報告到 `docs/research/{factor_name}.md`。
-報告包含：L5 結果、大規模 IC 表格（含基準對比）、Validator 13 項、部署判定。
+因子報告存放在 `docs/research/auto/`。**入選標準**（必須全部滿足）：
+1. evaluate.py 通過 L4（composite_score > 0, passed=True）
+2. 大規模 ICIR(20d) ≥ 0.20
+3. StrategyValidator ≥ 10/15
+
+未達標準的因子只記錄在 `results.tsv`，不寫 markdown 報告（避免假陽性汙染）。
 
 ---
 
