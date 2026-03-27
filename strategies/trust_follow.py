@@ -94,6 +94,10 @@ class TrustFollowStrategy(Strategy):
         end_str = pd.Timestamp(current_date).strftime("%Y-%m-%d")
 
         # Revenue data needs longer history for 12M comparison
+        # 40 天營收公布延遲（台灣月營收於次月 10 日前公布）
+        rev_cutoff = (
+            pd.Timestamp(current_date) - pd.DateOffset(days=40)
+        ).strftime("%Y-%m-%d")
         rev_start = (
             pd.Timestamp(current_date) - pd.DateOffset(years=2)
         ).strftime("%Y-%m-%d")
@@ -131,7 +135,7 @@ class TrustFollowStrategy(Strategy):
                     continue
 
                 # 條件 2 & 3: 營收數據
-                rev_df = ctx._fundamentals.get_revenue(symbol, rev_start, end_str)
+                rev_df = ctx._fundamentals.get_revenue(symbol, rev_start, rev_cutoff)
                 if rev_df.empty or len(rev_df) < 12:
                     continue
 

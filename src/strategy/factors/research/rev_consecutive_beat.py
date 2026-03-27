@@ -24,7 +24,9 @@ def compute_rev_consecutive_beat(symbols: list[str], as_of: pd.Timestamp) -> dic
             if df.empty or "revenue" not in df.columns:
                 continue
             df["date"] = pd.to_datetime(df["date"])
-            df = df[df["date"] <= as_of].sort_values("date")
+            # 40 天營收公布延遲
+            usable_cutoff = as_of - pd.DateOffset(days=40)
+            df = df[df["date"] <= usable_cutoff].sort_values("date")
             if len(df) < 12:
                 continue
 
