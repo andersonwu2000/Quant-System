@@ -23,7 +23,7 @@ while ($true) {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 
-    claude -p $prompt --dangerously-skip-permissions --max-turns 200
+    claude -p $prompt --dangerously-skip-permissions --max-turns 200 --model sonnet
 
     Write-Host ""
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Session ended. Restarting in 10s..." -ForegroundColor Yellow

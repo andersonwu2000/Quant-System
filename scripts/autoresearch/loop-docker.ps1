@@ -25,7 +25,7 @@ while ($true) {
     Write-Host "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
 
-    claude -p $prompt --dangerously-skip-permissions --max-turns 200
+    claude -p $prompt --dangerously-skip-permissions --max-turns 200 --model sonnet
 
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Session ended. Restarting in 10s..." -ForegroundColor Yellow
     Start-Sleep -Seconds 10
