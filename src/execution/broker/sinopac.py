@@ -209,18 +209,29 @@ class SinopacBroker(BrokerAdapter):
 
             order.client_order_id = broker_id
 
-            # Simulation mode: 模擬即時成交（Shioaji sim 盤外不撮合）
+            # Simulation mode: 模擬即時成交，含滑價和最低佣金
             if self._config.simulation:
+                price = order.price or Decimal("0")
+                # 滑價 5 bps（和 PaperBroker/SimBroker 一致）
+                slippage = price * Decimal("5") / Decimal("10000")
+                if order.side == Side.BUY:
+                    fill_price = price + slippage
+                else:
+                    fill_price = max(price - slippage, Decimal("0.01"))
+
                 order.status = OrderStatus.FILLED
                 order.filled_qty = order.quantity
-                order.filled_avg_price = order.price or Decimal("0")
-                notional = order.quantity * (order.price or Decimal("0"))
-                order.commission = notional * Decimal("0.001425")
-                if order.side == Side.SELL:
-                    order.commission += notional * Decimal("0.003")
+                order.filled_avg_price = fill_price
+                notional = order.quantity * fill_price
+                commission = notional * Decimal("0.001425")
+                if commission < Decimal("20"):
+                    commission = Decimal("20")
+                tax = notional * Decimal("0.003") if order.side == Side.SELL else Decimal("0")
+                order.commission = commission + tax
                 logger.info(
-                    "Order FILLED (sim): %s %s %s @ %s",
-                    order.side.value, order.quantity, order.instrument.symbol, order.price,
+                    "Order FILLED (sim): %s %s %s @ %s (slippage %s)",
+                    order.side.value, order.quantity, order.instrument.symbol,
+                    fill_price, slippage,
                 )
             else:
                 order.status = OrderStatus.SUBMITTED

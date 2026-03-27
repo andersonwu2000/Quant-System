@@ -94,12 +94,17 @@ def load_portfolio() -> Portfolio | None:
                 avg_cost=Decimal(pos_data["avg_cost"]),
                 market_price=Decimal(pos_data["market_price"]),
             )
+        cash = Decimal(raw["cash"])
+        initial_cash = Decimal(raw.get("initial_cash", raw["cash"]))
         portfolio = Portfolio(
-            cash=Decimal(raw["cash"]),
-            initial_cash=Decimal(raw.get("initial_cash", raw["cash"])),
-            nav_sod=Decimal(raw.get("nav_sod", "0")),  # #7: restore for daily_drawdown
+            cash=cash,
+            initial_cash=initial_cash,
             positions=positions,
         )
+        # E5: nav_sod 預設為當前 NAV（不是 0），避免 kill switch 失效
+        saved_nav_sod = raw.get("nav_sod", "0")
+        nav_sod = Decimal(saved_nav_sod) if saved_nav_sod != "0" else portfolio.nav
+        portfolio.nav_sod = nav_sod
         logger.info(
             "Loaded persisted portfolio: cash=%s, %d positions",
             portfolio.cash, len(portfolio.positions),

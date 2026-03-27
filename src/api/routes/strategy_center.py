@@ -228,19 +228,27 @@ async def get_drift(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
 async def trigger_rebalance(
     api_key: str = Depends(require_role("trader")),
 ) -> dict[str, Any]:
-    """手動觸發一鍵再平衡（= monthly_revenue_rebalance 的手動版）。"""
+    """手動觸發一鍵再平衡。使用 config.active_strategy。"""
     from src.api.state import get_app_state
     from src.core.config import get_config
+
+    state = get_app_state()
+    config = get_config()
+
+    # B1: acquire mutation lock to prevent race with kill switch / pipeline
+    async with state.mutation_lock:
+        return await _do_rebalance(state, config)
+
+
+async def _do_rebalance(state: Any, config: Any) -> dict[str, Any]:
+    """Rebalance implementation (called under mutation_lock)."""
     from src.data.sources import create_feed, create_fundamentals
     from src.strategy.base import Context
     from src.strategy.engine import weights_to_orders
     from src.strategy.registry import resolve_strategy
 
-    state = get_app_state()
-    config = get_config()
-
     try:
-        strategy = resolve_strategy("revenue_momentum_hedged")
+        strategy = resolve_strategy(config.active_strategy)
 
         # Universe: from portfolio positions or market data
         universe = list(state.portfolio.positions.keys())
@@ -289,7 +297,7 @@ async def trigger_rebalance(
 
         # Save selection
         from src.scheduler.jobs import _save_selection_log
-        _save_selection_log(target_weights)
+        _save_selection_log(target_weights, strategy.name())
 
         # Risk check + submit
         approved = []
