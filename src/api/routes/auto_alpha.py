@@ -816,10 +816,10 @@ async def submit_factor(
 
 
 def _write_auto_report(req: "SubmitFactorRequest", results: dict, report: Any, checks: list) -> None:
-    """Write a deployment report to docs/research/auto/ for deployed factors."""
+    """Write a deployment report to docs/research/autoresearch/ for deployed factors."""
     from pathlib import Path
 
-    report_dir = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "research" / "auto"
+    report_dir = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "research" / "autoresearch"
     report_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
