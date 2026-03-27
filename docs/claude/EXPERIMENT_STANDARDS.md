@@ -108,7 +108,7 @@
 |------|------|------|
 | L5 快篩 | ICIR ≥ 0.30 | 小樣本快速檢查（數秒） |
 | 大規模 IC | ICIR(20d) ≥ 0.20 | 全 universe 驗證（865+ 檔，數分鐘） |
-| StrategyValidator | ≥ 13/15 通過（排除 DSR） | 15 項驗證閘門 |
+| StrategyValidator | ≥ 14/15 通過（排除 DSR） | 15 項驗證閘門 |
 | vs 基準 | Sharpe > 0050.TW | 風險調整必須打敗大盤 |
 | 絕對報酬 | CAGR > 8% | 絕對報酬門檻 |
 | 近期表現 | recent_period_sharpe > -0.10 | 允許輕微噪音 |

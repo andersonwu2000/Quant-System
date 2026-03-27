@@ -350,12 +350,16 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
         )
         return None
     elif "zscore" in name:
-        code += '''
-            if len(revenues) < 24:
+        # 先檢查是否為 parametric variant (rev_zscore_12m 等)
+        import re as _re
+        _m = _re.search(r"zscore_(\d+)m", name)
+        months = int(_m.group(1)) if _m else 24
+        code += f'''
+            if len(revenues) < {months}:
                 continue
-            recent_24 = revenues[-24:]
-            mean = float(np.mean(recent_24))
-            std = float(np.std(recent_24, ddof=1))
+            recent = revenues[-{months}:]
+            mean = float(np.mean(recent))
+            std = float(np.std(recent, ddof=1))
             if std <= 0:
                 continue
             results[sym] = float((revenues[-1] - mean) / std)
@@ -389,26 +393,9 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
                 continue
             results[sym] = float(tau)
 '''
-    elif name.startswith("rev_zscore_") and name[-1].isdigit():
-        # zscore 變體：rev_zscore_12m, rev_zscore_18m, rev_zscore_36m 等
-        # 從名稱提取月數
-        import re
-        m = re.search(r"(\d+)m$", name)
-        months = int(m.group(1)) if m else 24
-        code += f'''
-            if len(revenues) < {months}:
-                continue
-            recent = revenues[-{months}:]
-            mean = float(np.mean(recent))
-            std = float(np.std(recent, ddof=1))
-            if std <= 0:
-                continue
-            results[sym] = float((revenues[-1] - mean) / std)
-'''
-    elif name.startswith("rev_accel_") and name[-1].isdigit():
+    elif _re.search(r"rev_accel_\d+m_\d+m", name):
         # acceleration 變體：rev_accel_2m_6m, rev_accel_6m_12m 等
-        import re
-        m = re.search(r"(\d+)m_(\d+)m$", name)
+        m = _re.search(r"(\d+)m_(\d+)m", name)
         if m:
             short, long = int(m.group(1)), int(m.group(2))
         else:
@@ -465,7 +452,11 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
     # Write to file
     factor_path = FACTOR_DIR / f"{name}.py"
     FACTOR_DIR.mkdir(parents=True, exist_ok=True)
-    factor_path.write_text(code, encoding="utf-8")
+    # 不覆寫已存在的 .py（可能由外部 Claude Code 手動寫入）
+    if factor_path.exists():
+        logger.info("[Factor] %s already exists — skipping auto-generation", factor_path)
+    else:
+        factor_path.write_text(code, encoding="utf-8")
     return str(factor_path)
 
 
@@ -869,7 +860,7 @@ class AlphaResearchAgent:
         6. 大規模 ICIR(20d) >= 0.20（865+ 支台股驗證）
         """
         n_passed = validator_result.get("n_passed", 0)
-        n_total = validator_result.get("n_total", 13)
+        n_total = validator_result.get("n_total", 15)
 
         # 計算排除 deflated_sharpe 後的通過數
         checks = validator_result.get("checks", [])
@@ -878,9 +869,9 @@ class AlphaResearchAgent:
             if c["passed"] or c["name"] == "deflated_sharpe"
         )
 
-        if n_passed_excl_dsr < 12:
+        if n_passed_excl_dsr < 14:
             logger.info(
-                "[Deploy] %s: %d/%d (excl DSR: %d/13) < 12, skip deploy",
+                "[Deploy] %s: %d/%d (excl DSR: %d/15) < 12, skip deploy",
                 hypothesis.name, n_passed, n_total, n_passed_excl_dsr,
             )
             return
@@ -1158,7 +1149,7 @@ class AlphaResearchAgent:
             }
         except Exception as e:
             logger.warning("[Validator] Failed: %s", e)
-            return {"n_passed": 0, "n_total": 13, "passed": False, "error": str(e)}
+            return {"n_passed": 0, "n_total": 15, "passed": False, "error": str(e)}
 
     def _write_discovery_report(
         self, traj: ResearchTrajectory, eval_result: EvaluationResult,
@@ -1195,7 +1186,7 @@ class AlphaResearchAgent:
         # StrategyValidator 結果
         if validator_result:
             n_pass = validator_result.get("n_passed", 0)
-            n_total = validator_result.get("n_total", 13)
+            n_total = validator_result.get("n_total", 15)
             lines.extend([
                 "",
                 f"## StrategyValidator: {n_pass}/{n_total}",
@@ -1282,9 +1273,9 @@ class AlphaResearchAgent:
         if validator_result:
             checks = validator_result.get("checks", [])
             n_excl_dsr = sum(1 for c in checks if c["passed"] or c["name"] == "deflated_sharpe")
-            if n_excl_dsr < 12:
+            if n_excl_dsr < 14:
                 deploy_eligible = False
-                reasons.append(f"Validator (excl DSR) {n_excl_dsr}/13 < 12")
+                reasons.append(f"Validator (excl DSR) {n_excl_dsr}/15 < 12")
             # DSR 寬鬆門檻
             dsr_val = next((float(c["value"]) for c in checks if c["name"] == "deflated_sharpe"), 0)
             if dsr_val < 0.70:
@@ -1311,7 +1302,7 @@ class AlphaResearchAgent:
         # Sharpe vs 0050 check
         if validator_result:
             sharpe_val = next((float(c["value"]) for c in checks if c["name"] == "sharpe"), 0)
-            bench_sharpe = 0.857  # 0050.TW baseline
+            bench_sharpe = self._get_0050_sharpe() if hasattr(self, '_get_0050_sharpe') else 0.857
             if sharpe_val <= bench_sharpe:
                 deploy_eligible = False
                 reasons.append(f"Sharpe {sharpe_val:.3f} <= 0050 {bench_sharpe:.3f}")
@@ -1544,7 +1535,11 @@ def main() -> None:
             traj = agent.run_one_cycle(direction=args.direction)
 
             name = traj.hypothesis.get("name", "?")
-            if traj.failure_step == "hypothesis" and "No untested" in (traj.failure_reason or ""):
+            is_idle = (
+                traj.failure_step == "hypothesis"
+                and any(kw in (traj.failure_reason or "") for kw in ("No untested", "No available"))
+            )
+            if is_idle:
                 idle_count += 1
                 if idle_count == 1:
                     # 第一次無假說：嘗試生成變體
