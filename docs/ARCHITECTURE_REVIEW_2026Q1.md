@@ -331,18 +331,15 @@ ExecutionService(cost_model=cost)
 3. 異常偵測（drawdown > 3%、NAV 偏離預期）
 4. 每日/每週摘要報告
 
-**架構**：
+**架構**（已整合進 API Server）：
 ```
-API Server (已有)
-  → GET /execution/paper-trading/status（NAV、持倉）
-  → GET /strategy/selection/latest（選股）
-  → GET /strategy/regime（市場環境）
+API Server 啟動（paper/live mode）
+  → _monitoring_loop() asyncio task（每小時）
+    → NAV 快照 → data/paper_trading/snapshots/
+    → 異常偵測 → WebSocket broadcast + log
+    → 14:00 每日報告 → docs/dev/paper/
 
-監控腳本 (新增)
-  → 每小時輪詢 API
-  → 寫入 data/paper_trading/snapshots/YYYY-MM-DD_HH.json
-  → 每日生成摘要到 docs/dev/paper/
-  → 異常時發送通知（Discord/LINE）
+scripts/paper_trading_monitor.py 保留為 CLI 工具（手動快照/報告）
 ```
 
 **實作項目**：

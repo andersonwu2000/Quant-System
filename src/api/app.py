@@ -206,9 +206,9 @@ def create_app() -> FastAPI:
                 asyncio.create_task(_price_poll_loop())
                 logger.info("Price polling fallback started (60s interval)")
 
-            # #12: 每日 NAV snapshot（13:35 台股收盤後）
-            async def _daily_nav_snapshot() -> None:
-                """每日記錄 NAV snapshot 到 data/paper_trading/snapshots/。"""
+            # ── 整合監控：每小時快照 + 異常偵測 + 每日報告 ──
+            async def _monitoring_loop() -> None:
+                """Paper trading integrated monitor — runs inside API server."""
                 import json as _json
                 from pathlib import Path as _Path
                 from datetime import datetime as _dt, timedelta as _tdelta, timezone as _tz
@@ -216,33 +216,94 @@ def create_app() -> FastAPI:
                 _tw = _tz(_tdelta(hours=8))
                 snap_dir = _Path("data/paper_trading/snapshots")
                 snap_dir.mkdir(parents=True, exist_ok=True)
+                report_dir = _Path("docs/dev/paper")
+                report_dir.mkdir(parents=True, exist_ok=True)
+                _daily_report_done: str = ""
 
                 while True:
-                    await asyncio.sleep(300)  # check every 5 min
-                    now = _dt.now(_tw)  # P14: 用台灣時間
-                    # 只在 13:25-13:55 之間存一次（台股收盤，寬鬆窗口避免 sleep drift）
-                    if now.hour == 13 and 25 <= now.minute <= 55:
-                        today = now.strftime("%Y-%m-%d")
-                        path = snap_dir / f"{today}.json"
-                        if not path.exists():
-                            snap = {
-                                "date": today,
-                                "nav": float(state.portfolio.nav),
-                                "cash": float(state.portfolio.cash),
-                                "positions": {
-                                    s: {"qty": float(p.quantity), "price": float(p.market_price)}
-                                    for s, p in state.portfolio.positions.items()
-                                },
-                                "n_positions": len(state.portfolio.positions),
-                            }
+                    await asyncio.sleep(3600)  # 每小時
+                    try:
+                        now = _dt.now(_tw)
+                        ts = now.strftime("%Y-%m-%d_%H%M")
+                        nav = float(state.portfolio.nav)
+                        cash = float(state.portfolio.cash)
+                        n_pos = len(state.portfolio.positions)
+
+                        # 1. 快照
+                        snap = {
+                            "timestamp": now.isoformat(),
+                            "nav": nav,
+                            "cash": cash,
+                            "n_positions": n_pos,
+                            "position_symbols": sorted(state.portfolio.positions.keys()),
+                        }
+                        (snap_dir / f"{ts}.json").write_text(
+                            _json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8"
+                        )
+                        logger.info("Monitor snapshot: NAV=%.0f, positions=%d", nav, n_pos)
+
+                        # 2. 異常偵測
+                        alerts = []
+                        # 檢查前一個快照的 NAV 變化
+                        prev_snaps = sorted(snap_dir.glob("*.json"))
+                        if len(prev_snaps) >= 2:
                             try:
-                                path.write_text(_json.dumps(snap, indent=2, ensure_ascii=False))
-                                logger.info("Daily NAV snapshot: %s (NAV=%s)", today, snap["nav"])
+                                prev = _json.loads(prev_snaps[-2].read_text(encoding="utf-8"))
+                                prev_nav = prev.get("nav", nav)
+                                if prev_nav > 0:
+                                    change = (nav - prev_nav) / prev_nav
+                                    if change < -0.03:
+                                        alerts.append(f"NAV dropped {change:.1%}")
                             except Exception:
-                                logger.debug("NAV snapshot write failed", exc_info=True)
+                                pass
+                        if n_pos == 0 and nav > 100000:
+                            alerts.append("No positions but significant NAV")
+
+                        # 異常 → WebSocket + 通知
+                        for alert in alerts:
+                            logger.warning("MONITOR ANOMALY: %s", alert)
+                            await ws_manager.broadcast("alerts", {
+                                "type": "monitor_anomaly",
+                                "message": alert,
+                            })
+
+                        # 3. 每日報告（14:00 台股收盤後）
+                        today = now.strftime("%Y-%m-%d")
+                        if now.hour >= 14 and _daily_report_done != today:
+                            _daily_report_done = today
+                            # 收集今日快照
+                            today_snaps = []
+                            for p in sorted(snap_dir.glob(f"{today}_*.json")):
+                                try:
+                                    today_snaps.append(_json.loads(p.read_text(encoding="utf-8")))
+                                except Exception:
+                                    continue
+                            if today_snaps:
+                                first_nav = today_snaps[0]["nav"]
+                                last_nav = today_snaps[-1]["nav"]
+                                daily_ret = (last_nav - first_nav) / first_nav if first_nav > 0 else 0
+                                total_ret = (last_nav - 10_000_000) / 10_000_000
+                                report_lines = [
+                                    f"# Paper Trading Daily Report - {today}",
+                                    "",
+                                    "| Metric | Value |",
+                                    "|--------|-------|",
+                                    f"| NAV | ${last_nav:,.0f} |",
+                                    f"| Daily Return | {daily_ret:+.2%} |",
+                                    f"| Total Return | {total_ret:+.2%} |",
+                                    f"| Positions | {today_snaps[-1].get('n_positions', 0)} |",
+                                    f"| Snapshots | {len(today_snaps)} |",
+                                ]
+                                (report_dir / f"{today}_daily.md").write_text(
+                                    "\n".join(report_lines), encoding="utf-8"
+                                )
+                                logger.info("Daily report generated: %s", today)
+
+                    except Exception:
+                        logger.debug("Monitor loop error", exc_info=True)
 
             if config.mode in ("paper", "live"):
-                asyncio.create_task(_daily_nav_snapshot())
+                asyncio.create_task(_monitoring_loop())
 
             logger.info("RealtimeRiskMonitor initialized")
 
