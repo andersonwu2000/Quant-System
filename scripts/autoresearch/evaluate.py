@@ -535,15 +535,14 @@ def evaluate() -> dict:
     oos_ic_sign = 1 if oos_ic_mean >= 0 else -1
 
     # L5 gate checks
+    # P-01: failure messages hide OOS values to prevent indirect overfitting
     l5_failure = ""
     if is_ic_sign != oos_ic_sign:
-        l5_failure = f"OOS IC sign flip: IS={ic_20d:.4f}, OOS={oos_ic_mean:.4f}"
+        l5_failure = "OOS IC sign inconsistent with IS"
     elif abs(best_icir) > 0 and abs(oos_icir) < abs(best_icir) * (1 - OOS_ICIR_DECAY_MAX):
-        l5_failure = (f"OOS ICIR decay too large: IS={best_icir:.4f}, OOS={oos_icir:.4f}, "
-                      f"decay={1 - abs(oos_icir)/abs(best_icir):.0%} > {OOS_ICIR_DECAY_MAX:.0%}")
+        l5_failure = "OOS ICIR decay exceeds threshold"
     elif oos_positive_ratio < OOS_MIN_POSITIVE_RATIO and oos_total_months >= 6:
-        l5_failure = (f"OOS positive months {oos_positive_months}/{oos_total_months} "
-                      f"({oos_positive_ratio:.0%}) < {OOS_MIN_POSITIVE_RATIO:.0%}")
+        l5_failure = "OOS monthly consistency below threshold"
 
     # P-01 fix: only show pass/fail to agent, not exact OOS values
     # (prevents indirect OOS overfitting via feedback leakage)
@@ -551,7 +550,7 @@ def evaluate() -> dict:
 
     if l5_failure:
         return _make_result(
-            level="L4", failure=f"L5 OOS fail: {l5_failure}",
+            level="L4", failure=f"L5 OOS fail: {l5_failure}",  # generic msg, no OOS values
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             fitness=fitness, positive_years=positive_years, total_years=total_years,
