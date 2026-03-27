@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.core.config import TradingConfig
@@ -77,12 +77,12 @@ def _has_completed_run_today() -> bool:
     return False
 
 
-def check_crashed_runs() -> list[dict]:
+def check_crashed_runs() -> list[dict[str, Any]]:
     """Check for pipeline runs with status='started' (indicates a crash).
 
     Returns list of crashed run records. Called on scheduler startup.
     """
-    crashed: list[dict] = []
+    crashed: list[dict[str, Any]] = []
     if not PIPELINE_RUNS_DIR.exists():
         return crashed
     for path in PIPELINE_RUNS_DIR.glob("*.json"):
@@ -427,7 +427,7 @@ def _save_selection_log_legacy(weights: dict[str, float]) -> None:
     logger.info("Selection log saved: %s", path)
 
 
-def _save_trade_log(trades: list, strategy_name: str) -> None:
+def _save_trade_log(trades: list[Any], strategy_name: str) -> None:
     """記錄每次 rebalance 的交易結果。(R10.5)"""
     import json
     from pathlib import Path

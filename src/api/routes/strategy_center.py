@@ -203,8 +203,8 @@ async def get_drift(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
             "status": "new" if actual == 0 and target > 0 else ("exit" if target == 0 and actual > 0 else "held"),
         })
 
-    drift_items.sort(key=lambda x: abs(float(x["drift"])), reverse=True)
-    max_drift = max(abs(float(d["drift"])) for d in drift_items) if drift_items else 0
+    drift_items.sort(key=lambda x: abs(float(str(x["drift"]))), reverse=True)
+    max_drift = max(abs(float(str(d["drift"]))) for d in drift_items) if drift_items else 0
 
     selection_date = None
     if SELECTIONS_DIR.exists():

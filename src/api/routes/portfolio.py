@@ -513,7 +513,7 @@ async def get_hedge_recommendations(req: HedgeRequest, api_key: str = Depends(ve
         return [
             HedgeRecommendationResponse(
                 currency=r.currency,
-                exposure_pct=float(r.gross_exposure / Decimal(str(req.total_nav)) * Decimal(100)) if req.total_nav > 0 else 0.0,
+                exposure_pct=r.gross_exposure / req.total_nav * 100 if req.total_nav > 0 else 0.0,
                 hedge_ratio=float(r.hedge_ratio),
                 hedge_amount=float(r.hedged_amount),
                 reason=r.reason,

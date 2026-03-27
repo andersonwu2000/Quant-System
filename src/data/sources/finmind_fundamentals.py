@@ -195,13 +195,13 @@ class FinMindFundamentals(FundamentalsProvider):
 
         cached_full = self._get_cached(full_cache_key)
         if cached_full is not None:
-            full_result: pd.DataFrame = cached_full  # type: ignore[assignment]
+            assert isinstance(cached_full, pd.DataFrame)
             # Filter and return
-            if full_result.empty:
+            if cached_full.empty:
                 return empty
-            filtered: pd.DataFrame = full_result[
-                (full_result["date"] >= pd.Timestamp(start))
-                & (full_result["date"] <= pd.Timestamp(end))
+            filtered: pd.DataFrame = cached_full[
+                (cached_full["date"] >= pd.Timestamp(start))
+                & (cached_full["date"] <= pd.Timestamp(end))
             ].reset_index(drop=True)
             return filtered
 
@@ -317,7 +317,8 @@ class FinMindFundamentals(FundamentalsProvider):
         empty = pd.DataFrame(columns=["date", "trust_net", "foreign_net", "dealer_net"])
 
         if cached_full is not None:
-            full_result: pd.DataFrame = cached_full  # type: ignore[assignment]
+            assert isinstance(cached_full, pd.DataFrame)
+            full_result: pd.DataFrame = cached_full
         else:
             # Local parquet only — no API calls during backtest
             local_df = self._read_local_parquet(bare_id, "institutional")
