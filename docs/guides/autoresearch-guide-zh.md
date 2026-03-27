@@ -45,6 +45,7 @@ docker compose down
 | 操作 | 指令 |
 |------|------|
 | 查看實驗進度 | `cat docker/autoresearch/work/results.tsv` |
+| 查看狀態報告 | `powershell -File scripts/autoresearch/status.ps1` 然後開 `docs/research/autoresearch-status.md` |
 | 查看 Watchdog 日誌 | `docker logs autoresearch-watchdog --tail 20` |
 | 查看容器狀態 | `docker compose -f docker/autoresearch/docker-compose.yml ps` |
 | 重啟容器 | `docker compose -f docker/autoresearch/docker-compose.yml restart` |
