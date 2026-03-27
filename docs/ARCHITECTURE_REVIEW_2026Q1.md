@@ -292,6 +292,70 @@ ExecutionService(cost_model=cost)
 5. **風險高的改動**：先在 worktree 分支做，通過後再 merge
 6. **完成後**：更新本文件為「已完成」
 
+### Phase W：運營基礎設施（新增）
+
+#### W1：假說生成器（Claude Code 驅動）
+
+**問題**：自動研究 daemon 跑完所有模板假說後停滯。參數變體（zscore 12m/36m 等）只是微調，缺乏真正的新方向。
+
+**目標**：第二個終端的 Claude Code 持續讀取研究結果，用推理能力生成新假說方向。
+
+**架構**：
+```
+終端 1：alpha_research_agent --daemon
+  → 跑因子 → 寫 memory.json → 假說用完 → sleep
+
+終端 2：Claude Code（hypothesis_generator_prompt.txt）
+  → 讀 memory.json → 推理 → 寫 hypothesis_templates.json + factor .py
+  → 等 10 分鐘 → 讀新結果 → 重複
+```
+
+**實作項目**：
+| 步驟 | 說明 | 狀態 |
+|------|------|:---:|
+| W1.1 | hypothesis_generator_prompt.txt（完整指令） | ✅ 已完成 |
+| W1.2 | daemon --daemon 模式（無限循環 + 自動變體） | ✅ 已完成 |
+| W1.3 | 因子 .py skip-if-exists（不覆寫外部寫入） | ✅ 已完成 |
+| W1.4 | memory.json 清空機制 | ✅ 已完成 |
+| W1.5 | 假說生成器的自動啟動腳本 | 🔲 待做 |
+
+**預估**：W1.5 約 30 分鐘
+
+#### W2：Paper Trading 監控儀表板
+
+**問題**：Paper trading 運行後無法即時觀察績效，只能手動 curl API。需要自動化監控 + 定期報告。
+
+**目標**：
+1. 定時 NAV 快照 + 持倉追蹤
+2. 績效 vs 0050 基準比較
+3. 異常偵測（drawdown > 3%、NAV 偏離預期）
+4. 每日/每週摘要報告
+
+**架構**：
+```
+API Server (已有)
+  → GET /execution/paper-trading/status（NAV、持倉）
+  → GET /strategy/selection/latest（選股）
+  → GET /strategy/regime（市場環境）
+
+監控腳本 (新增)
+  → 每小時輪詢 API
+  → 寫入 data/paper_trading/snapshots/YYYY-MM-DD_HH.json
+  → 每日生成摘要到 docs/dev/paper/
+  → 異常時發送通知（Discord/LINE）
+```
+
+**實作項目**：
+| 步驟 | 說明 | 預估 |
+|------|------|:---:|
+| W2.1 | scripts/paper_trading_monitor.py — 輪詢 + 快照 | 1 hr |
+| W2.2 | 每日摘要報告生成（markdown） | 30 min |
+| W2.3 | 績效 vs 0050 追蹤 | 30 min |
+| W2.4 | 異常偵測 + 通知整合 | 30 min |
+| W2.5 | --daemon 模式持續運行 | 15 min |
+
+**預估**：約 3 小時
+
 ### 不重構項目（確認合理）
 
 | 項目 | 原因 |
