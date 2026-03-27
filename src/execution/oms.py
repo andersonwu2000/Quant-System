@@ -59,7 +59,7 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
     """
     將成交記錄應用到投資組合，更新持倉和現金。
 
-    這是一個純函式，返回更新後的 Portfolio。
+    注意：此函式直接 mutate portfolio 物件並回傳它（非純函式）。
     """
     from src.core.models import Instrument, Position
 
@@ -83,13 +83,19 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
                 pos.avg_cost = total_cost / new_qty if new_qty > 0 else Decimal("0")
                 pos.quantity = new_qty
             else:
-                # 減倉
+                # 減倉（不允許賣超持倉）
+                if trade.quantity > pos.quantity:
+                    logger.warning(
+                        "SELL qty %s > position %s for %s — capping to position size",
+                        trade.quantity, pos.quantity, symbol,
+                    )
+                    trade.quantity = pos.quantity
                 pos.quantity -= trade.quantity
 
             pos.market_price = trade.price
 
-            # 如果數量歸零，移除持倉
-            if pos.quantity == 0:
+            # 如果數量歸零或因浮點比較為極小值，移除持倉
+            if pos.quantity <= 0:
                 del portfolio.positions[symbol]
         else:
             if trade.side == Side.BUY:

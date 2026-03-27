@@ -227,6 +227,7 @@ class BacktestEngine:
         pending_orders: list[Order] = []
         kill_switch_active = False
         kill_switch_month: int = -1
+        kill_switch_bar_idx: int = -1  # bar index when kill switch triggered
 
         for i, bar_date in enumerate(trading_dates):
             # 合作式取消：每個 bar 檢查一次
@@ -274,19 +275,23 @@ class BacktestEngine:
                     )
                     kill_switch_active = True
                     kill_switch_month = bar_date.month
+                    kill_switch_bar_idx = i
 
-            # Kill switch cooldown
+            # Kill switch cooldown: must be new month AND at least 5 trading days
             if kill_switch_active:
+                new_month = bar_date.month != kill_switch_month
+                min_bars_passed = (i - kill_switch_bar_idx) >= 5
                 if (
                     config.kill_switch_cooldown == "end_of_month"
-                    and bar_date.month != kill_switch_month
+                    and new_month
+                    and min_bars_passed
                 ):
                     kill_switch_active = False
                     logger.info(
-                        "Kill switch cooldown expired on %s — resuming trading",
-                        date_str,
+                        "Kill switch cooldown expired on %s (after %d bars) — resuming trading",
+                        date_str, i - kill_switch_bar_idx,
                     )
-                else:
+                elif kill_switch_active:
                     nav_history.append(self._snap_nav(portfolio, bar_date))
                     portfolio.nav_sod = portfolio.nav
                     if progress_callback:
@@ -843,7 +848,11 @@ class BacktestEngine:
         prev_row = self._price_matrix.iloc[idx - 1]
         prices: dict[str, Decimal] = {}
         row_vals = prev_row.values
-        col_index = {c: i for i, c in enumerate(self._price_matrix.columns)}
+        # 使用 _col_index_cache 避免每次重建字典
+        matrix_id = id(self._price_matrix)
+        if matrix_id not in self._col_index_cache:
+            self._col_index_cache[matrix_id] = {c: i for i, c in enumerate(self._price_matrix.columns)}
+        col_index = self._col_index_cache[matrix_id]
         _Decimal = Decimal
         _Q = _Decimal("0.0001")
         for symbol in universe:
