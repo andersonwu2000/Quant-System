@@ -6,7 +6,12 @@
 |------|-------------|
 | `PHASE_TRACKER.md` | 一頁式進度總覽（A~T + U/V/W） |
 | `DEVELOPMENT_LOG.md` | 開發日誌 |
-| `ARCHITECTURE_REVIEW_2026Q1.md` | Q1 架構審查：88+ bug、7 架構問題、重構計畫 |
+
+## 審查報告（`reviews/`）
+
+| File | Description |
+|------|-------------|
+| `ARCHITECTURE_REVIEW_2026Q1.md` | Q1 架構審查：88+ bug、10 架構問題、重構計畫 |
 | `CODE_REVIEW_REPORT.md` | 代碼審查報告：8 輪審計、57 項驗證、3 殘留 |
 | `APP_STABILITY_TESTING_REPORT.md` | 應用穩定性測試 |
 
