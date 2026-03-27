@@ -125,7 +125,7 @@
 
 ### 3.4 報告流程
 
-L5 通過後，不論後續是否通過，都寫報告到 `docs/dev/auto/{factor_name}.md`。
+L5 通過後，不論後續是否通過，都寫報告到 `docs/research/{factor_name}.md`。
 報告包含：L5 結果、大規模 IC 表格（含基準對比）、Validator 13 項、部署判定。
 
 ---
@@ -153,9 +153,9 @@ L5 通過後，不論後續是否通過，都寫報告到 `docs/dev/auto/{factor
 
 | 類型 | 目錄 |
 |------|------|
-| 實驗報告 | `docs/dev/test/` |
-| Auto-alpha 報告 | `docs/dev/auto/` |
-| Paper trading 報告 | `docs/dev/paper/` |
+| 實驗報告 | `docs/research/` |
+| Auto-alpha 報告 | `docs/research/` |
+| Paper trading 報告 | `docs/paper-trading/` |
 
 ### 檔案命名
 

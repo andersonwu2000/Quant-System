@@ -158,6 +158,8 @@ class AppState:
     backtest_lock: threading.Lock = field(default_factory=threading.Lock)
     # 保護 alpha_tasks 跨執行緒存取
     alpha_lock: threading.Lock = field(default_factory=threading.Lock)
+    # D2: kill switch re-trigger guard
+    kill_switch_fired: bool = False
 
 
 _state: AppState | None = None

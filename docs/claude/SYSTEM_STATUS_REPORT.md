@@ -3,8 +3,8 @@
 > **日期**: 2026-03-27
 > **版本**: v12.0
 > **階段**: Phase A~S 完成, N/P 進行中
-> **進度總覽**: `docs/dev/plans/`
-> **開發計畫**: `docs/dev/plans/`（各 Phase 獨立計畫書）
+> **進度總覽**: `docs/plans/`
+> **開發計畫**: `docs/plans/`（各 Phase 獨立計畫書）
 
 ---
 
@@ -188,7 +188,7 @@
 | 13 | Factor decay (recent Sharpe) | 1.570 | ✅ |
 
 **通過 12/13（2026-03-27 最新驗證）。** 唯一失敗: vs 0050 買入持有 (-14.23%)。
-OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/dev/test/20260327_rev_accel_validator.md`。
+OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/research/20260327_rev_accel_validator.md`。
 
 ---
 
@@ -321,7 +321,7 @@ Research Pipeline（獨立，不操作 Portfolio）
 
 ## 13. 階段完成度
 
-詳見 `docs/dev/PHASE_TRACKER.md`。
+詳見 `docs/PHASE_TRACKER.md`。
 
 | 階段 | 狀態 | 備註 |
 |------|:----:|------|
@@ -386,7 +386,7 @@ Research Pipeline（獨立，不操作 Portfolio）
 
 ## 16. 實驗報告索引
 
-17 份實驗報告，詳見 `docs/dev/test/RESEARCH_SUMMARY.md`。
+17 份實驗報告，詳見 `docs/research/RESEARCH_SUMMARY.md`。
 
 **核心結論**（含 40 天營收延遲 + 大規模驗證）：
 - revenue_acceleration 大規模 ICIR(20d) +0.240, ICIR(60d) +0.426（#16 基準，全因子最強）

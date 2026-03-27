@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
@@ -108,7 +107,7 @@ class RealtimeRiskMonitor:
                 if liq_orders and self.execution_service is not None and self._loop is not None:
                     import asyncio
 
-                    async def _execute_liquidation(orders: list, svc: Any, pf: Any) -> None:
+                    async def _execute_liquidation(orders: list[Any], svc: Any, pf: Any) -> None:
                         try:
                             trades = svc.submit_orders(orders, pf)
                             if trades:

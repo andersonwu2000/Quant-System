@@ -193,7 +193,7 @@ class Portfolio:
     pending_settlements: list[tuple[str, Decimal]] = field(default_factory=list)  # (settle_date_str, amount)
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)  # #1: cross-thread safety
 
-    def __deepcopy__(self, memo: dict) -> "Portfolio":
+    def __deepcopy__(self, memo: dict[int, object]) -> "Portfolio":
         """Custom deepcopy that creates a new lock instead of copying the old one."""
         from copy import deepcopy
         cls = self.__class__

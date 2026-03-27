@@ -6,7 +6,6 @@ All tests use SQLite in-memory databases.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -18,12 +17,8 @@ from src.core.models import RiskAlert, Severity, Side, Trade
 from src.data.store import (
     DataStore,
     _create_engine,
-    backtest_results_table,
-    bars_table,
-    metadata,
     portfolios_table,
     risk_events_table,
-    trades_table,
     users_table,
 )
 

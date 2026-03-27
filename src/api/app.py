@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -164,7 +164,7 @@ def create_app() -> FastAPI:
                 is_simulation = True
             if quote_manager is None or is_simulation:
                 # P4: Simulation mode 用 ShioajiFeed.snapshot 取即時價（非 Yahoo 收盤價）
-                _poll_feed_source = None
+                _poll_feed_source: Any = None
                 if is_simulation and isinstance(broker, SinopacBroker) and broker.api is not None:
                     try:
                         from src.data.sources.shioaji_feed import ShioajiFeed

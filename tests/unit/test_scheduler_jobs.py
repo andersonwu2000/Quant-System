@@ -13,14 +13,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from src.scheduler.jobs import (
-    PIPELINE_RUNS_DIR,
     PipelineResult,
     _has_completed_run_this_month,
     _has_completed_run_today,
@@ -242,10 +240,7 @@ class TestCrashDetection:
 
 class TestTradeLogging:
     def test_save_trade_log(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        out_dir = tmp_path / "trades"
         monkeypatch.chdir(tmp_path)
-        # Patch Path references within the function
-        original_save = _save_trade_log.__wrapped__ if hasattr(_save_trade_log, "__wrapped__") else _save_trade_log
 
         # Create mock trades
         mock_trade = MagicMock()
