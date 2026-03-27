@@ -128,7 +128,7 @@
 因子報告存放在 `docs/research/auto/`。**入選標準**（必須全部滿足）：
 1. evaluate.py 通過 L4（composite_score > 0, passed=True）
 2. 大規模 ICIR(20d) ≥ 0.20
-3. StrategyValidator ≥ 12/15
+3. StrategyValidator ≥ 13/15
 
 未達標準的因子只記錄在 `results.tsv`，不寫 markdown 報告（避免假陽性汙染）。
 
