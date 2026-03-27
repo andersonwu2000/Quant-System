@@ -100,11 +100,9 @@ def build_from_research_factor(
                     val = values.get(sym)
                     if val is None:
                         continue
-                    if direction > 0 and val <= 0:
-                        continue
-                    if direction < 0 and val >= 0:
-                        continue
-                    candidates.append((sym, abs(val)))
+                    # 不過濾 val 的正負（計數型因子 val=0 也是有效信號）
+                    # 用 direction 決定排序方向（direction=1 → 越大越好）
+                    candidates.append((sym, val * direction))
                 except Exception:
                     continue
 

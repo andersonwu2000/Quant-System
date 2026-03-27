@@ -210,7 +210,8 @@ def main():
 
     all_symbols = sorted(data.keys())
     all_dates = sorted(set().union(*[set(data[s].index) for s in all_symbols]))
-    monthly_periods = pd.DatetimeIndex(all_dates).to_period("M").unique()
+    trading_day_index = pd.DatetimeIndex(all_dates)
+    monthly_periods = trading_day_index.to_period("M").unique()
 
     horizons = [5, 20, 60]
     ic_store = {name: {h: [] for h in horizons} for name in factors}
@@ -219,9 +220,13 @@ def main():
     n_months = 0
 
     for period in monthly_periods:
-        as_of = period.to_timestamp() + pd.DateOffset(months=1) - pd.DateOffset(days=1)
-        if as_of < pd.Timestamp("2017-01-01") or as_of > pd.Timestamp("2025-12-31"):
+        month_end = period.to_timestamp() + pd.DateOffset(months=1) - pd.DateOffset(days=1)
+        if month_end < pd.Timestamp("2017-01-01") or month_end > pd.Timestamp("2025-12-31"):
             continue
+        candidates = trading_day_index[trading_day_index <= month_end]
+        if len(candidates) == 0:
+            continue
+        as_of = candidates[-1]
 
         active = [s for s in all_symbols if s in data and as_of in data[s].index]
         if len(active) < 50:

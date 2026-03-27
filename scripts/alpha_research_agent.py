@@ -268,13 +268,21 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
         code += '''
             if len(revenues) < 36:
                 continue
-            # Current month revenue vs same month average of past 3 years
-            current = revenues[-1]
-            month_idx = len(revenues) - 1
-            same_month = [revenues[month_idx - 12*k] for k in range(1, 4) if month_idx - 12*k >= 0]
-            if not same_month or np.mean(same_month) <= 0:
+            # 用日期欄位的月份匹配（不依賴 index 位置，避免缺月錯位）
+            dates = df["date"].values
+            current_month = pd.Timestamp(dates[-1]).month
+            current_rev = float(df.iloc[-1]["revenue"])
+            same_month_revs = []
+            for j in range(len(df) - 1):
+                if pd.Timestamp(dates[j]).month == current_month:
+                    v = float(df.iloc[j]["revenue"])
+                    if v > 0:
+                        same_month_revs.append(v)
+            # 只取最近 3 年同月
+            same_month_revs = same_month_revs[-3:]
+            if not same_month_revs or np.mean(same_month_revs) <= 0:
                 continue
-            results[sym] = float(current / np.mean(same_month) - 1)
+            results[sym] = float(current_rev / np.mean(same_month_revs) - 1)
 '''
     elif "vs_trend_residual" in name:
         code += '''
@@ -984,10 +992,19 @@ class AlphaResearchAgent:
         ic_store: dict[int, list[float]] = {h: [] for h in horizons}
         n_months = 0
 
+        # 建立全 universe 交易日集合，用於找最近交易日
+        all_trading_days = sorted(set().union(*[set(price_data[s].index) for s in all_symbols]))
+        trading_day_index = pd.DatetimeIndex(all_trading_days)
+
         for period in monthly:
-            as_of = period.to_timestamp() + pd.DateOffset(months=1) - pd.DateOffset(days=1)
-            if as_of < pd.Timestamp("2017-01-01") or as_of > pd.Timestamp("2025-12-31"):
+            month_end = period.to_timestamp() + pd.DateOffset(months=1) - pd.DateOffset(days=1)
+            if month_end < pd.Timestamp("2017-01-01") or month_end > pd.Timestamp("2025-12-31"):
                 continue
+            # 找月末最近的交易日（月末或之前）
+            candidates = trading_day_index[trading_day_index <= month_end]
+            if len(candidates) == 0:
+                continue
+            as_of = candidates[-1]
 
             active = [s for s in all_symbols if s in price_data and as_of in price_data[s].index]
             if len(active) < 50:
@@ -1241,6 +1258,13 @@ class AlphaResearchAgent:
             if large_ic.get("icir_20d", 0) < 0.20:
                 deploy_eligible = False
                 reasons.append(f"大規模 ICIR(20d) {large_ic.get('icir_20d', 0):.3f} < 0.20")
+        # Sharpe vs 0050 check
+        if validator_result:
+            sharpe_val = next((float(c["value"]) for c in checks if c["name"] == "sharpe"), 0)
+            bench_sharpe = 0.857  # 0050.TW baseline
+            if sharpe_val <= bench_sharpe:
+                deploy_eligible = False
+                reasons.append(f"Sharpe {sharpe_val:.3f} <= 0050 {bench_sharpe:.3f}")
 
         lines.extend([
             "",
