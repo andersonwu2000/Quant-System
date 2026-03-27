@@ -42,6 +42,10 @@ class ExecutionConfig:
     # General
     check_market_hours: bool = True
     queue_off_hours_orders: bool = True
+    # Cost model (forwarded to PaperBroker / SinopacBroker simulation)
+    commission_rate: float = 0.001425
+    tax_rate: float = 0.003
+    default_slippage_bps: float = 5.0
     # Smart Order (TWAP)
     smart_order_enabled: bool = False
     smart_order_slices: int = 5
@@ -102,6 +106,9 @@ class ExecutionService:
                     secret_key=self._config.sinopac_secret_key,
                     ca_path=self._config.sinopac_ca_path,
                     ca_password=self._config.sinopac_ca_password,
+                    sim_commission_rate=self._config.commission_rate,
+                    sim_tax_rate=self._config.tax_rate,
+                    sim_slippage_bps=self._config.default_slippage_bps,
                 )
                 broker = SinopacBroker(sinopac_config)
 

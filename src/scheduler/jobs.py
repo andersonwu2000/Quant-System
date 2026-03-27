@@ -563,9 +563,11 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     from src.strategy.engine import weights_to_orders
     from src.strategy.registry import resolve_strategy
 
-    # T1: 市場時段檢查（paper/live 模式，避免用過時收盤價下單）
+    # T1 + P6: 市場時段檢查（用台灣時間 UTC+8，不依賴系統時區）
     if config.mode in ("paper", "live"):
-        now = datetime.now()
+        from datetime import timedelta as _td
+        _tw_tz = timezone(_td(hours=8))
+        now = datetime.now(_tw_tz)
         try:
             from src.core.calendar import get_tw_calendar
             cal = get_tw_calendar()

@@ -91,6 +91,9 @@ def create_app() -> FastAPI:
             sinopac_secret_key=config.sinopac_secret_key,
             sinopac_ca_path=config.sinopac_ca_path,
             sinopac_ca_password=config.sinopac_ca_password,
+            commission_rate=config.commission_rate,
+            tax_rate=config.tax_rate,
+            default_slippage_bps=config.default_slippage_bps,
         )
         state.execution_service = ExecSvc(exec_config)
         state.execution_service.initialize()
@@ -160,11 +163,21 @@ def create_app() -> FastAPI:
             elif getattr(state.execution_service, '_fallback_mode', False):
                 is_simulation = True
             if quote_manager is None or is_simulation:
+                # P4: Simulation mode 用 ShioajiFeed.snapshot 取即時價（非 Yahoo 收盤價）
+                _poll_feed_source = None
+                if is_simulation and isinstance(broker, SinopacBroker) and broker.api is not None:
+                    try:
+                        from src.data.sources.shioaji_feed import ShioajiFeed
+                        _poll_feed_source = ShioajiFeed(broker.api)
+                        logger.info("Price polling: using ShioajiFeed (snapshot API)")
+                    except Exception:
+                        logger.debug("ShioajiFeed init failed, falling back to config feed", exc_info=True)
+
                 from src.data.sources import create_feed as _create_feed
 
                 async def _price_poll_loop() -> None:
                     """Poll latest prices every 60s when ticks unavailable."""
-                    _cached_feed = None
+                    _cached_feed = _poll_feed_source
                     _cached_syms: list[str] = []
                     while True:
                         await asyncio.sleep(60)
@@ -172,9 +185,12 @@ def create_app() -> FastAPI:
                             syms = sorted(state.portfolio.positions.keys())
                             if not syms:
                                 continue
-                            # Cache feed, only recreate when symbols change
-                            if syms != _cached_syms:
-                                _cached_feed = _create_feed(config.data_source, syms)
+                            # If no ShioajiFeed, fallback to config feed (Yahoo/FinMind)
+                            if _cached_feed is None or syms != _cached_syms:
+                                if _poll_feed_source is not None:
+                                    _cached_feed = _poll_feed_source
+                                else:
+                                    _cached_feed = _create_feed(config.data_source, syms)
                                 _cached_syms = syms
                             if _cached_feed is not None:
                                 realtime_risk.poll_prices_from_feed(_cached_feed)
@@ -189,14 +205,15 @@ def create_app() -> FastAPI:
                 """每日記錄 NAV snapshot 到 data/paper_trading/snapshots/。"""
                 import json as _json
                 from pathlib import Path as _Path
-                from datetime import datetime as _dt
+                from datetime import datetime as _dt, timedelta as _tdelta, timezone as _tz
 
+                _tw = _tz(_tdelta(hours=8))
                 snap_dir = _Path("data/paper_trading/snapshots")
                 snap_dir.mkdir(parents=True, exist_ok=True)
 
                 while True:
                     await asyncio.sleep(300)  # check every 5 min
-                    now = _dt.now()
+                    now = _dt.now(_tw)  # P14: 用台灣時間
                     # 只在 13:25-13:55 之間存一次（台股收盤，寬鬆窗口避免 sleep drift）
                     if now.hour == 13 and 25 <= now.minute <= 55:
                         today = now.strftime("%Y-%m-%d")

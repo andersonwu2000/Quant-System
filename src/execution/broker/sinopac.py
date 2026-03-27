@@ -58,6 +58,11 @@ class SinopacConfig:
     ca_password: str = ""
     api_key: str = ""
     secret_key: str = ""
+    # P10: simulation mode 成本參數（和 PaperBroker/SimBroker 一致）
+    sim_commission_rate: float = 0.001425
+    sim_tax_rate: float = 0.003
+    sim_slippage_bps: float = 5.0
+    sim_min_commission: float = 20.0
     non_blocking: bool = True         # timeout=0 for non-blocking place_order (~12ms vs ~136ms)
 
 
@@ -223,8 +228,8 @@ class SinopacBroker(BrokerAdapter):
                     order.status = OrderStatus.REJECTED
                     order.reject_reason = "No price for simulation fill"
                     return broker_id
-                # 滑價 5 bps（和 PaperBroker/SimBroker 一致）
-                slippage = price * Decimal("5") / Decimal("10000")
+                # P10: 滑價和成本從 config 讀
+                slippage = price * Decimal(str(self._config.sim_slippage_bps)) / Decimal("10000")
                 if order.side == Side.BUY:
                     fill_price = price + slippage
                 else:
@@ -234,10 +239,11 @@ class SinopacBroker(BrokerAdapter):
                 order.filled_qty = order.quantity
                 order.filled_avg_price = fill_price
                 notional = order.quantity * fill_price
-                commission = notional * Decimal("0.001425")
-                if commission < Decimal("20"):
-                    commission = Decimal("20")
-                tax = notional * Decimal("0.003") if order.side == Side.SELL else Decimal("0")
+                commission = notional * Decimal(str(self._config.sim_commission_rate))
+                min_comm = Decimal(str(self._config.sim_min_commission))
+                if commission < min_comm:
+                    commission = min_comm
+                tax = notional * Decimal(str(self._config.sim_tax_rate)) if order.side == Side.SELL else Decimal("0")
                 order.commission = commission + tax
                 logger.info(
                     "Order FILLED (sim): %s %s %s @ %s (slippage %s)",

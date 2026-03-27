@@ -11,6 +11,7 @@ import json
 import logging
 import threading
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,7 @@ def save_portfolio(portfolio: Portfolio) -> None:
             "cash": str(portfolio.cash),
             "initial_cash": str(portfolio.initial_cash),
             "nav_sod": str(portfolio.nav_sod),
+            "as_of": portfolio.as_of.isoformat() if portfolio.as_of else "",
             "pending_settlements": [
                 [sd, str(amt)] for sd, amt in portfolio.pending_settlements
             ],
@@ -115,6 +117,13 @@ def load_portfolio() -> Portfolio | None:
         saved_nav_sod = raw.get("nav_sod", "0")
         nav_sod = Decimal(saved_nav_sod) if saved_nav_sod != "0" else portfolio.nav
         portfolio.nav_sod = nav_sod
+        # P12: 恢復 as_of
+        saved_as_of = raw.get("as_of", "")
+        if saved_as_of:
+            try:
+                portfolio.as_of = datetime.fromisoformat(saved_as_of)
+            except (ValueError, TypeError):
+                pass
         logger.info(
             "Loaded persisted portfolio: cash=%s, %d positions",
             portfolio.cash, len(portfolio.positions),
