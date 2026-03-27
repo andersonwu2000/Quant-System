@@ -3,18 +3,22 @@
 所有策略（無論手動研究或自動化 Alpha）在進入 Paper/Live 交易前，
 必須通過此驗證器的全部檢查。任何一項不通過即判定為不合格。
 
-檢查項目（11 項）：
-1.  Full backtest — CAGR、Sharpe、MDD
-2.  Walk-Forward — 滾動 OOS Sharpe
-3.  PBO — 過擬合機率（Bailey 2015）
-4.  Deflated Sharpe — 多重測試校正（Bailey & López de Prado 2014）
-5.  Bootstrap — P(Sharpe > 0) 信賴區間
-6.  OOS holdout — 獨立保留期驗證
-7.  vs 1/N benchmark — 必須跑贏等權基準
-8.  Turnover + cost — 換手率和成本佔比
-9.  Regime breakdown — 牛/熊/盤整分段表現
-10. Selection bias check — 最寬 universe 驗證
-11. Factor decay — 最近期因子是否仍有效
+檢查項目（15 項）：
+1.  Universe size — 選股池 ≥ 50
+2.  CAGR — ≥ 8%
+3.  Sharpe — ≥ 0.7
+4.  Max Drawdown — ≤ 40%
+5.  Turnover + cost — 成本 / gross alpha < 50%
+6.  Walk-Forward — ≥ 60% 年份 OOS Sharpe > 0
+7.  Deflated Sharpe — ≥ 0.70（寬鬆門檻）
+8.  Bootstrap — P(Sharpe > 0) ≥ 80%
+9.  OOS Sharpe — ≥ 0
+10. vs 1/N benchmark — 超額 ≥ 0
+11. PBO — ≤ 50%
+12. Regime breakdown — 最差年 ≥ -30%
+13. Factor decay — 最近 1 年 Sharpe ≥ 0
+14. Market correlation — |corr with 0050| ≤ 0.90
+15. CVaR(95%) — ≥ -5%
 
 用法：
     from src.backtest.validator import StrategyValidator, ValidationConfig

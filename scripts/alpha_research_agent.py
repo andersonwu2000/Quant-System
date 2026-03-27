@@ -23,6 +23,7 @@ import argparse
 import importlib
 import json
 import logging
+import re
 import sys
 import time
 import uuid
@@ -351,8 +352,7 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
         return None
     elif "zscore" in name:
         # 先檢查是否為 parametric variant (rev_zscore_12m 等)
-        import re as _re
-        _m = _re.search(r"zscore_(\d+)m", name)
+        _m = re.search(r"zscore_(\d+)m", name)
         months = int(_m.group(1)) if _m else 24
         code += f'''
             if len(revenues) < {months}:
@@ -393,9 +393,9 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
                 continue
             results[sym] = float(tau)
 '''
-    elif _re.search(r"rev_accel_\d+m_\d+m", name):
+    elif re.search(r"rev_accel_\d+m_\d+m", name):
         # acceleration 變體：rev_accel_2m_6m, rev_accel_6m_12m 等
-        m = _re.search(r"(\d+)m_(\d+)m", name)
+        m = re.search(r"(\d+)m_(\d+)m", name)
         if m:
             short, long = int(m.group(1)), int(m.group(2))
         else:
@@ -1202,15 +1202,15 @@ class AlphaResearchAgent:
 
             # 排除 deflated_sharpe 後的有效通過數
             n_excl_dsr = sum(1 for c in checks if c["passed"] or c["name"] == "deflated_sharpe")
-            if n_excl_dsr >= 12:
+            if n_excl_dsr >= 14:
                 lines.extend([
                     "",
-                    f"**{n_pass}/13 通過（排除 DSR: {n_excl_dsr}/13）— 符合部署門檻。**",
+                    f"**{n_pass}/{n_total} 通過（排除 DSR: {n_excl_dsr}/{n_total}）— 符合部署門檻 (≥14/15)。**",
                 ])
             elif n_pass >= 10:
                 lines.extend([
                     "",
-                    f"**{n_pass}/13 通過（排除 DSR: {n_excl_dsr}/13）— 未達部署門檻，僅供觀察。**",
+                    f"**{n_pass}/{n_total} 通過（排除 DSR: {n_excl_dsr}/{n_total}）— 未達部署門檻 (需≥14/15)，僅供觀察。**",
                 ])
             else:
                 lines.extend([
@@ -1275,7 +1275,7 @@ class AlphaResearchAgent:
             n_excl_dsr = sum(1 for c in checks if c["passed"] or c["name"] == "deflated_sharpe")
             if n_excl_dsr < 14:
                 deploy_eligible = False
-                reasons.append(f"Validator (excl DSR) {n_excl_dsr}/15 < 12")
+                reasons.append(f"Validator (excl DSR) {n_excl_dsr}/15 < 14")
             # DSR 寬鬆門檻
             dsr_val = next((float(c["value"]) for c in checks if c["name"] == "deflated_sharpe"), 0)
             if dsr_val < 0.70:
