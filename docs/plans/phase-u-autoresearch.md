@@ -28,33 +28,28 @@ scripts/autoresearch/
 
 ## 執行步驟
 
-### T1：搬移 + 驗證（30 min）
-- [ ] 從 `docs/reviews/autoresearch-alpha/` 搬到 `scripts/autoresearch/`
-- [ ] 產出 `data/research/baseline_ic_series.json`
-- [ ] 產出 `data/research/universe.txt` + `large_universe.txt`
-- [ ] 驗證 `python scripts/autoresearch/evaluate.py` 端到端可執行
+### T1：搬移 + 驗證 ✅
+- [x] 搬到 `scripts/autoresearch/`
+- [x] 修正 evaluate.py 資料載入（parquet 檔名匹配）
+- [x] Baseline 跑成功：12-1 momentum, composite_score 8.80
 
-### T2：清理舊系統（30 min）
-- [ ] 刪除 `scripts/alpha_research_agent.py`
-- [ ] 刪除 `data/research/hypothesis_templates.json`
-- [ ] 刪除 `data/research/memory.json`
-- [ ] 刪除 `src/strategy/factors/research/rev_*.py`
-- [ ] 刪除 `scripts/hypothesis_generator_prompt.txt`
-- [ ] 刪除 `scripts/generate_hypotheses.md`
-- [ ] 保留 `src/alpha/auto/factor_evaluator.py`（evaluate.py 整合了其邏輯）
-- [ ] 保留 `src/alpha/auto/strategy_builder.py`（通過因子仍需包裝）
-- [ ] 保留 `src/backtest/validator.py`（最終 15 項驗證）
+### T2：清理舊系統 ✅
+- [x] 刪除舊 agent + 假說模板 + 研究因子文件
 
-### T3：首次 baseline run（15 min）
-- [ ] 跑 `python scripts/autoresearch/evaluate.py`
-- [ ] 確認輸出 composite_score
-- [ ] 初始化 `results.tsv`
+### T3：系統整合 ✅
+- [x] `POST /auto-alpha/submit-factor` endpoint
+- [x] evaluate.py → API → Validator 15 項 → 自動部署
+- [x] strategy_builder 支援 3-arg autoresearch 因子
+- [x] 代碼安全檢查 + 名稱 sanitization
 
-### T4：更新系統文檔（15 min）
-- [ ] 更新 `CLAUDE.md` — Auto-Alpha Research Pipeline 段落
-- [ ] 更新 `docs/claude/EXPERIMENT_STANDARDS.md` — 因子研究管線
-- [ ] 更新 `docs/claude/ARCHITECTURE.md` — 排程段落
-- [ ] 更新 `docs/ARCHITECTURE_REVIEW_2026Q1.md` — Phase T 狀態
+### T4：Code review + 修復 ✅
+- [x] signature mismatch（CRITICAL）
+- [x] code sanitization（HIGH）
+- [x] 相對路徑 + name sanitization（MEDIUM）
+
+### T5：文檔更新 ✅
+- [x] CLAUDE.md
+- [x] phase-u-autoresearch.md
 
 ## 使用方式
 

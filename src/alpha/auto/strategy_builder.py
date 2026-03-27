@@ -61,10 +61,17 @@ def build_from_research_factor(
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    compute_fn_or_none = getattr(mod, f"compute_{factor_name}", None)
-    if compute_fn_or_none is None:
-        raise AttributeError(f"No compute_{factor_name}() in {factor_path}")
-    compute_fn = compute_fn_or_none
+    # 支援兩種命名：compute_{name}（舊式）或 compute_factor（autoresearch 式）
+    compute_fn = getattr(mod, f"compute_{factor_name}", None) or getattr(mod, "compute_factor", None)
+    if compute_fn is None:
+        raise AttributeError(f"No compute_{factor_name}() or compute_factor() in {factor_path}")
+
+    # 偵測函式簽名：2-arg（舊式）或 3-arg（autoresearch）
+    import inspect
+    _sig = inspect.signature(compute_fn)
+    _n_params = len([p for p in _sig.parameters.values()
+                     if p.default is inspect.Parameter.empty])
+    _needs_data = _n_params >= 3  # autoresearch factor needs (symbols, as_of, data)
 
     class ResearchFactorStrategy(StrategyBase):
         """Auto-built strategy from research factor."""
@@ -97,7 +104,19 @@ def build_from_research_factor(
                     continue
 
                 try:
-                    values = compute_fn([sym], as_of)
+                    if _needs_data:
+                        # autoresearch 3-arg: build data dict from ctx
+                        _bars = ctx.bars(sym, lookback=252)
+                        _rev = ctx.get_revenue(sym, lookback_months=36)
+                        _data = {
+                            "bars": {sym: _bars},
+                            "revenue": {sym: _rev} if not _rev.empty else {},
+                            "institutional": {},
+                            "pe": {}, "pb": {}, "roe": {},
+                        }
+                        values = compute_fn([sym], as_of, _data)
+                    else:
+                        values = compute_fn([sym], as_of)
                     val = values.get(sym)
                     if val is None:
                         continue

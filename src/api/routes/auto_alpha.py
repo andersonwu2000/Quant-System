@@ -691,13 +691,33 @@ async def submit_factor(
     from pathlib import Path
     import importlib.util
 
-    factor_dir = Path("src/strategy/factors/research")
+    factor_dir = Path(__file__).resolve().parent.parent.parent.parent / "src" / "strategy" / "factors" / "research"
     factor_dir.mkdir(parents=True, exist_ok=True)
     factor_path = factor_dir / f"{req.name}.py"
 
-    # 1. 保存因子代碼
+    # 0. 安全檢查 — 拒絕明顯惡意代碼
+    import re as _re
+    FORBIDDEN_PATTERNS = [
+        r"\bimport\s+os\b", r"\bimport\s+subprocess\b", r"\bimport\s+shutil\b",
+        r"\b__import__\b", r"\bexec\s*\(", r"\beval\s*\(",
+        r"\bos\.system\b", r"\bos\.popen\b", r"\bsubprocess\.\w+\(",
+    ]
+    for pat in FORBIDDEN_PATTERNS:
+        if _re.search(pat, req.code):
+            return SubmitFactorResponse(
+                status="rejected",
+                message=f"Code contains forbidden pattern: {pat}",
+            )
+
+    # 1. Name sanitization
+    clean_name = _re.sub(r'[^a-zA-Z0-9_]', '', req.name)
+    if not clean_name:
+        return SubmitFactorResponse(status="rejected", message="Invalid factor name")
+    factor_path = factor_dir / f"{clean_name}.py"
+
+    # 2. 保存因子代碼
     factor_path.write_text(req.code, encoding="utf-8")
-    logger.info("Factor submitted: %s (score=%.2f)", req.name, req.composite_score)
+    logger.info("Factor submitted: %s (score=%.2f)", clean_name, req.composite_score)
 
     # 2. 驗證可載入
     try:
@@ -723,7 +743,6 @@ async def submit_factor(
             p.stem.replace("_1d", "")
             for p in market_dir.glob("*.TW_1d.parquet")
             if not p.stem.startswith("00")
-            and len(list(open(str(p), "rb").read(1) for _ in [1])) > 0
         ])
         # 過濾太短的
         import pandas as pd

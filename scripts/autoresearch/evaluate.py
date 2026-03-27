@@ -624,8 +624,10 @@ def _auto_submit(results: dict) -> None:
                 cwd=str(Path(__file__).parent),
             )
             if log.returncode == 0 and log.stdout.strip():
+                import re as _re
                 raw = log.stdout.strip().replace("experiment: ", "").replace(" ", "_")[:40]
-                name = f"ar_{raw}"
+                raw = _re.sub(r'[^a-zA-Z0-9_]', '', raw)
+                name = f"ar_{raw}" if raw else name
         except Exception:
             pass
 
