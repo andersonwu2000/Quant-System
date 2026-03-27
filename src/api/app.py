@@ -216,7 +216,7 @@ def create_app() -> FastAPI:
                 _tw = _tz(_tdelta(hours=8))
                 snap_dir = _Path("data/paper_trading/snapshots")
                 snap_dir.mkdir(parents=True, exist_ok=True)
-                report_dir = _Path("docs/dev/paper")
+                report_dir = _Path("docs/paper-trading")
                 report_dir.mkdir(parents=True, exist_ok=True)
                 _daily_report_done: str = ""
 

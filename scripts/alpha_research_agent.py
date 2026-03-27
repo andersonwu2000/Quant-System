@@ -1185,8 +1185,8 @@ class AlphaResearchAgent:
         validator_result: dict[str, Any] | None = None,
         large_ic: dict[str, float] | None = None,
     ) -> None:
-        """成果寫到 docs/dev/auto/。"""
-        auto_dir = Path("docs/dev/auto")
+        """成果寫到 docs/research/auto/。"""
+        auto_dir = Path("docs/research/auto")
         auto_dir.mkdir(parents=True, exist_ok=True)
 
         name = traj.hypothesis.get("name", "unknown")
