@@ -796,6 +796,11 @@ async def submit_factor(
                 )
                 deployed = True
                 logger.info("Auto-deployed: %s", req.name)
+                _write_auto_report(req, results=dict(
+                    composite_score=req.composite_score,
+                    icir_20d=req.icir_20d,
+                    large_icir_20d=req.large_icir_20d,
+                ), report=report, checks=checks)
             else:
                 logger.info("Cannot deploy %s: %s", req.name, reason)
         except Exception as e:
@@ -808,3 +813,57 @@ async def submit_factor(
         deployed=deployed,
         message=f"{'Deployed' if deployed else 'Not deployed'} ({n_passed}/{n_total})",
     )
+
+
+def _write_auto_report(req: "SubmitFactorRequest", results: dict, report: Any, checks: list) -> None:
+    """Write a deployment report to docs/research/auto/ for deployed factors."""
+    from pathlib import Path
+
+    report_dir = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "research" / "auto"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    name = req.name.replace("/", "_").replace(" ", "_")
+    report_path = report_dir / f"{ts}_{name}.md"
+
+    checks_table = "\n".join(
+        f"| {c.name} | {'PASS' if c.passed else 'FAIL'} | {c.value} | {c.threshold} |"
+        for c in checks
+    )
+
+    content = f"""# Auto-Deployed Factor: {req.name}
+
+> Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+> Status: **DEPLOYED** to Paper Trading
+
+## Metrics
+
+| Metric | Value |
+|--------|-------|
+| Composite Score | {results.get('composite_score', 'N/A')} |
+| ICIR (20d) | {results.get('icir_20d', 'N/A')} |
+| Large-scale ICIR (20d) | {results.get('large_icir_20d', 'N/A')} |
+| Validator | {report.n_passed}/{report.n_total} |
+
+## Validator Results
+
+| Check | Result | Value | Threshold |
+|-------|--------|-------|-----------|
+{checks_table}
+
+## Factor Code
+
+```python
+{req.code}
+```
+
+## Description
+
+{req.description}
+"""
+
+    try:
+        report_path.write_text(content, encoding="utf-8")
+        logger.info("Auto report written: %s", report_path)
+    except Exception as e:
+        logger.warning("Failed to write auto report: %s", e)
