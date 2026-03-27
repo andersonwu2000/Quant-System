@@ -897,7 +897,7 @@ class AlphaResearchAgent:
 
         if n_passed_excl_dsr < 14:
             logger.info(
-                "[Deploy] %s: %d/%d (excl DSR: %d/15) < 12, skip deploy",
+                "[Deploy] %s: %d/%d (excl DSR: %d/15) < 14, skip deploy",
                 hypothesis.name, n_passed, n_total, n_passed_excl_dsr,
             )
             return
@@ -1097,7 +1097,10 @@ class AlphaResearchAgent:
                     after = df.index[df.index > as_of]
                     if len(after) < h:
                         continue
-                    ret = float(df.loc[after[h - 1], "close"] / df.loc[as_of, "close"] - 1)
+                    base_price = df.loc[as_of, "close"]
+                    if base_price <= 0 or pd.isna(base_price):
+                        continue
+                    ret = float(df.loc[after[h - 1], "close"] / base_price - 1)
                     xs.append(fv)
                     ys.append(ret)
                 if len(xs) < 20:
