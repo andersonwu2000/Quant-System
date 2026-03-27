@@ -167,10 +167,19 @@ class ExecutionService:
         logger.error("Unknown mode: %s", mode)
         return False
 
+    def execute(
+        self,
+        orders: list[Order],
+        current_bars: dict[str, dict[str, Any]] | None = None,
+        timestamp: datetime | None = None,
+    ) -> list[Trade]:
+        """OrderExecutor protocol — 統一執行介面（U1）。"""
+        return self.submit_orders(orders, portfolio=None, current_bars=current_bars, timestamp=timestamp)
+
     def submit_orders(
         self,
         orders: list[Order],
-        portfolio: Portfolio,
+        portfolio: Portfolio | None = None,
         current_bars: dict[str, dict[str, Any]] | None = None,
         timestamp: datetime | None = None,
     ) -> list[Trade]:
