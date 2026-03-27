@@ -412,7 +412,7 @@ class StrategyValidator:
                     "trades": r.total_trades,
                 })
             except Exception as e:
-                results.append({"year": test_year, "sharpe": 0, "error": str(e)})
+                results.append({"year": test_year, "sharpe": 0.0, "error": str(e)})  # type: ignore[dict-item]
 
         return results
 
@@ -440,7 +440,7 @@ class StrategyValidator:
 
         return positive_count / n_bootstrap
 
-    def _run_oos(self, strategy: Strategy, universe: list[str], start: str, end: str) -> dict[str, float]:
+    def _run_oos(self, strategy: Strategy, universe: list[str], start: str, end: str) -> dict[str, Any]:
         """OOS holdout 回測。"""
         try:
             bt_config = self._make_bt_config(universe, start, end)
@@ -543,7 +543,7 @@ class StrategyValidator:
             bench_total = float(close.iloc[-1] / close.iloc[0] - 1)
             n_years = max(len(bars) / 252, 0.5)
             bench_annual = (1 + bench_total) ** (1 / n_years) - 1
-            return result.annual_return - bench_annual
+            return float(result.annual_return - bench_annual)
         except Exception as e:
             logger.warning("Benchmark comparison failed: %s", e)
             return 0.0

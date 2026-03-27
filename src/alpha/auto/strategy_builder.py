@@ -61,9 +61,10 @@ def build_from_research_factor(
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    compute_fn = getattr(mod, f"compute_{factor_name}", None)
-    if compute_fn is None:
+    compute_fn_or_none = getattr(mod, f"compute_{factor_name}", None)
+    if compute_fn_or_none is None:
         raise AttributeError(f"No compute_{factor_name}() in {factor_path}")
+    compute_fn = compute_fn_or_none
 
     class ResearchFactorStrategy(StrategyBase):
         """Auto-built strategy from research factor."""

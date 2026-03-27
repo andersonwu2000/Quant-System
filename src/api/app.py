@@ -149,16 +149,57 @@ def create_app() -> FastAPI:
 
                 async def _price_poll_loop() -> None:
                     """Poll latest prices every 60s when ticks unavailable."""
-                    feed = _create_feed(config.data_source, [])
                     while True:
                         await asyncio.sleep(60)
                         try:
+                            # #9: 用 portfolio 的持倉 symbols 作為 universe（不傳空）
+                            syms = list(state.portfolio.positions.keys())
+                            if not syms:
+                                continue
+                            feed = _create_feed(config.data_source, syms)
                             realtime_risk.poll_prices_from_feed(feed)
                         except Exception:
                             pass
 
                 asyncio.create_task(_price_poll_loop())
                 logger.info("Price polling fallback started (60s interval)")
+
+            # #12: 每日 NAV snapshot（13:35 台股收盤後）
+            async def _daily_nav_snapshot() -> None:
+                """每日記錄 NAV snapshot 到 data/paper_trading/snapshots/。"""
+                import json as _json
+                from pathlib import Path as _Path
+                from datetime import datetime as _dt
+
+                snap_dir = _Path("data/paper_trading/snapshots")
+                snap_dir.mkdir(parents=True, exist_ok=True)
+
+                while True:
+                    await asyncio.sleep(300)  # check every 5 min
+                    now = _dt.now()
+                    # 只在 13:30-13:40 之間存一次（台股收盤）
+                    if now.hour == 13 and 30 <= now.minute <= 40:
+                        today = now.strftime("%Y-%m-%d")
+                        path = snap_dir / f"{today}.json"
+                        if not path.exists():
+                            snap = {
+                                "date": today,
+                                "nav": float(state.portfolio.nav),
+                                "cash": float(state.portfolio.cash),
+                                "positions": {
+                                    s: {"qty": float(p.quantity), "price": float(p.market_price)}
+                                    for s, p in state.portfolio.positions.items()
+                                },
+                                "n_positions": len(state.portfolio.positions),
+                            }
+                            try:
+                                path.write_text(_json.dumps(snap, indent=2, ensure_ascii=False))
+                                logger.info("Daily NAV snapshot: %s (NAV=%s)", today, snap["nav"])
+                            except Exception:
+                                pass
+
+            if config.mode in ("paper", "live"):
+                asyncio.create_task(_daily_nav_snapshot())
 
             logger.info("RealtimeRiskMonitor initialized")
 

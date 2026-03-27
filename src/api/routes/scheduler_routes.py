@@ -73,16 +73,19 @@ async def send_notification(
         for ch in channels:
             try:
                 if ch == "discord" and config.discord_webhook_url:
-                    from src.notifications.discord import send_discord
-                    await send_discord(req.message, config.discord_webhook_url)
+                    from src.notifications.discord import DiscordNotifier
+                    notifier = DiscordNotifier(webhook_url=config.discord_webhook_url)
+                    await notifier.send("Notification", req.message)
                     sent.append("discord")
                 elif ch == "line" and config.line_notify_token:
-                    from src.notifications.line import send_line
-                    await send_line(req.message, config.line_notify_token)
+                    from src.notifications.line import LineNotifier
+                    notifier = LineNotifier(access_token=config.line_notify_token)
+                    await notifier.send("Notification", req.message)
                     sent.append("line")
                 elif ch == "telegram" and config.telegram_bot_token:
-                    from src.notifications.telegram import send_telegram
-                    await send_telegram(req.message, config.telegram_bot_token, config.telegram_chat_id)
+                    from src.notifications.telegram import TelegramNotifier
+                    notifier = TelegramNotifier(bot_token=config.telegram_bot_token, chat_id=config.telegram_chat_id)
+                    await notifier.send("Notification", req.message)
                     sent.append("telegram")
                 else:
                     failed.append(f"{ch}: not configured")

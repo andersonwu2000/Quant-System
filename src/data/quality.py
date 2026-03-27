@@ -161,7 +161,7 @@ def load_dividend_dates(symbol: str, data_dir: str = "data/market") -> set[str]:
             if isinstance(df.index, pd.DatetimeIndex):
                 dates = df.index
             elif "date" in df.columns:
-                dates = pd.to_datetime(df["date"])
+                dates = pd.DatetimeIndex(pd.to_datetime(df["date"]))
             else:
                 continue
             return {str(d.date()) if hasattr(d, "date") else str(d) for d in dates}

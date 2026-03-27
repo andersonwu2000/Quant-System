@@ -312,7 +312,7 @@ def compute_analytics(
     # Sortino Ratio — 下行偏差包含所有觀測值
     # DD = sqrt(mean(min(r, 0)²)) × sqrt(252)
     if len(daily_returns) > 1:
-        downside = np.minimum(daily_returns.values, 0.0)
+        downside = np.minimum(np.asarray(daily_returns.values), 0.0)
         downside_vol = float(np.sqrt(np.mean(downside ** 2)) * np.sqrt(252))
         sortino = float(daily_returns.mean() * 252 / downside_vol) if downside_vol > 0 else 0.0
     else:

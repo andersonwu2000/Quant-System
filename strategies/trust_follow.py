@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from src.strategy.base import Context, Strategy
@@ -137,7 +138,7 @@ class TrustFollowStrategy(Strategy):
                 revenues = rev_df["revenue"].values
 
                 # 3M avg hits 12M high
-                rev_3m_avg = float(revenues[-3:].mean()) if len(revenues) >= 3 else 0
+                rev_3m_avg = float(np.asarray(revenues[-3:]).mean()) if len(revenues) >= 3 else 0
                 rev_12m_max = float(
                     pd.Series(revenues[-12:]).rolling(3).mean().max()
                 ) if len(revenues) >= 12 else 0

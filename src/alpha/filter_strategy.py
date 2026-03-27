@@ -52,18 +52,25 @@ class FilterCondition:
 
     def evaluate(self, value: float) -> bool:
         """Evaluate if value passes this condition."""
+        t = self.threshold
         if self.operator == "gt":
-            return value > self.threshold
+            assert not isinstance(t, tuple)
+            return value > t
         elif self.operator == "lt":
-            return value < self.threshold
+            assert not isinstance(t, tuple)
+            return value < t
         elif self.operator == "gte":
-            return value >= self.threshold
+            assert not isinstance(t, tuple)
+            return value >= t
         elif self.operator == "lte":
-            return value <= self.threshold
+            assert not isinstance(t, tuple)
+            return value <= t
         elif self.operator == "eq":
-            return abs(value - self.threshold) < 1e-9
+            assert not isinstance(t, tuple)
+            return abs(value - t) < 1e-9
         elif self.operator == "between":
-            lo, hi = self.threshold
+            assert isinstance(t, tuple)
+            lo, hi = t
             return lo <= value <= hi
         else:
             raise ValueError(f"Unknown operator: {self.operator}")
@@ -157,7 +164,7 @@ def _calc_revenue_acceleration(ctx: Context, symbol: str) -> float | None:
     rev_df = ctx._fundamentals.get_revenue(symbol, start, end)
     if rev_df.empty or len(rev_df) < 12:
         return None
-    revenues = rev_df["revenue"].values
+    revenues = np.asarray(rev_df["revenue"])
     avg_3m = float(revenues[-3:].mean())
     avg_12m = float(revenues[-12:].mean())
     if avg_12m <= 0:
@@ -179,7 +186,7 @@ def _calc_revenue_new_high(ctx: Context, symbol: str) -> float | None:
     rev_df = ctx._fundamentals.get_revenue(symbol, start, end)
     if rev_df.empty or len(rev_df) < 12:
         return None
-    revenues = rev_df["revenue"].values
+    revenues = np.asarray(rev_df["revenue"])
     avg_3m = float(revenues[-3:].mean())
     # Rolling 3M avg max over last 12 months
     rev_series = pd.Series(revenues[-12:])
@@ -207,7 +214,7 @@ def _calc_trust_cumulative(ctx: Context, symbol: str, days: int = 10) -> float |
 # 1. Bar-based: fn(bars) -> float | None
 # 2. Context-based: fn(ctx, symbol) -> float | None  (needs fundamentals)
 
-PRICE_FACTORS: dict[str, Callable] = {
+PRICE_FACTORS: dict[str, Callable[..., Any]] = {
     "price_vs_ma60": lambda bars: _calc_price_vs_ma(bars, 60),
     "price_vs_ma20": lambda bars: _calc_price_vs_ma(bars, 20),
     "price_vs_ma120": lambda bars: _calc_price_vs_ma(bars, 120),
@@ -218,7 +225,7 @@ PRICE_FACTORS: dict[str, Callable] = {
     "rsi": _calc_rsi,
 }
 
-FUNDAMENTAL_FACTORS: dict[str, Callable] = {
+FUNDAMENTAL_FACTORS: dict[str, Callable[..., Any]] = {
     "revenue_yoy": _calc_revenue_yoy,
     "revenue_acceleration": _calc_revenue_acceleration,
     "revenue_new_high": _calc_revenue_new_high,

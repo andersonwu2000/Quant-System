@@ -617,11 +617,11 @@ async def neutralize_factor(
     """Neutralize a factor (remove market or industry exposure)."""
     try:
         from src.strategy.research import compute_factor_values
-        from src.alpha.neutralize import neutralize
+        from src.alpha.neutralize import neutralize, NeutralizeMethod
         from src.data.sources.yahoo import YahooFeed
 
         feed = YahooFeed(universe=req.symbols)
-        data = {}
+        data: dict[str, Any] = {}
         for sym in req.symbols:
             bars = feed.get_bars(sym, start=req.start, end=req.end)
             if not bars.empty:
@@ -631,7 +631,7 @@ async def neutralize_factor(
         if fv.empty:
             raise HTTPException(status_code=400, detail=f"No factor values for {req.factor_name}")
 
-        neutralized = neutralize(fv, method=req.method)
+        neutralized = neutralize(fv, method=NeutralizeMethod(req.method))
         last_row = neutralized.iloc[-1].dropna()
 
         return NeutralizeResponse(
@@ -639,7 +639,7 @@ async def neutralize_factor(
             method=req.method,
             n_dates=len(neutralized),
             n_symbols=len(last_row),
-            sample={k: float(v) for k, v in last_row.head(10).items()},
+            sample={str(k): float(v) for k, v in last_row.head(10).items()},
         )
     except HTTPException:
         raise

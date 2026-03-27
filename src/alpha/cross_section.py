@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -79,7 +80,7 @@ def quantile_backtest(
     turnover_sums: dict[str, float] = {q: 0.0 for q in q_labels}
     turnover_counts = 0
 
-    used_dates: list = []
+    used_dates: list[Any] = []
 
     for dt in common_dates:
         fv = factor_values.loc[dt, common_symbols].dropna()
