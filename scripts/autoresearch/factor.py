@@ -34,10 +34,10 @@ def compute_factor(
                 s = float(np.std(r, ddof=1))
                 return m / s if s > 0 else None
 
-            # 12-1 Sharpe
-            s12 = _sharpe(close[-252:-21])
-            # 8-1 Sharpe
-            s6 = _sharpe(close[-168:-21])
+            # 12-0.5 Sharpe (skip 10d instead of 21d)
+            s12 = _sharpe(close[-252:-10])
+            # 8-0.5 Sharpe
+            s6 = _sharpe(close[-168:-10])
 
             if s12 is None or s6 is None:
                 continue
