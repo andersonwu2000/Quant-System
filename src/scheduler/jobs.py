@@ -448,16 +448,14 @@ def _save_selection_log_legacy(weights: dict[str, float]) -> None:
 
 
 def _save_trade_log(trades: list[Any], strategy_name: str) -> None:
-    """記錄每次 rebalance 的交易結果。(R10.5)"""
-    import json
-    from pathlib import Path
-
+    """記錄每次 rebalance 的交易結果（含 run_id）。"""
     out_dir = Path("data/paper_trading/trades")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     today = datetime.now().strftime("%Y-%m-%d_%H%M")
     log = {
         "date": today,
+        "run_id": _today_run_id(),  # P3: 關聯 selection → trade → reconciliation
         "strategy": strategy_name,
         "n_trades": len(trades),
         "trades": [
@@ -557,7 +555,13 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
 
 
 async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
-    """Core pipeline logic (extracted for timeout wrapping)."""
+    """Core pipeline logic (extracted for timeout wrapping).
+
+    P2: Also writes pipeline_runs record (not just execute_pipeline outer wrapper).
+    """
+    # P2: Write started record even when called directly (e.g. manual test)
+    run_id = _today_run_id()
+    _write_pipeline_record(run_id, status="started", strategy=config.active_strategy)
     from src.api.state import get_app_state
     from src.core.models import Order
     from src.data.sources import create_feed, create_fundamentals
@@ -753,7 +757,38 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         except Exception:
             logger.debug("Notification failed", exc_info=True)
 
+    # P1: 主動存 NAV snapshot（不依賴 asyncio task 的時間窗口）
+    _save_nav_snapshot(state.portfolio)
+
+    # P2: Write completion record
+    _write_pipeline_record(run_id, status="completed", strategy=strategy.name(), n_trades=n_trades)
+
     return PipelineResult(status="ok", n_trades=n_trades, strategy_name=strategy.name())
+
+
+def _save_nav_snapshot(portfolio: "Portfolio") -> None:
+    """P1: Pipeline 執行後主動存一次 NAV snapshot。"""
+    snap_dir = Path("data/paper_trading/snapshots")
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    path = snap_dir / f"{today}.json"
+    if path.exists():
+        return  # 今天已存過
+    snap = {
+        "date": today,
+        "nav": float(portfolio.nav),
+        "cash": float(portfolio.cash),
+        "n_positions": len(portfolio.positions),
+        "positions": {
+            s: {"qty": float(p.quantity), "price": float(p.market_price)}
+            for s, p in portfolio.positions.items()
+        },
+    }
+    try:
+        path.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.info("NAV snapshot saved: %s (NAV=%s)", today, snap["nav"])
+    except Exception:
+        logger.debug("NAV snapshot save failed", exc_info=True)
 
 
 def _reconcile(
@@ -777,13 +812,18 @@ def _reconcile(
             })
     deviations.sort(key=lambda d: d["deviation"], reverse=True)
 
-    # 存檔
-    if deviations:
-        recon_dir = Path("data/paper_trading/reconciliation")
-        recon_dir.mkdir(parents=True, exist_ok=True)
-        today = datetime.now().strftime("%Y-%m-%d")
-        path = recon_dir / f"{today}.json"
-        path.write_text(json.dumps(deviations, indent=2, ensure_ascii=False), encoding="utf-8")
+    # 存檔（含 run_id）
+    recon_dir = Path("data/paper_trading/reconciliation")
+    recon_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    recon_record = {
+        "date": today,
+        "run_id": _today_run_id(),  # P3: 關聯
+        "n_deviations": len(deviations),
+        "deviations": deviations,
+    }
+    path = recon_dir / f"{today}.json"
+    path.write_text(json.dumps(recon_record, indent=2, ensure_ascii=False), encoding="utf-8")
 
     return deviations
 
@@ -825,22 +865,19 @@ async def _async_revenue_update() -> bool:
 
 
 def _save_selection_log(weights: dict[str, float], strategy_name: str = "") -> None:
-    """記錄選股結果。"""
-    import json
-    from pathlib import Path
-
+    """記錄選股結果（含 run_id 用於追溯）。"""
     out_dir = Path("data/paper_trading/selections")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     today = datetime.now().strftime("%Y-%m-%d")
     log = {
         "date": today,
+        "run_id": _today_run_id(),  # P3: 關聯 selection → trade → reconciliation
         "strategy": strategy_name,
         "n_targets": len(weights),
         "weights": {k: round(v, 4) for k, v in sorted(weights.items(), key=lambda x: -x[1])},
     }
 
     path = out_dir / f"{today}.json"
-    with open(path, "w") as f:
-        json.dump(log, f, indent=2, ensure_ascii=False)
+    path.write_text(json.dumps(log, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("Selection log saved: %s", path)
