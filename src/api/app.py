@@ -208,44 +208,45 @@ def create_app() -> FastAPI:
 
             logger.info("RealtimeRiskMonitor initialized")
 
-        _kill_switch_fired = False  # D2: re-trigger guard
+        state.kill_switch_fired = False  # D2: re-trigger guard, accessible via API
 
         async def _kill_switch_monitor() -> None:
-            nonlocal _kill_switch_fired
             while True:
                 await asyncio.sleep(5)
                 try:
                     # D2: skip if already fired (wait for manual reset via API)
-                    if _kill_switch_fired:
+                    if state.kill_switch_fired:
                         continue
 
                     if state.risk_engine.kill_switch(state.portfolio):
-                        _kill_switch_fired = True  # D2: prevent re-trigger
-                        for name in list(state.strategies):
-                            state.strategies[name]["status"] = "stopped"
-                        state.oms.cancel_all()
+                        state.kill_switch_fired = True  # D2: prevent re-trigger
 
-                        # Paper/live: generate, submit, and APPLY liquidation orders
-                        if config.mode in ("paper", "live"):
-                            liq_orders = state.risk_engine.generate_liquidation_orders(
-                                state.portfolio
-                            )
-                            if liq_orders:
-                                logger.critical(
-                                    "Kill switch: submitting %d liquidation orders",
-                                    len(liq_orders),
+                        # Acquire mutation lock for portfolio changes
+                        async with state.mutation_lock:
+                            for name in list(state.strategies):
+                                state.strategies[name]["status"] = "stopped"
+                            state.oms.cancel_all()
+
+                            # Paper/live: generate, submit, and APPLY liquidation orders
+                            if config.mode in ("paper", "live") and state.execution_service.is_initialized:
+                                liq_orders = state.risk_engine.generate_liquidation_orders(
+                                    state.portfolio
                                 )
-                                trades = state.execution_service.submit_orders(
-                                    liq_orders, state.portfolio
-                                )
-                                # D1: apply trades to portfolio (was missing!)
-                                if trades:
-                                    from src.execution.oms import apply_trades
-                                    apply_trades(state.portfolio, trades)
+                                if liq_orders:
                                     logger.critical(
-                                        "Kill switch: %d liquidation trades executed, NAV=%s",
-                                        len(trades), state.portfolio.nav,
+                                        "Kill switch: submitting %d liquidation orders",
+                                        len(liq_orders),
                                     )
+                                    trades = state.execution_service.submit_orders(
+                                        liq_orders, state.portfolio
+                                    )
+                                    if trades:
+                                        from src.execution.oms import apply_trades
+                                        apply_trades(state.portfolio, trades)
+                                        logger.critical(
+                                            "Kill switch: %d liquidation trades executed, NAV=%s",
+                                            len(trades), state.portfolio.nav,
+                                        )
 
                         await ws_manager.broadcast("alerts", {
                             "type": "kill_switch",

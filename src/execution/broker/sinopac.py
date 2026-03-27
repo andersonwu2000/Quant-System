@@ -212,6 +212,10 @@ class SinopacBroker(BrokerAdapter):
             # Simulation mode: 模擬即時成交，含滑價和最低佣金
             if self._config.simulation:
                 price = order.price or Decimal("0")
+                if price <= 0:
+                    order.status = OrderStatus.REJECTED
+                    order.reject_reason = "No price for simulation fill"
+                    return broker_id
                 # 滑價 5 bps（和 PaperBroker/SimBroker 一致）
                 slippage = price * Decimal("5") / Decimal("10000")
                 if order.side == Side.BUY:

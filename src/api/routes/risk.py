@@ -92,6 +92,20 @@ async def kill_switch(api_key: str = Depends(verify_api_key), _role: dict[str, A
     )
 
 
+@router.post("/kill-switch/reset", response_model=MessageResponse)
+async def reset_kill_switch(
+    api_key: str = Depends(verify_api_key),
+    _role: dict[str, Any] = Depends(require_role("risk_manager")),
+) -> MessageResponse:
+    """重置 kill switch 狀態，允許恢復交易。"""
+    state = get_app_state()
+    was_fired = getattr(state, "kill_switch_fired", False)
+    state.kill_switch_fired = False
+    if was_fired:
+        return MessageResponse(message="Kill switch reset — trading can resume")
+    return MessageResponse(message="Kill switch was not active")
+
+
 # ── Risk Config ────────────────────────────────────────────────
 
 class RiskConfigUpdate(BaseModel):

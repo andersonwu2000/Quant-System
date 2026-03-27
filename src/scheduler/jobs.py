@@ -651,10 +651,12 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         logger.info("All orders rejected by risk engine")
         return PipelineResult(status="no_orders", strategy_name=strategy.name())
 
-    trades = state.execution_service.submit_orders(approved, state.portfolio)
-    if trades:
-        apply_trades(state.portfolio, trades)
-        _save_trade_log(trades, strategy.name())
+    # Acquire mutation lock for submit + apply (prevent race with kill switch / rebalance)
+    async with state.mutation_lock:
+        trades = state.execution_service.submit_orders(approved, state.portfolio)
+        if trades:
+            apply_trades(state.portfolio, trades)
+            _save_trade_log(trades, strategy.name())
 
     n_trades = len(trades) if trades else 0
     logger.info("Pipeline done: %d trades, NAV=%s", n_trades, state.portfolio.nav)
