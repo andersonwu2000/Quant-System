@@ -3,22 +3,22 @@
   "passed": true,
   "level_reached": "L5",
   "failure_reason": "",
-  "ic_20d": 0.023798839200430216,
+  "ic_20d": 0.04799131596640788,
   "icir_by_horizon": {
-    "5d": 0.2851975077002979,
-    "10d": 0.46080785721498085,
-    "20d": 0.18862284255052306,
-    "60d": 0.5211546768200442
+    "5d": 0.6580419636389967,
+    "10d": 0.8143806605988989,
+    "20d": 0.4140213614626167,
+    "60d": 0.3564254633880386
   },
-  "best_icir": 0.5211546768200442,
-  "best_horizon": "60d",
-  "avg_turnover": 0.8245208638347764,
+  "best_icir": 0.8143806605988989,
+  "best_horizon": "10d",
+  "avg_turnover": 0.8285105829842673,
   "max_correlation": 0.0,
   "correlated_with": "",
   "positive_years": 0,
   "total_years": 0,
-  "fitness": 8.854085307120707,
+  "fitness": 19.600166068273083,
   "wf_avg_sharpe": 0.0,
   "wf_positive_ratio": 0.0,
-  "duration_seconds": 0.8959454000141704
+  "duration_seconds": 0.9734619999944698
 }

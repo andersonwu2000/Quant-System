@@ -505,21 +505,23 @@ class AlphaResearchAgent:
         """判斷因子是否符合自動部署條件，若符合則部署到 Paper Trading。
 
         部署條件（全部滿足）：
-        1. StrategyValidator >= 10/13
+        1. StrategyValidator >= 12/13（提高門檻，10/13 太寬鬆）
         2. Sharpe > 0050.TW Sharpe（風險調整打敗大盤）
         3. CAGR > 8%
+        4. recent_period_sharpe > 0（最近 1 年不能虧）
         """
         n_passed = validator_result.get("n_passed", 0)
         n_total = validator_result.get("n_total", 13)
 
-        if n_passed < 10:
-            logger.info("[Deploy] %s: %d/%d < 10, skip deploy", hypothesis.name, n_passed, n_total)
+        if n_passed < 12:
+            logger.info("[Deploy] %s: %d/%d < 12, skip deploy", hypothesis.name, n_passed, n_total)
             return
 
-        # 從 validator checks 取 Sharpe 和 CAGR
+        # 從 validator checks 取 Sharpe、CAGR、recent Sharpe
         checks = validator_result.get("checks", [])
         strategy_sharpe = 0.0
         strategy_cagr = 0.0
+        recent_sharpe = 0.0
         for c in checks:
             if c["name"] == "sharpe":
                 try:
@@ -528,9 +530,13 @@ class AlphaResearchAgent:
                     pass
             if c["name"] == "cagr":
                 try:
-                    # value 格式如 "+10.05%" — 去掉 % 和 + 再轉 float
                     val_str = str(c["value"]).strip().rstrip("%").lstrip("+")
                     strategy_cagr = float(val_str) / 100
+                except (ValueError, TypeError):
+                    pass
+            if c["name"] == "recent_period_sharpe":
+                try:
+                    recent_sharpe = float(c["value"])
                 except (ValueError, TypeError):
                     pass
 
@@ -538,8 +544,8 @@ class AlphaResearchAgent:
         bench_sharpe = self._get_0050_sharpe()
 
         logger.info(
-            "[Deploy] %s: Sharpe=%.3f vs 0050=%.3f, CAGR=%.2f%%",
-            hypothesis.name, strategy_sharpe, bench_sharpe, strategy_cagr * 100,
+            "[Deploy] %s: Sharpe=%.3f vs 0050=%.3f, CAGR=%.2f%%, recent=%.3f",
+            hypothesis.name, strategy_sharpe, bench_sharpe, strategy_cagr * 100, recent_sharpe,
         )
 
         if strategy_sharpe <= bench_sharpe:
@@ -548,6 +554,10 @@ class AlphaResearchAgent:
 
         if strategy_cagr < 0.08:
             logger.info("[Deploy] %s: CAGR < 8%%, skip deploy", hypothesis.name)
+            return
+
+        if recent_sharpe <= 0:
+            logger.info("[Deploy] %s: recent Sharpe %.3f <= 0, skip deploy", hypothesis.name, recent_sharpe)
             return
 
         # 全部通過 → 部署到 Paper Trading
@@ -682,10 +692,15 @@ class AlphaResearchAgent:
                     icon = "PASS" if c["passed"] else "FAIL"
                     lines.append(f"| {c['name']} | {c['value']} | {icon} |")
 
-            if n_pass >= 10:
+            if n_pass >= 12:
                 lines.extend([
                     "",
-                    f"**{n_pass}/13 通過 — 可考慮進入 Paper Trading。**",
+                    f"**{n_pass}/13 通過 — 符合 Paper Trading 部署門檻 (≥12/13)。**",
+                ])
+            elif n_pass >= 10:
+                lines.extend([
+                    "",
+                    f"**{n_pass}/13 通過 — 未達部署門檻 (需 ≥12/13)，僅供觀察。**",
                 ])
             else:
                 lines.extend([

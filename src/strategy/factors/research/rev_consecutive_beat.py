@@ -1,7 +1,7 @@
-"""Auto-generated research factor: rev_accel_2nd_derivative
+"""Auto-generated research factor: rev_consecutive_beat
 
-營收加速度的二階導數（加速度的變化率）
-Academic basis: Second-order momentum
+連續 N 月營收超越去年同月的月數
+Academic basis: Earnings consistency premium
 Direction: revenue_acceleration_2nd_order
 """
 
@@ -13,8 +13,8 @@ from pathlib import Path
 FUND_DIR = Path("data/fundamental")
 
 
-def compute_rev_accel_2nd_derivative(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_accel_2nd_derivative for all symbols at as_of date."""
+def compute_rev_consecutive_beat(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_consecutive_beat for all symbols at as_of date."""
     results = {}
     for sym in symbols:
         try:
@@ -31,19 +31,13 @@ def compute_rev_accel_2nd_derivative(symbols: list[str], as_of: pd.Timestamp) ->
 
             revenues = df["revenue"].astype(float).values
 
-            # YoY for each month
             if len(revenues) < 24:
                 continue
-            yoy = []
-            for i in range(12, len(revenues)):
-                if revenues[i-12] > 0:
-                    yoy.append(revenues[i] / revenues[i-12] - 1)
-                else:
-                    yoy.append(0)
-            if len(yoy) < 2:
-                continue
-            # Acceleration = latest YoY - previous YoY
-            results[sym] = float(yoy[-1] - yoy[-2])
+            count = 0
+            for i in range(max(len(revenues)-12, 12), len(revenues)):
+                if revenues[i-12] > 0 and revenues[i] > revenues[i-12]:
+                    count += 1
+            results[sym] = float(count)
 
         except Exception:
             continue

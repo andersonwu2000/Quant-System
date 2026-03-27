@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_accel_2nd_derivative
+"""Auto-generated research factor: rev_yoy_acceleration
 
-營收加速度的二階導數（加速度的變化率）
-Academic basis: Second-order momentum
-Direction: revenue_acceleration_2nd_order
+營收 YoY 的月度加速度（本月 YoY - 上月 YoY）
+Academic basis: Earnings momentum acceleration
+Direction: seasonal_revenue_patterns
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from pathlib import Path
 FUND_DIR = Path("data/fundamental")
 
 
-def compute_rev_accel_2nd_derivative(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_accel_2nd_derivative for all symbols at as_of date."""
+def compute_rev_yoy_acceleration(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_yoy_acceleration for all symbols at as_of date."""
     results = {}
     for sym in symbols:
         try:

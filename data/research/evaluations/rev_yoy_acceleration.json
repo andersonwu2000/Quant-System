@@ -1,5 +1,5 @@
 {
-  "factor_name": "rev_accel_2nd_derivative",
+  "factor_name": "rev_yoy_acceleration",
   "passed": true,
   "level_reached": "L5",
   "failure_reason": "",
@@ -20,5 +20,5 @@
   "fitness": 18.699084481294506,
   "wf_avg_sharpe": 0.0,
   "wf_positive_ratio": 0.0,
-  "duration_seconds": 0.9251289999956498
+  "duration_seconds": 0.8498991999949794
 }

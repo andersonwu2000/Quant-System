@@ -1,10 +1,10 @@
 {
   "version": 2,
-  "total_rounds": 1,
-  "total_pass": 1,
+  "total_rounds": 7,
+  "total_pass": 7,
   "total_fail": 0,
-  "best_fitness": 22.78292982730775,
-  "last_updated": "2026-03-27T05:26:41.455395",
+  "best_fitness": 24.975786035827884,
+  "last_updated": "2026-03-27T10:47:12.705296",
   "success_patterns": [
     {
       "name": "revenue_growth_variants",
@@ -115,6 +115,72 @@
       "avg_fitness": 22.78292982730775,
       "evidence": "auto_research_20260327_052445_2b15",
       "mutation_suggestions": []
+    },
+    {
+      "name": "rev_seasonal_deviation",
+      "description": "實際營收 vs 同行業歷史同月平均的偏離",
+      "factors": [
+        "rev_seasonal_deviation"
+      ],
+      "avg_icir": 0.8143806605988989,
+      "avg_fitness": 19.600166068273083,
+      "evidence": "auto_research_20260327_080310_db1e",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_accel_2nd_derivative",
+      "description": "營收加速度的二階導數（加速度的變化率）",
+      "factors": [
+        "rev_accel_2nd_derivative"
+      ],
+      "avg_icir": 0.8598182855503261,
+      "avg_fitness": 18.699084481294506,
+      "evidence": "auto_research_20260327_081513_d8c8",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_yoy_x_roe_improvement",
+      "description": "營收成長且 ROE 提升 = 高品質成長",
+      "factors": [
+        "rev_yoy_x_roe_improvement"
+      ],
+      "avg_icir": 0.8586429063519062,
+      "avg_fitness": 24.975786035827884,
+      "evidence": "auto_research_20260327_100700_53f9",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_yoy_acceleration",
+      "description": "營收 YoY 的月度加速度（本月 YoY - 上月 YoY）",
+      "factors": [
+        "rev_yoy_acceleration"
+      ],
+      "avg_icir": 0.8598182855503261,
+      "avg_fitness": 18.699084481294506,
+      "evidence": "auto_research_20260327_101706_0001",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_consecutive_beat",
+      "description": "連續 N 月營收超越去年同月的月數",
+      "factors": [
+        "rev_consecutive_beat"
+      ],
+      "avg_icir": 0.5824142304563007,
+      "avg_fitness": 9.016245761786378,
+      "evidence": "auto_research_20260327_102654_90c3",
+      "mutation_suggestions": []
+    },
+    {
+      "name": "rev_accel_x_operating_margin",
+      "description": "營收加速中且營業利益率穩定/改善",
+      "factors": [
+        "rev_accel_x_operating_margin"
+      ],
+      "avg_icir": 0.8586429063519062,
+      "avg_fitness": 24.975786035827884,
+      "evidence": "auto_research_20260327_103630_7ebc",
+      "mutation_suggestions": []
     }
   ],
   "forbidden_regions": [
@@ -178,25 +244,25 @@
       "name": "revenue_quality_interaction",
       "status": "exploring",
       "priority": "P0",
-      "best_icir": 0.802212325411974,
-      "hypothesis_count": 1,
-      "pass_count": 3
+      "best_icir": 0.8586429063519062,
+      "hypothesis_count": 3,
+      "pass_count": 5
     },
     {
       "name": "seasonal_revenue_patterns",
       "status": "exploring",
       "priority": "P0",
-      "best_icir": 0.5211546768200442,
-      "hypothesis_count": 0,
-      "pass_count": 2
+      "best_icir": 0.8598182855503261,
+      "hypothesis_count": 2,
+      "pass_count": 4
     },
     {
       "name": "revenue_acceleration_2nd_order",
       "status": "exploring",
       "priority": "P0",
-      "best_icir": 0.47046354707733756,
-      "hypothesis_count": 0,
-      "pass_count": 2
+      "best_icir": 0.8598182855503261,
+      "hypothesis_count": 2,
+      "pass_count": 4
     },
     {
       "name": "supply_chain_propagation",
@@ -277,6 +343,198 @@
       "failure_step": "",
       "failure_reason": "",
       "duration_seconds": 115.96669269999256,
+      "passed": true
+    },
+    {
+      "id": "20260327_080310_db1e",
+      "timestamp": "2026-03-27T08:08:44.622530",
+      "hypothesis": {
+        "name": "rev_seasonal_deviation",
+        "description": "實際營收 vs 同行業歷史同月平均的偏離",
+        "formula_sketch": "rev_this_month / mean(rev_same_month_past_3years) - 1",
+        "expected_direction": 1,
+        "academic_basis": "Seasonal anomalies in earnings",
+        "data_requirements": [
+          "revenue"
+        ],
+        "direction": "seasonal_revenue_patterns"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.04799131596640788,
+        "best_icir": 0.8143806605988989,
+        "best_horizon": "10d",
+        "fitness": 19.600166068273083,
+        "turnover": 0.8285105829842673,
+        "max_corr": 0.0,
+        "positive_years": 0,
+        "validator_passed": 12,
+        "validator_total": 13
+      },
+      "fitness": 19.600166068273083,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 333.70481549999386,
+      "passed": true
+    },
+    {
+      "id": "20260327_081513_d8c8",
+      "timestamp": "2026-03-27T08:20:22.566799",
+      "hypothesis": {
+        "name": "rev_accel_2nd_derivative",
+        "description": "營收加速度的二階導數（加速度的變化率）",
+        "formula_sketch": "d(rev_3m/rev_12m)/dt",
+        "expected_direction": 1,
+        "academic_basis": "Second-order momentum",
+        "data_requirements": [
+          "revenue"
+        ],
+        "direction": "revenue_acceleration_2nd_order"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.041517649993759974,
+        "best_icir": 0.8598182855503261,
+        "best_horizon": "5d",
+        "fitness": 18.699084481294506,
+        "turnover": 0.8778199156193018,
+        "max_corr": 0.0,
+        "positive_years": 0
+      },
+      "fitness": 18.699084481294506,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 308.70959830000356,
+      "passed": true
+    },
+    {
+      "id": "20260327_100700_53f9",
+      "timestamp": "2026-03-27T10:11:24.876634",
+      "hypothesis": {
+        "name": "rev_yoy_x_roe_improvement",
+        "description": "營收成長且 ROE 提升 = 高品質成長",
+        "formula_sketch": "rank(rev_yoy) × rank(roe_change_yoy)",
+        "expected_direction": 1,
+        "academic_basis": "Fama-French (2015) RMW profitability",
+        "data_requirements": [
+          "revenue",
+          "financial_statement"
+        ],
+        "direction": "revenue_quality_interaction"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.07584389679563332,
+        "best_icir": 0.8586429063519062,
+        "best_horizon": "10d",
+        "fitness": 24.975786035827884,
+        "turnover": 0.8964116269379427,
+        "max_corr": 0.0,
+        "positive_years": 0,
+        "validator_passed": 11,
+        "validator_total": 13
+      },
+      "fitness": 24.975786035827884,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 264.12203619998763,
+      "passed": true
+    },
+    {
+      "id": "20260327_101706_0001",
+      "timestamp": "2026-03-27T10:21:20.859052",
+      "hypothesis": {
+        "name": "rev_yoy_acceleration",
+        "description": "營收 YoY 的月度加速度（本月 YoY - 上月 YoY）",
+        "formula_sketch": "rev_yoy[t] - rev_yoy[t-1]",
+        "expected_direction": 1,
+        "academic_basis": "Earnings momentum acceleration",
+        "data_requirements": [
+          "revenue"
+        ],
+        "direction": "seasonal_revenue_patterns"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.041517649993759974,
+        "best_icir": 0.8598182855503261,
+        "best_horizon": "5d",
+        "fitness": 18.699084481294506,
+        "turnover": 0.8778199156193018,
+        "max_corr": 0.0,
+        "positive_years": 0,
+        "validator_passed": 12,
+        "validator_total": 13
+      },
+      "fitness": 18.699084481294506,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 254.70397200000298,
+      "passed": true
+    },
+    {
+      "id": "20260327_102654_90c3",
+      "timestamp": "2026-03-27T10:31:05.203037",
+      "hypothesis": {
+        "name": "rev_consecutive_beat",
+        "description": "連續 N 月營收超越去年同月的月數",
+        "formula_sketch": "sum(rev_yoy > 0 for last 12 months)",
+        "expected_direction": 1,
+        "academic_basis": "Earnings consistency premium",
+        "data_requirements": [
+          "revenue"
+        ],
+        "direction": "revenue_acceleration_2nd_order"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.02078005691614504,
+        "best_icir": 0.5824142304563007,
+        "best_horizon": "10d",
+        "fitness": 9.016245761786378,
+        "turnover": 0.8670800744725966,
+        "max_corr": 0.0,
+        "positive_years": 0,
+        "validator_passed": 10,
+        "validator_total": 13
+      },
+      "fitness": 9.016245761786378,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 250.45344690000638,
+      "passed": true
+    },
+    {
+      "id": "20260327_103630_7ebc",
+      "timestamp": "2026-03-27T10:40:49.211069",
+      "hypothesis": {
+        "name": "rev_accel_x_operating_margin",
+        "description": "營收加速中且營業利益率穩定/改善",
+        "formula_sketch": "rank(rev_3m/rev_12m) × rank(operating_margin > median)",
+        "expected_direction": 1,
+        "academic_basis": "Operating leverage effect",
+        "data_requirements": [
+          "revenue",
+          "financial_statement"
+        ],
+        "direction": "revenue_quality_interaction"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.07584389679563332,
+        "best_icir": 0.8586429063519062,
+        "best_horizon": "10d",
+        "fitness": 24.975786035827884,
+        "turnover": 0.8964116269379427,
+        "max_corr": 0.0,
+        "positive_years": 0,
+        "validator_passed": 11,
+        "validator_total": 13
+      },
+      "fitness": 24.975786035827884,
+      "failure_step": "",
+      "failure_reason": "",
+      "duration_seconds": 258.24993699998595,
       "passed": true
     }
   ]
