@@ -76,6 +76,11 @@ def create_app() -> FastAPI:
             if persisted is not None:
                 state.portfolio = persisted
                 logger.info("Restored persisted portfolio on startup")
+            else:
+                # No persisted state — save current state immediately
+                from src.api.state import save_portfolio
+                save_portfolio(state.portfolio)
+                logger.info("No persisted portfolio found, saved initial state")
 
         _seed_admin(config)
 
