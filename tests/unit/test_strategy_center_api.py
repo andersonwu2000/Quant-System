@@ -34,7 +34,7 @@ class TestStrategyInfo:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "revenue_momentum_hedged"
-        assert "revenue_yoy" in data["factor"]
+        assert "rebalance" in data  # dynamic info, no longer hardcoded "factor" field
 
 
 class TestRegime:
