@@ -40,7 +40,23 @@ def verify_api_key(
 
     if token:
         try:
-            jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+            payload = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+            # 撤銷檢查：token 的 iat 必須 >= user 的 token_valid_after
+            username = payload.get("sub", "")
+            if username:
+                from src.api.user_store import get_user_store
+                user = get_user_store().get(username)
+                if user:
+                    token_valid_after = user.get("token_valid_after")
+                    token_iat = payload.get("iat")
+                    if token_valid_after and token_iat:
+                        from datetime import datetime
+                        valid_after_ts = datetime.fromisoformat(token_valid_after).timestamp()
+                        if token_iat < valid_after_ts:
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Token has been revoked",
+                            )
             return "jwt_authenticated"
         except JWTError:
             pass

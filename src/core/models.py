@@ -253,15 +253,15 @@ class Portfolio:
 
     @property
     def daily_pnl(self) -> Decimal:
-        if self.nav_sod == 0:
-            return Decimal("0")
-        return self.nav - self.nav_sod
+        sod = self.nav_sod if self.nav_sod > 0 else self.nav
+        return self.nav - sod
 
     @property
     def daily_drawdown(self) -> Decimal:
-        if self.nav_sod == 0:
+        sod = self.nav_sod if self.nav_sod > 0 else self.nav
+        if sod == 0:
             return Decimal("0")
-        return -self.daily_pnl / self.nav_sod
+        return -self.daily_pnl / sod
 
     def get_position_weight(self, symbol: str) -> Decimal:
         if symbol not in self.positions or self.nav == 0:

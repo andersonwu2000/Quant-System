@@ -68,7 +68,17 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
         for trade in trades:
             symbol = trade.symbol
 
-            # 更新現金
+            # SELL 溢出防護：先 cap 數量再計算現金
+            if trade.side == Side.SELL and symbol in portfolio.positions:
+                pos_qty = portfolio.positions[symbol].quantity
+                if trade.quantity > pos_qty:
+                    logger.warning(
+                        "SELL qty %s > position %s for %s — capping",
+                        trade.quantity, pos_qty, symbol,
+                    )
+                    trade.quantity = pos_qty
+
+            # 更新現金（用 capped 後的數量）
             notional = trade.quantity * trade.price
             if trade.side == Side.BUY:
                 portfolio.cash -= notional + trade.commission
@@ -84,12 +94,6 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
                     pos.avg_cost = total_cost / new_qty if new_qty > 0 else Decimal("0")
                     pos.quantity = new_qty
                 else:
-                    if trade.quantity > pos.quantity:
-                        logger.warning(
-                            "SELL qty %s > position %s for %s — capping to position size",
-                            trade.quantity, pos.quantity, symbol,
-                        )
-                        trade.quantity = pos.quantity
                     pos.quantity -= trade.quantity
 
                 pos.market_price = trade.price

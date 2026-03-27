@@ -78,12 +78,10 @@ async def kill_switch(api_key: str = Depends(verify_api_key), _role: dict[str, A
     """緊急熔斷：停止所有策略，撤銷所有訂單。"""
     state = get_app_state()
 
-    # 停止所有策略
-    for name in state.strategies:
-        state.strategies[name]["status"] = "stopped"
-
-    # 撤銷所有訂單
-    cancelled = state.oms.cancel_all()
+    async with state.mutation_lock:
+        for name in state.strategies:
+            state.strategies[name]["status"] = "stopped"
+        cancelled = state.oms.cancel_all()
 
     return KillSwitchResponse(
         message="Kill switch activated",
