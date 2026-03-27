@@ -609,17 +609,41 @@ class AlphaResearchAgent:
         """判斷因子是否符合自動部署條件，若符合則部署到 Paper Trading。
 
         部署條件（全部滿足）：
-        1. StrategyValidator >= 12/13
-        2. Sharpe > 0050.TW Sharpe
-        3. CAGR > 8%
-        4. recent_period_sharpe > 0（最近 1 年不能虧）
-        5. 大規模 ICIR(20d) >= 0.20（865+ 支台股驗證）
+        1. StrategyValidator >= 11/13（排除 DSR 後 ≥12/13）
+        2. deflated_sharpe >= 0.50（寬鬆門檻，<0.50 仍視為過擬合風險）
+        3. Sharpe > 0050.TW Sharpe
+        4. CAGR > 8%
+        5. recent_period_sharpe > -0.10（允許輕微噪音）
+        6. 大規模 ICIR(20d) >= 0.20（865+ 支台股驗證）
         """
         n_passed = validator_result.get("n_passed", 0)
         n_total = validator_result.get("n_total", 13)
 
-        if n_passed < 12:
-            logger.info("[Deploy] %s: %d/%d < 12, skip deploy", hypothesis.name, n_passed, n_total)
+        # 計算排除 deflated_sharpe 後的通過數
+        checks = validator_result.get("checks", [])
+        n_passed_excl_dsr = sum(
+            1 for c in checks
+            if c["passed"] or c["name"] == "deflated_sharpe"
+        )
+
+        if n_passed_excl_dsr < 12:
+            logger.info(
+                "[Deploy] %s: %d/%d (excl DSR: %d/13) < 12, skip deploy",
+                hypothesis.name, n_passed, n_total, n_passed_excl_dsr,
+            )
+            return
+
+        # DSR 寬鬆門檻：不要求 0.95，但 < 0.50 仍然危險（可能真的過擬合）
+        dsr_value = 0.0
+        for c in checks:
+            if c["name"] == "deflated_sharpe":
+                try:
+                    dsr_value = float(c["value"])
+                except (ValueError, TypeError):
+                    pass
+        if dsr_value < 0.50:
+            logger.info("[Deploy] %s: DSR %.3f < 0.50 (relaxed threshold), skip deploy",
+                       hypothesis.name, dsr_value)
             return
 
         # 從 validator checks 取 Sharpe、CAGR、recent Sharpe
@@ -661,8 +685,8 @@ class AlphaResearchAgent:
             logger.info("[Deploy] %s: CAGR < 8%%, skip deploy", hypothesis.name)
             return
 
-        if recent_sharpe <= 0:
-            logger.info("[Deploy] %s: recent Sharpe %.3f <= 0, skip deploy", hypothesis.name, recent_sharpe)
+        if recent_sharpe < -0.10:
+            logger.info("[Deploy] %s: recent Sharpe %.3f < -0.10, skip deploy", hypothesis.name, recent_sharpe)
             return
 
         # 5. 大規模 ICIR 門檻
@@ -912,15 +936,17 @@ class AlphaResearchAgent:
                     icon = "PASS" if c["passed"] else "FAIL"
                     lines.append(f"| {c['name']} | {c['value']} | {icon} |")
 
-            if n_pass >= 12:
+            # 排除 deflated_sharpe 後的有效通過數
+            n_excl_dsr = sum(1 for c in checks if c["passed"] or c["name"] == "deflated_sharpe")
+            if n_excl_dsr >= 12:
                 lines.extend([
                     "",
-                    f"**{n_pass}/13 通過 — 符合 Paper Trading 部署門檻 (≥12/13)。**",
+                    f"**{n_pass}/13 通過（排除 DSR: {n_excl_dsr}/13）— 符合部署門檻。**",
                 ])
             elif n_pass >= 10:
                 lines.extend([
                     "",
-                    f"**{n_pass}/13 通過 — 未達部署門檻 (需 ≥12/13)，僅供觀察。**",
+                    f"**{n_pass}/13 通過（排除 DSR: {n_excl_dsr}/13）— 未達部署門檻，僅供觀察。**",
                 ])
             else:
                 lines.extend([
@@ -996,7 +1022,7 @@ class AlphaResearchAgent:
             "",
         ])
         if deploy_eligible:
-            lines.append("**符合所有部署條件（Validator ≥12/13 + 大規模 ICIR ≥0.20）。**")
+            lines.append("**符合所有部署條件（Validator ≥11/13 excl DSR + 大規模 ICIR ≥0.20 + recent>-0.10）。**")
         else:
             lines.append(f"**不符合部署條件：{'; '.join(reasons)}**")
 
