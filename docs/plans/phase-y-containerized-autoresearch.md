@@ -32,7 +32,7 @@ Host (Windows 11)
 │   └── docker/autoresearch/             ← Docker 配置（新增）
 │       ├── Dockerfile
 │       ├── docker-compose.yml
-│       ├── entrypoint.sh
+│       ├── init.ps1
 │       └── watchdog.py
 │
 └── Docker Container: autoresearch-agent
@@ -98,14 +98,16 @@ RUN pip install --no-cache-dir \
     "scipy>=1.12,<2" \
     "pyarrow>=15,<24"
 
-# 複製 evaluate.py（不可變）
+# 複製 evaluate.py + watchdog.py（不可變）
 COPY scripts/autoresearch/evaluate.py /app/evaluate.py
+COPY docker/autoresearch/watchdog.py /app/watchdog.py
 
 # 工作目錄
 WORKDIR /app
 
 # 非 root 用戶
-RUN useradd -m -s /bin/bash researcher
+RUN useradd -m -s /bin/bash researcher && \
+    mkdir -p /app/work && chown researcher:researcher /app/work
 USER researcher
 
 # 入口：等待 docker exec 指令
@@ -128,6 +130,8 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - autoresearch-net
+    environment:
+      - API_URL=http://host.docker.internal:8000
     mem_limit: 4g                   # 記憶體限制
     cpus: 2                         # CPU 限制
     security_opt:
@@ -165,42 +169,44 @@ volumes:
   autoresearch-work:
 ```
 
-### 3.3 entrypoint.sh（Host 端啟動腳本）
+### 3.3 init.ps1（Host 端初始化腳本）
 
-```bash
-#!/bin/bash
-# Host 端啟動腳本：初始化 work/ 目錄 + 啟動容器 + 啟動 Claude Code loop
+```powershell
+# Host 端啟動腳本：初始化 work/ 目錄 + 啟動容器
+# 用法：powershell -ExecutionPolicy Bypass -File docker/autoresearch/init.ps1
 
-WORK_DIR="D:/Finance/docker/autoresearch/work"
-SCRIPT_DIR="D:/Finance/scripts/autoresearch"
+$WorkDir = "D:\Finance\docker\autoresearch\work"
+$ScriptDir = "D:\Finance\scripts\autoresearch"
 
 # 1. 初始化 work/ 目錄（首次啟動）
-mkdir -p "$WORK_DIR"
-if [ ! -f "$WORK_DIR/factor.py" ]; then
-    cp "$SCRIPT_DIR/factor.py" "$WORK_DIR/factor.py"
-    cp "$SCRIPT_DIR/results.tsv" "$WORK_DIR/results.tsv"
-fi
+if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Path $WorkDir }
+if (-not (Test-Path "$WorkDir\factor.py")) {
+    Copy-Item "$ScriptDir\factor.py" "$WorkDir\factor.py"
+    Copy-Item "$ScriptDir\results.tsv" "$WorkDir\results.tsv"
+}
 
-# 2. 初始化獨立 git repo（如果不存在）
-#    P-02 fix: results.tsv 不進 git，防止 git reset 清空實驗記錄
-if [ ! -d "$WORK_DIR/.git" ]; then
-    cd "$WORK_DIR"
+# 2. 初始化獨立 git repo
+#    P-02: results.tsv 不進 git，防止 git reset 清空
+if (-not (Test-Path "$WorkDir\.git")) {
+    Push-Location $WorkDir
     git init
-    echo "results.tsv" > .gitignore
-    echo "run.log" >> .gitignore
+    "results.tsv`nrun.log" | Out-File -Encoding ascii .gitignore
     git add factor.py .gitignore
     git commit -m "init: autoresearch workspace"
-fi
+    Pop-Location
+}
 
-# 3. 啟動容器
-cd "D:/Finance/docker/autoresearch"
+# 3. 建構並啟動容器
+Push-Location "D:\Finance\docker\autoresearch"
+docker compose build
 docker compose up -d
+Pop-Location
 
 # 4. 驗證容器健康
 docker exec autoresearch-agent python -c "import numpy, pandas, scipy; print('OK')"
 
-echo "Container ready. Start Claude Code loop with:"
-echo "  powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop-docker.ps1"
+Write-Host "`nContainer ready. Start research with:" -ForegroundColor Green
+Write-Host "  powershell -File scripts/autoresearch/loop-docker.ps1"
 ```
 
 ### 3.4 loop-docker.ps1（Host 端 Claude Code 循環）
@@ -251,13 +257,11 @@ while ($true) {
 """
 
 import hashlib
-import os
 import time
 from datetime import datetime
 from pathlib import Path
 
 WORK_DIR = Path("/app/work")
-REF_DIR = Path("/app/reference")      # 掛載的原始 autoresearch/
 CHECK_INTERVAL = 60                    # 秒
 STALE_THRESHOLD = 1800                 # 30 分鐘無更新 = 停滯
 # N-03: watchdog 只寫 stdout，不寫檔案（volume 是 :ro）
@@ -334,7 +338,27 @@ def main():
                 else:
                     consecutive_crashes = 0  # reset on successful run
 
-        # 6. 磁碟用量
+        # 6. §8 退出條件偵測（飽和 + OOS 衰退）
+        if (WORK_DIR / "results.tsv").exists():
+            lines = (WORK_DIR / "results.tsv").read_text(
+                encoding="utf-8", errors="ignore"
+            ).strip().splitlines()[1:]  # skip header
+            if len(lines) >= 50:
+                recent = lines[-50:]
+                discard_count = sum(1 for l in recent if "\tdiscard\t" in l)
+                if discard_count >= 50:
+                    log("ALERT: 50 consecutive discards — factor space may be exhausted")
+            # OOS 衰退：連續 L4 通過但 L5 失敗
+            l4_fail_l5 = 0
+            for l in reversed(lines):
+                if "\tL4\t" in l and "L5 OOS fail" in l:
+                    l4_fail_l5 += 1
+                else:
+                    break
+            if l4_fail_l5 >= 10:
+                log(f"ALERT: {l4_fail_l5} consecutive L4-pass-L5-fail — possible OOS overfitting")
+
+        # 7. 磁碟用量
         total_size = sum(
             f.stat().st_size for f in WORK_DIR.rglob("*") if f.is_file()
         ) if WORK_DIR.exists() else 0
@@ -384,10 +408,9 @@ docker compose version
 docker/autoresearch/
 ├── Dockerfile
 ├── docker-compose.yml
+├── init.ps1              ← Host 端初始化腳本
 ├── watchdog.py
-└── work/                 ← agent 工作區（git init）
-    ├── factor.py
-    └── results.tsv
+└── work/                 ← agent 工作區（init.ps1 自動建立）
 ```
 
 ### Step 2：建構 image（~5 分鐘）
@@ -414,10 +437,10 @@ docker compose build
 
 ### Step 3：初始化工作區 + 啟動容器（~10 分鐘）
 
-entrypoint.sh 統一處理：初始化 work/ → 啟動容器 → 驗證健康。
+init.ps1 統一處理：初始化 work/ → 建構 image → 啟動容器 → 驗證健康。
 
 ```powershell
-bash docker/autoresearch/entrypoint.sh
+powershell -ExecutionPolicy Bypass -File docker/autoresearch/init.ps1
 ```
 
 ### Step 4：驗證 + 安全測試（~10 分鐘）
