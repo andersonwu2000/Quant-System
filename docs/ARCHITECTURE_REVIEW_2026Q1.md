@@ -13,7 +13,7 @@
 |------|------|
 | 審查涵蓋模組 | 引擎、風控、回測、管線、因子研究、Paper Trading |
 | 發現並修復 bug | **80+** |
-| 測試數（修復後） | **1,580+** |
+| 測試數（修復後） | **1,725** |
 | 全量測試通過率 | 100%（排除 Sinopac 外部依賴） |
 
 ### 按類別分佈
@@ -396,8 +396,8 @@ Total: ~8-10 小時
 ### Paper Trading 現況（2026-03-27）
 
 - 模式：paper（Shioaji simulation）
-- 持倉：8 支台股
-- NAV：$9,988,602（初始 $10M，-0.1% 手續費）
+- 持倉：12 支台股
+- NAV：~$9.04M（初始 $10M，-9.6%）
 - 已修問題：
   - Portfolio 持久化（atomic write + startup restore）
   - Kill switch 執行清倉 + re-trigger guard
