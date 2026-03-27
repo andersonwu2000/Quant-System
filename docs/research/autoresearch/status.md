@@ -1,23 +1,34 @@
 ﻿# Autoresearch Status Report
 
-> Updated: 2026-03-28 02:52:50
+> Updated: 2026-03-28 03:17:12
 
 ## Dashboard
 
 | Item | Value |
 |------|-------|
-| Agent container | Up 24 minutes |
-| Watchdog container | Up 24 minutes |
-| Total experiments | 7 |
-| Keep / Discard | 2 / 5 |
-| L5 OOS passed | 2 |
-| Best score | 12.7635 |
-| Best factor | OBV slope t-stat 63d (large_icir=0.0602 below threshold) |
+| Agent | Running (Up 49 minutes) |
+| Watchdog | Running (Up 49 minutes) |
+| Experiments | 15 |
+| Keep / Discard / Crash | 2 / 13 / 0 |
+| L5 OOS Passed | 7 (46.7%) |
+| L0 Early Reject | 5 |
+| Deployed | 0 |
+| Best Score | 12.7635 |
+| Best Factor | OBV slope t-stat 63d (large_icir=0.0602 below threshold) |
 
-## Experiment Log (latest first)
+## Experiments (latest first)
 
 | Score | ICIR | Level | Status | Description |
-|------:|-----:|-------|--------|-------------|| 5.4078 | 0.3530 | L5 | discard | 52-week high proximity (large_icir=0.4285 excellent, but lower composite) |
+|------:|-----:|-------|--------|-------------|
+| 0.51 | 0.1020 | L1 | discard | OTC intraday slope t-stat (ICIR=0.1020 too weak) |
+| 12.7635 | 0.6783 | L5 | discard | vol-win-rate slope (mathematically identical to OBV slope) |
+| 0 | 0.0000 | L0 | discard | CMF slope t-stat 63d (IC=0.0175, just below L1 threshold) |
+| 10.2049 | 0.4470 | L5 | discard | OBV slope 126d (lower turnover but lower ICIR, negative large_icir) |
+| 12.7635 | 0.6783 | L5 | discard | normalized OBV slope (identical to OBV, scale doesn't affect t-stat) |
+| 9.3935 | 0.5101 | L5 | discard | log-price trend t-stat 63d (large_icir=0.2451 passes stage2, composite below OBV) |
+| 10.3051 | 0.5580 | L5 | discard | OBV x 52wk-high rank combo compact (large_icir=0.3835, composite below OBV) |
+| 0 | 0.0000 | L0 | discard | OBV x 52wk-high combo (too complex, 69 lines > 60 max) |
+| 5.4078 | 0.3530 | L5 | discard | 52-week high proximity (large_icir=0.4285 excellent, but lower composite) |
 | 0.7429 | -0.1486 | L1 | discard | low volatility anomaly -vol20d (ICIR just below 0.15 threshold) |
 | 0 | 0.0000 | L0 | discard | investment trust 20d net buy (institutional data starts 2019) |
 | 0 | 0.0000 | L0 | discard | revenue yoy_growth direct (no yoy_growth col, no data pre-2019) |
@@ -25,13 +36,20 @@
 | 12.7635 | 0.6783 | L5 | keep | OBV slope t-stat 63d (large_icir=0.0602 below threshold) |
 | 8.8004 | 0.3419 | L4 | keep | 12-1 momentum (baseline) |
 
-## Recent Alerts
-None
+## Kept Factors
+
+| Score | ICIR | Level | Description |
+|------:|-----:|-------|-------------|
+| 8.8004 | 0.3419 | L4 | 12-1 momentum (baseline) |
+| 12.7635 | 0.6783 | L5 | OBV slope t-stat 63d (large_icir=0.0602 below threshold) |
+
+## Alerts
+
+None.
 
 ## Recent Commits
 
 ```
-d9a671c experiment: log-price trend t-stat 63d (no volume)
 121a8c9 init: autoresearch workspace
 ```
 
