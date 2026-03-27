@@ -59,7 +59,7 @@ class ValidationConfig:
     max_drawdown: float = 0.40        # MDD < 40%（收緊自 50%，機構標準）
 
     # 2. Walk-Forward
-    wf_train_years: int = 3           # 訓練窗口
+    wf_train_years: int = 2           # 訓練窗口（從 3 改 2，確保 WF ≥ 4 年讓 PBO 有效）
     wf_test_years: int = 1            # 測試窗口
     wf_min_positive_ratio: float = 0.6  # ≥ 60% 年份 OOS Sharpe > 0
 
@@ -545,9 +545,9 @@ class StrategyValidator:
         """
         sharpes = [r.get("sharpe", 0) for r in wf_results if "error" not in r]
         if len(sharpes) < 4:
-            # V5 fix: 數據不足 → inconclusive (0.5)，而非 optimistic (0.0)
-            logger.info("PBO: insufficient WF data (%d years < 4), returning inconclusive (0.5)", len(sharpes))
-            return 0.5
+            # 數據不足 → 回傳 1.0 (worst case)，不讓不可計算的 PBO 自動通過
+            logger.warning("PBO: insufficient WF data (%d years < 4), returning pessimistic (1.0)", len(sharpes))
+            return 1.0
 
         try:
             rng = np.random.default_rng(42)
