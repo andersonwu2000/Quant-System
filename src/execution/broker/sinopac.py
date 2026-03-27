@@ -187,83 +187,99 @@ class SinopacBroker(BrokerAdapter):
         price_type = self._map_price_type(order)
         order_type = getattr(sj.constant.OrderType, self._config.default_order_type.value)
 
-        # 數量轉換：本專案以「股」為單位，Shioaji 整股以「張」(1000 股) 為單位
-        quantity, is_odd_lot = self._shares_to_lots(order.quantity, order.instrument.symbol)
-        if quantity <= 0:
+        # 數量轉換：本專案以「股」為單位，Shioaji 整股以「張」為單位
+        # 可能拆成整股 + 零股兩筆委託
+        lot_parts = self._shares_to_lots(order.quantity, order.instrument.symbol)
+        if not lot_parts:
             order.status = OrderStatus.REJECTED
             order.reject_reason = f"Zero quantity after lot conversion: {order.quantity}"
             return ""
 
-        sj_order = self._api.Order(
-            price=float(order.price) if order.price else 0,
-            quantity=int(quantity),
-            action=action,
-            price_type=price_type,
-            order_type=order_type,
-        )
-        # 零股需要使用盤中零股子類型
-        if is_odd_lot:
+        broker_ids: list[str] = []
+        for quantity, is_odd_lot in lot_parts:
+            # 零股交易時段檢查（非模擬模式）
+            if is_odd_lot and not self._config.simulation:
+                from src.execution.market_hours import is_odd_lot_session
+                if not is_odd_lot_session():
+                    logger.warning(
+                        "%s: odd-lot order (%d shares) outside odd-lot session, queuing",
+                        order.instrument.symbol, quantity,
+                    )
+                    continue  # skip this part, regular lot part still submitted
+
+            sj_order = self._api.Order(
+                price=float(order.price) if order.price else 0,
+                quantity=int(quantity),
+                action=action,
+                price_type=price_type,
+                order_type=order_type,
+            )
+            if is_odd_lot:
+                try:
+                    sj_order.stock_order_lot = sj.constant.StockOrderLot.IntradayOdd
+                except AttributeError:
+                    pass
+
             try:
-                sj_order.stock_order_lot = sj.constant.StockOrderLot.IntradayOdd
-            except AttributeError:
-                pass  # 舊版 Shioaji 可能沒有此常數
-
-        try:
-            if self._config.non_blocking:
-                trade = self._api.place_order(contract, sj_order, timeout=0)
-            else:
-                trade = self._api.place_order(contract, sj_order)
-            broker_id = trade.order.id if hasattr(trade, "order") else str(id(trade))
-
-            with self._lock:
-                self._trades[broker_id] = trade
-                self._order_map[broker_id] = order
-
-            order.client_order_id = broker_id
-
-            # Simulation mode: 模擬即時成交，含滑價和最低佣金
-            if self._config.simulation:
-                price = order.price or Decimal("0")
-                if price <= 0:
-                    order.status = OrderStatus.REJECTED
-                    order.reject_reason = "No price for simulation fill"
-                    return broker_id
-                # P10: 滑價和成本從 config 讀
-                slippage = price * Decimal(str(self._config.sim_slippage_bps)) / Decimal("10000")
-                if order.side == Side.BUY:
-                    fill_price = price + slippage
+                if self._config.non_blocking:
+                    trade = self._api.place_order(contract, sj_order, timeout=0)
                 else:
-                    fill_price = max(price - slippage, Decimal("0.01"))
+                    trade = self._api.place_order(contract, sj_order)
+                bid = trade.order.id if hasattr(trade, "order") else str(id(trade))
+                broker_ids.append(bid)
+            except Exception as e:
+                logger.error("Place order failed for %s (%s): %s",
+                             order.instrument.symbol, "odd" if is_odd_lot else "regular", e)
 
-                order.status = OrderStatus.FILLED
-                order.filled_qty = order.quantity
-                order.filled_avg_price = fill_price
-                notional = order.quantity * fill_price
-                commission = notional * Decimal(str(self._config.sim_commission_rate))
-                min_comm = Decimal(str(self._config.sim_min_commission))
-                if commission < min_comm:
-                    commission = min_comm
-                tax = notional * Decimal(str(self._config.sim_tax_rate)) if order.side == Side.SELL else Decimal("0")
-                order.commission = commission + tax
-                logger.info(
-                    "Order FILLED (sim): %s %s %s @ %s (slippage %s)",
-                    order.side.value, order.quantity, order.instrument.symbol,
-                    fill_price, slippage,
-                )
-            else:
-                order.status = OrderStatus.SUBMITTED
-                logger.info(
-                    "Order submitted: %s %s %s @ %s (broker_id=%s)",
-                    order.side.value, order.quantity, order.instrument.symbol,
-                    order.price, broker_id,
-                )
-            return broker_id
-
-        except Exception:
-            logger.exception("Order submission failed: %s", order.instrument.symbol)
+        if not broker_ids:
             order.status = OrderStatus.REJECTED
-            order.reject_reason = "Shioaji submission error"
+            order.reject_reason = "All sub-orders failed"
             return ""
+
+        broker_id = broker_ids[0]  # primary ID for tracking
+
+        with self._lock:
+            self._order_map[broker_id] = order
+
+        order.client_order_id = broker_id
+
+        # Simulation mode: 模擬即時成交，含滑價和最低佣金
+        if self._config.simulation:
+            price = order.price or Decimal("0")
+            if price <= 0:
+                order.status = OrderStatus.REJECTED
+                order.reject_reason = "No price for simulation fill"
+                return broker_id
+            slippage = price * Decimal(str(self._config.sim_slippage_bps)) / Decimal("10000")
+            if order.side == Side.BUY:
+                fill_price = price + slippage
+            else:
+                fill_price = max(price - slippage, Decimal("0.01"))
+
+            order.status = OrderStatus.FILLED
+            order.filled_qty = order.quantity
+            order.filled_avg_price = fill_price
+            notional = order.quantity * fill_price
+            commission = notional * Decimal(str(self._config.sim_commission_rate))
+            # 零股最低手續費（台股零股手續費最低 1 元）
+            min_comm = Decimal(str(self._config.sim_min_commission))
+            if commission < min_comm:
+                commission = min_comm
+            tax = notional * Decimal(str(self._config.sim_tax_rate)) if order.side == Side.SELL else Decimal("0")
+            order.commission = commission + tax
+            logger.info(
+                "Order FILLED (sim): %s %s %s @ %s (slippage %s)",
+                order.side.value, order.quantity, order.instrument.symbol,
+                fill_price, slippage,
+            )
+        else:
+            order.status = OrderStatus.SUBMITTED
+            logger.info(
+                "Order submitted: %s %s %s @ %s (broker_id=%s)",
+                order.side.value, order.quantity, order.instrument.symbol,
+                order.price, broker_id,
+            )
+        return broker_id
 
     def cancel_order(self, order_id: str) -> bool:
         """撤單。"""
@@ -565,24 +581,30 @@ class SinopacBroker(BrokerAdapter):
             return sj.constant.StockPriceType.MKT
         return sj.constant.StockPriceType.LMT
 
-    def _shares_to_lots(self, shares: Decimal, symbol: str) -> tuple[int, bool]:
-        """股數 → (數量, 是否零股)。
+    def _shares_to_lots(self, shares: Decimal, symbol: str) -> list[tuple[int, bool]]:
+        """股數 → [(數量, 是否零股), ...]。
 
-        台股 1000 股 = 1 張。若 < 1000 股為零股，回傳 (股數, True)。
-        整股回傳 (張數, False)。餘數會被丟棄並記錄警告。
+        台股 1000 股 = 1 張。
+        - >= 1000 股的部分 → 整股（數量為張數）
+        - < 1000 股的部分 → 零股（數量為股數）
+        - 可能回傳兩筆（整股 + 零股餘數），不再丟棄餘數
         """
         lot_size = 1000
         int_shares = int(shares)
+        if int_shares <= 0:
+            return []
         if int_shares < lot_size:
-            return (int_shares, True)  # 零股：數量為股數
+            return [(int_shares, True)]  # 純零股
         lots = int_shares // lot_size
         remainder = int_shares % lot_size
+        result: list[tuple[int, bool]] = [(lots, False)]  # 整股
         if remainder > 0:
-            logger.warning(
-                "%s: %d shares → %d lots (%d shares), discarding %d share remainder",
-                symbol, int_shares, lots, lots * lot_size, remainder,
+            result.append((remainder, True))  # 零股餘數
+            logger.info(
+                "%s: %d shares → %d lots + %d odd shares",
+                symbol, int_shares, lots, remainder,
             )
-        return (lots, False)  # 整股：數量為張數
+        return result
 
     @property
     def simulation(self) -> bool:
