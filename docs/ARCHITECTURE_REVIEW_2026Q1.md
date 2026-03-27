@@ -12,7 +12,7 @@
 | 項目 | 數值 |
 |------|------|
 | 審查涵蓋模組 | 引擎、風控、回測、管線、因子研究、Paper Trading |
-| 發現並修復 bug | **70+** |
+| 發現並修復 bug | **80+** |
 | 測試數（修復後） | **1,707** |
 | 全量測試通過率 | 100%（排除 Sinopac 外部依賴） |
 
@@ -23,7 +23,7 @@
 | 公式與計算 | 9 | CAGR off-by-one、DSR kurtosis double correction |
 | Look-Ahead Bias | 8 | 營收 40 天延遲缺失（影響所有因子 IC） |
 | 風控 | 12 | enum 比較脆弱、批次無累積效應、kill switch 不清倉 |
-| 管線與流程 | 12 | 因果鏈斷裂、hardcoded 日期、無 MarketState |
+| 管線與流程 | 14 | 因果鏈斷裂、hardcoded 日期、無 MarketState、舊持倉無法賣出 |
 | 並發與狀態 | 7 | Portfolio race condition、crash 後重複再平衡 |
 | 語義與數據 | 8 | 日期交集→空結果、PBO 方法學錯誤 |
 | Paper Trading | 10 | 無滑價、NAV 凍結、時區混用 |
@@ -138,6 +138,33 @@ PaperBroker.__init__(commission_rate=)
 **殘留風險**：新數據源如果時間格式不同，`index.intersection()` 可能為空。
 
 **優先級**：中
+
+### 2.8 Pipeline 只取 target 價格（已修）
+
+**問題**：`execute_pipeline` 只取 `target_weights` 裡的股票價格，不取現有持倉的價格。`weights_to_orders` 對不在 target 的持倉股票產生 SELL 訂單時，因為 `price=0` 而跳過。**結果：舊持倉永遠賣不掉。**
+
+**修復**：`all_needed = target_weights ∪ portfolio.positions`，兩邊的價格都取。
+
+**影響**：修復前，Portfolio 會無限累積持倉（每月新增但不賣出舊的）。
+
+### 2.9 風控門檻和策略權重衝突（已修）
+
+**問題**：`default_rules` 改為從 config 讀取後，`max_position_pct=0.05`（5%）和策略 15 支等權（6.7%）衝突，導致 14/15 訂單被拒。
+
+**修復**：`config.max_position_pct` 改為 0.10（10%）。
+
+**教訓**：風控規則的門檻和策略的權重分配必須協調設計，不能獨立修改。
+
+### 2.10 Shioaji Simulation Mode 限制
+
+**問題**：
+- Simulation mode 不推送 tick → NAV 盤中不更新
+- Simulation mode 的 snapshot API 可能不可用 → price polling 靜默失敗
+- 沒有 fallback 到 Yahoo feed
+
+**現狀**：加了 ShioajiFeed snapshot polling，但如果 Shioaji session timeout，polling 失敗且只有 debug log。
+
+**建議**：polling 失敗超過 N 次後自動 fallback 到 Yahoo feed。
 
 ---
 
@@ -342,6 +369,12 @@ Total: ~8-10 小時
 
 60-78. 類型標註、swallowed exceptions、assert safety、feed cache、redundant wraps、np.asarray 一致性等
 
+### 實際運行發現 — 3 項
+
+79. Pipeline 只取 target 價格 → 舊持倉無法賣出 → 取 target ∪ positions
+80. 風控門檻 5% vs 策略 6.7% → 14/15 訂單被拒 → config 改 10%
+81. ShioajiFeed snapshot 可能因 session timeout 靜默失敗 → 需 Yahoo fallback
+
 ---
 
 ## 6. 實驗結果摘要
@@ -361,16 +394,22 @@ Total: ~8-10 小時
 | rev_accel (validator) | 12/15 | +18.1% | 0.873 | +264% |
 | rev_accel_x_zscore (auto) | 通過 L5 | — | — | — |
 
-### Paper Trading 現況
+### Paper Trading 現況（2026-03-27 EOD）
 
 - 模式：paper（Shioaji simulation）
-- 持倉：17 支台股
-- NAV：~$8.87M（初始 $10M）
-- 問題：simulation mode 無即時 tick，NAV 更新依賴 Yahoo 收盤價
+- 持倉：12 支台股
+- NAV：~$8.44M（初始 $10M，-15.6%）
+- 已修問題：
+  - 舊持倉不清理 → pipeline 現在取 target + 持倉的價格
+  - 風控門檻衝突 → max_position_pct 5% → 10%
+  - ShioajiFeed snapshot polling for simulation mode
+- 殘留問題：
+  - Shioaji session timeout → polling 靜默失敗（需 Yahoo fallback）
+  - NAV 只在收盤後更新（無盤中即時估值）
 
 ---
 
-## 7. 經驗教訓（Top 10）
+## 7. 經驗教訓（Top 12）
 
 1. **Look-ahead bias 最隱蔽** — 營收 40 天延遲缺失膨脹 ICIR 72%，結果看起來完全正常
 2. **generic fallback 是毒藥** — 「找不到就用預設值」靜默產出錯誤結果
@@ -382,3 +421,5 @@ Total: ~8-10 小時
 8. **deepcopy + threading.Lock 不相容** — 需要自定義 __deepcopy__
 9. **Shioaji simulation mode 有 quote_manager 但不推 tick** — polling fallback 被跳過
 10. **回測和實盤是兩條代碼** — 任何改動要改兩個地方
+11. **Pipeline 只取 target 價格會導致舊持倉賣不掉** — 必須取 target ∪ positions 的價格
+12. **風控門檻和策略權重必須協調** — 獨立修改一邊會導致大量訂單被拒
