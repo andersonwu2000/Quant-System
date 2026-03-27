@@ -86,13 +86,13 @@ DataFeed → Strategy.on_bar() → 目標權重 → RiskEngine → SimBroker/Bro
 | 路徑 | 觸發方式 | Cron | 設定 |
 |------|---------|------|------|
 | **統一交易管線** | APScheduler | `QUANT_TRADING_PIPELINE_CRON`（預設：每月 11 日 08:30） | `QUANT_SCHEDULER_ENABLED` |
-| **Auto-Alpha** | `/auto-alpha/start` API | 8 階段 08:30~13:35 | 手動啟停 |
-| **Alpha 研究** | `scripts/alpha_research_agent.py` | 手動 / 背景 | -- |
+| **Autoresearch** | `loop-docker.ps1`（Docker）或 `loop.ps1` | 持續循環 | Karpathy 3 檔案 + L5 OOS + 容器化 |
+| **Auto-Alpha API** | `POST /auto-alpha/submit-factor` | L5 通過時自動提交 | Validator ≥13/15 → paper deploy |
 
 ## 基礎設施
 
 - **資料庫**：PostgreSQL 16（開發用 SQLite）。Alembic 遷移。
-- **Docker**：多階段建置，非 root 用戶。`docker-compose.yml` = api + db。
+- **Docker**：多階段建置，非 root 用戶。`docker-compose.yml` = api + db。`docker/autoresearch/` = autoresearch agent 容器（read-only root, internal network, watchdog）。
 - **CI/CD**：9 個 jobs（lint, test, typecheck, build, e2e, release+APK）。
 
 ## 設定

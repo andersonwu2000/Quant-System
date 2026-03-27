@@ -1,8 +1,8 @@
 # 系統現況追蹤報告書
 
-> **日期**: 2026-03-27
-> **版本**: v12.0
-> **階段**: Phase A~S 完成, N/P 進行中
+> **日期**: 2026-03-28
+> **版本**: v13.0
+> **階段**: Phase A~S 完成, N/P/X/Y 進行中
 > **進度總覽**: `docs/plans/`
 > **開發計畫**: `docs/plans/`（各 Phase 獨立計畫書）
 
@@ -310,9 +310,14 @@ Trading Pipeline（唯一交易管線）
         8. 通知（Discord/LINE/Telegram）
         9. Timeout/crash → 記錄 status=failed，啟動時 check_crashed_runs() 偵測
 
-Research Pipeline（獨立，不操作 Portfolio）
-    觸發: CronCreate 或 POST /auto-alpha/start
-    alpha_research_agent.py → L1-L5 → Validator → deploy 判斷
+Autoresearch Pipeline（獨立，不操作 Portfolio）
+    架構: Karpathy autoresearch pattern（3 檔案取代舊 1800 行 agent）
+    evaluate.py（READ ONLY）+ factor.py（agent 可改）+ program.md（協議）
+    閘門: L1-L4 in-sample → L5 OOS holdout → Stage 2 大規模 IC → Validator 15 項
+    畢業: L5 通過 → _auto_submit → Validator ≥13/15 → 自動 paper deploy
+    防過擬合: L5 只輸出 pass/fail（不洩漏 OOS 數值）, 60 行複雜度限制
+    容器化: Docker（Phase Y）— evaluate.py 在容器內跑，Claude Code 在 host
+    觸發: loop-docker.ps1（自動重啟）或 loop.ps1（非 Docker）
 
 入口: src/scheduler/__init__.py + src/scheduler/jobs.py
 ```
@@ -331,10 +336,13 @@ Research Pipeline（獨立，不操作 Portfolio）
 | M（下行保護） | ✅ | |
 | N（Paper Trading） | 🟢 | Portfolio 持久化、kill switch 清倉、mutation lock、pipeline timeout |
 | N2（Web 重寫） | 🟡 | Step 1-4 完成，Step 5 待辦 |
-| P（自動因子挖掘） | 🟢 | 完整管線：L5 → 大規模 IC → Validator → Deploy。40+ bug 已修 |
+| P（自動因子挖掘） | ✅ | Karpathy 3 檔案架構取代舊 agent。40+ bug 已修 |
 | Q（策略精煉） | 🟡 | Q1 代碼已實作（12/13），Q2-Q3 待辦 |
-| R（整頓 + 實用性） | 🟢 | 4 輪代碼審計完成 |
+| R（整頓 + 實用性） | 🟢 | 7 輪代碼審計完成（88+ bug） |
 | S（管線統一） | ✅ | execute_pipeline 取代 3 個舊 job |
+| U（Autoresearch 重構） | ✅ | Karpathy pattern + API 整合 + 安全規則 |
+| X（防過擬合） | ✅ | L5 OOS holdout + 複雜度限制 + pass/fail only 反饋 |
+| Y（容器化） | 🟢 | Docker 隔離 + Watchdog + 自動重啟。已部署運行中 |
 
 ---
 
@@ -345,7 +353,7 @@ Research Pipeline（獨立，不操作 Portfolio）
 | CA 憑證（永豐金） | ⏳ 申請中 | 阻塞 live mode（非 simulation） |
 | Paper Trading 運行中 | ✅ | Shioaji simulation + portfolio 持久化 + kill switch 清倉 |
 | 策略驗證 | ✅ 12/13 通過 | revenue_momentum_hedged |
-| 自動因子研究 | 🟡 | 40d lag 修正後所有因子 L1 失敗，需新假說 |
+| 自動因子研究 | ✅ | Karpathy autoresearch 運行中（Docker 容器化），首輪 35 實驗 best ICIR 0.52 |
 | Shioaji async fill callback | ⏳ | 非 simulation mode 的異步成交回報未接線 |
 
 ---
@@ -367,10 +375,10 @@ Research Pipeline（獨立，不操作 Portfolio）
 
 | 陷阱 | 狀態 | 處理方式 | 已知缺口 |
 |------|:----:|---------|---------|
-| 過度擬合 (Overfitting) | ✅ | PBO=0%、Walk-Forward 年度 OOS、Bootstrap P(SR>0)、DSR | — |
+| 過度擬合 (Overfitting) | ✅ | PBO、WF OOS、Bootstrap、DSR + **L5 OOS holdout**（2023H2-2024，agent 不可見）+ 60 行複雜度限制 | L5 pass/fail 反饋長期仍有間接洩漏風險 |
 | 存活者偏差 (Survivorship Bias) | ⚠️ | Universe 含 40 支已下市股票 | **缺少完整歷史 universe 快照**（不知道某年某月有哪些股票在市場上），可能遺漏更多早期下市股票 |
 | 前視偏差 (Look-ahead Bias) | ✅ | 營收 +40 天公布延遲、`Context` 截斷數據到 `current_time`、`HistoricalFeed.set_current_date()` | — |
-| 多重測試問題 (Multiple Testing) | ✅ | Harvey (2016) t>3.0（≈ p<0.003，比 p<0.05 嚴格 ~17 倍）、DSR 調整 | — |
+| 多重測試問題 (Multiple Testing) | ✅ | Harvey t>3.0、DSR、**不使用全域 Bonferroni**（業界共識：會導致無法發現因子）。防禦靠 L5 OOS holdout + 家族分組 + paper trading 最終驗證 | — |
 
 ### 待改善項目
 
@@ -395,7 +403,15 @@ Research Pipeline（獨立，不操作 Portfolio）
 - 自動發現因子在修正 look-ahead bias 後全部 L1 失敗（IC < 0.02）
 - Paper Trading 已上線：portfolio 持久化、kill switch 清倉、mutation lock
 
-**2026-03-27 大規模代碼審計（4 輪，40+ bug）：**
+**2026-03-27 大規模代碼審計（7 輪，88+ bug）：**
 - 修正了 look-ahead bias、因子生成 generic fallback、kill switch 無限循環
 - 新增 portfolio 持久化、pipeline 崩潰恢復、mutation lock、16 個整合測試
 - 詳見 CLAUDE.md 歷史教訓
+
+**2026-03-28 Autoresearch 重構 + 容器化：**
+- 舊 alpha_research_agent.py（1800 行）→ Karpathy 3 檔案架構（~600 行）
+- 首輪裸跑發現 6 事件（殭屍 daemon、越權寫入、git reset 回滾基礎設施等）
+- Phase X: L5 OOS holdout（IS 2017~mid-2023 / OOS mid-2023~2024）
+- Phase Y: Docker 容器化（read-only root、internal network、watchdog）
+- 35 個實驗，best composite 12.49, ICIR 0.52（dual Sharpe 12+8 skip15）
+- 詳見 `docs/reviews/AUTORESEARCH_OPERATIONS_REVIEW_2026Q1.md`
