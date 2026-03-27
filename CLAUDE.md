@@ -203,34 +203,34 @@ scripts/start.bat            # Windows: backend + web in separate windows
 docker compose up -d         # API (port 8000) + PostgreSQL
 docker compose down          # stop all services
 
-# === Alpha Research ===
-python -m scripts.alpha_research_agent --rounds 20 --interval 5   # 自動因子研究
-python -m scripts.large_scale_factor_check                        # 大規模 IC 驗證
+# === Alpha Research (autoresearch 模式) ===
+cd scripts/autoresearch && python evaluate.py                   # 跑一次因子評估
+claude -p scripts/autoresearch/program.md                       # 啟動 Claude Code 自動研究
+python -m scripts.large_scale_factor_check                      # 大規模 IC 驗證（獨立）
 ```
 
-## Auto-Alpha Research Pipeline
+## Auto-Alpha Research Pipeline（autoresearch 模式）
 
-因子從假說到部署的完整流程（詳見 `docs/claude/EXPERIMENT_STANDARDS.md`）：
+採用 Karpathy autoresearch 架構（3 個文件取代舊的 1800 行 agent）：
 
 ```
-假說生成 → 因子實作 → L5 快篩 (ICIR≥0.30)
-  → 大規模 IC 驗證 (865+ 支, ICIR(20d)≥0.20)
-  → StrategyValidator (≥11/13, excl DSR; DSR≥0.70)
-  → 部署檢查 (Sharpe>0050, CAGR>8%, recent_sharpe>-0.10)
-  → Paper Trading (5% NAV, 30 天觀察)
+scripts/autoresearch/
+├── evaluate.py    ← 固定（READ ONLY）— L1-L4 閘門 + 大規模 IC + 去重
+├── factor.py      ← Agent 唯一可改 — compute_factor(symbols, as_of, data)
+├── program.md     ← 研究協議 — 永不停止 + 簡單性準則
+└── results.tsv    ← 實驗記錄 — commit | score | icir | level | status
 ```
 
-**關鍵約束**：
-- 所有營收因子必須有 **40 天公布延遲**（`as_of - pd.DateOffset(days=40)`）
-- 因子生成器不匹配的假說必須 **fail-closed**（return None），不可 fallback
-- Portfolio mutation 必須持有 **state.mutation_lock**（asyncio.Lock）
-- Shioaji 線程中的 portfolio 操作必須排程到 **event loop**
+**使用方式**：`claude -p scripts/autoresearch/program.md`
 
-**假說生成**：由 Claude Code 根據 experience memory (`data/research/memory.json`) 和學術文獻動態生成。不使用硬編碼模板。生成新假說時應考慮：
-1. 已測試因子的成功/失敗模式
-2. 禁區列表（forbidden regions）
-3. 學術文獻依據
-4. 與現有因子的差異化（避免高相關）
+**Agent 循環**：改 factor.py → commit → 跑 evaluate.py → 記錄 → keep/discard → 重複
+
+**安全設計**：
+- 40 天營收延遲在 **evaluate.py 強制**（agent 無法繞過）
+- evaluate.py 是 READ ONLY — 評估標準不可改
+- IC-series 去重防止 clone 因子
+- 大規模 IC 驗證（865+ 支）防小樣本偏差
+- 通過因子用 **StrategyValidator 15 項** 最終驗證
 
 ## Architecture Quick Reference
 

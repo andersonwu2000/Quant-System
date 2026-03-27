@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_consecutive_beat
+"""Auto-generated research factor: rev_accel_4m_9m
 
-連續 N 月營收超越去年同月的月數
-Academic basis: Earnings consistency premium
-Direction: revenue_acceleration_2nd_order
+4M/9M ratio
+Academic basis: Revenue momentum with varying windows
+Direction: multi_period_momentum
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_consecutive_beat(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_consecutive_beat for all symbols at as_of date."""
+def compute_rev_accel_4m_9m(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_accel_4m_9m for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,13 +53,13 @@ def compute_rev_consecutive_beat(symbols: list[str], as_of: pd.Timestamp) -> dic
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 24:
+            if len(revenues) < 9:
                 continue
-            count = 0
-            for i in range(max(len(revenues)-12, 12), len(revenues)):
-                if revenues[i-12] > 0 and revenues[i] > revenues[i-12]:
-                    count += 1
-            results[sym] = float(count)
+            rev_short = float(np.mean(revenues[-4:]))
+            rev_long = float(np.mean(revenues[-9:]))
+            if rev_long <= 0:
+                continue
+            results[sym] = float(rev_short / rev_long)
 
         except Exception:
             continue

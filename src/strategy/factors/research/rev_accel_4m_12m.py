@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_seasonal_deviation
+"""Auto-generated research factor: rev_accel_4m_12m
 
-實際營收 vs 同行業歷史同月平均的偏離
-Academic basis: Seasonal anomalies in earnings
-Direction: seasonal_revenue_patterns
+4M/12M ratio
+Academic basis: Revenue momentum with varying windows
+Direction: multi_period_momentum
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_seasonal_deviation(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_seasonal_deviation for all symbols at as_of date."""
+def compute_rev_accel_4m_12m(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_accel_4m_12m for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,23 +53,13 @@ def compute_rev_seasonal_deviation(symbols: list[str], as_of: pd.Timestamp) -> d
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 36:
+            if len(revenues) < 12:
                 continue
-            # 用日期欄位的月份匹配（不依賴 index 位置，避免缺月錯位）
-            dates = df["date"].values
-            current_month = pd.Timestamp(dates[-1]).month
-            current_rev = float(df.iloc[-1]["revenue"])
-            same_month_revs = []
-            for j in range(len(df) - 1):
-                if pd.Timestamp(dates[j]).month == current_month:
-                    v = float(df.iloc[j]["revenue"])
-                    if v > 0:
-                        same_month_revs.append(v)
-            # 只取最近 3 年同月
-            same_month_revs = same_month_revs[-3:]
-            if not same_month_revs or np.mean(same_month_revs) <= 0:
+            rev_short = float(np.mean(revenues[-4:]))
+            rev_long = float(np.mean(revenues[-12:]))
+            if rev_long <= 0:
                 continue
-            results[sym] = float(current_rev / np.mean(same_month_revs) - 1)
+            results[sym] = float(rev_short / rev_long)
 
         except Exception:
             continue
