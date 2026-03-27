@@ -446,6 +446,121 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
             zscore = (revenues[-1] - mean_24) / std_24
             results[sym] = float(accel * zscore)
 '''
+    elif "accel_x_newhigh" in name:
+        code += '''
+            if len(revenues) < 13:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_12m = float(np.mean(revenues[-12:]))
+            if rev_12m <= 0:
+                continue
+            accel = rev_3m / rev_12m
+            past_max = float(np.max(revenues[-13:-1]))
+            if past_max <= 0:
+                continue
+            newhigh = revenues[-1] / past_max
+            results[sym] = float(accel * newhigh)
+'''
+    elif "zscore_x_newhigh" in name:
+        code += '''
+            if len(revenues) < 24:
+                continue
+            mean_24 = float(np.mean(revenues[-24:]))
+            std_24 = float(np.std(revenues[-24:], ddof=1))
+            if std_24 <= 0:
+                continue
+            zscore = (revenues[-1] - mean_24) / std_24
+            past_max = float(np.max(revenues[-13:-1])) if len(revenues) >= 13 else float(revenues[-1])
+            if past_max <= 0:
+                continue
+            newhigh = revenues[-1] / past_max
+            results[sym] = float(zscore * newhigh)
+'''
+    elif "accel_x_yoy" in name:
+        code += '''
+            if len(revenues) < 13:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_12m = float(np.mean(revenues[-12:]))
+            if rev_12m <= 0 or revenues[-12] <= 0:
+                continue
+            accel = rev_3m / rev_12m
+            yoy = revenues[-1] / revenues[-12] - 1
+            results[sym] = float(accel * max(0, yoy))
+'''
+    elif "triple_composite" in name:
+        code += '''
+            if len(revenues) < 24:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_12m = float(np.mean(revenues[-12:]))
+            if rev_12m <= 0:
+                continue
+            accel = rev_3m / rev_12m
+            mean_24 = float(np.mean(revenues[-24:]))
+            std_24 = float(np.std(revenues[-24:], ddof=1))
+            zscore = (revenues[-1] - mean_24) / std_24 if std_24 > 0 else 0
+            past_max = float(np.max(revenues[-13:-1])) if len(revenues) >= 13 else float(revenues[-1])
+            newhigh = revenues[-1] / past_max if past_max > 0 else 0
+            results[sym] = float(accel * zscore * newhigh)
+'''
+    elif "log_accel" in name:
+        code += '''
+            if len(revenues) < 12:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_12m = float(np.mean(revenues[-12:]))
+            if rev_12m <= 0 or rev_3m <= 0:
+                continue
+            results[sym] = float(np.log(rev_3m / rev_12m))
+'''
+    elif "vol_adjusted" in name:
+        code += '''
+            if len(revenues) < 12:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_12m = float(np.mean(revenues[-12:]))
+            cv = float(np.std(revenues[-12:])) / float(np.mean(revenues[-12:])) if np.mean(revenues[-12:]) > 0 else 1
+            if rev_12m <= 0 or cv <= 0:
+                continue
+            results[sym] = float((rev_3m / rev_12m) / cv)
+'''
+    elif "diff_accel" in name:
+        code += '''
+            if len(revenues) < 12:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_12m = float(np.mean(revenues[-12:]))
+            results[sym] = float(rev_3m - rev_12m)
+'''
+    elif "ewm_" in name:
+        m = re.search(r"ewm_(\d+)m", name)
+        span = int(m.group(1)) if m else 12
+        code += f'''
+            if len(revenues) < {span}:
+                continue
+            import pandas as _pd
+            ewm_val = float(_pd.Series(revenues[-{span}:]).ewm(span={span}).mean().iloc[-1])
+            results[sym] = float(ewm_val)
+'''
+    elif "slope_" in name:
+        m = re.search(r"slope_(\d+)m", name)
+        months = int(m.group(1)) if m else 12
+        code += f'''
+            if len(revenues) < {months}:
+                continue
+            x = np.arange({months})
+            coeffs = np.polyfit(x, revenues[-{months}:], 1)
+            results[sym] = float(coeffs[0])  # slope
+'''
+    elif "curvature" in name:
+        code += '''
+            if len(revenues) < 12:
+                continue
+            x = np.arange(12)
+            coeffs = np.polyfit(x, revenues[-12:], 2)
+            results[sym] = float(coeffs[0])  # quadratic coefficient
+'''
     elif "cfo_over_ni" in name or "capex" in name or "inventory" in name or "upstream" in name or "sensitivity" in name:
         # These require financial_statement data not yet available
         logger.warning(
@@ -1458,10 +1573,10 @@ class AlphaResearchAgent:
 
 
 def _generate_parameter_variants(agent: AlphaResearchAgent) -> int:
-    """當所有模板假說都已測完時，自動生成參數變體。
+    """系統化生成因子變體 — 設計為可無限產出新假說。
 
-    基於已知有效的因子模式，變化 lookback window 等參數，
-    產生新假說寫入 hypothesis_templates.json。
+    策略：每次被呼叫時，生成一批未測試的變體（最多 5 個）。
+    透過系統化的參數網格 + 組合，確保假說空間足夠大。
 
     Returns: 新增的假說數量。
     """
@@ -1470,73 +1585,93 @@ def _generate_parameter_variants(agent: AlphaResearchAgent) -> int:
         with open(templates_path, encoding="utf-8") as f:
             templates = json.load(f)
     except Exception:
-        return 0
+        templates = {}
 
     tested = {t.hypothesis.get("name", "") for t in agent.memory.trajectories}
+    # 也排除 templates 裡已有的
+    existing_names: set[str] = set()
+    for hyps in templates.values():
+        for h in hyps:
+            existing_names.add(h["name"])
+
     added = 0
+    max_per_batch = 5  # 每批最多生成 5 個，避免一次太多
 
-    # 基於 zscore 的變體（zscore 是目前大規模 IC 最強的自動因子）
-    zscore_variants = [
-        ("rev_zscore_12m", 12, "12 月 z-score（shorter window, more responsive）"),
-        ("rev_zscore_36m", 36, "36 月 z-score（longer window, more stable）"),
-        ("rev_zscore_18m", 18, "18 月 z-score（middle ground）"),
-    ]
-    for name, months, desc in zscore_variants:
-        if name not in tested:
-            if "revenue_surprise_magnitude" not in templates:
-                templates["revenue_surprise_magnitude"] = []
-            if not any(t["name"] == name for t in templates["revenue_surprise_magnitude"]):
-                templates["revenue_surprise_magnitude"].append({
-                    "name": name,
-                    "description": desc,
-                    "formula_sketch": f"(rev[-1] - mean(rev[-{months}:])) / std(rev[-{months}:])",
-                    "academic_basis": "SUE with varying lookback",
-                    "data_requirements": ["revenue"],
-                })
-                added += 1
+    def _add(direction: str, name: str, desc: str, formula: str, basis: str) -> bool:
+        nonlocal added
+        if added >= max_per_batch:
+            return False
+        if name in tested or name in existing_names:
+            return False
+        if direction not in templates:
+            templates[direction] = []
+        templates[direction].append({
+            "name": name,
+            "description": desc,
+            "formula_sketch": formula,
+            "academic_basis": basis,
+            "data_requirements": ["revenue"],
+        })
+        existing_names.add(name)
+        added += 1
+        return True
 
-    # 基於 acceleration 的變體（不同短/長期窗口）
-    accel_variants = [
-        ("rev_accel_2m_6m", 2, 6, "2M/6M ratio（more responsive）"),
-        ("rev_accel_6m_12m", 6, 12, "6M/12M ratio（standard）"),
-        ("rev_accel_3m_24m", 3, 24, "3M/24M ratio（long-term comparison）"),
-    ]
-    for name, short, long, desc in accel_variants:
-        if name not in tested:
-            if "multi_period_momentum" not in templates:
-                templates["multi_period_momentum"] = []
-            if not any(t["name"] == name for t in templates["multi_period_momentum"]):
-                templates["multi_period_momentum"].append({
-                    "name": name,
-                    "description": desc,
-                    "formula_sketch": f"mean(rev[-{short}:]) / mean(rev[-{long}:])",
-                    "academic_basis": "Revenue momentum with varying windows",
-                    "data_requirements": ["revenue"],
-                })
-                added += 1
+    # ── 第 1 層：zscore 參數網格 ──
+    for months in [6, 9, 12, 15, 18, 24, 30, 36, 48]:
+        _add("revenue_surprise_magnitude",
+             f"rev_zscore_{months}m",
+             f"{months} 月 z-score",
+             f"(rev[-1] - mean(rev[-{months}:])) / std(rev[-{months}:])",
+             "SUE with varying lookback")
 
-    # 組合因子（acceleration × zscore）
-    combo_variants = [
-        ("rev_accel_x_zscore", "acceleration × z-score composite"),
+    # ── 第 2 層：acceleration 參數網格 ──
+    for short in [2, 3, 4, 6]:
+        for long in [6, 9, 12, 18, 24]:
+            if short >= long:
+                continue
+            _add("multi_period_momentum",
+                 f"rev_accel_{short}m_{long}m",
+                 f"{short}M/{long}M ratio",
+                 f"mean(rev[-{short}:]) / mean(rev[-{long}:])",
+                 "Revenue momentum with varying windows")
+
+    # ── 第 3 層：組合因子 ──
+    combos = [
+        ("rev_accel_x_zscore", "acceleration × z-score", "rank(3M/12M) * rank(zscore_24m)"),
+        ("rev_accel_x_newhigh", "acceleration × new high", "rank(3M/12M) * rank(rev/max12)"),
+        ("rev_zscore_x_newhigh", "z-score × new high", "rank(zscore_24m) * rank(rev/max12)"),
+        ("rev_accel_x_yoy", "acceleration × YoY", "rank(3M/12M) * rank(rev_yoy)"),
+        ("rev_triple_composite", "accel × zscore × new_high", "rank(accel) * rank(zscore) * rank(newhigh)"),
     ]
-    for name, desc in combo_variants:
-        if name not in tested:
-            if "factor_combination" not in templates:
-                templates["factor_combination"] = []
-            if not any(t["name"] == name for t in templates["factor_combination"]):
-                templates["factor_combination"].append({
-                    "name": name,
-                    "description": desc,
-                    "formula_sketch": "rank(rev_3m/rev_12m) * rank(zscore_24m)",
-                    "academic_basis": "Multi-signal composite",
-                    "data_requirements": ["revenue"],
-                })
-                added += 1
+    for name, desc, formula in combos:
+        _add("factor_combination", name, desc, formula, "Multi-signal composite")
+
+    # ── 第 4 層：非線性變體 ──
+    nonlinear = [
+        ("rev_log_accel", "log(3M/12M) ratio", "log(mean(rev[-3:])/mean(rev[-12:]))", "Log momentum"),
+        ("rev_exp_zscore", "exp-weighted z-score", "zscore with exponential weights", "Recency-weighted SUE"),
+        ("rev_rank_accel", "cross-sectional rank of acceleration", "percentile_rank(3M/12M)", "Cross-sectional momentum"),
+        ("rev_vol_adjusted_accel", "acceleration / revenue volatility", "(3M/12M) / cv(rev[-12:])", "Risk-adjusted momentum"),
+        ("rev_diff_accel", "level difference vs ratio", "mean(rev[-3:]) - mean(rev[-12:])", "Absolute momentum"),
+    ]
+    for name, desc, formula, basis in nonlinear:
+        _add("nonlinear_revenue", name, desc, formula, basis)
+
+    # ── 第 5 層：時間衰減變體 ──
+    decay = [
+        ("rev_ewm_6m", "6M exponential weighted mean", "ewm(rev, span=6).mean()[-1]", "Exponential smoothing"),
+        ("rev_ewm_12m", "12M exponential weighted mean", "ewm(rev, span=12).mean()[-1]", "Exponential smoothing"),
+        ("rev_slope_6m", "6M linear slope", "polyfit(range(6), rev[-6:], 1)[0]", "Trend strength"),
+        ("rev_slope_12m", "12M linear slope", "polyfit(range(12), rev[-12:], 1)[0]", "Trend strength"),
+        ("rev_curvature", "12M quadratic curvature", "polyfit(range(12), rev[-12:], 2)[0]", "Trend acceleration"),
+    ]
+    for name, desc, formula, basis in decay:
+        _add("time_decay_revenue", name, desc, formula, basis)
 
     if added > 0:
         with open(templates_path, "w", encoding="utf-8") as f:
             json.dump(templates, f, indent=2, ensure_ascii=False)
-        logger.info("Generated %d parameter variants", added)
+        logger.info("Generated %d new variants (batch)", added)
 
     return added
 
