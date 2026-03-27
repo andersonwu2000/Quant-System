@@ -654,16 +654,25 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     _save_selection_log(target_weights, strategy.name())
 
     # 4. 風控 + 下單
+    # 取 target + 現有持倉的價格（持倉不在 target 時需要 price 才能產生 SELL 訂單）
+    all_needed = set(target_weights.keys()) | set(state.portfolio.positions.keys())
     prices = {}
     volumes = {}
-    for s in target_weights:
+    missing_prices: list[str] = []
+    for s in all_needed:
         try:
-            prices[s] = feed.get_latest_price(s)
+            p = feed.get_latest_price(s)
+            if p and p > 0:
+                prices[s] = p
+            else:
+                missing_prices.append(s)
             bars = feed.get_bars(s, start=None, end=None)
             if bars is not None and len(bars) >= 20:
                 volumes[s] = Decimal(str(int(bars["volume"].iloc[-20:].mean())))
         except Exception:
-            pass
+            missing_prices.append(s)
+    if missing_prices:
+        logger.warning("Missing prices for %d symbols: %s", len(missing_prices), missing_prices[:10])
 
     orders = weights_to_orders(
         target_weights, state.portfolio, prices,
