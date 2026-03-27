@@ -1,0 +1,44 @@
+services:
+  autoresearch:
+    build:
+      context: ../..
+      dockerfile: docker/autoresearch/Dockerfile
+    container_name: autoresearch-agent
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - autoresearch-net
+    environment:
+      - API_URL=http://host.docker.internal:8000
+    mem_limit: 4g
+    cpus: 2
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+    volumes:
+      - ../../data:/app/data:ro
+      - ./work:/app/work
+      - ../../src:/app/src:ro
+
+  watchdog:
+    build:
+      context: ../..
+      dockerfile: docker/autoresearch/Dockerfile
+    container_name: autoresearch-watchdog
+    restart: unless-stopped
+    network_mode: none
+    mem_limit: 256m
+    read_only: true
+    volumes:
+      - ./work:/app/work:ro
+    entrypoint: ["python", "/app/watchdog.py"]
+
+networks:
+  autoresearch-net:
+    internal: true
+
+volumes:
+  autoresearch-work:

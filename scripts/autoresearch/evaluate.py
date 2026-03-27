@@ -328,6 +328,17 @@ def evaluate() -> dict:
     """
     from factor import compute_factor
 
+    # Complexity gate: reject overly complex factors (8.3 prevention)
+    factor_path = Path(__file__).parent / "factor.py"
+    if factor_path.exists():
+        n_lines = len(factor_path.read_text(encoding="utf-8").strip().splitlines())
+        if n_lines > 60:
+            return _make_result(
+                level="L0",
+                failure=f"factor.py too complex: {n_lines} lines > 60 max",
+                elapsed=0.0,
+            )
+
     universe = _load_universe()
     data = _load_all_data(universe)
     bars = data["bars"]
@@ -735,8 +746,10 @@ def _auto_submit(results: dict) -> None:
         except Exception:
             pass
 
+        import os as _os
+        api_url = _os.environ.get("API_URL", "http://127.0.0.1:8000")
         resp = requests.post(
-            "http://127.0.0.1:8000/api/v1/auto-alpha/submit-factor",
+            f"{api_url}/api/v1/auto-alpha/submit-factor",
             json={
                 "name": name,
                 "code": factor_code,
