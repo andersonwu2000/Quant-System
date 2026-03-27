@@ -561,6 +561,29 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
             coeffs = np.polyfit(x, revenues[-12:], 2)
             results[sym] = float(coeffs[0])  # quadratic coefficient
 '''
+    elif name.startswith("rev_combo_"):
+        # 自動交叉組合：acceleration(3m/12m) × zscore(24m) 的加權版本
+        # 不同 combo 用名稱 hash 產生不同的 accel/zscore 窗口
+        import hashlib as _hl
+        h = int(_hl.md5(name.encode()).hexdigest()[:8], 16)
+        accel_short = [2, 3, 4, 6][h % 4]
+        accel_long = [9, 12, 18, 24][h // 4 % 4]
+        zscore_months = [12, 18, 24, 36][h // 16 % 4]
+        code += f'''
+            if len(revenues) < {max(accel_long, zscore_months)}:
+                continue
+            rev_s = float(np.mean(revenues[-{accel_short}:]))
+            rev_l = float(np.mean(revenues[-{accel_long}:]))
+            if rev_l <= 0:
+                continue
+            accel = rev_s / rev_l
+            mean_z = float(np.mean(revenues[-{zscore_months}:]))
+            std_z = float(np.std(revenues[-{zscore_months}:], ddof=1))
+            if std_z <= 0:
+                continue
+            zscore = (revenues[-1] - mean_z) / std_z
+            results[sym] = float(accel * zscore)
+'''
     elif "cfo_over_ni" in name or "capex" in name or "inventory" in name or "upstream" in name or "sensitivity" in name:
         # These require financial_statement data not yet available
         logger.warning(
@@ -1573,10 +1596,11 @@ class AlphaResearchAgent:
 
 
 def _generate_parameter_variants(agent: AlphaResearchAgent) -> int:
-    """系統化生成因子變體 — 設計為可無限產出新假說。
+    """無限假說生成器 — 三層策略確保永遠有新假說可跑。
 
-    策略：每次被呼叫時，生成一批未測試的變體（最多 5 個）。
-    透過系統化的參數網格 + 組合，確保假說空間足夠大。
+    第 1 層：固定參數網格（zscore, acceleration, combo, nonlinear, decay）
+    第 2 層：自動交叉組合（通過 L5 的因子兩兩相乘）
+    第 3 層：動態網格擴展（每次呼叫加入更多窗口參數）
 
     Returns: 新增的假說數量。
     """
@@ -1668,10 +1692,81 @@ def _generate_parameter_variants(agent: AlphaResearchAgent) -> int:
     for name, desc, formula, basis in decay:
         _add("time_decay_revenue", name, desc, formula, basis)
 
+    # ── 第 2 層：自動交叉組合（通過 L2+ 的因子兩兩相乘）──
+    if added < max_per_batch:
+        # 找通過 L2 以上的因子（有一定 ICIR 的）
+        good_factors = []
+        for t in agent.memory.trajectories:
+            if t.passed or (t.eval_results and t.eval_results.get("best_icir", 0) > 0.3):
+                fname = t.hypothesis.get("name", "")
+                if fname:
+                    good_factors.append(fname)
+        # 加上已知基準因子
+        for p in agent.memory.success_patterns:
+            if p.name not in good_factors:
+                good_factors.append(p.name)
+
+        # 兩兩組合（A × B）
+        for i, f1 in enumerate(good_factors):
+            for f2 in good_factors[i + 1:]:
+                combo_name = f"rev_combo_{f1.replace('rev_', '')}_{f2.replace('rev_', '')}"
+                # 截斷過長的名字
+                if len(combo_name) > 50:
+                    combo_name = combo_name[:50]
+                _add("auto_combination",
+                     combo_name,
+                     f"auto combo: {f1} × {f2}",
+                     f"rank({f1}) * rank({f2})",
+                     "Automated cross-factor combination")
+
+    # ── 第 3 層：動態網格擴展（每次加入新的窗口參數）──
+    if added < max_per_batch:
+        # 根據已測試的窗口，找到 gap 填入
+        tested_zscore_months = set()
+        tested_accel_pairs = set()
+        for name in tested | existing_names:
+            m = re.search(r"zscore_(\d+)m", name)
+            if m:
+                tested_zscore_months.add(int(m.group(1)))
+            m = re.search(r"accel_(\d+)m_(\d+)m", name)
+            if m:
+                tested_accel_pairs.add((int(m.group(1)), int(m.group(2))))
+
+        # 在已測窗口之間插入中間值
+        if tested_zscore_months:
+            sorted_months = sorted(tested_zscore_months)
+            for i in range(len(sorted_months) - 1):
+                mid = (sorted_months[i] + sorted_months[i + 1]) // 2
+                if mid not in tested_zscore_months and mid >= 6:
+                    _add("revenue_surprise_magnitude",
+                         f"rev_zscore_{mid}m",
+                         f"{mid} 月 z-score（interpolated）",
+                         f"(rev[-1] - mean(rev[-{mid}:])) / std(rev[-{mid}:])",
+                         "SUE with interpolated lookback")
+            # 向外擴展
+            max_m = max(sorted_months)
+            new_m = max_m + 12
+            if new_m <= 72:
+                _add("revenue_surprise_magnitude",
+                     f"rev_zscore_{new_m}m",
+                     f"{new_m} 月 z-score（extended）",
+                     f"(rev[-1] - mean(rev[-{new_m}:])) / std(rev[-{new_m}:])",
+                     "SUE with extended lookback")
+
+        # acceleration 網格擴展
+        for short in range(1, 8):
+            for long in range(short + 3, 30, 3):
+                if (short, long) not in tested_accel_pairs:
+                    _add("multi_period_momentum",
+                         f"rev_accel_{short}m_{long}m",
+                         f"{short}M/{long}M ratio",
+                         f"mean(rev[-{short}:]) / mean(rev[-{long}:])",
+                         "Revenue momentum with extended grid")
+
     if added > 0:
         with open(templates_path, "w", encoding="utf-8") as f:
             json.dump(templates, f, indent=2, ensure_ascii=False)
-        logger.info("Generated %d new variants (batch)", added)
+        logger.info("Generated %d new variants (layers 1-3)", added)
 
     return added
 
