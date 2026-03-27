@@ -110,18 +110,23 @@
 - In-Sample (IS)：2017-01-01 ~ 2023-06-30（L1-L4 使用）
 - Out-of-Sample (OOS)：2023-07-01 ~ 2024-12-31（L5 使用，agent 不可見）
 
-| 閘門 | 條件 | 說明 | 失敗處理 |
-|------|------|------|----------|
-| **L0** | factor.py ≤ 60 行 | 複雜度限制（防過擬合） | 直接拒絕 |
-| **L1** | \|IC(20d)\| ≥ 0.02 | IS 前 30 個日期快篩（~30 秒） | 換方向 |
-| **L2** | \|ICIR\| ≥ 0.15 | IS 全期間、全 horizon（5/10/20/60d） | 訊號不穩，試平滑 |
-| **L3a** | dedup corr ≤ 0.50 | IC-series 與已知因子相關性 | 因子是 clone |
-| **L3b** | positive_years ≥ 4/6.5 | IS 年度穩定性 | regime 依賴 |
-| **L4** | fitness ≥ 3.0 | WorldQuant BRAIN 公式 | 綜合不足 |
-| **L5** | OOS IC 方向一致 | IS 和 OOS 的 IC 同號 | 過擬合 IS |
-| **L5** | OOS ICIR 衰退 ≤ 60% | OOS \|ICIR\| ≥ IS \|ICIR\| × 0.40 | 過擬合 IS |
-| **L5** | OOS 正向月 ≥ 50% | 至少半數 OOS 月份 IC > 0 | 不穩定 |
-| **Stage 2** | large ICIR(20d) ≥ 0.20 | 865+ 支股票全 universe 驗證 | 僅在藍籌有效 |
+**Universe：**
+- Core：200 支大中型股（依日均成交額排序，ADV ≥ 340M TWD）
+- Large：865+ 支全市場（Stage 2 用）
+- MIN_SYMBOLS：每日至少 50 支有效股票才計算 IC
+
+| 閘門 | 條件 | Universe | 說明 | 失敗處理 |
+|------|------|----------|------|----------|
+| **L0** | factor.py ≤ 60 行 | — | 複雜度限制（防過擬合） | 直接拒絕 |
+| **L1** | \|IC(20d)\| ≥ 0.02 | Core 200 | IS 前 30 個日期快篩（~30 秒） | 換方向 |
+| **L2** | \|ICIR\| ≥ 0.15 | Core 200 | IS 全期間、全 horizon（5/10/20/60d） | 訊號不穩，試平滑 |
+| **L3a** | dedup corr ≤ 0.50 | Core 200 | IC-series 與已知因子相關性 | 因子是 clone |
+| **L3b** | positive_years ≥ 4/6.5 | Core 200 | IS 年度穩定性 | regime 依賴 |
+| **L4** | fitness ≥ 3.0 | Core 200 | WorldQuant BRAIN 公式 | 綜合不足 |
+| **L5** | OOS IC 方向一致 | Core 200 | IS 和 OOS 的 IC 同號 | 過擬合 IS |
+| **L5** | OOS ICIR 衰退 ≤ 60% | Core 200 | OOS \|ICIR\| ≥ IS \|ICIR\| × 0.40 | 過擬合 IS |
+| **L5** | OOS 正向月 ≥ 50% | Core 200 | 至少半數 OOS 月份 IC > 0 | 不穩定 |
+| **Stage 2** | large ICIR(20d)（參考） | Large 865+ | 全市場驗證，不硬擋，記錄於報告 | — |
 
 **防過擬合設計：**
 - L5 只向 agent 回報 pass/fail，不洩漏 OOS 具體數值（P-01）

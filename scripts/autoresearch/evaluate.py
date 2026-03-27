@@ -36,7 +36,7 @@ PROJECT_ROOT = Path(_os.environ["PROJECT_ROOT"]) if "PROJECT_ROOT" in _os.enviro
 sys.path.insert(0, str(PROJECT_ROOT))
 
 REVENUE_DELAY_DAYS = 40        # Taiwan monthly revenue publication delay
-MIN_SYMBOLS = 30               # Minimum symbols per date for valid IC
+MIN_SYMBOLS = 50               # Minimum symbols per date for valid IC (200-stock universe)
 EVAL_START = "2017-01-01"      # Evaluation period start
 IS_END = "2023-06-30"          # In-sample period end (L1-L4)
 OOS_START = "2023-07-01"       # Out-of-sample period start (L5)
@@ -58,20 +58,9 @@ OOS_MIN_POSITIVE_RATIO = 0.50 # OOS months with positive IC >= 50%
 # Dedup: known good factors' IC series (from legacy L3 check)
 DEDUP_FACTORS_FILE = PROJECT_ROOT / "data" / "research" / "baseline_ic_series.json"
 
-# Universe
+# Universe — core universe (200 large/mid-cap by ADV) from file
+# Replaces old hardcoded 50-stock list for better statistical robustness
 UNIVERSE_FILE = PROJECT_ROOT / "data" / "research" / "universe.txt"
-DEFAULT_UNIVERSE = [
-    "2330.TW", "2317.TW", "2454.TW", "2308.TW", "2382.TW",
-    "2881.TW", "2882.TW", "2886.TW", "2891.TW", "2892.TW",
-    "1301.TW", "1303.TW", "1216.TW", "2002.TW", "2412.TW",
-    "3711.TW", "2207.TW", "1101.TW", "2603.TW", "5880.TW",
-    "3034.TW", "2303.TW", "6505.TW", "2345.TW", "2357.TW",
-    "2395.TW", "2408.TW", "2474.TW", "2801.TW", "2880.TW",
-    "2883.TW", "2884.TW", "2885.TW", "2887.TW", "2890.TW",
-    "3037.TW", "3045.TW", "4904.TW", "5871.TW", "5876.TW",
-    "1326.TW", "1402.TW", "2301.TW", "2327.TW", "2379.TW",
-    "2609.TW", "2615.TW", "2912.TW", "3231.TW", "6415.TW",
-]
 
 # Large-scale universe for Stage 2 verification (865+ symbols)
 LARGE_UNIVERSE_FILE = PROJECT_ROOT / "data" / "research" / "large_universe.txt"
@@ -94,17 +83,19 @@ def _load_universe(large: bool = False) -> list[str]:
         ]
         if syms:
             return syms
-    if large:
-        # Fallback: scan all parquet files in data/market/
-        market_dir = PROJECT_ROOT / "data" / "market"
-        if market_dir.exists():
-            syms = []
-            for p in market_dir.glob("finmind_*.parquet"):
-                bare = p.stem.replace("finmind_", "")
-                syms.append(f"{bare}.TW")
-            if len(syms) > 100:
-                return sorted(syms)
-    return list(DEFAULT_UNIVERSE)
+    # Fallback: scan all parquet files in data/market/
+    market_dir = PROJECT_ROOT / "data" / "market"
+    if market_dir.exists():
+        syms = []
+        for p in market_dir.glob("finmind_*.parquet"):
+            bare = p.stem.replace("finmind_", "")
+            syms.append(f"{bare}.TW")
+        if large and len(syms) > 100:
+            return sorted(syms)
+        if not large and len(syms) > 50:
+            # Use top 200 by filename as rough proxy if universe.txt missing
+            return sorted(syms)[:200]
+    raise FileNotFoundError(f"Universe file not found: {path}. Run universe builder first.")
 
 
 def _load_all_data(universe: list[str]) -> dict:

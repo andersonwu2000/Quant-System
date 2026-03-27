@@ -84,7 +84,7 @@ L5: OOS holdout validation      — 2023-07 to 2024-12 (agent never sees this da
     IC sign consistency         — OOS IC must have same sign as IS IC
     ICIR decay <= 60%           — OOS |ICIR| >= IS |ICIR| * 0.40
     positive months >= 50%      — at least half the OOS months are positive
-Stage 2: large_icir_20d >= 0.20 — 865+ symbols (only if L5 passed)
+Stage 2: large_icir_20d (reference) — 865+ symbols, recorded but not hard-gated
 ```
 
 **L1-L4 use IN-SAMPLE data only (2017 to mid-2023). L5 validates on a HOLDOUT period
@@ -97,7 +97,7 @@ If it fails L2, the signal exists but isn't stable — try smoothing or differen
 If it fails L3 (dedup), you reinvented an existing factor — try something genuinely new.
 If it fails L3 (stability), the signal is regime-dependent — try regime-conditional logic.
 If it fails L5 (OOS), the factor is overfit to IS — it looked good in-sample but doesn't generalize.
-If it passes L5 but fails Stage 2, it works on blue chips but not broadly — niche factor.
+Stage 2 is informational — low large-scale ICIR means the factor may only work on large/mid-caps (which is fine for our portfolio).
 
 ## Available Data
 
