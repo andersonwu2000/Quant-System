@@ -34,10 +34,12 @@ class RealtimeRiskMonitor:
         ws_manager: Any,
         *,
         loop: asyncio.AbstractEventLoop | None = None,
+        execution_service: Any = None,
     ) -> None:
         self.portfolio = portfolio
         self.risk_engine = risk_engine
         self.ws_manager = ws_manager
+        self.execution_service = execution_service  # for kill switch liquidation
         self._loop = loop
         self._lock = threading.Lock()  # #14: thread-safe price updates
         self._nav_high: float = float(portfolio.nav)
@@ -97,12 +99,40 @@ class RealtimeRiskMonitor:
                 f"KILL SWITCH: drawdown {intraday_dd:.1%}",
             )
             self._alerts_sent.add("kill_switch")
-            # Trigger kill switch + generate liquidation orders
+            # Trigger kill switch + execute liquidation
             if self.risk_engine.kill_switch(self.portfolio):
                 liq_orders = self.risk_engine.generate_liquidation_orders(self.portfolio)
-                if liq_orders:
-                    logger.critical("Kill switch: %d liquidation orders generated", len(liq_orders))
-                    # TODO: submit to ExecutionService when available
+                if liq_orders and self.execution_service is not None:
+                    try:
+                        trades = self.execution_service.submit_orders(liq_orders, self.portfolio)
+                        if trades:
+                            from src.execution.oms import apply_trades
+                            apply_trades(self.portfolio, trades)
+                            logger.critical(
+                                "Kill switch: %d liquidation trades executed, NAV=%s",
+                                len(trades), self.portfolio.nav,
+                            )
+                    except Exception:
+                        logger.exception("Kill switch liquidation failed")
+                elif liq_orders:
+                    logger.critical(
+                        "Kill switch: %d liquidation orders generated but no ExecutionService",
+                        len(liq_orders),
+                    )
+
+    def poll_prices_from_feed(self, feed: Any) -> None:
+        """Fallback price update when tick callbacks are unavailable.
+
+        Call this periodically (e.g. every 60s) in simulation/paper mode
+        where Shioaji doesn't push ticks.
+        """
+        for symbol in list(self.portfolio.positions.keys()):
+            try:
+                price = feed.get_latest_price(symbol)
+                if price and price > 0:
+                    self.on_price_update(symbol, price)
+            except Exception:
+                pass
 
     def reset_daily(self) -> None:
         """Call at market open to reset intraday tracking."""

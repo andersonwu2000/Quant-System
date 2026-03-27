@@ -130,6 +130,7 @@ def create_app() -> FastAPI:
                 risk_engine=state.risk_engine,
                 ws_manager=ws_manager,
                 loop=loop,
+                execution_service=state.execution_service,
             )
             state.realtime_risk_monitor = realtime_risk
 
@@ -141,6 +142,24 @@ def create_app() -> FastAPI:
                 quote_manager.on_tick(_risk_on_tick)
 
             state.quote_manager = quote_manager
+
+            # Fallback: if no tick subscription, poll prices periodically
+            if quote_manager is None or not state.portfolio.positions:
+                from src.data.sources import create_feed as _create_feed
+
+                async def _price_poll_loop() -> None:
+                    """Poll latest prices every 60s when ticks unavailable."""
+                    feed = _create_feed(config.data_source, [])
+                    while True:
+                        await asyncio.sleep(60)
+                        try:
+                            realtime_risk.poll_prices_from_feed(feed)
+                        except Exception:
+                            pass
+
+                asyncio.create_task(_price_poll_loop())
+                logger.info("Price polling fallback started (60s interval)")
+
             logger.info("RealtimeRiskMonitor initialized")
 
         async def _kill_switch_monitor() -> None:

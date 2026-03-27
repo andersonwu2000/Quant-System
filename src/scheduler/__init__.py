@@ -1,28 +1,19 @@
-"""Strategy scheduler — periodic rebalance trigger.
+"""Strategy scheduler — Phase S 統一交易管線。
 
-Three mutually exclusive execution paths are managed here:
+一條 Trading Pipeline（由 QUANT_ACTIVE_STRATEGY + QUANT_TRADING_PIPELINE_CRON 控制）。
+Auto-Alpha Research Pipeline 獨立運行（不操作 Portfolio），由 ``POST /auto-alpha/start`` 觸發。
 
-1. **General rebalance** — runs whichever strategy is currently "active"
-   (configurable cron, default 1st of month 09:00).
-2. **Auto-Alpha** — daily factor pipeline, started separately via
-   ``POST /api/v1/auto-alpha/start``; has its own APScheduler instance
-   inside ``AlphaScheduler``.
-3. **Monthly revenue** — fixed ``revenue_momentum_hedged`` strategy,
-   triggered on the 11th of each month (data update 08:30, rebalance 09:05).
-
-These three paths should NOT run simultaneously. The general rebalance
-and monthly revenue jobs are registered here; Auto-Alpha is managed by
-``src/alpha/auto/scheduler.py``. Operators should ensure only one path
-is active at a time by configuring ``scheduler_enabled``,
-``revenue_scheduler_enabled``, and the Auto-Alpha /start endpoint
-accordingly.
+流程：cron → execute_pipeline(config)
+  → 數據更新（營收策略自動下載 FinMind）
+  → strategy.on_bar() → weights_to_orders()
+  → RiskEngine → ExecutionService → apply_trades()
+  → 持久化 + 通知
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -42,17 +33,10 @@ class SchedulerService:
         self._running = False
 
     def start(self, config: TradingConfig) -> None:
-        """Start the scheduler with jobs from config.
+        """Start the scheduler with the unified trading pipeline.
 
-        Registers up to three jobs depending on configuration:
-
-        - **rebalance** (always): general strategy rebalance
-          (cron from ``config.rebalance_cron``).
-        - **revenue_update** (if ``revenue_scheduler_enabled``):
-          monthly revenue data download (cron from ``config.revenue_update_cron``).
-        - **revenue_rebalance** (if ``revenue_scheduler_enabled``):
-          monthly revenue_momentum_hedged rebalance
-          (cron from ``config.revenue_rebalance_cron``).
+        Registers one job: ``trading_pipeline`` (cron from ``config.trading_pipeline_cron``).
+        Strategy is determined by ``config.active_strategy``.
         """
         if not config.scheduler_enabled:
             logger.info("Scheduler disabled, skipping")
@@ -120,48 +104,5 @@ class SchedulerService:
             except Exception:
                 logger.exception("Pipeline failed")
 
-    # ── Deprecated methods (kept for backward compat) ──
-
-    async def _rebalance_job(self, config: TradingConfig) -> None:
-        """[deprecated] Use _run_pipeline instead."""
-        await self._run_pipeline(config)
-
-    async def _revenue_update_then_rebalance(self, config: TradingConfig) -> None:
-        """Monthly revenue: update data → rebalance (chained, R10.1).
-
-        If update fails after retry, rebalance is skipped and alert is sent.
-        Uses pipeline lock to prevent concurrent execution (R10.3).
-        """
-        if _pipeline_lock.locked():
-            logger.warning("Pipeline lock held, skipping revenue pipeline")
-            return
-        async with _pipeline_lock:
-            logger.info("Revenue pipeline started at %s", datetime.now())
-
-            # Step 1: Update data
-            from src.scheduler.jobs import monthly_revenue_update, monthly_revenue_rebalance
-
-            update_ok = await monthly_revenue_update(max_retries=1)
-
-            if not update_ok:
-                # R10.6: update 失敗 → 通知 + 跳過 rebalance
-                logger.error("Revenue update failed — skipping rebalance")
-                try:
-                    from src.notifications.factory import create_notifier
-                    notifier = create_notifier(config)
-                    if notifier.is_configured():
-                        await notifier.send(
-                            "Revenue Update FAILED",
-                            "Monthly revenue data update failed after retry. "
-                            "Rebalance skipped. Check logs.",
-                        )
-                except Exception:
-                    logger.debug("Failed to send update-failure notification", exc_info=True)
-                return
-
-            # Step 2: Rebalance (only if update succeeded)
-            logger.info("Revenue update OK — proceeding to rebalance")
-            try:
-                await monthly_revenue_rebalance(config)
-            except Exception:
-                logger.exception("Revenue rebalance failed after successful update")
+    # Deprecated methods removed in Phase S cleanup.
+    # Git history preserves them (commit fc5eab4).
