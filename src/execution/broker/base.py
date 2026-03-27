@@ -5,11 +5,27 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from decimal import Decimal
+from typing import Any, Protocol, runtime_checkable
 
-from typing import Any
+from src.core.models import Order, Trade
 
-from src.core.models import Order
+
+@runtime_checkable
+class OrderExecutor(Protocol):
+    """統一執行介面 — SimBroker 和 ExecutionService 都滿足此 protocol。
+
+    U1: 讓 execute_one_bar 接受任何實作 execute() 的物件，
+    回測用 SimBroker，Paper/Live 用 ExecutionService。
+    """
+
+    def execute(
+        self,
+        orders: list[Order],
+        current_bars: dict[str, dict[str, Any]] | None = None,
+        timestamp: datetime | None = None,
+    ) -> list[Trade]: ...
 
 
 class BrokerAdapter(ABC):
