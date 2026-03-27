@@ -19,6 +19,7 @@ from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.core.config import TradingConfig
+    from src.core.models import Portfolio
 
 logger = logging.getLogger(__name__)
 
@@ -542,6 +543,24 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     from src.strategy.engine import weights_to_orders
     from src.strategy.registry import resolve_strategy
 
+    # T1: 市場時段檢查（paper/live 模式，避免用過時收盤價下單）
+    if config.mode in ("paper", "live"):
+        now = datetime.now()
+        try:
+            from src.core.calendar import get_tw_calendar
+            cal = get_tw_calendar()
+            if not cal.is_trading_day(now.date()):
+                logger.info("Pipeline skipped: non-trading day (%s)", now.date())
+                return PipelineResult(status="skipped", strategy_name=config.active_strategy,
+                                     error=f"Non-trading day: {now.date()}")
+        except Exception:
+            pass  # calendar 不可用時不阻擋
+        # 台股 09:00-13:30，允許 08:00-14:00 的寬鬆時段
+        if not (8 <= now.hour <= 14):
+            logger.info("Pipeline skipped: outside trading hours (%d:00)", now.hour)
+            return PipelineResult(status="skipped", strategy_name=config.active_strategy,
+                                 error=f"Outside trading hours: {now.hour}:00")
+
     state = get_app_state()
     notifier = create_notifier(config)
 
@@ -637,20 +656,100 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         apply_trades(state.portfolio, trades)
         _save_trade_log(trades, strategy.name())
 
-    logger.info("Pipeline done: %d trades, NAV=%s", len(trades) if trades else 0, state.portfolio.nav)
+    n_trades = len(trades) if trades else 0
+    logger.info("Pipeline done: %d trades, NAV=%s", n_trades, state.portfolio.nav)
 
-    # 5. 通知
+    # 5. T3: 自動對帳 — 比對策略目標 vs 實際持倉
+    deviations = _reconcile(target_weights, state.portfolio)
+    if deviations:
+        logger.warning(
+            "Reconciliation: %d deviations > 2%%: %s",
+            len(deviations),
+            [(d["symbol"], f"{d['deviation']:.1%}") for d in deviations[:5]],
+        )
+
+    # 6. T2: 記錄回測比較數據（用於未來 R² 計算）
+    _record_backtest_comparison(
+        strategy_name=strategy.name(),
+        paper_nav=float(state.portfolio.nav),
+        paper_trades=n_trades,
+        target_weights=target_weights,
+    )
+
+    # 7. 通知（含對帳結果）
     if notifier.is_configured():
+        deviation_text = ""
+        if deviations:
+            deviation_text = f"\nDeviations: {len(deviations)} symbols > 2%"
         summary = (
-            f"Pipeline [{strategy.name()}]: {len(trades) if trades else 0} trades, "
+            f"Pipeline [{strategy.name()}]: {n_trades} trades, "
             f"{len(target_weights)} targets, NAV={float(state.portfolio.nav):,.0f}"
+            f"{deviation_text}"
         )
         try:
             await notifier.send("Trading Pipeline", summary)
         except Exception:
             logger.debug("Notification failed", exc_info=True)
 
-    return PipelineResult(status="ok", n_trades=len(trades) if trades else 0, strategy_name=strategy.name())
+    return PipelineResult(status="ok", n_trades=n_trades, strategy_name=strategy.name())
+
+
+def _reconcile(
+    target_weights: dict[str, float],
+    portfolio: "Portfolio",
+    threshold: float = 0.02,
+) -> list[dict[str, float]]:
+    """T3: 比對策略目標 vs 實際持倉，回傳偏差 > threshold 的股票。"""
+    deviations: list[dict[str, float]] = []
+    all_symbols = set(target_weights.keys()) | set(portfolio.positions.keys())
+    for sym in all_symbols:
+        target_w = target_weights.get(sym, 0.0)
+        actual_w = float(portfolio.get_position_weight(sym))
+        diff = abs(target_w - actual_w)
+        if diff > threshold:
+            deviations.append({
+                "symbol": sym,
+                "target": round(target_w, 4),
+                "actual": round(actual_w, 4),
+                "deviation": round(diff, 4),
+            })
+    deviations.sort(key=lambda d: d["deviation"], reverse=True)
+
+    # 存檔
+    if deviations:
+        recon_dir = Path("data/paper_trading/reconciliation")
+        recon_dir.mkdir(parents=True, exist_ok=True)
+        today = datetime.now().strftime("%Y-%m-%d")
+        path = recon_dir / f"{today}.json"
+        path.write_text(json.dumps(deviations, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    return deviations
+
+
+def _record_backtest_comparison(
+    strategy_name: str,
+    paper_nav: float,
+    paper_trades: int,
+    target_weights: dict[str, float],
+) -> None:
+    """T2: 記錄每次 pipeline 的 NAV，供未來計算回測 vs Paper Trading R²。"""
+    comp_dir = Path("data/paper_trading/backtest_comparison")
+    comp_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    record = {
+        "date": today,
+        "strategy": strategy_name,
+        "paper_nav": paper_nav,
+        "paper_trades": paper_trades,
+        "n_targets": len(target_weights),
+        "top_targets": dict(sorted(target_weights.items(), key=lambda x: -x[1])[:5]),
+    }
+    path = comp_dir / f"{today}.json"
+    try:
+        path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.info("Backtest comparison record: %s", path)
+    except Exception:
+        logger.debug("Failed to save backtest comparison", exc_info=True)
 
 
 async def _async_revenue_update() -> bool:
