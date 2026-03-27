@@ -59,7 +59,10 @@ def save_portfolio(portfolio: Portfolio) -> None:
         state = {
             "cash": str(portfolio.cash),
             "initial_cash": str(portfolio.initial_cash),
-            "nav_sod": str(portfolio.nav_sod),  # #7: persist for daily_drawdown
+            "nav_sod": str(portfolio.nav_sod),
+            "pending_settlements": [
+                [sd, str(amt)] for sd, amt in portfolio.pending_settlements
+            ],
             "positions": positions,
         }
         tmp_path = _PERSIST_PATH.with_suffix(".tmp")
@@ -96,10 +99,17 @@ def load_portfolio() -> Portfolio | None:
             )
         cash = Decimal(raw["cash"])
         initial_cash = Decimal(raw.get("initial_cash", raw["cash"]))
+        # Restore pending settlements
+        settlements: list[tuple[str, Decimal]] = []
+        for item in raw.get("pending_settlements", []):
+            if isinstance(item, list) and len(item) == 2:
+                settlements.append((item[0], Decimal(item[1])))
+
         portfolio = Portfolio(
             cash=cash,
             initial_cash=initial_cash,
             positions=positions,
+            pending_settlements=settlements,
         )
         # E5: nav_sod 預設為當前 NAV（不是 0），避免 kill switch 失效
         saved_nav_sod = raw.get("nav_sod", "0")

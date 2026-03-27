@@ -498,9 +498,14 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
     """
     import asyncio
 
-    # Idempotency: skip if already completed today
-    if _has_completed_run_today():
-        logger.info("Pipeline already completed today — skipping (idempotency)")
+    # #2: 月度策略防重複再平衡（crash recovery 後不會重跑）
+    monthly_strategies = {"revenue_momentum", "revenue_momentum_hedged", "trust_follow"}
+    if config.active_strategy in monthly_strategies:
+        if _has_completed_run_this_month():
+            logger.info("Pipeline already completed this month — skipping (monthly idempotency)")
+            return PipelineResult(status="ok", strategy_name=config.active_strategy)
+    elif _has_completed_run_today():
+        logger.info("Pipeline already completed today — skipping (daily idempotency)")
         return PipelineResult(status="ok", strategy_name=config.active_strategy)
 
     run_id = _today_run_id()
@@ -608,6 +613,9 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                         pass
                 return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
 
+    # #5: 數據更新後建立新 feed（不用可能快取舊 parquet 的 feed）
+    # create_feed 在下面呼叫，確保用更新後的數據
+
     # 2. 建立 Context
     # 策略需要全市場 universe 才能掃描和發現新標的（不只是現有持倉）
     # 例如 revenue_momentum 需要掃描 800+ 支再篩選 15 支
@@ -670,8 +678,10 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     async with state.mutation_lock:
         trades = state.execution_service.submit_orders(approved, state.portfolio)
         if trades:
-            apply_trades(state.portfolio, trades)
+            # #6: save trade log BEFORE apply_trades — if crash happens between
+            # submit and apply, at least we have a record of what was executed
             _save_trade_log(trades, strategy.name())
+            apply_trades(state.portfolio, trades)
 
     n_trades = len(trades) if trades else 0
     logger.info("Pipeline done: %d trades, NAV=%s", n_trades, state.portfolio.nav)

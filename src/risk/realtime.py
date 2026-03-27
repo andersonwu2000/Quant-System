@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -41,7 +41,7 @@ class RealtimeRiskMonitor:
         self.ws_manager = ws_manager
         self.execution_service = execution_service  # for kill switch liquidation
         self._loop = loop
-        self._lock = threading.Lock()  # #14: thread-safe price updates
+        # Price updates use portfolio.lock (shared with apply_trades) for thread safety
         self._nav_high: float = float(portfolio.nav)
         self._alerts_sent: set[str] = set()
         self._alerts_count: int = 0
@@ -55,9 +55,10 @@ class RealtimeRiskMonitor:
 
         Thread-safe: uses lock to protect portfolio mutation.
         """
-        with self._lock:
-            # #17: auto reset at date change (台股 UTC+8)
-            now = datetime.now(timezone.utc)
+        with self.portfolio.lock:
+            # #4: 用台灣時間（UTC+8）判斷日期變更，避免 UTC midnight 提前 reset
+            _tw_tz = timezone(timedelta(hours=8))
+            now = datetime.now(_tw_tz)
             today_str = now.strftime("%Y-%m-%d")
             if self._last_reset_date and today_str != self._last_reset_date:
                 self._nav_high = float(self.portfolio.nav)

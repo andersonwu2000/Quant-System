@@ -191,7 +191,20 @@ class Portfolio:
     initial_cash: Decimal = Decimal("1000000")
     nav_sod: Decimal = Decimal("0")  # start-of-day NAV（回測引擎更新）
     pending_settlements: list[tuple[str, Decimal]] = field(default_factory=list)  # (settle_date_str, amount)
-    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # #1: cross-thread safety
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)  # #1: cross-thread safety
+
+    def __deepcopy__(self, memo: dict) -> "Portfolio":
+        """Custom deepcopy that creates a new lock instead of copying the old one."""
+        from copy import deepcopy
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            if k == "lock":
+                object.__setattr__(result, k, threading.Lock())
+            else:
+                object.__setattr__(result, k, deepcopy(v, memo))
+        return result
 
     @property
     def available_cash(self) -> Decimal:
