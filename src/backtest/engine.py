@@ -508,7 +508,7 @@ class BacktestEngine:
                 prices=prices,
                 volumes=volumes,
                 current_bars=current_bars,
-                sim_broker=sim_broker,
+                broker=sim_broker,
                 instruments=self._instruments,
                 available_cash=avail_cash,
                 market_lot_sizes=config.market_lot_sizes,
