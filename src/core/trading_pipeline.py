@@ -133,6 +133,12 @@ def execute_from_weights(
     if broker is None:
         return []
 
+    # H2: SimBroker 需要 current_bars，ExecutionService 不需要
+    from src.execution.broker.simulated import SimBroker as _SimBroker
+    if isinstance(broker, _SimBroker) and current_bars is None:
+        logger.error("SimBroker requires current_bars but got None")
+        return []
+
     trades = broker.execute(approved, current_bars, timestamp)
 
     # 4. Apply trades to portfolio

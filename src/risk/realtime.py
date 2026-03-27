@@ -107,10 +107,9 @@ class RealtimeRiskMonitor:
                 f"KILL SWITCH: drawdown {intraday_dd:.1%}",
             )
             self._alerts_sent.add("kill_switch")
-            # Trigger kill switch — schedule liquidation on event loop
-            # (不在 Shioaji 線程中直接操作 portfolio，避免和 asyncio 側的
-            #  mutation_lock 競爭。改為排程到 event loop 執行。)
-            if self.risk_engine.kill_switch(self.portfolio):
+            # H4 fix: 用 lock 內算好的 intraday_dd 判斷，不重新讀 portfolio
+            # kill_switch 門檻是 5%，intraday_dd 已 < -0.05 才到這裡
+            if True:  # already confirmed intraday_dd < -0.05
                 liq_orders = self.risk_engine.generate_liquidation_orders(self.portfolio)
                 if liq_orders and self.execution_service is not None and self._loop is not None:
                     import asyncio

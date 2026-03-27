@@ -559,9 +559,8 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
 
     P2: Also writes pipeline_runs record (not just execute_pipeline outer wrapper).
     """
-    # P2: Write started record even when called directly (e.g. manual test)
+    # H1 fix: 不在內層重複寫 "started"（外層 execute_pipeline 已寫）
     run_id = _today_run_id()
-    _write_pipeline_record(run_id, status="started", strategy=config.active_strategy)
     from src.api.state import get_app_state
     from src.data.sources import create_feed, create_fundamentals
     from src.notifications.factory import create_notifier

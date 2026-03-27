@@ -158,7 +158,7 @@ def create_app() -> FastAPI:
             # so we also enable polling in simulation mode.
             is_simulation = False
             if isinstance(broker, SinopacBroker):
-                is_simulation = getattr(broker._config, 'simulation', False)
+                is_simulation = getattr(broker, "simulation", False)
             elif getattr(state.execution_service, '_fallback_mode', False):
                 is_simulation = True
             if quote_manager is None or is_simulation:

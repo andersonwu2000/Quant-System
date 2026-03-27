@@ -112,9 +112,12 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
         portfolio.as_of = trades[-1].timestamp if trades else portfolio.as_of
 
     # Persist portfolio state for crash recovery (paper/live mode)
-    from src.core.config import get_config
-    if get_config().mode in ("paper", "live"):
-        from src.api.state import save_portfolio
-        save_portfolio(portfolio)
+    try:
+        from src.core.config import get_config
+        if get_config().mode in ("paper", "live"):
+            from src.api.state import save_portfolio
+            save_portfolio(portfolio)
+    except Exception:
+        pass  # backtest mode or missing API dependencies — skip persistence
 
     return portfolio

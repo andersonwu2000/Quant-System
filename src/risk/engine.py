@@ -103,7 +103,13 @@ class RiskEngine:
                 approved.append(order)
                 # 更新 projected portfolio 以反映累積效應
                 sym = order.instrument.symbol
-                price = order.price or Decimal("0")
+                # H5 fix: market order 可能 price=None，fallback 到 MarketState
+                price = order.price
+                if not price or price <= 0:
+                    if market and sym in market.prices:
+                        price = market.prices[sym]
+                    else:
+                        price = Decimal("0")
                 notional = order.quantity * price
                 if order.side == Side.BUY:
                     projected.cash -= notional
