@@ -554,7 +554,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                 return PipelineResult(status="skipped", strategy_name=config.active_strategy,
                                      error=f"Non-trading day: {now.date()}")
         except Exception:
-            pass  # calendar 不可用時不阻擋
+            logger.debug("Calendar check failed, proceeding anyway", exc_info=True)
         # 台股 09:00-13:30，允許 08:00-14:00 的寬鬆時段
         if not (8 <= now.hour <= 14):
             logger.info("Pipeline skipped: outside trading hours (%d:00)", now.hour)
@@ -698,9 +698,9 @@ def _reconcile(
     target_weights: dict[str, float],
     portfolio: "Portfolio",
     threshold: float = 0.02,
-) -> list[dict[str, float]]:
+) -> list[dict[str, Any]]:
     """T3: 比對策略目標 vs 實際持倉，回傳偏差 > threshold 的股票。"""
-    deviations: list[dict[str, float]] = []
+    deviations: list[dict[str, Any]] = []
     all_symbols = set(target_weights.keys()) | set(portfolio.positions.keys())
     for sym in all_symbols:
         target_w = target_weights.get(sym, 0.0)
@@ -749,7 +749,7 @@ def _record_backtest_comparison(
         path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.info("Backtest comparison record: %s", path)
     except Exception:
-        logger.debug("Failed to save backtest comparison", exc_info=True)
+        logger.warning("Failed to save backtest comparison", exc_info=True)
 
 
 async def _async_revenue_update() -> bool:

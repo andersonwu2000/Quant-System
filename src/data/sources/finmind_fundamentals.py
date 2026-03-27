@@ -195,7 +195,10 @@ class FinMindFundamentals(FundamentalsProvider):
 
         cached_full = self._get_cached(full_cache_key)
         if cached_full is not None:
-            assert isinstance(cached_full, pd.DataFrame)
+            if not isinstance(cached_full, pd.DataFrame):
+                logger.warning("Corrupted cache for %s, re-fetching", full_cache_key)
+                cached_full = None
+        if cached_full is not None:
             # Filter and return
             if cached_full.empty:
                 return empty
@@ -316,9 +319,12 @@ class FinMindFundamentals(FundamentalsProvider):
 
         empty = pd.DataFrame(columns=["date", "trust_net", "foreign_net", "dealer_net"])
 
-        if cached_full is not None:
-            assert isinstance(cached_full, pd.DataFrame)
+        if cached_full is not None and isinstance(cached_full, pd.DataFrame):
             full_result: pd.DataFrame = cached_full
+        elif cached_full is not None:
+            logger.warning("Corrupted institutional cache for %s, re-fetching", full_cache_key)
+            cached_full = None
+            full_result = empty  # will be overwritten below
         else:
             # Local parquet only — no API calls during backtest
             local_df = self._read_local_parquet(bare_id, "institutional")

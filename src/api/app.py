@@ -149,17 +149,22 @@ def create_app() -> FastAPI:
 
                 async def _price_poll_loop() -> None:
                     """Poll latest prices every 60s when ticks unavailable."""
+                    _cached_feed = None
+                    _cached_syms: list[str] = []
                     while True:
                         await asyncio.sleep(60)
                         try:
-                            # #9: 用 portfolio 的持倉 symbols 作為 universe（不傳空）
-                            syms = list(state.portfolio.positions.keys())
+                            syms = sorted(state.portfolio.positions.keys())
                             if not syms:
                                 continue
-                            feed = _create_feed(config.data_source, syms)
-                            realtime_risk.poll_prices_from_feed(feed)
+                            # Cache feed, only recreate when symbols change
+                            if syms != _cached_syms:
+                                _cached_feed = _create_feed(config.data_source, syms)
+                                _cached_syms = syms
+                            if _cached_feed is not None:
+                                realtime_risk.poll_prices_from_feed(_cached_feed)
                         except Exception:
-                            pass
+                            logger.debug("Price poll failed", exc_info=True)
 
                 asyncio.create_task(_price_poll_loop())
                 logger.info("Price polling fallback started (60s interval)")
@@ -177,8 +182,8 @@ def create_app() -> FastAPI:
                 while True:
                     await asyncio.sleep(300)  # check every 5 min
                     now = _dt.now()
-                    # 只在 13:30-13:40 之間存一次（台股收盤）
-                    if now.hour == 13 and 30 <= now.minute <= 40:
+                    # 只在 13:25-13:55 之間存一次（台股收盤，寬鬆窗口避免 sleep drift）
+                    if now.hour == 13 and 25 <= now.minute <= 55:
                         today = now.strftime("%Y-%m-%d")
                         path = snap_dir / f"{today}.json"
                         if not path.exists():
@@ -196,23 +201,31 @@ def create_app() -> FastAPI:
                                 path.write_text(_json.dumps(snap, indent=2, ensure_ascii=False))
                                 logger.info("Daily NAV snapshot: %s (NAV=%s)", today, snap["nav"])
                             except Exception:
-                                pass
+                                logger.debug("NAV snapshot write failed", exc_info=True)
 
             if config.mode in ("paper", "live"):
                 asyncio.create_task(_daily_nav_snapshot())
 
             logger.info("RealtimeRiskMonitor initialized")
 
+        _kill_switch_fired = False  # D2: re-trigger guard
+
         async def _kill_switch_monitor() -> None:
+            nonlocal _kill_switch_fired
             while True:
                 await asyncio.sleep(5)
                 try:
+                    # D2: skip if already fired (wait for manual reset via API)
+                    if _kill_switch_fired:
+                        continue
+
                     if state.risk_engine.kill_switch(state.portfolio):
+                        _kill_switch_fired = True  # D2: prevent re-trigger
                         for name in list(state.strategies):
                             state.strategies[name]["status"] = "stopped"
                         state.oms.cancel_all()
 
-                        # Paper/live: generate and submit liquidation orders
+                        # Paper/live: generate, submit, and APPLY liquidation orders
                         if config.mode in ("paper", "live"):
                             liq_orders = state.risk_engine.generate_liquidation_orders(
                                 state.portfolio
@@ -225,14 +238,18 @@ def create_app() -> FastAPI:
                                 trades = state.execution_service.submit_orders(
                                     liq_orders, state.portfolio
                                 )
-                                logger.critical(
-                                    "Kill switch: %d liquidation trades executed",
-                                    len(trades),
-                                )
+                                # D1: apply trades to portfolio (was missing!)
+                                if trades:
+                                    from src.execution.oms import apply_trades
+                                    apply_trades(state.portfolio, trades)
+                                    logger.critical(
+                                        "Kill switch: %d liquidation trades executed, NAV=%s",
+                                        len(trades), state.portfolio.nav,
+                                    )
 
                         await ws_manager.broadcast("alerts", {
                             "type": "kill_switch",
-                            "message": "Kill switch triggered — all strategies stopped",
+                            "message": "Kill switch triggered — all strategies stopped, positions liquidated",
                         })
                 except Exception:
                     logger.warning("Kill switch monitor error", exc_info=True)
