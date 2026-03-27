@@ -102,35 +102,53 @@
 | 14 | market_correlation | \|corr\| ≤ 0.90 | 獨立 alpha（非市場 beta） |
 | 15 | cvar_95 | ≥ -5% | 日尾部風險 |
 
-### 3.3 部署篩選（六層）
+### 3.3 Autoresearch 評估閘門（L1-L5 + Stage 2）
 
-| 階段 | 條件 | 說明 |
-|------|------|------|
-| L5 快篩 | ICIR ≥ 0.30 | 小樣本快速檢查（數秒） |
-| 大規模 IC | ICIR(20d) ≥ 0.20 | 全 universe 驗證（865+ 檔，數分鐘） |
-| StrategyValidator | ≥ 14/15 通過（排除 DSR） | 15 項驗證閘門 |
-| vs 基準 | Sharpe > 0050.TW | 風險調整必須打敗大盤 |
-| 絕對報酬 | CAGR > 8% | 絕對報酬門檻 |
-| 近期表現 | recent_period_sharpe > -0.10 | 允許輕微噪音 |
+定義於 `scripts/autoresearch/evaluate.py`（READ ONLY）。
+
+**期間分割：**
+- In-Sample (IS)：2017-01-01 ~ 2023-06-30（L1-L4 使用）
+- Out-of-Sample (OOS)：2023-07-01 ~ 2024-12-31（L5 使用，agent 不可見）
+
+| 閘門 | 條件 | 說明 | 失敗處理 |
+|------|------|------|----------|
+| **L0** | factor.py ≤ 60 行 | 複雜度限制（防過擬合） | 直接拒絕 |
+| **L1** | \|IC(20d)\| ≥ 0.02 | IS 前 30 個日期快篩（~30 秒） | 換方向 |
+| **L2** | \|ICIR\| ≥ 0.15 | IS 全期間、全 horizon（5/10/20/60d） | 訊號不穩，試平滑 |
+| **L3a** | dedup corr ≤ 0.50 | IC-series 與已知因子相關性 | 因子是 clone |
+| **L3b** | positive_years ≥ 4/6.5 | IS 年度穩定性 | regime 依賴 |
+| **L4** | fitness ≥ 3.0 | WorldQuant BRAIN 公式 | 綜合不足 |
+| **L5** | OOS IC 方向一致 | IS 和 OOS 的 IC 同號 | 過擬合 IS |
+| **L5** | OOS ICIR 衰退 ≤ 60% | OOS \|ICIR\| ≥ IS \|ICIR\| × 0.40 | 過擬合 IS |
+| **L5** | OOS 正向月 ≥ 50% | 至少半數 OOS 月份 IC > 0 | 不穩定 |
+| **Stage 2** | large ICIR(20d) ≥ 0.20 | 865+ 支股票全 universe 驗證 | 僅在藍籌有效 |
+
+**防過擬合設計：**
+- L5 只向 agent 回報 pass/fail，不洩漏 OOS 具體數值（P-01）
+- 不使用全域 Bonferroni/DSR 修正（業界共識：會導致無法發現因子）
+- 最終驗證靠 StrategyValidator + paper trading
 
 > **deflated_sharpe 說明**：90+ trials 下 DSR 0.95 需 Sharpe > 2.0（業界不現實）。0.70 對應 Sharpe ~1.5，是合理門檻。Bailey & López de Prado 原意是排名工具而非絕對門檻。
 
-### 3.3 關鍵約束（2026-03-27 大規模審計後確立）
+### 3.4 關鍵約束（2026-03-27 大規模審計後確立）
 
 1. **營收 40 天延遲**：所有營收因子必須用 `as_of - pd.DateOffset(days=40)` 截斷。缺此延遲會導致 IC 膨脹 10-40 倍（look-ahead bias）
 2. **因子生成 fail-closed**：不匹配的假說必須 return None，不可 fallback 到 revenue_yoy
-3. **L5 Walk-Forward 必須實際計算**：前半/後半 IC 比較，不可 `passed = True` 空殼
-4. **大規模 IC 和 L1-L5 forward return 必須一致**：都用 `close[as_of+h] / close[as_of] - 1`
-5. **月度取樣用最近交易日**：不可直接用月末日期（可能不是交易日）
+3. **大規模 IC 和 L1-L5 forward return 必須一致**：都用 `close[as_of+h] / close[as_of] - 1`
+4. **月度取樣用最近交易日**：不可直接用月末日期（可能不是交易日）
 
-### 3.4 報告流程（autoresearch 模式）
+### 3.5 報告流程（autoresearch 模式）
 
-因子報告存放在 `docs/research/auto/`。**入選標準**（必須全部滿足）：
-1. evaluate.py 通過 L4（composite_score > 0, passed=True）
-2. 大規模 ICIR(20d) ≥ 0.20
-3. StrategyValidator ≥ 13/15
+因子報告存放在 `docs/research/autoresearch/`。
 
-未達標準的因子只記錄在 `results.tsv`，不寫 markdown 報告（避免假陽性汙染）。
+**報告生成條件：** 通過 L5 OOS 驗證（`passed=True`）。由 evaluate.py 的 `_write_report()` 直接寫入，不依賴 API server。報告包含完整指標和因子原始碼。
+
+**部署條件（額外需要 API server）：**
+1. StrategyValidator ≥ 14/15 通過（排除 DSR）
+2. DSR ≥ 0.70
+3. 自動部署到 Paper Trading
+
+未通過 L5 的因子只記錄在 `results.tsv`，不寫報告。
 
 ---
 
