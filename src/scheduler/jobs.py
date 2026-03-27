@@ -563,12 +563,9 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     run_id = _today_run_id()
     _write_pipeline_record(run_id, status="started", strategy=config.active_strategy)
     from src.api.state import get_app_state
-    from src.core.models import Order
     from src.data.sources import create_feed, create_fundamentals
-    from src.execution.oms import apply_trades
     from src.notifications.factory import create_notifier
     from src.strategy.base import Context
-    from src.strategy.engine import weights_to_orders
     from src.strategy.registry import resolve_strategy
 
     # T1 + P6: 市場時段檢查（用台灣時間 UTC+8，不依賴系統時區）
@@ -678,37 +675,22 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     if missing_prices:
         logger.warning("Missing prices for %d symbols: %s", len(missing_prices), missing_prices[:10])
 
-    orders = weights_to_orders(
-        target_weights, state.portfolio, prices,
-        market_lot_sizes=config.market_lot_sizes,
-        fractional_shares=config.fractional_shares,
-        volumes=volumes if volumes else None,
-    )
-    if not orders:
-        return PipelineResult(status="no_orders", strategy_name=strategy.name())
+    # U1: 使用統一執行路徑（和回測共用 execute_from_weights）
+    from src.core.trading_pipeline import execute_from_weights
 
-    approved: list[Order] = []
-    for order in orders:
-        decision = state.risk_engine.check_order(order, state.portfolio)
-        if decision.approved:
-            if decision.modified_qty is not None:
-                order.quantity = decision.modified_qty
-            approved.append(order)
-        else:
-            logger.warning("Rejected: %s — %s", order.instrument.symbol, decision.reason)
-
-    if not approved:
-        logger.info("All orders rejected by risk engine")
-        return PipelineResult(status="no_orders", strategy_name=strategy.name())
-
-    # Acquire mutation lock for submit + apply (prevent race with kill switch / rebalance)
     async with state.mutation_lock:
-        trades = state.execution_service.submit_orders(approved, state.portfolio)
+        trades = execute_from_weights(
+            target_weights=target_weights,
+            portfolio=state.portfolio,
+            risk_engine=state.risk_engine,
+            prices=prices,
+            volumes=volumes if volumes else None,
+            broker=state.execution_service,
+            market_lot_sizes=config.market_lot_sizes,
+            fractional_shares=config.fractional_shares,
+        )
         if trades:
-            # #6: save trade log BEFORE apply_trades — if crash happens between
-            # submit and apply, at least we have a record of what was executed
             _save_trade_log(trades, strategy.name())
-            apply_trades(state.portfolio, trades)
 
     n_trades = len(trades) if trades else 0
     logger.info("Pipeline done: %d trades, NAV=%s", n_trades, state.portfolio.nav)
