@@ -281,6 +281,90 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
                 continue
             results[sym] = float(rev_3m / rev_12m)
 '''
+    elif "coefficient_of_variation" in name:
+        code += '''
+            if len(revenues) < 12:
+                continue
+            recent = revenues[-12:]
+            std = float(np.std(recent))
+            mean = float(np.mean(recent))
+            if std <= 0 or mean <= 0:
+                continue
+            # Inverse CV: higher = more stable growth (lower relative volatility)
+            results[sym] = float(mean / std)
+'''
+    elif "positive_streak" in name:
+        code += '''
+            if len(revenues) < 6:
+                continue
+            streak = 0
+            for i in range(len(revenues) - 1, 0, -1):
+                if revenues[i] > revenues[i - 1]:
+                    streak += 1
+                else:
+                    break
+            results[sym] = float(streak)
+'''
+    elif "rank_change" in name:
+        code += '''
+            # Revenue rank change requires cross-sectional data
+            # Use revenue 6-month momentum as proxy for relative improvement
+            if len(revenues) < 6:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_6m = float(np.mean(revenues[-6:]))
+            if rev_6m <= 0:
+                continue
+            results[sym] = float(rev_3m / rev_6m - 1)
+'''
+    elif "zscore" in name:
+        code += '''
+            if len(revenues) < 24:
+                continue
+            recent_24 = revenues[-24:]
+            mean = float(np.mean(recent_24))
+            std = float(np.std(recent_24, ddof=1))
+            if std <= 0:
+                continue
+            results[sym] = float((revenues[-1] - mean) / std)
+'''
+    elif "beat_magnitude" in name:
+        code += '''
+            if len(revenues) < 13 or revenues[-13] <= 0:
+                continue
+            yoy = revenues[-1] / revenues[-13] - 1
+            # Squared positive surprise (penalize negative)
+            results[sym] = float(max(0, yoy) ** 2)
+'''
+    elif "3m_vs_6m" in name:
+        code += '''
+            if len(revenues) < 6:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_6m = float(np.mean(revenues[-6:]))
+            if rev_6m <= 0:
+                continue
+            results[sym] = float(rev_3m / rev_6m)
+'''
+    elif "monotonic" in name:
+        code += '''
+            from scipy.stats import kendalltau
+            if len(revenues) < 6:
+                continue
+            recent = revenues[-6:]
+            tau, _ = kendalltau(range(len(recent)), recent)
+            if np.isnan(tau):
+                continue
+            results[sym] = float(tau)
+'''
+    elif "cfo_over_ni" in name or "capex" in name or "inventory" in name or "upstream" in name or "sensitivity" in name:
+        # These require financial_statement data not yet available
+        logger.warning(
+            "[Factor] '%s' requires financial_statement data (not just revenue). "
+            "Cannot auto-implement with revenue-only data.",
+            name,
+        )
+        return None
     else:
         # 不匹配任何已知 pattern → 無法自動實作，回傳 None
         logger.warning(
