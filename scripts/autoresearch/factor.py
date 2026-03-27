@@ -11,9 +11,8 @@ def compute_factor(
     as_of: pd.Timestamp,
     data: dict,
 ) -> dict[str, float]:
-    """Momentum Sharpe: 12-1 daily return mean / std.
-    Risk-adjusted momentum — Sharpe ratio of daily returns from day -252 to -21.
-    More stable than raw momentum since it penalizes erratic price moves.
+    """Dual-window momentum Sharpe: average of 12-1 and 6-1 Sharpe ratios.
+    Blends long-term (252d-21d) and medium-term (126d-21d) momentum quality.
     """
     results: dict[str, float] = {}
 
@@ -28,16 +27,22 @@ def compute_factor(
                 continue
 
             close = b["close"].values
-            # Daily returns from -252 to -21 (skip recent month)
-            segment = close[-252:-21]
-            rets = np.diff(segment) / segment[:-1]
 
-            mean_ret = float(np.mean(rets))
-            std_ret = float(np.std(rets, ddof=1))
-            if std_ret <= 0:
+            def _sharpe(seg):
+                r = np.diff(seg) / seg[:-1]
+                m = float(np.mean(r))
+                s = float(np.std(r, ddof=1))
+                return m / s if s > 0 else None
+
+            # 12-1 Sharpe
+            s12 = _sharpe(close[-252:-21])
+            # 6-1 Sharpe
+            s6 = _sharpe(close[-126:-21])
+
+            if s12 is None or s6 is None:
                 continue
 
-            results[sym] = mean_ret / std_ret
+            results[sym] = (s12 + s6) / 2.0
 
         except Exception:
             continue
