@@ -11,8 +11,8 @@ def compute_factor(
     as_of: pd.Timestamp,
     data: dict,
 ) -> dict[str, float]:
-    """Dual-window momentum Sharpe: average of 12-1 and 6-1 Sharpe ratios.
-    Blends long-term (252d-21d) and medium-term (126d-21d) momentum quality.
+    """Dual-window momentum Sharpe: average of 12-1 and 9-1 Sharpe ratios.
+    9-month window may be more stable than 6-month (lower turnover).
     """
     results: dict[str, float] = {}
 
@@ -36,8 +36,8 @@ def compute_factor(
 
             # 12-1 Sharpe
             s12 = _sharpe(close[-252:-21])
-            # 6-1 Sharpe
-            s6 = _sharpe(close[-126:-21])
+            # 9-1 Sharpe
+            s6 = _sharpe(close[-189:-21])
 
             if s12 is None or s6 is None:
                 continue
