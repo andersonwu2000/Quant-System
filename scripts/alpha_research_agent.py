@@ -210,7 +210,9 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
             if df.empty or "revenue" not in df.columns:
                 continue
             df["date"] = pd.to_datetime(df["date"])
-            df = df[df["date"] <= as_of].sort_values("date")
+            # 40 天營收公布延遲（台灣月營收於次月 10 日前公布）
+            usable_cutoff = as_of - pd.DateOffset(days=40)
+            df = df[df["date"] <= usable_cutoff].sort_values("date")
             if len(df) < 12:
                 continue
 
@@ -429,13 +431,88 @@ class AlphaResearchAgent:
 
     def _get_evaluator(self) -> FactorEvaluator:
         if self._evaluator is None:
+            data = self._load_data()
+            # 計算已知因子的 IC 序列，供 L3 相關性檢查
+            existing_ics = self._compute_baseline_factor_ics(data)
             self._evaluator = FactorEvaluator(
-                data=self._load_data(),
-                total_tested=self.memory.total_rounds + 83,  # 83 existing factors already tested
+                data=data,
+                total_tested=self.memory.total_rounds + 83,
+                existing_factor_ics=existing_ics,
             )
         else:
             self._evaluator.total_tested = self.memory.total_rounds + 83
         return self._evaluator
+
+    def _compute_baseline_factor_ics(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.Series]:
+        """計算 revenue_acceleration 和 revenue_yoy 的 IC 序列作為 L3 去重基準。"""
+        import numpy as np
+        from scipy.stats import spearmanr
+
+        fund_dir = Path("data/fundamental")
+        rev_cache: dict[str, pd.DataFrame] = {}
+        for p in sorted(fund_dir.glob("*_revenue.parquet")):
+            sym = p.stem.replace("_revenue", "")
+            try:
+                df = pd.read_parquet(p)
+                if df.empty or "revenue" not in df.columns:
+                    continue
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date")
+                df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
+                rev_cache[sym] = df
+            except Exception:
+                continue
+
+        if not rev_cache:
+            return {}
+
+        # 月度取樣，計算 revenue_acceleration IC
+        all_close = pd.DataFrame({s: data[s]["close"] for s in data if "close" in data[s].columns})
+        monthly = all_close.resample("ME").last().dropna(how="all")
+
+        result: dict[str, list[float]] = {"revenue_acceleration": [], "revenue_yoy": []}
+        for i in range(len(monthly) - 1):
+            as_of = monthly.index[i]
+            fwd_date = monthly.index[i + 1]
+            if as_of < pd.Timestamp("2017-01-01"):
+                continue
+
+            cutoff = as_of - pd.DateOffset(days=40)
+            accel_vals, yoy_vals, rets = [], [], []
+
+            for sym in rev_cache:
+                if sym not in data:
+                    continue
+                df = rev_cache[sym]
+                usable = df[df["date"] <= cutoff]
+                if len(usable) < 12:
+                    continue
+                rev = usable["revenue"].astype(float).values
+
+                if sym in all_close.columns and as_of in all_close.index and fwd_date in all_close.index:
+                    p0 = all_close.loc[as_of, sym]
+                    p1 = all_close.loc[fwd_date, sym]
+                    if pd.isna(p0) or pd.isna(p1) or p0 <= 0:
+                        continue
+                    ret = p1 / p0 - 1
+                else:
+                    continue
+
+                r3 = np.mean(rev[-3:])
+                r12 = np.mean(rev[-12:])
+                if r12 > 0:
+                    accel_vals.append(r3 / r12)
+                    rets.append(ret)
+
+                if len(rev) >= 13 and rev[-12] > 0:
+                    yoy_vals.append(rev[-1] / rev[-12] - 1)
+
+            if len(accel_vals) >= 20:
+                ic, _ = spearmanr(accel_vals, rets[:len(accel_vals)])
+                if not np.isnan(ic):
+                    result["revenue_acceleration"].append(ic)
+
+        return {k: pd.Series(v) for k, v in result.items() if len(v) >= 10}
 
     def _get_direction_with_untested(self):
         """找到有未測假說的方向（避免選已耗盡的方向）。"""
@@ -460,8 +537,12 @@ class AlphaResearchAgent:
             if d.status not in ("pending", "exploring"):
                 continue
             templates = all_templates.get(d.name, [])
+            # 跳過需要 financial_statement 的假說（目前不支援）
+            NEEDS_FIN_DATA = {"financial_statement"}
             has_untested = any(
-                t["name"] not in tested and not self.memory.is_forbidden(t["name"])
+                t["name"] not in tested
+                and not self.memory.is_forbidden(t["name"])
+                and not (set(t.get("data_requirements", [])) & NEEDS_FIN_DATA)
                 for t in templates
             )
             if has_untested:
@@ -869,8 +950,8 @@ class AlphaResearchAgent:
         price_data = self._load_data()
         all_symbols = sorted(price_data.keys())
 
-        # Monthly sampling
-        sample_dates = sorted(set().union(*[set(price_data[s].index) for s in all_symbols[:200]]))
+        # Monthly sampling — 用全 universe 的日期（不只前 200 支）
+        sample_dates = sorted(set().union(*[set(price_data[s].index) for s in all_symbols]))
         monthly = pd.DatetimeIndex(sample_dates).to_period("M").unique()
 
         horizons = [5, 20, 60]

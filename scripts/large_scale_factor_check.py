@@ -209,7 +209,7 @@ def main():
     }
 
     all_symbols = sorted(data.keys())
-    all_dates = sorted(set().union(*[set(data[s].index) for s in all_symbols[:200]]))
+    all_dates = sorted(set().union(*[set(data[s].index) for s in all_symbols]))
     monthly_periods = pd.DatetimeIndex(all_dates).to_period("M").unique()
 
     horizons = [5, 20, 60]

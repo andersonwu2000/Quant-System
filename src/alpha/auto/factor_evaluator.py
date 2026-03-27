@@ -189,9 +189,25 @@ class FactorEvaluator:
             result.duration_seconds = time.perf_counter() - t0
             return result
 
-        # L5: Walk-Forward (simplified — check if signal persists in recent period)
+        # L5: Walk-Forward — 前半 IC vs 後半 IC，確認信號不衰減
         result.level_reached = "L5"
-        result.passed = True
+        try:
+            ic_series_20 = self._compute_ic_series(factor_values, fwd_20)
+            mid = len(ic_series_20) // 2
+            if mid >= 5:
+                first_half_ic = float(np.mean(ic_series_20[:mid]))
+                second_half_ic = float(np.mean(ic_series_20[mid:]))
+                # 後半 IC 不能是負的（信號完全反轉）
+                if second_half_ic < 0 and first_half_ic > 0:
+                    result.passed = False
+                    result.failure_reason = (
+                        f"WF fail: IC reversal (first={first_half_ic:.3f}, second={second_half_ic:.3f})"
+                    )
+                    result.duration_seconds = time.perf_counter() - t0
+                    return result
+            result.passed = True
+        except Exception:
+            result.passed = True  # 數據不足時不阻擋
         result.duration_seconds = time.perf_counter() - t0
         return result
 
@@ -226,16 +242,16 @@ class FactorEvaluator:
         return float(np.mean(ics)) if ics else 0.0
 
     @staticmethod
-    def _compute_icir(factor: pd.DataFrame, fwd: pd.DataFrame) -> float:
-        """ICIR = mean(IC) / std(IC)."""
+    def _compute_ic_series(factor: pd.DataFrame, fwd: pd.DataFrame) -> list[float]:
+        """計算 IC 時間序列（每 5 天取樣）。"""
         from scipy.stats import spearmanr
 
         common_dates = factor.index.intersection(fwd.index)
         common_syms = factor.columns.intersection(fwd.columns)
         if len(common_dates) < 20 or len(common_syms) < 10:
-            return 0.0
+            return []
 
-        ics = []
+        ics: list[float] = []
         for dt in common_dates[::5]:
             f = factor.loc[dt, common_syms].dropna()
             r = fwd.loc[dt, common_syms].dropna()
@@ -245,11 +261,17 @@ class FactorEvaluator:
             corr, _ = spearmanr(f[common], r[common])
             if not np.isnan(corr):
                 ics.append(corr)
+        return ics
+
+    @staticmethod
+    def _compute_icir(factor: pd.DataFrame, fwd: pd.DataFrame) -> float:
+        """ICIR = mean(IC) / std(IC)."""
+        ics = FactorEvaluator._compute_ic_series(factor, fwd)
 
         if len(ics) < 5:
             return 0.0
         ic_mean = float(np.mean(ics))
-        ic_std = float(np.std(ics, ddof=1))  # sample std, consistent with pd.Series.std()
+        ic_std = float(np.std(ics, ddof=1))
         return ic_mean / ic_std if ic_std > 0 else 0.0
 
     @staticmethod

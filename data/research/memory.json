@@ -3,41 +3,47 @@
   "success_patterns": [
     {
       "name": "revenue_acceleration",
-      "description": "revenue 3M avg / 12M avg ratio — validated as strongest factor",
+      "description": "3M/12M ratio, strongest factor",
       "factors": [
         "revenue_acceleration"
       ],
       "avg_icir": 0.24,
       "avg_fitness": 0,
-      "evidence": "experiment_16_large_scale"
+      "evidence": "experiment_16"
     },
     {
       "name": "revenue_new_high",
-      "description": "current revenue / past 12M max — second strongest",
+      "description": "current/max12M, second strongest",
       "factors": [
         "revenue_new_high"
       ],
       "avg_icir": 0.207,
       "avg_fitness": 0,
-      "evidence": "experiment_16_large_scale"
+      "evidence": "experiment_16"
     }
   ],
   "forbidden_regions": [
     {
-      "name": "generic_revenue_yoy_clones",
-      "reason": "Generic fallback produced revenue_yoy clones with inflated ICIR. Fixed in v5.",
+      "name": "generic_yoy_clones",
+      "reason": "Generic fallback bug produced revenue_yoy clones",
       "factor_patterns": [
         "upstream_rev_lead",
         "inventory_revenue_divergence",
         "rev_sensitivity_to_profit"
       ],
-      "evidence": "20260327_fake_factor_bug"
+      "evidence": "20260327"
     },
     {
       "name": "price_only_factors",
-      "reason": "All 54 price factors have turnover >40% and cost >1300bps. Not viable in TW market.",
+      "reason": "All price factors have TO>40%, cost>1300bps in TW market",
       "factor_patterns": [],
       "evidence": "experiment_16"
+    },
+    {
+      "name": "look_ahead_factors",
+      "reason": "Pre-fix factors used as_of without 40d lag — IC inflated",
+      "factor_patterns": [],
+      "evidence": "20260327_fix3"
     }
   ],
   "directions": [],
