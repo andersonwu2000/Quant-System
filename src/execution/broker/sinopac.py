@@ -505,7 +505,7 @@ class SinopacBroker(BrokerAdapter):
         self._reconnect_thread.start()
 
     def _reconnect_loop(self) -> None:
-        """背景重連迴圈。"""
+        """背景重連迴圈 — 無限重試，設計為容忍每日 03:00 的 3 分鐘斷網。"""
         attempts = 0
         while not self._stop_reconnect.is_set():
             if self._connected:
@@ -513,23 +513,27 @@ class SinopacBroker(BrokerAdapter):
                 self._stop_reconnect.wait(self._config.reconnect_interval)
                 continue
 
-            if attempts >= self._config.max_reconnect_attempts:
-                logger.error("Max reconnect attempts reached (%d)", attempts)
-                break
-
             attempts += 1
-            logger.warning("Connection lost, reconnecting (attempt %d)...", attempts)
+            # 前 10 次頻繁重試（覆蓋 3 分鐘斷網），之後每 5 分鐘一次
+            if attempts <= 10:
+                logger.warning("Connection lost, reconnecting (attempt %d)...", attempts)
+            elif attempts % 12 == 0:  # 每 12 次（約 1 小時）才 log
+                logger.warning("Still disconnected after %d attempts, continuing...", attempts)
 
             try:
                 success = self.connect()
                 if success:
-                    logger.info("Reconnected successfully")
+                    logger.info("Reconnected after %d attempts", attempts)
                     attempts = 0
             except Exception:
-                logger.exception("Reconnect attempt %d failed", attempts)
+                if attempts <= 10:
+                    logger.debug("Reconnect attempt %d failed", attempts)
 
-            # Exponential backoff (capped at 60s)
-            wait = min(self._config.reconnect_interval * (2 ** (attempts - 1)), 60.0)
+            # Exponential backoff: 5s → 10s → 20s → 40s → 60s → 300s (cap)
+            if attempts <= 5:
+                wait = min(self._config.reconnect_interval * (2 ** (attempts - 1)), 60.0)
+            else:
+                wait = 300.0  # 5 分鐘
             self._stop_reconnect.wait(wait)
 
     # ── 內部工具 ──────────────────────────────────────────
