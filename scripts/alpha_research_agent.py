@@ -610,7 +610,7 @@ class AlphaResearchAgent:
 
         部署條件（全部滿足）：
         1. StrategyValidator >= 11/13（排除 DSR 後 ≥12/13）
-        2. deflated_sharpe >= 0.50（寬鬆門檻，<0.50 仍視為過擬合風險）
+        2. deflated_sharpe >= 0.70（寬鬆門檻，<0.70 仍視為過擬合風險）
         3. Sharpe > 0050.TW Sharpe
         4. CAGR > 8%
         5. recent_period_sharpe > -0.10（允許輕微噪音）
@@ -641,8 +641,8 @@ class AlphaResearchAgent:
                     dsr_value = float(c["value"])
                 except (ValueError, TypeError):
                     pass
-        if dsr_value < 0.50:
-            logger.info("[Deploy] %s: DSR %.3f < 0.50 (relaxed threshold), skip deploy",
+        if dsr_value < 0.70:
+            logger.info("[Deploy] %s: DSR %.3f < 0.70 (relaxed threshold), skip deploy",
                        hypothesis.name, dsr_value)
             return
 
