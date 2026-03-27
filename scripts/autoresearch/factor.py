@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from scipy.stats import linregress
 
 
 def compute_factor(
@@ -11,8 +12,9 @@ def compute_factor(
     as_of: pd.Timestamp,
     data: dict,
 ) -> dict[str, float]:
-    """Dual-window momentum Sharpe: average of 12-1 and 9-1 Sharpe ratios.
-    9-month window may be more stable than 6-month (lower turnover).
+    """OBV slope: t-stat of linear regression on On-Balance Volume (60d).
+    OBV accumulates volume on up days and subtracts on down days.
+    Rising OBV with positive slope = sustained buying pressure.
     """
     results: dict[str, float] = {}
 
@@ -23,26 +25,23 @@ def compute_factor(
                 continue
 
             b = bars.loc[:as_of]
-            if len(b) < 252:
+            if len(b) < 63:
                 continue
 
-            close = b["close"].values
+            close = b["close"].values[-63:]
+            volume = b["volume"].values[-63:]
 
-            def _sharpe(seg):
-                r = np.diff(seg) / seg[:-1]
-                m = float(np.mean(r))
-                s = float(np.std(r, ddof=1))
-                return m / s if s > 0 else None
+            # OBV calculation
+            price_change = np.diff(close)
+            obv_changes = np.where(price_change > 0, volume[1:],
+                          np.where(price_change < 0, -volume[1:], 0))
+            obv = np.cumsum(obv_changes)
 
-            # 12-0.75 Sharpe (skip 15d)
-            s12 = _sharpe(close[-252:-15])
-            # 8-0.75 Sharpe
-            s6 = _sharpe(close[-168:-15])
-
-            if s12 is None or s6 is None:
-                continue
-
-            results[sym] = (s12 + s6) / 2.0
+            # T-stat of OBV slope
+            x = np.arange(len(obv), dtype=float)
+            slope, intercept, r, p, se = linregress(x, obv.astype(float))
+            if se > 0:
+                results[sym] = slope / se
 
         except Exception:
             continue
