@@ -4,14 +4,18 @@
 $prompt = @"
 Read scripts/autoresearch/program.md for the full research protocol, then begin the experiment loop.
 
-Docker-specific overrides:
-- factor.py location: docker/autoresearch/work/factor.py
-- results.tsv location: docker/autoresearch/work/results.tsv
-- Run evaluate: docker exec autoresearch-agent python /app/evaluate.py
-- Git operations: cd docker/autoresearch/work first
+CRITICAL — Docker overrides (these OVERRIDE anything in program.md):
+- factor.py is at: docker/autoresearch/work/factor.py (NOT scripts/autoresearch/factor.py)
+- results.tsv is at: docker/autoresearch/work/results.tsv
+- To run evaluate.py: docker exec autoresearch-agent python /app/evaluate.py
+  (do NOT run python scripts/autoresearch/evaluate.py directly)
+- All git operations must cd to docker/autoresearch/work/ first:
+  cd docker/autoresearch/work && git add factor.py && git commit -m "experiment: ..."
+  cd docker/autoresearch/work && git reset --hard HEAD~1
+- run.log: docker exec autoresearch-agent python /app/evaluate.py > docker/autoresearch/work/run.log 2>&1
 - NEVER modify files outside docker/autoresearch/work/
 
-Start now. Read program.md first.
+Start now. Read program.md first, then read docker/autoresearch/work/results.tsv.
 "@
 
 while ($true) {

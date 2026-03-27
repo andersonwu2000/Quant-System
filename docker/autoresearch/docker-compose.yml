@@ -21,7 +21,6 @@ services:
     volumes:
       - ../../data:/app/data:ro
       - ./work:/app/work
-      - ../../src:/app/src:ro
 
   watchdog:
     build:

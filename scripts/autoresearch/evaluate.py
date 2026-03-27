@@ -29,7 +29,10 @@ from scipy.stats import spearmanr
 # Constants — do NOT change
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+import os as _os
+# Support both local (scripts/autoresearch/evaluate.py) and Docker (/app/evaluate.py)
+PROJECT_ROOT = Path(_os.environ["PROJECT_ROOT"]) if "PROJECT_ROOT" in _os.environ \
+    else Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 REVENUE_DELAY_DAYS = 40        # Taiwan monthly revenue publication delay
@@ -329,7 +332,10 @@ def evaluate() -> dict:
     from factor import compute_factor
 
     # Complexity gate: reject overly complex factors (8.3 prevention)
+    # Check both local path and Docker /app/work/ path
     factor_path = Path(__file__).parent / "factor.py"
+    if not factor_path.exists():
+        factor_path = Path(__file__).parent / "work" / "factor.py"
     if factor_path.exists():
         n_lines = len(factor_path.read_text(encoding="utf-8").strip().splitlines())
         if n_lines > 60:
@@ -746,7 +752,6 @@ def _auto_submit(results: dict) -> None:
         except Exception:
             pass
 
-        import os as _os
         api_url = _os.environ.get("API_URL", "http://127.0.0.1:8000")
         resp = requests.post(
             f"{api_url}/api/v1/auto-alpha/submit-factor",
