@@ -21,7 +21,8 @@ class CostModel:
 
     commission_rate: Decimal = Decimal("0.001425")  # 台股 0.1425%
     tax_rate: Decimal = Decimal("0.003")            # 證交稅 0.3%（僅賣出）
-    min_commission: Decimal = Decimal("20")          # 最低手續費 NT$20
+    min_commission: Decimal = Decimal("20")          # 整股最低手續費 NT$20
+    min_commission_odd: Decimal = Decimal("1")       # 零股最低手續費 NT$1
     slippage_bps: Decimal = Decimal("5")             # 滑價 5 bps
     slippage_model: str = "fixed"                    # "fixed" or "sqrt"
 
@@ -35,10 +36,11 @@ class CostModel:
             slippage_bps=Decimal(str(getattr(config, "default_slippage_bps", 5.0))),
         )
 
-    def compute_commission(self, notional: Decimal) -> Decimal:
-        """計算手續費（含最低門檻）。"""
+    def compute_commission(self, notional: Decimal, is_odd_lot: bool = False) -> Decimal:
+        """計算手續費（含最低門檻，區分整股/零股）。"""
         comm = notional * self.commission_rate
-        return max(comm, self.min_commission)
+        floor = self.min_commission_odd if is_odd_lot else self.min_commission
+        return max(comm, floor)
 
     def compute_tax(self, notional: Decimal, is_sell: bool) -> Decimal:
         """計算交易稅（僅賣出）。"""
@@ -51,6 +53,6 @@ class CostModel:
             return price + slip
         return max(price - slip, Decimal("0.01"))
 
-    def total_cost(self, notional: Decimal, is_sell: bool) -> Decimal:
+    def total_cost(self, notional: Decimal, is_sell: bool, is_odd_lot: bool = False) -> Decimal:
         """總成本 = 手續費 + 稅。"""
-        return self.compute_commission(notional) + self.compute_tax(notional, is_sell)
+        return self.compute_commission(notional, is_odd_lot) + self.compute_tax(notional, is_sell)
