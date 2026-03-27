@@ -282,12 +282,13 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
             results[sym] = float(rev_3m / rev_12m)
 '''
     else:
-        code += '''
-            # Generic: use latest revenue YoY
-            if len(revenues) < 12 or revenues[-12] <= 0:
-                continue
-            results[sym] = float(revenues[-1] / revenues[-12] - 1)
-'''
+        # 不匹配任何已知 pattern → 無法自動實作，回傳 None
+        logger.warning(
+            "[Factor] Cannot auto-implement '%s' — no matching pattern. "
+            "Needs manual implementation or new pattern in _implement_revenue_factor().",
+            name,
+        )
+        return None
 
     code += '''
         except Exception:
