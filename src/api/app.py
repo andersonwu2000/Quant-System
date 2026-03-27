@@ -151,8 +151,15 @@ def create_app() -> FastAPI:
 
             state.quote_manager = quote_manager
 
-            # Fallback: if no tick subscription, poll prices periodically
-            if quote_manager is None or not state.portfolio.positions:
+            # Fallback: poll prices when ticks are unavailable.
+            # Shioaji simulation mode has quote_manager but doesn't push ticks,
+            # so we also enable polling in simulation mode.
+            is_simulation = False
+            if isinstance(broker, SinopacBroker):
+                is_simulation = getattr(broker._config, 'simulation', False)
+            elif getattr(state.execution_service, '_fallback_mode', False):
+                is_simulation = True
+            if quote_manager is None or is_simulation:
                 from src.data.sources import create_feed as _create_feed
 
                 async def _price_poll_loop() -> None:
