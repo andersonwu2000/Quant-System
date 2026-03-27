@@ -38,12 +38,6 @@
       "reason": "TO>40% cost>1300bps",
       "factor_patterns": [],
       "evidence": "experiment_16"
-    },
-    {
-      "name": "look_ahead_factors",
-      "reason": "Pre-v8 factors had no 40d lag",
-      "factor_patterns": [],
-      "evidence": "20260327_fix3"
     }
   ],
   "directions": [],

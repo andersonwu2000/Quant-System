@@ -159,7 +159,7 @@ class FactorEvaluator:
             return result
 
         # L3: 相關性 + 年度穩定性
-        max_corr, corr_with = self._check_correlation(factor_values)
+        max_corr, corr_with = self._check_correlation(factor_values, fwd_20)
         result.max_correlation = max_corr
         result.correlated_with = corr_with
 
@@ -315,22 +315,20 @@ class FactorEvaluator:
 
         return changes / total if total > 0 else 0.0
 
-    def _check_correlation(self, factor: pd.DataFrame) -> tuple[float, str]:
-        """Check max correlation with existing factors."""
+    def _check_correlation(self, factor: pd.DataFrame, fwd_20: pd.DataFrame) -> tuple[float, str]:
+        """Check max correlation with existing factors using IC series (not factor-value means).
+
+        Computes the new factor's IC time series, then correlates with baseline IC series.
+        """
         if not self.existing_factor_ics:
             return 0.0, ""
 
-        # Simple: use IC time series correlation
-        ic_series = []
-        for dt in factor.index[::5]:
-            row = factor.loc[dt].dropna()
-            if len(row) > 5:
-                ic_series.append(float(row.mean()))
-
-        if len(ic_series) < 10:
+        # Compute IC series for the new factor (same method as _compute_ic_series)
+        new_ics = self._compute_ic_series(factor, fwd_20)
+        if len(new_ics) < 10:
             return 0.0, ""
 
-        new_ic = pd.Series(ic_series)
+        new_ic = pd.Series(new_ics)
         max_corr = 0.0
         max_name = ""
 

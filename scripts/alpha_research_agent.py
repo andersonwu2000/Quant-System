@@ -220,9 +220,9 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
 '''
 
     # Add specific computation based on hypothesis name
-    if "yoy_acceleration" in name or "2nd_derivative" in name:
+    if "yoy_acceleration" in name and "2nd_derivative" not in name:
         code += '''
-            # YoY for each month
+            # YoY for each month, then 1st derivative (acceleration)
             if len(revenues) < 24:
                 continue
             yoy = []
@@ -233,8 +233,26 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
                     yoy.append(0)
             if len(yoy) < 2:
                 continue
-            # Acceleration = latest YoY - previous YoY
+            # 1st derivative: latest YoY - previous YoY
             results[sym] = float(yoy[-1] - yoy[-2])
+'''
+    elif "2nd_derivative" in name:
+        code += '''
+            # YoY for each month, then 2nd derivative (jerk)
+            if len(revenues) < 24:
+                continue
+            yoy = []
+            for i in range(12, len(revenues)):
+                if revenues[i-12] > 0:
+                    yoy.append(revenues[i] / revenues[i-12] - 1)
+                else:
+                    yoy.append(0)
+            if len(yoy) < 3:
+                continue
+            # 2nd derivative: (yoy[-1]-yoy[-2]) - (yoy[-2]-yoy[-3])
+            accel_now = yoy[-1] - yoy[-2]
+            accel_prev = yoy[-2] - yoy[-3]
+            results[sym] = float(accel_now - accel_prev)
 '''
     elif "consecutive_beat" in name:
         code += '''
@@ -265,20 +283,22 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
             recent_6 = revenues[-6:]
             x = np.arange(len(recent_6))
             coeffs = np.polyfit(x, recent_6, 1)
-            predicted_next = coeffs[0] * len(recent_6) + coeffs[1]
+            # 殘差：實際值 vs 趨勢線在最後一個點的擬合值
+            fitted_last = coeffs[0] * (len(recent_6) - 1) + coeffs[1]
             actual = revenues[-1]
-            if predicted_next > 0:
-                results[sym] = float((actual - predicted_next) / predicted_next)
+            if fitted_last > 0:
+                results[sym] = float((actual - fitted_last) / fitted_last)
 '''
     elif "breakout" in name:
         code += '''
-            if len(revenues) < 12:
+            if len(revenues) < 13:
                 continue
-            max_12 = float(np.max(revenues[-12:]))
-            if max_12 <= 0:
+            # 排除當月，取過去 12 個月的最高值
+            past_max = float(np.max(revenues[-13:-1]))
+            if past_max <= 0:
                 continue
-            # How much current revenue exceeds 12-month high (0 if below)
-            results[sym] = float(max(0, revenues[-1] / max_12 - 1))
+            # 當月超越過去 12 月高點的幅度（0 if below）
+            results[sym] = float(max(0, revenues[-1] / past_max - 1))
 '''
     elif "x_gross_margin" in name or "x_roe" in name or "x_operating" in name:
         # Interaction factors need financial_statement data — cannot proxy as rev_acceleration
@@ -478,7 +498,8 @@ class AlphaResearchAgent:
                 continue
 
             cutoff = as_of - pd.DateOffset(days=40)
-            accel_vals, yoy_vals, rets = [], [], []
+            accel_vals, accel_rets = [], []
+            yoy_vals, yoy_rets = [], []
 
             for sym in rev_cache:
                 if sym not in data:
@@ -494,7 +515,7 @@ class AlphaResearchAgent:
                     p1 = all_close.loc[fwd_date, sym]
                     if pd.isna(p0) or pd.isna(p1) or p0 <= 0:
                         continue
-                    ret = p1 / p0 - 1
+                    ret = float(p1 / p0 - 1)
                 else:
                     continue
 
@@ -502,15 +523,20 @@ class AlphaResearchAgent:
                 r12 = np.mean(rev[-12:])
                 if r12 > 0:
                     accel_vals.append(r3 / r12)
-                    rets.append(ret)
+                    accel_rets.append(ret)
 
                 if len(rev) >= 13 and rev[-12] > 0:
                     yoy_vals.append(rev[-1] / rev[-12] - 1)
+                    yoy_rets.append(ret)
 
             if len(accel_vals) >= 20:
-                ic, _ = spearmanr(accel_vals, rets[:len(accel_vals)])
+                ic, _ = spearmanr(accel_vals, accel_rets)
                 if not np.isnan(ic):
                     result["revenue_acceleration"].append(ic)
+            if len(yoy_vals) >= 20:
+                ic, _ = spearmanr(yoy_vals, yoy_rets)
+                if not np.isnan(ic):
+                    result["revenue_yoy"].append(ic)
 
         return {k: pd.Series(v) for k, v in result.items() if len(v) >= 10}
 
