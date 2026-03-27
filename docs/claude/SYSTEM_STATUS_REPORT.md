@@ -285,7 +285,7 @@ OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/dev/test/202603
 
 | 項目 | 數值 |
 |------|------|
-| pytest 測試數 | 1,385 passed |
+| pytest 測試數 | 1,707 passed |
 | ruff lint | 0 errors |
 | CI jobs | 9（lint + test + typecheck + build + e2e + android + release） |
 
