@@ -76,6 +76,15 @@ def weights_to_orders(
     if portfolio.nav <= 0:
         return []
 
+    # Filter NaN/inf/None weights
+    import math
+    target_weights = {
+        k: v for k, v in target_weights.items()
+        if v is not None and isinstance(v, (int, float)) and math.isfinite(v)
+    }
+    if not target_weights:
+        return []
+
     # 驗證總權重不超過合理上限
     total_weight = sum(target_weights.values())
     if total_weight > 1.5:

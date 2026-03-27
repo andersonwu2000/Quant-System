@@ -62,9 +62,21 @@ def execute_one_bar(
         List of executed trades (empty if no action taken).
     """
     # 1. Strategy produces target weights
-    target_weights = strategy.on_bar(ctx)
+    import math
+    try:
+        target_weights = strategy.on_bar(ctx)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("strategy.on_bar() crashed — skipping bar")
+        return []
     if not target_weights:
         return []
+
+    # Filter NaN/inf weights (strategy bug protection)
+    target_weights = {
+        k: v for k, v in target_weights.items()
+        if isinstance(v, (int, float)) and math.isfinite(v)
+    }
 
     # 2. Convert weights to orders
     orders = weights_to_orders(

@@ -262,10 +262,12 @@ async def _do_rebalance(state: Any, config: Any) -> dict[str, Any]:
         feed = create_feed(config.data_source, universe)
         fundamentals = create_fundamentals(config.data_source)
 
+        from datetime import datetime
         ctx = Context(
             feed=feed,
             portfolio=state.portfolio,
             fundamentals_provider=fundamentals,
+            current_time=datetime.now(),  # tz-naive, consistent with backtest
         )
 
         target_weights = strategy.on_bar(ctx)
@@ -339,17 +341,22 @@ async def _do_rebalance(state: Any, config: Any) -> dict[str, Any]:
 
 @router.get("/info")
 async def get_strategy_info(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
-    """當前策略基本資訊。"""
-    return {
-        "name": "revenue_momentum_hedged",
-        "description": "營收動能 + 複合空頭偵測（MA200 OR vol_spike）",
-        "factor": "revenue_yoy (ICIR 0.674, t=16.1)",
-        "rebalance": "Monthly (11th)",
-        "bear_scale": 0.0,
-        "sideways_scale": 0.3,
-        "max_holdings": 15,
-        "validation": "StrategyValidator 10/13, PBO 0%, WF 7/7 positive",
-    }
+    """當前策略基本資訊（動態讀取 config.active_strategy）。"""
+    from src.core.config import get_config
+    from src.strategy.registry import resolve_strategy
+
+    config = get_config()
+    name = config.active_strategy
+    try:
+        strategy = resolve_strategy(name)
+        return {
+            "name": name,
+            "description": getattr(strategy, '__doc__', '') or strategy.name(),
+            "rebalance": "Monthly",
+            "max_holdings": getattr(strategy, 'max_holdings', 'N/A'),
+        }
+    except ValueError:
+        return {"name": name, "error": f"Strategy '{name}' not found"}
 
 
 # ── Data status ──────────────────────────────────────────────────

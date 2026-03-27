@@ -628,7 +628,13 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
 
     feed = create_feed(config.data_source, universe)
     fundamentals = create_fundamentals(config.data_source)
-    ctx = Context(feed=feed, portfolio=state.portfolio, fundamentals_provider=fundamentals)
+    # 用 tz-naive 當前時間（和 backtest Context 一致，避免 tz-aware vs tz-naive 衝突）
+    import datetime as _dt
+    ctx = Context(
+        feed=feed, portfolio=state.portfolio,
+        fundamentals_provider=fundamentals,
+        current_time=_dt.datetime.now(),  # tz-naive, consistent with backtest
+    )
 
     # 3. 執行策略
     target_weights = strategy.on_bar(ctx)
