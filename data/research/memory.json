@@ -3,7 +3,7 @@
   "success_patterns": [
     {
       "name": "revenue_acceleration",
-      "description": "3M/12M ratio, strongest factor",
+      "description": "3M/12M ratio",
       "factors": [
         "revenue_acceleration"
       ],
@@ -13,7 +13,7 @@
     },
     {
       "name": "revenue_new_high",
-      "description": "current/max12M, second strongest",
+      "description": "current/max12M",
       "factors": [
         "revenue_new_high"
       ],
@@ -25,7 +25,7 @@
   "forbidden_regions": [
     {
       "name": "generic_yoy_clones",
-      "reason": "Generic fallback bug produced revenue_yoy clones",
+      "reason": "Generic fallback bug",
       "factor_patterns": [
         "upstream_rev_lead",
         "inventory_revenue_divergence",
@@ -35,13 +35,13 @@
     },
     {
       "name": "price_only_factors",
-      "reason": "All price factors have TO>40%, cost>1300bps in TW market",
+      "reason": "TO>40% cost>1300bps",
       "factor_patterns": [],
       "evidence": "experiment_16"
     },
     {
       "name": "look_ahead_factors",
-      "reason": "Pre-fix factors used as_of without 40d lag — IC inflated",
+      "reason": "Pre-v8 factors had no 40d lag",
       "factor_patterns": [],
       "evidence": "20260327_fix3"
     }

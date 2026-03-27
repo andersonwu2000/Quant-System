@@ -223,7 +223,7 @@ def main():
         if as_of < pd.Timestamp("2017-01-01") or as_of > pd.Timestamp("2025-12-31"):
             continue
 
-        active = [s for s in all_symbols if s in data and len(data[s][data[s].index <= as_of]) > 120]
+        active = [s for s in all_symbols if s in data and as_of in data[s].index]
         if len(active) < 50:
             continue
 
@@ -238,10 +238,12 @@ def main():
                     if sym not in data:
                         continue
                     df = data[sym]
-                    after = df.index[df.index > as_of]
-                    if len(after) <= horizon:
+                    if as_of not in df.index:
                         continue
-                    ret = float(df.loc[after[horizon], "close"] / df.loc[after[0], "close"] - 1)
+                    after = df.index[df.index > as_of]
+                    if len(after) < horizon:
+                        continue
+                    ret = float(df.loc[after[horizon - 1], "close"] / df.loc[as_of, "close"] - 1)
                     xs.append(fv)
                     ys.append(ret)
 

@@ -189,7 +189,7 @@ class FactorEvaluator:
             result.duration_seconds = time.perf_counter() - t0
             return result
 
-        # L5: Walk-Forward — 前半 IC vs 後半 IC，確認信號不衰減
+        # L5: Walk-Forward — 後半 IC 絕對值不能太低（衰減或反轉都不行）
         result.level_reached = "L5"
         try:
             ic_series_20 = self._compute_ic_series(factor_values, fwd_20)
@@ -197,17 +197,30 @@ class FactorEvaluator:
             if mid >= 5:
                 first_half_ic = float(np.mean(ic_series_20[:mid]))
                 second_half_ic = float(np.mean(ic_series_20[mid:]))
-                # 後半 IC 不能是負的（信號完全反轉）
-                if second_half_ic < 0 and first_half_ic > 0:
+                # 後半 IC 絕對值需 > 0.005（不能衰減到零或反轉）
+                if abs(second_half_ic) < 0.005:
+                    result.passed = False
+                    result.failure_reason = (
+                        f"WF fail: signal decayed (first={first_half_ic:.3f}, second={second_half_ic:.3f})"
+                    )
+                    result.duration_seconds = time.perf_counter() - t0
+                    return result
+                # 後半方向不能和前半相反
+                if first_half_ic * second_half_ic < 0:
                     result.passed = False
                     result.failure_reason = (
                         f"WF fail: IC reversal (first={first_half_ic:.3f}, second={second_half_ic:.3f})"
                     )
                     result.duration_seconds = time.perf_counter() - t0
                     return result
-            result.passed = True
-        except Exception:
-            result.passed = True  # 數據不足時不阻擋
+                result.passed = True
+            else:
+                # 數據不足，fail-closed（寧可錯過不冒險）
+                result.passed = False
+                result.failure_reason = f"WF fail: insufficient IC samples ({len(ic_series_20)})"
+        except Exception as e:
+            result.passed = False  # fail-closed
+            result.failure_reason = f"WF exception: {e}"
         result.duration_seconds = time.perf_counter() - t0
         return result
 

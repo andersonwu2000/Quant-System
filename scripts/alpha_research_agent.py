@@ -963,7 +963,7 @@ class AlphaResearchAgent:
             if as_of < pd.Timestamp("2017-01-01") or as_of > pd.Timestamp("2025-12-31"):
                 continue
 
-            active = [s for s in all_symbols if s in price_data and len(price_data[s][price_data[s].index <= as_of]) > 120]
+            active = [s for s in all_symbols if s in price_data and as_of in price_data[s].index]
             if len(active) < 50:
                 continue
 
@@ -980,10 +980,14 @@ class AlphaResearchAgent:
                     if sym not in price_data:
                         continue
                     df = price_data[sym]
-                    after = df.index[df.index > as_of]
-                    if len(after) <= h:
+                    # Forward return: close[as_of+h] / close[as_of] - 1
+                    # 和 L1-L5 的 pct_change(h).shift(-h) 一致
+                    if as_of not in df.index:
                         continue
-                    ret = float(df.loc[after[h], "close"] / df.loc[after[0], "close"] - 1)
+                    after = df.index[df.index > as_of]
+                    if len(after) < h:
+                        continue
+                    ret = float(df.loc[after[h - 1], "close"] / df.loc[as_of, "close"] - 1)
                     xs.append(fv)
                     ys.append(ret)
                 if len(xs) < 20:
@@ -1250,8 +1254,11 @@ class AlphaResearchAgent:
 
         tested = {t.hypothesis.get("name", "") for t in self.memory.trajectories}
 
+        NEEDS_FIN = {"financial_statement"}
         for tmpl in templates:
-            if tmpl["name"] not in tested and not self.memory.is_forbidden(tmpl["name"]):
+            if (tmpl["name"] not in tested
+                    and not self.memory.is_forbidden(tmpl["name"])
+                    and not (set(tmpl.get("data_requirements", [])) & NEEDS_FIN)):
                 return Hypothesis(
                     name=tmpl["name"],
                     description=tmpl["description"],
@@ -1259,6 +1266,7 @@ class AlphaResearchAgent:
                     academic_basis=tmpl.get("academic_basis", ""),
                     data_requirements=tmpl.get("data_requirements", []),
                     direction=direction,
+                    expected_direction=tmpl.get("expected_direction", 1),
                 )
         return None
 
