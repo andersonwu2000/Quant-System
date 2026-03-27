@@ -34,7 +34,7 @@
 | worst_regime | +3.75% | PASS |
 | recent_period_sharpe | -0.020 | FAIL |
 
-**11/13 通過 — 可考慮進入 Paper Trading。**
+**11/13 通過 — 未達部署門檻 (需 ≥12/13)，僅供觀察。**
 
 ## Walk-Forward: 100%
 
@@ -44,17 +44,12 @@
 - **deflated_sharpe** (0.903): 多重測試校正後信心不足（測了 87 個因子）。這是統計保守，不代表因子無效
 - **recent_period_sharpe** (-0.020): 近 252 天 Sharpe 為負，受市場環境影響。需觀察是暫時還是永久衰退
 
-## 與現有因子比較
+## 不合格原因
 
-| 因子 | ICIR | 說明 |
-|------|:----:|------|
-| **rev_yoy_x_roe_improvement** | **+0.859** | **本次發現** |
-| revenue_yoy（基線） | +0.674 | 已驗證的核心因子 |
-| revenue_acceleration | +0.847 | 60d 最強因子 |
-| momentum_6m | +0.217 | 最佳 price-volume 因子 |
+1. **recent_period_sharpe = -0.020** — 最近 1 年微虧（硬性要求 > 0）
+2. **deflated_sharpe = 0.903** — 多重測試後信心不足
+3. 11/13 未達新部署門檻 (≥12/13)
+4. L5 的 ICIR 0.859 可能被小樣本高估（需大 universe 驗證）
 
-## 下一步
-
-- [ ] 人工審閱假說邏輯
-- [ ] 決定是否加入正式因子庫
+**結論：邊緣因子，不適合獨立部署。待大 universe IC 驗證後決定是否作為輔助因子。**
 - [ ] 決定是否部署到 Paper Trading

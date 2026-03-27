@@ -34,7 +34,7 @@
 | worst_regime | -11.27% | PASS |
 | recent_period_sharpe | -0.308 | FAIL |
 
-**10/13 通過 — 可考慮進入 Paper Trading。**
+**10/13 通過 — 未達部署門檻 (需 ≥12/13)，僅供觀察。**
 
 ## Walk-Forward: 80%
 
@@ -45,17 +45,11 @@
 - **vs_1n_excess** (-4.06%): 未達門檻
 - **recent_period_sharpe** (-0.308): 近 252 天 Sharpe 為負，受市場環境影響。需觀察是暫時還是永久衰退
 
-## 與現有因子比較
+## 不合格原因
 
-| 因子 | ICIR | 說明 |
-|------|:----:|------|
-| **rev_consecutive_beat** | **+0.582** | **本次發現** |
-| revenue_yoy（基線） | +0.674 | 已驗證的核心因子 |
-| revenue_acceleration | +0.847 | 60d 最強因子 |
-| momentum_6m | +0.217 | 最佳 price-volume 因子 |
+1. **recent_period_sharpe = -0.308** — 最近 1 年虧損，因子已衰退
+2. **vs_1n_excess = -4.06%** — 跑輸 0050
+3. **deflated_sharpe = 0.316** — 多重測試後信心極低
+4. 10/13 未達新部署門檻 (≥12/13)
 
-## 下一步
-
-- [ ] 人工審閱假說邏輯
-- [ ] 決定是否加入正式因子庫
-- [ ] 決定是否部署到 Paper Trading
+**結論：不適合部署。**
