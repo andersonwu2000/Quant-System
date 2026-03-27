@@ -407,6 +407,10 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
     state = get_app_state()
     notifier = create_notifier(config)
 
+    # #8: 確保 nav_sod 有設定（實盤管線不像回測引擎會自動設）
+    if state.portfolio.nav_sod == 0 and state.portfolio.nav > 0:
+        state.portfolio.nav_sod = state.portfolio.nav
+
     if not state.execution_service.is_initialized:
         logger.error("ExecutionService not initialized, skipping pipeline")
         return PipelineResult(status="error", error="ExecutionService not initialized")

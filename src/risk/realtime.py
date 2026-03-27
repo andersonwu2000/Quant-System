@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -22,6 +23,8 @@ class RealtimeRiskMonitor:
     Tracks intraday NAV high-water mark and broadcasts tiered drawdown
     alerts via WebSocket.  When drawdown exceeds the kill-switch
     threshold the ``RiskEngine.kill_switch`` is invoked automatically.
+
+    Thread-safe: on_price_update() can be called from Shioaji SDK thread.
     """
 
     def __init__(
@@ -36,33 +39,44 @@ class RealtimeRiskMonitor:
         self.risk_engine = risk_engine
         self.ws_manager = ws_manager
         self._loop = loop
+        self._lock = threading.Lock()  # #14: thread-safe price updates
         self._nav_high: float = float(portfolio.nav)
         self._alerts_sent: set[str] = set()
         self._alerts_count: int = 0
         self._last_update: datetime | None = None
+        self._last_reset_date: str = ""  # #17: auto reset tracking
 
     # ── Public API ────────────────────────────────────────
 
     def on_price_update(self, symbol: str, price: Decimal) -> None:
         """Called on each tick — update portfolio prices and check risk.
 
-        This method is safe to call from *any* thread (e.g. the Shioaji
-        SDK background thread).
+        Thread-safe: uses lock to protect portfolio mutation.
         """
-        # 1. Update portfolio market price
-        self.portfolio.update_market_prices({symbol: price})
-        self._last_update = datetime.now(timezone.utc)
+        with self._lock:
+            # #17: auto reset at date change (台股 UTC+8)
+            now = datetime.now(timezone.utc)
+            today_str = now.strftime("%Y-%m-%d")
+            if self._last_reset_date and today_str != self._last_reset_date:
+                self._nav_high = float(self.portfolio.nav)
+                self._alerts_sent.clear()
+                logger.info("RealtimeRiskMonitor auto-reset for new day %s", today_str)
+            self._last_reset_date = today_str
 
-        # 2. Check intraday drawdown
-        current_nav = float(self.portfolio.nav)
-        self._nav_high = max(self._nav_high, current_nav)
+            # 1. Update portfolio market price
+            self.portfolio.update_market_prices({symbol: price})
+            self._last_update = now
+
+            # 2. Check intraday drawdown
+            current_nav = float(self.portfolio.nav)
+            self._nav_high = max(self._nav_high, current_nav)
 
         if self._nav_high == 0:
             return
 
         intraday_dd = (current_nav - self._nav_high) / self._nav_high
 
-        # 3. Tiered alerts
+        # 3. Tiered alerts (outside lock to avoid blocking)
         if intraday_dd < -0.02 and "dd_2pct" not in self._alerts_sent:
             self._broadcast_alert(
                 "warning",
@@ -83,8 +97,12 @@ class RealtimeRiskMonitor:
                 f"KILL SWITCH: drawdown {intraday_dd:.1%}",
             )
             self._alerts_sent.add("kill_switch")
-            # Trigger kill switch
-            self.risk_engine.kill_switch(self.portfolio)
+            # Trigger kill switch + generate liquidation orders
+            if self.risk_engine.kill_switch(self.portfolio):
+                liq_orders = self.risk_engine.generate_liquidation_orders(self.portfolio)
+                if liq_orders:
+                    logger.critical("Kill switch: %d liquidation orders generated", len(liq_orders))
+                    # TODO: submit to ExecutionService when available
 
     def reset_daily(self) -> None:
         """Call at market open to reset intraday tracking."""

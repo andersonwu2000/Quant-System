@@ -52,7 +52,7 @@ def max_position_weight(threshold: float = 0.05) -> RiskRule:
         # 預估下單後的市值（市價單使用當前市價）
         price = order.price or market.prices.get(symbol, Decimal("0"))
         order_value = order.quantity * price
-        if order.side.value == "BUY":
+        if order.side == Side.BUY:
             projected_mv = current_mv + order_value
         else:
             projected_mv = current_mv - order_value
@@ -123,7 +123,10 @@ def fat_finger_check(threshold: float = 0.05) -> RiskRule:
 
 
 def max_daily_trades(limit: int = 100) -> RiskRule:
-    """每日交易次數上限。"""
+    """每日交易次數上限。
+
+    只在檢查階段計數（不 increment），由 record_trade() 在成交後 increment。
+    """
     trade_count: dict[str, int] = {}  # date_str → count
 
     def check(order: Order, portfolio: Portfolio, market: MarketState) -> RiskDecision:
@@ -131,15 +134,15 @@ def max_daily_trades(limit: int = 100) -> RiskRule:
         count = trade_count.get(today, 0)
         if count >= limit:
             return RiskDecision.REJECT(f"今日交易次數已達上限 {limit}")
-        # Increment on approval (approximation: counts approved, not filled)
-        trade_count[today] = count + 1
+        # 不在 check 階段 increment — 等 record_trade() 確認成交後才加
         return RiskDecision.APPROVE()
 
-    def record_trade() -> None:
-        """Called after a trade actually executes to increment the counter."""
-        from datetime import datetime, timezone
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        trade_count[today] = trade_count.get(today, 0) + 1
+    def record_trade(date_str: str | None = None) -> None:
+        """成交後呼叫，increment 計數器。"""
+        if date_str is None:
+            from datetime import datetime, timezone
+            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        trade_count[date_str] = trade_count.get(date_str, 0) + 1
 
     def reset() -> None:
         trade_count.clear()
@@ -212,7 +215,7 @@ def max_asset_class_weight(threshold: float = 0.40) -> RiskRule:
         price = order.price or market.prices.get(order.instrument.symbol, Decimal("0"))
         multiplier = order.instrument.multiplier or Decimal("1")
         order_notional = order.quantity * price * multiplier
-        if order.side.value == "BUY":
+        if order.side == Side.BUY:
             projected = class_mv + order_notional
         else:
             projected = max(class_mv - order_notional, Decimal("0"))
@@ -246,7 +249,7 @@ def max_currency_exposure(threshold: float = 0.60) -> RiskRule:
         price = order.price or market.prices.get(order.instrument.symbol, Decimal("0"))
         multiplier = order.instrument.multiplier or Decimal("1")
         order_notional = order.quantity * price * multiplier
-        if order.side.value == "BUY":
+        if order.side == Side.BUY:
             projected = cur_mv + order_notional
         else:
             projected = max(cur_mv - order_notional, Decimal("0"))
@@ -265,6 +268,7 @@ def max_gross_leverage(threshold: float = 1.5) -> RiskRule:
     """總槓桿上限（gross exposure / NAV）。
 
     主要防止期貨過度槓桿。
+    SELL 分兩種：減倉（降低 gross）和賣空（增加 gross）。
     """
     def check(order: Order, portfolio: Portfolio, market: MarketState) -> RiskDecision:
         if portfolio.nav <= 0:
@@ -275,11 +279,18 @@ def max_gross_leverage(threshold: float = 1.5) -> RiskRule:
         multiplier = order.instrument.multiplier or Decimal("1")
         order_notional = float(order.quantity * price * multiplier / portfolio.nav)
 
-        # SELL reduces gross exposure, BUY increases it
-        if order.side == Side.SELL:
+        symbol = order.instrument.symbol
+        has_position = symbol in portfolio.positions and portfolio.positions[symbol].quantity > 0
+
+        if order.side == Side.BUY:
+            projected = current_gross + order_notional
+        elif has_position:
+            # 減倉 — gross 下降
             projected = current_gross - order_notional
         else:
+            # 賣空（沒有持倉或持倉為零）— gross 增加
             projected = current_gross + order_notional
+
         if projected > threshold:
             return RiskDecision.REJECT(
                 f"總槓桿 {projected:.2f}x 超過上限 {threshold:.1f}x"
@@ -289,16 +300,54 @@ def max_gross_leverage(threshold: float = 1.5) -> RiskRule:
     return RiskRule(f"max_gross_leverage_{threshold}", check)
 
 
+# ─── 新增規則：累計回撤限制 (#21) ─────────────────────
+
+
+def max_cumulative_drawdown(threshold: float = 0.20) -> RiskRule:
+    """累計回撤上限（從初始資金計算）。
+
+    防止連續多天小虧累計成大虧而不觸發日回撤限制。
+    """
+    def check(order: Order, portfolio: Portfolio, market: MarketState) -> RiskDecision:
+        if portfolio.initial_cash <= 0:
+            return RiskDecision.APPROVE()
+        cum_dd = 1 - float(portfolio.nav / portfolio.initial_cash)
+        if cum_dd > threshold:
+            return RiskDecision.REJECT(
+                f"累計回撤 {cum_dd:.1%} 超過上限 {threshold:.0%}，禁止新下單"
+            )
+        return RiskDecision.APPROVE()
+
+    return RiskRule(f"max_cumulative_drawdown_{threshold}", check)
+
+
 # ─── 預設規則集 ─────────────────────────────────────
 
+
 def default_rules() -> list[RiskRule]:
-    """回傳預設風控規則集。"""
+    """回傳預設風控規則集。門檻從 config 讀取（若可用），否則用合理預設。"""
+    try:
+        from src.core.config import get_config
+        cfg = get_config()
+        pos_pct = cfg.max_position_pct           # 預設 0.05
+        dd_pct = cfg.max_daily_drawdown_pct      # 預設 0.03
+        adv_pct = cfg.max_order_vs_adv_pct       # 預設 0.10
+        fat_pct = cfg.fat_finger_pct             # 預設 0.05
+        max_trades = cfg.max_daily_trades        # 預設 100
+    except Exception:
+        pos_pct = 0.05
+        dd_pct = 0.03
+        adv_pct = 0.10
+        fat_pct = 0.05
+        max_trades = 100
+
     return [
-        max_position_weight(0.10),
-        max_order_notional(0.10),
-        daily_drawdown_limit(0.03),
-        fat_finger_check(0.05),
-        max_daily_trades(100),
-        max_order_vs_adv(0.10),
+        max_position_weight(pos_pct),
+        max_order_notional(pos_pct * 2),   # 單筆上限 = 持倉上限 × 2
+        daily_drawdown_limit(dd_pct),
+        fat_finger_check(fat_pct),
+        max_daily_trades(max_trades),
+        max_order_vs_adv(adv_pct),
         price_circuit_breaker(0.10),
+        max_cumulative_drawdown(0.20),     # #21: 累計回撤 20%
     ]
