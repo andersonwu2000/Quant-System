@@ -43,22 +43,19 @@ def compute_factor(
 
     for sym in symbols:
         try:
-            bars = data["bars"].get(sym)
-            if bars is None or bars.empty:
+            inst = data["institutional"].get(sym)
+            if inst is None or inst.empty:
                 continue
 
-            # Use close prices up to as_of
-            close = bars.loc[:as_of, "close"]
-            if len(close) < 252:
+            # Filter to as_of and Investment_Trust rows
+            recent = inst[(inst["date"] <= as_of) & (inst["name"] == "Investment_Trust")]
+            recent = recent.sort_values("date").tail(20)
+            if len(recent) < 10:
                 continue
 
-            # === Baseline: 12-1 Momentum ===
-            # Skip most recent 21 days (short-term reversal)
-            base = float(close.iloc[-252])
-            if base <= 0:
-                continue
-            ret_12m = float(close.iloc[-22] / base - 1)
-            results[sym] = ret_12m
+            # Net buy = buy - sell, summed over 20 days
+            net = (recent["buy"] - recent["sell"]).sum()
+            results[sym] = float(net)
 
         except Exception:
             continue
