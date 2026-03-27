@@ -108,4 +108,11 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
             # 賣出不存在的持倉 = 做空（暫不支持）
 
     portfolio.as_of = trades[-1].timestamp if trades else portfolio.as_of
+
+    # Persist portfolio state for crash recovery (paper/live mode)
+    from src.core.config import get_config
+    if get_config().mode in ("paper", "live"):
+        from src.api.state import save_portfolio
+        save_portfolio(portfolio)
+
     return portfolio

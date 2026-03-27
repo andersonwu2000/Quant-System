@@ -67,6 +67,7 @@ class ExecutionService:
         self._oms = OrderManager()
         self._order_queue = OrderQueue()
         self._initialized = False
+        self._fallback_mode = False
         self._trade_callbacks: list[Any] = []
         # TWAP splitter
         self._twap: TWAPSplitter | None = None
@@ -107,9 +108,14 @@ class ExecutionService:
                 if self._config.sinopac_api_key:
                     connected = broker.connect()
                     if not connected:
-                        logger.error("Failed to connect to Shioaji")
-                        # Fall back to PaperBroker
+                        logger.critical(
+                            "FALLBACK: Shioaji connection failed in %s mode — "
+                            "falling back to PaperBroker. Fills will use simulated costs, "
+                            "NOT real broker execution!",
+                            mode,
+                        )
                         self._broker = PaperBroker()
+                        self._fallback_mode = True
                         self._initialized = True
                         return True
                     broker.start_reconnect_monitor()
@@ -120,10 +126,14 @@ class ExecutionService:
                 return True
 
             except ImportError:
-                logger.warning(
-                    "shioaji not installed, falling back to PaperBroker for %s mode", mode
+                logger.critical(
+                    "FALLBACK: shioaji package not installed — "
+                    "falling back to PaperBroker for %s mode. "
+                    "Fills will use simulated costs, NOT real broker execution!",
+                    mode,
                 )
                 self._broker = PaperBroker()
+                self._fallback_mode = True
                 self._initialized = True
                 return True
 
@@ -292,6 +302,11 @@ class ExecutionService:
     @property
     def is_initialized(self) -> bool:
         return self._initialized
+
+    @property
+    def fallback_mode(self) -> bool:
+        """True if broker connection failed and we fell back to PaperBroker."""
+        return self._fallback_mode
 
     def shutdown(self) -> None:
         """優雅關閉。"""

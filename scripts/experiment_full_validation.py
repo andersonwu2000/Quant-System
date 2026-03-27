@@ -167,7 +167,7 @@ def main() -> None:
         print(f"    {name}: {panel.shape[1]} symbols, {n_valid:,.0f} valid obs", flush=True)
 
     # ── Part 1: Multi-horizon IC ──
-    print(f"\n[2/6] Multi-horizon IC analysis...", flush=True)
+    print("\n[2/6] Multi-horizon IC analysis...", flush=True)
     horizons = [5, 10, 20, 60]
     print(f"\n{'Factor':25s}", end="", flush=True)
     for h in horizons:
@@ -191,7 +191,7 @@ def main() -> None:
         print(f" | {ic_results[fname][20]['n']:>4d}", flush=True)
 
     # ── Part 2: IC Decay ──
-    print(f"\n[3/6] IC decay (factor persistence)...", flush=True)
+    print("\n[3/6] IC decay (factor persistence)...", flush=True)
     print(f"{'Factor':25s} | {'5d':>7s} {'10d':>7s} {'20d':>7s} {'60d':>7s} | {'Decay?':>6s}", flush=True)
     print("-" * 75, flush=True)
     for fname in factors:
@@ -200,7 +200,7 @@ def main() -> None:
         print(f"{fname:25s} | {vals[0]:>+7.3f} {vals[1]:>+7.3f} {vals[2]:>+7.3f} {vals[3]:>+7.3f} | {decay:>6s}", flush=True)
 
     # ── Part 3: IC Stability (rolling 1-year IC) ──
-    print(f"\n[4/6] IC stability (rolling 1-year)...", flush=True)
+    print("\n[4/6] IC stability (rolling 1-year)...", flush=True)
     fwd_20 = close.pct_change(20).shift(-20)
     for fname, fpanel in factors.items():
         ic_s = compute_ic(fpanel, fwd_20, sample_every=5)
@@ -216,7 +216,7 @@ def main() -> None:
         print(f"    {yearly_str}", flush=True)
 
     # ── Part 4: Size stratification ──
-    print(f"\n[5/6] Size stratification (large/mid/small)...", flush=True)
+    print("\n[5/6] Size stratification (large/mid/small)...", flush=True)
     mcap = market_cap_proxy(close, vol)
     # Use median market cap to split
     median_mcap = mcap.median(axis=1)
@@ -248,7 +248,7 @@ def main() -> None:
             print(f"    {size_name:20s} IC={ic_mean:+.4f} ICIR={icir:+.4f} N={len(ic_s)}", flush=True)
 
     # ── Part 5: Statistical tests on best factor ──
-    print(f"\n[6/6] Statistical tests (revenue_yoy, 20d horizon)...", flush=True)
+    print("\n[6/6] Statistical tests (revenue_yoy, 20d horizon)...", flush=True)
     best_ic = compute_ic(factors["revenue_yoy"], fwd_20, sample_every=5)
     n = len(best_ic)
     ic_mean = best_ic.mean()

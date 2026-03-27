@@ -9,7 +9,7 @@ import pickle
 import pandas as pd
 
 from src.alpha.pipeline import AlphaPipeline, AlphaConfig, FactorSpec
-from src.strategy.research import FACTOR_REGISTRY, FUNDAMENTAL_REGISTRY
+from src.strategy.research import FACTOR_REGISTRY
 
 
 def main() -> None:
@@ -100,7 +100,7 @@ def main() -> None:
 
     # 6. Save
     df.to_csv("docs/dev/test/factor_analysis.csv", index=False)
-    print(f"\nSaved to docs/dev/test/factor_analysis.csv")
+    print("\nSaved to docs/dev/test/factor_analysis.csv")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 """Experiment: Institutional + Margin + Revenue factors on Taiwan stocks."""
 import warnings; warnings.filterwarnings("ignore")
-import numpy as np, pandas as pd, pickle, time, os
+import numpy as np
+import pandas as pd
+import pickle
+import time
 from scipy.stats import spearmanr
 from FinMind.data import DataLoader
 from src.strategy.research import VECTORIZED_FACTORS

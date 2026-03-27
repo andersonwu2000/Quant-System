@@ -474,7 +474,65 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
 
     取代 execute_rebalance() 和 monthly_revenue_rebalance()。
     根據 config.active_strategy 決定跑哪個策略和需要哪些數據。
+
+    Features:
+    - Timeout: enforced via asyncio.wait_for (default: config.backtest_timeout)
+    - Execution records: written to data/paper_trading/pipeline_runs/
+    - Idempotency: skips if a completed run already exists for today
     """
+    import asyncio
+
+    # Idempotency: skip if already completed today
+    if _has_completed_run_today():
+        logger.info("Pipeline already completed today — skipping (idempotency)")
+        return PipelineResult(status="ok", strategy_name=config.active_strategy)
+
+    run_id = _today_run_id()
+    timeout_secs = config.backtest_timeout  # default 1800s
+
+    # Write "started" record before doing anything
+    _write_pipeline_record(run_id, status="started", strategy=config.active_strategy)
+    logger.info("Pipeline triggered: strategy=%s, run_id=%s, timeout=%ds",
+                config.active_strategy, run_id, timeout_secs)
+
+    try:
+        result = await asyncio.wait_for(
+            _execute_pipeline_inner(config),
+            timeout=timeout_secs,
+        )
+        # Write completion record
+        _write_pipeline_record(
+            run_id,
+            status="completed" if result.status == "ok" else result.status,
+            strategy=result.strategy_name,
+            n_trades=result.n_trades,
+            error=result.error,
+        )
+        return result
+
+    except asyncio.TimeoutError:
+        msg = f"Pipeline timed out after {timeout_secs}s"
+        logger.error(msg)
+        _write_pipeline_record(run_id, status="failed", strategy=config.active_strategy, error=msg)
+        # Best-effort notification
+        try:
+            from src.notifications.factory import create_notifier
+            notifier = create_notifier(config)
+            if notifier.is_configured():
+                await notifier.send("Pipeline Timeout", msg)
+        except Exception:
+            pass
+        return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
+
+    except Exception as exc:
+        msg = f"Pipeline crashed: {exc}"
+        logger.exception("Pipeline failed")
+        _write_pipeline_record(run_id, status="failed", strategy=config.active_strategy, error=msg)
+        return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
+
+
+async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
+    """Core pipeline logic (extracted for timeout wrapping)."""
     from src.api.state import get_app_state
     from src.core.models import Order
     from src.data.sources import create_feed, create_fundamentals
@@ -483,8 +541,6 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
     from src.strategy.base import Context
     from src.strategy.engine import weights_to_orders
     from src.strategy.registry import resolve_strategy
-
-    logger.info("Pipeline triggered: strategy=%s", config.active_strategy)
 
     state = get_app_state()
     notifier = create_notifier(config)

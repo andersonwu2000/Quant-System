@@ -1,5 +1,10 @@
 {
-  "total_rounds": 0,
+  "version": 2,
+  "total_rounds": 1,
+  "total_pass": 0,
+  "total_fail": 1,
+  "best_fitness": 0,
+  "last_updated": "2026-03-27T13:45:29.864177",
   "success_patterns": [
     {
       "name": "revenue_acceleration",
@@ -9,7 +14,8 @@
       ],
       "avg_icir": 0.24,
       "avg_fitness": 0,
-      "evidence": "experiment_16"
+      "evidence": "experiment_16",
+      "mutation_suggestions": []
     },
     {
       "name": "revenue_new_high",
@@ -19,7 +25,8 @@
       ],
       "avg_icir": 0.207,
       "avg_fitness": 0,
-      "evidence": "experiment_16"
+      "evidence": "experiment_16",
+      "mutation_suggestions": []
     }
   ],
   "forbidden_regions": [
@@ -40,6 +47,142 @@
       "evidence": "experiment_16"
     }
   ],
-  "directions": [],
-  "trajectories": []
+  "directions": [
+    {
+      "name": "revenue_quality_interaction",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "seasonal_revenue_patterns",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 1,
+      "pass_count": 0
+    },
+    {
+      "name": "revenue_acceleration_2nd_order",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "earnings_surprise_proxy",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "supply_chain_propagation",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "inventory_turnover",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "operating_leverage",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "cash_flow_quality",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "capex_intensity",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "revenue_stability",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "revenue_breadth",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "revenue_surprise_magnitude",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    },
+    {
+      "name": "multi_period_momentum",
+      "status": "pending",
+      "priority": 5,
+      "best_icir": 0.0,
+      "hypothesis_count": 0,
+      "pass_count": 0
+    }
+  ],
+  "trajectories": [
+    {
+      "id": "20260327_133855_3702",
+      "timestamp": "2026-03-27T13:45:29.864177",
+      "hypothesis": {
+        "name": "rev_seasonal_deviation",
+        "description": "實際營收 vs 同行業歷史同月平均的偏離",
+        "formula_sketch": "rev_this_month / mean(rev_same_month_past_3years) - 1",
+        "expected_direction": 1,
+        "academic_basis": "Seasonal anomalies in earnings",
+        "data_requirements": [
+          "revenue"
+        ],
+        "direction": "seasonal_revenue_patterns"
+      },
+      "implementation_success": true,
+      "eval_results": {
+        "ic_20d": 0.019822379499700105,
+        "best_icir": 0.0,
+        "best_horizon": "",
+        "fitness": 0.0,
+        "turnover": 0.0,
+        "max_corr": 0.0,
+        "positive_years": 0
+      },
+      "fitness": 0.0,
+      "failure_step": "L1",
+      "failure_reason": "|IC_20d| = 0.0198 < 0.02",
+      "duration_seconds": 394.270894700021,
+      "passed": false
+    }
+  ]
 }

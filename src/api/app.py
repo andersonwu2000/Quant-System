@@ -65,10 +65,18 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         """Application lifespan: startup & shutdown logic."""
         logger.info("Quant Trading System starting (env=%s, mode=%s)", config.env, config.mode)
-        from src.api.state import get_app_state
+        from src.api.state import get_app_state, load_portfolio
         from src.strategy.registry import list_strategies
         state = get_app_state()
         state.strategies = {name: {"status": "stopped", "pnl": 0.0} for name in list_strategies()}
+
+        # Restore paper-trading portfolio from disk (if available)
+        if config.mode in ("paper", "live"):
+            persisted = load_portfolio()
+            if persisted is not None:
+                state.portfolio = persisted
+                logger.info("Restored persisted portfolio on startup")
+
         _seed_admin(config)
 
         from src.execution.service import ExecutionConfig, ExecutionService as ExecSvc
@@ -143,6 +151,25 @@ def create_app() -> FastAPI:
                         for name in list(state.strategies):
                             state.strategies[name]["status"] = "stopped"
                         state.oms.cancel_all()
+
+                        # Paper/live: generate and submit liquidation orders
+                        if config.mode in ("paper", "live"):
+                            liq_orders = state.risk_engine.generate_liquidation_orders(
+                                state.portfolio
+                            )
+                            if liq_orders:
+                                logger.critical(
+                                    "Kill switch: submitting %d liquidation orders",
+                                    len(liq_orders),
+                                )
+                                trades = state.execution_service.submit_orders(
+                                    liq_orders, state.portfolio
+                                )
+                                logger.critical(
+                                    "Kill switch: %d liquidation trades executed",
+                                    len(trades),
+                                )
+
                         await ws_manager.broadcast("alerts", {
                             "type": "kill_switch",
                             "message": "Kill switch triggered — all strategies stopped",

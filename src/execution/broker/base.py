@@ -49,14 +49,21 @@ class PaperBroker(BrokerAdapter):
         self._cash = Decimal("10000000")
 
     def submit_order(self, order: Order) -> str:
-        """紙上交易直接以委託價成交。"""
-        from src.core.models import OrderStatus
+        """紙上交易直接以委託價成交，使用與 SimBroker 一致的成本模型。"""
+        from src.core.models import OrderStatus, Side
+
         order.filled_qty = order.quantity
         order.filled_avg_price = order.price or Decimal("0")
         order.status = OrderStatus.FILLED
-        # 簡易手續費（台股 0.1425%）
+
+        # 成本模型：手續費 0.1425% + 賣出交易稅 0.3%（與 SimBroker 一致）
         notional = order.quantity * (order.price or Decimal("0"))
-        order.commission = notional * Decimal("0.001425")
+        commission = notional * Decimal("0.001425")
+        # 台灣券商最低手續費 20 元
+        if commission < Decimal("20"):
+            commission = Decimal("20")
+        tax = notional * Decimal("0.003") if order.side == Side.SELL else Decimal("0")
+        order.commission = commission + tax
         return order.id
 
     def cancel_order(self, order_id: str) -> bool:

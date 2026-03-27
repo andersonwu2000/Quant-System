@@ -12,7 +12,10 @@ Usage:
   cd D:/Finance && PYTHONPATH=. python scripts/experiment_final.py
 """
 import warnings; warnings.filterwarnings("ignore")
-import numpy as np, pandas as pd, pickle, time, sys, os
+import numpy as np
+import pandas as pd
+import pickle
+import os
 from scipy import stats as scipy_stats
 from src.strategy.research import VECTORIZED_FACTORS
 
@@ -257,7 +260,7 @@ print("=" * 70)
 tw_roundtrip = (TW_COMMISSION_RATE * 2 + TW_SELL_TAX) * 100
 print(f"  TW explicit costs: commission {TW_COMMISSION_RATE*100:.4f}% × 2 + tax {TW_SELL_TAX*100:.1f}% = {tw_roundtrip:.3f}% round trip")
 print(f"  Market impact (large/mid/small): {COST_BPS_LARGE}/{COST_BPS_MID}/{COST_BPS_SMALL} bps")
-print(f"  Total effective cost per full turnover:")
+print("  Total effective cost per full turnover:")
 print(f"    Large cap: {COST_BPS_LARGE + tw_roundtrip*100:.0f} bps ({(COST_BPS_LARGE + tw_roundtrip*100)/100:.2f}%)")
 print(f"    Mid cap:   {COST_BPS_MID + tw_roundtrip*100:.0f} bps ({(COST_BPS_MID + tw_roundtrip*100)/100:.2f}%)")
 print(f"    Small cap: {COST_BPS_SMALL + tw_roundtrip*100:.0f} bps ({(COST_BPS_SMALL + tw_roundtrip*100)/100:.2f}%)")
@@ -289,7 +292,7 @@ print(f"  Annualized turnover: {ann_turnover*100:.0f}%")
 print(f"  Avg trades per rebalance: {is_df['trade_count'].mean():.1f}")
 
 # Turnover over time
-print(f"\n  Turnover by year:")
+print("\n  Turnover by year:")
 is_df_copy = is_df.copy()
 is_df_copy["year"] = is_df_copy["date"].dt.year
 for yr, grp in is_df_copy.groupby("year"):
@@ -358,7 +361,7 @@ print()
 oos_stats = summarize(oos_df, "Out-of-Sample (2025-07 to 2025-12)")
 
 if oos_stats:
-    print(f"\n  OOS Degradation:")
+    print("\n  OOS Degradation:")
     print(f"    Excess return: {is_stats.get('ann_excess',0)*100:+.2f}% → {oos_stats.get('ann_excess',0)*100:+.2f}%")
     print(f"    Sharpe:        {is_stats.get('sharpe',0):.2f} → {oos_stats.get('sharpe',0):.2f}")
     print(f"    Excess Sharpe: {is_stats.get('excess_sharpe',0):.2f} → {oos_stats.get('excess_sharpe',0):.2f}")
@@ -385,7 +388,7 @@ market_vol = all_close.mean(axis=1).pct_change().rolling(60).std() * np.sqrt(252
 mom6m_avg = mom6m_panel.mean(axis=1)  # average momentum across stocks
 mom6m_chg = mom6m_avg.diff(HOLD_DAYS)  # change in factor level
 
-print(f"\n  Worst 5 periods (by net excess return):\n")
+print("\n  Worst 5 periods (by net excess return):\n")
 for rank, (idx, row) in enumerate(worst5.iterrows(), 1):
     dt = row["date"]
     print(f"  --- #{rank}: {dt.strftime('%Y-%m-%d')} ---")
@@ -419,11 +422,11 @@ for rank, (idx, row) in enumerate(worst5.iterrows(), 1):
     yr = dt.year
     mo = dt.month
     if yr == 2022:
-        print(f"    Context: 2022 global rate hike cycle / TW bear market")
+        print("    Context: 2022 global rate hike cycle / TW bear market")
     elif yr == 2020 and mo <= 4:
-        print(f"    Context: COVID crash")
+        print("    Context: COVID crash")
     elif yr == 2025 and mo >= 7:
-        print(f"    Context: 2025 H2 (OOS period)")
+        print("    Context: 2025 H2 (OOS period)")
 
     print()
 
@@ -482,8 +485,8 @@ report.append("")
 # Section 1
 report.append("## 1. Statistical Testing (統計檢定)")
 report.append("")
-report.append(f"| Metric | Value |")
-report.append(f"|--------|-------|")
+report.append("| Metric | Value |")
+report.append("|--------|-------|")
 report.append(f"| IS periods | {n} |")
 report.append(f"| Mean net excess / period | {mean_excess*100:+.3f}% |")
 report.append(f"| Std of excess | {std_excess*100:.3f}% |")
@@ -515,8 +518,8 @@ report.append(f"| Market impact — Small cap | {COST_BPS_SMALL} bps |")
 report.append("")
 report.append("### Cost Impact")
 report.append("")
-report.append(f"| Metric | Value |")
-report.append(f"|--------|-------|")
+report.append("| Metric | Value |")
+report.append("|--------|-------|")
 report.append(f"| Avg cost per rebalance | {avg_cost*10000:.1f} bps |")
 report.append(f"| Annualized cost drag | {total_cost_ann*100:.2f}% |")
 report.append(f"| Gross excess (ann.) | {gross_ann*100:+.2f}% |")
@@ -527,8 +530,8 @@ report.append("")
 # Section 3
 report.append("## 3. Turnover Analysis (換手率分析)")
 report.append("")
-report.append(f"| Metric | Value |")
-report.append(f"|--------|-------|")
+report.append("| Metric | Value |")
+report.append("|--------|-------|")
 report.append(f"| Avg turnover / rebalance | {avg_turnover*100:.1f}% |")
 report.append(f"| Annualized turnover | {ann_turnover*100:.0f}% |")
 report.append(f"| Avg trades / rebalance | {is_df['trade_count'].mean():.1f} |")
@@ -612,8 +615,8 @@ if len(analysis_df_copy) > 10:
         corr_mkt = valid["net_excess"].corr(valid["mkt_ret"])
         corr_vol = valid["net_excess"].corr(valid["mkt_vol"])
         corr_mom = valid["net_excess"].corr(valid["mom_shift"])
-        report.append(f"| Factor | Correlation with Excess |")
-        report.append(f"|--------|------------------------|")
+        report.append("| Factor | Correlation with Excess |")
+        report.append("|--------|------------------------|")
         report.append(f"| Market return (20d) | r = {corr_mkt:+.3f} |")
         report.append(f"| Market volatility | r = {corr_vol:+.3f} |")
         report.append(f"| Momentum factor shift | r = {corr_mom:+.3f} |")
@@ -643,7 +646,7 @@ report.append(f"| 2. Realistic costs | {total_cost_ann*100:.1f}% ann. drag; net 
 report.append(f"| 3. Turnover | {ann_turnover*100:.0f}% ann.; cost drag proportional |")
 oos_str = f"{oos_stats['ann_excess']*100:+.1f}% excess" if oos_stats else "insufficient data"
 report.append(f"| 4. OOS validation | {oos_str} |")
-report.append(f"| 5. Loss deep dive | See worst periods table; losses correlate with market regime |")
+report.append("| 5. Loss deep dive | See worst periods table; losses correlate with market regime |")
 report.append("")
 
 # Write report

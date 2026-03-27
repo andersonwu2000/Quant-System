@@ -58,6 +58,18 @@ class SchedulerService:
             logger.info("Scheduler disabled, skipping")
             return
 
+        # Crash recovery: check for pipeline runs that never finished
+        from src.scheduler.jobs import check_crashed_runs
+
+        crashed = check_crashed_runs()
+        for run in crashed:
+            logger.warning(
+                "Detected crashed pipeline run: run_id=%s, strategy=%s, started_at=%s",
+                run.get("run_id", "?"),
+                run.get("strategy", "?"),
+                run.get("started_at", "?"),
+            )
+
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from apscheduler.triggers.cron import CronTrigger

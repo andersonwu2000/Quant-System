@@ -1,6 +1,9 @@
 """Experiment 13: Full 59-factor stratified IC scan with pre-computed panels."""
 import warnings; warnings.filterwarnings("ignore")
-import numpy as np, pandas as pd, pickle, time, sys
+import numpy as np
+import pandas as pd
+import pickle
+import time
 
 with open("data/market/experiment_data.pkl", "rb") as f:
     all_data = pickle.load(f)
@@ -111,4 +114,4 @@ for _, r in p3.iterrows():
     print(f"  {r['name']}: large={r['large']:+.2f} small={r['small']:+.2f}")
 
 df.to_csv("docs/dev/test/experiment13_factor_scan.csv", index=False)
-print(f"\nSaved to docs/dev/test/experiment13_factor_scan.csv")
+print("\nSaved to docs/dev/test/experiment13_factor_scan.csv")

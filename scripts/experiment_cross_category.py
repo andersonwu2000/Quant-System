@@ -229,7 +229,7 @@ def main():
         print(f"  {name:15s}: {n} symbols", flush=True)
 
     # ── Single factor baseline ──
-    print(f"\n--- 單因子基線 ---", flush=True)
+    print("\n--- 單因子基線 ---", flush=True)
     print(f"{'Factor':15s} {'IC':>8s} {'ICIR':>8s} {'Hit':>5s} {'N':>5s} {'Type':>10s}", flush=True)
     print("-" * 55, flush=True)
 
@@ -251,7 +251,7 @@ def main():
         print(f"{fname:15s} {m:>+8.4f} {icir:>+8.4f} {(ic_s > 0).mean():>4.0%} {len(ic_s):>5d} {ftype:>10s}{tag}", flush=True)
 
     # ── rev_yoy + each other ──
-    print(f"\n--- rev_yoy + 各類型因子 ---", flush=True)
+    print("\n--- rev_yoy + 各類型因子 ---", flush=True)
     print(f"{'Combination':30s} {'IC':>8s} {'ICIR':>8s} {'Hit':>5s} {'vs single':>10s} {'Type':>8s}", flush=True)
     print("-" * 75, flush=True)
 
@@ -274,7 +274,7 @@ def main():
         print(f"rev_yoy + {other:19s} {m:>+8.4f} {icir:>+8.4f} {(ic_s > 0).mean():>4.0%} {diff:>+9.4f} {ftype:>8s}{tag}", flush=True)
 
     # ── Best cross-category combos ──
-    print(f"\n--- 跨類型三因子組合 ---", flush=True)
+    print("\n--- 跨類型三因子組合 ---", flush=True)
     print(f"{'Combination':45s} {'IC':>8s} {'ICIR':>8s} {'Hit':>5s}", flush=True)
     print("-" * 65, flush=True)
 
@@ -304,7 +304,7 @@ def main():
         print(f"{name:45s} {m:>+8.4f} {icir:>+8.4f} {(ic_s > 0).mean():>4.0%}", flush=True)
 
     # ── IC-weighted best cross combo ──
-    print(f"\n--- 加權測試（最佳跨類型組合） ---", flush=True)
+    print("\n--- 加權測試（最佳跨類型組合） ---", flush=True)
 
     # Find which pair was best
     if pair_results:

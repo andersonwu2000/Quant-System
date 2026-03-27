@@ -22,6 +22,7 @@ class ExecutionStatusResponse(BaseModel):
     broker_type: str
     simulation: bool
     queued_orders: int
+    fallback_mode: bool = False
 
 
 class ReconcileResponse(BaseModel):
@@ -77,6 +78,7 @@ async def get_execution_status(
         broker_type=broker_type,
         simulation=simulation,
         queued_orders=exec_svc.order_queue.size,
+        fallback_mode=exec_svc.fallback_mode,
     )
 
 

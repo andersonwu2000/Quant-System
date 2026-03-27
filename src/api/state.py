@@ -7,24 +7,105 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import threading
 from dataclasses import dataclass, field
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from src.alpha.auto.config import AutoAlphaConfig
 from src.alpha.auto.store import AlphaStore
 from src.data.store import DataStore
-from src.core.models import Portfolio
+from src.core.models import (
+    AssetClass, Instrument, Market, Portfolio, Position, SubClass,
+)
 from src.execution.service import ExecutionService
 from src.execution.oms import OrderManager
 from src.execution.stop_order import StopOrderManager
 from src.risk.engine import RiskEngine
 
+logger = logging.getLogger(__name__)
+
+# ── Portfolio persistence ────────────────────────────────────────
+_PERSIST_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "paper_trading"
+_PERSIST_PATH = _PERSIST_DIR / "portfolio_state.json"
+
 
 def _make_risk_engine() -> RiskEngine:
     store = DataStore()
     return RiskEngine(persist_fn=store.save_risk_event)
+
+
+def save_portfolio(portfolio: Portfolio) -> None:
+    """Serialize portfolio state to JSON for crash recovery."""
+    try:
+        _PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+        positions: dict[str, dict[str, str]] = {}
+        for symbol, pos in portfolio.positions.items():
+            positions[symbol] = {
+                "quantity": str(pos.quantity),
+                "avg_cost": str(pos.avg_cost),
+                "market_price": str(pos.market_price),
+                "asset_class": pos.instrument.asset_class.value,
+                "sub_class": pos.instrument.sub_class.value,
+                "market": pos.instrument.market.value,
+                "currency": pos.instrument.currency,
+                "lot_size": str(pos.instrument.lot_size),
+                "multiplier": str(pos.instrument.multiplier),
+                "name": pos.instrument.name,
+            }
+        state = {
+            "cash": str(portfolio.cash),
+            "initial_cash": str(portfolio.initial_cash),
+            "positions": positions,
+        }
+        tmp_path = _PERSIST_PATH.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        tmp_path.replace(_PERSIST_PATH)
+        logger.debug("Portfolio state persisted to %s", _PERSIST_PATH)
+    except Exception:
+        logger.warning("Failed to persist portfolio state", exc_info=True)
+
+
+def load_portfolio() -> Portfolio | None:
+    """Load portfolio state from JSON. Returns None if no file or error."""
+    if not _PERSIST_PATH.exists():
+        return None
+    try:
+        raw = json.loads(_PERSIST_PATH.read_text(encoding="utf-8"))
+        positions: dict[str, Position] = {}
+        for symbol, pos_data in raw.get("positions", {}).items():
+            instrument = Instrument(
+                symbol=symbol,
+                name=pos_data.get("name", ""),
+                asset_class=AssetClass(pos_data.get("asset_class", "EQUITY")),
+                sub_class=SubClass(pos_data.get("sub_class", "stock")),
+                market=Market(pos_data.get("market", "us")),
+                currency=pos_data.get("currency", "TWD"),
+                lot_size=int(pos_data.get("lot_size", 1)),
+                multiplier=Decimal(pos_data.get("multiplier", "1")),
+            )
+            positions[symbol] = Position(
+                instrument=instrument,
+                quantity=Decimal(pos_data["quantity"]),
+                avg_cost=Decimal(pos_data["avg_cost"]),
+                market_price=Decimal(pos_data["market_price"]),
+            )
+        portfolio = Portfolio(
+            cash=Decimal(raw["cash"]),
+            initial_cash=Decimal(raw.get("initial_cash", raw["cash"])),
+            positions=positions,
+        )
+        logger.info(
+            "Loaded persisted portfolio: cash=%s, %d positions",
+            portfolio.cash, len(portfolio.positions),
+        )
+        return portfolio
+    except Exception:
+        logger.warning("Failed to load persisted portfolio state", exc_info=True)
+        return None
 
 
 @dataclass

@@ -23,7 +23,6 @@ import warnings
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 warnings.filterwarnings("ignore")
 logging.disable(logging.CRITICAL)
@@ -32,7 +31,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.backtest.engine import BacktestConfig, BacktestEngine
 from src.strategy.base import Context, Strategy
 from src.strategy.registry import resolve_strategy
-from src.strategy.optimizer import equal_weight, OptConstraints
 
 MARKET_DIR = Path("data/market")
 

@@ -318,7 +318,7 @@ def main():
     # Top 5 combinations overall
     all_combos = {**{k: v for k, v in combo_results.items()}, **{k: v for k, v in triple_results.items()}}
     top5 = sorted(all_combos.items(), key=lambda x: -x[1]["icir"])[:5]
-    print(f"\nTop 5 組合（by ICIR）：", flush=True)
+    print("\nTop 5 組合（by ICIR）：", flush=True)
     for i, (combo, r) in enumerate(top5, 1):
         name = " + ".join(combo) if isinstance(combo, tuple) else str(combo)
         print(f"  {i}. {name:45s} ICIR={r['icir']:+.4f} Hit={r['hit']:.0%}", flush=True)

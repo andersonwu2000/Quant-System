@@ -156,7 +156,6 @@ def run_walkforward_validation(
     initial_cash: float,
 ) -> None:
     """滾動 3 年訓練 / 1 年測試 Walk-Forward。"""
-    import sys
 
     # Walk-forward windows: train 3yr, test 1yr, rolling 1yr
     windows = [

@@ -17,10 +17,8 @@ from __future__ import annotations
 
 import sys
 import warnings
-from decimal import Decimal
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 warnings.filterwarnings("ignore")
@@ -386,7 +384,7 @@ def main():
 
     failed = [(n, d) for n, ok, d in results if not ok]
     if failed:
-        print(f"\n失敗項目:", flush=True)
+        print("\n失敗項目:", flush=True)
         for name, detail in failed:
             print(f"  ✗ {name}: {detail}", flush=True)
 
