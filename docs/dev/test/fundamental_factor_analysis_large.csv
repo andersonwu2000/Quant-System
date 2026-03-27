@@ -1,5 +1,0 @@
-factor,n_stocks,n_dates,icir_5d,icir_20d,icir_60d,hit_5d,hit_20d,hit_60d
-revenue_yoy,855,121,0.186,0.037,0.112,0.58,0.508,0.504
-revenue_acceleration,855,122,0.202,0.24,0.426,0.567,0.639,0.737
-revenue_new_high,855,122,0.246,0.207,0.364,0.65,0.613,0.661
-revenue_momentum,855,122,0.205,0.03,0.134,0.602,0.547,0.56
