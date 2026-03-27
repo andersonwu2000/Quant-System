@@ -760,7 +760,7 @@ def _write_report(results: dict) -> None:
         content = (
             f"# Factor Report: {name}\n\n"
             f"> Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"> Status: L5 OOS Validated\n\n"
+            f"> Status: L5 OOS Validated | Validator: pending\n\n"
             f"## Metrics\n\n"
             f"| Metric | Value |\n"
             f"|--------|-------|\n"
