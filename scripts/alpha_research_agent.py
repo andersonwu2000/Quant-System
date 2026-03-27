@@ -389,6 +389,56 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
                 continue
             results[sym] = float(tau)
 '''
+    elif name.startswith("rev_zscore_") and name[-1].isdigit():
+        # zscore 變體：rev_zscore_12m, rev_zscore_18m, rev_zscore_36m 等
+        # 從名稱提取月數
+        import re
+        m = re.search(r"(\d+)m$", name)
+        months = int(m.group(1)) if m else 24
+        code += f'''
+            if len(revenues) < {months}:
+                continue
+            recent = revenues[-{months}:]
+            mean = float(np.mean(recent))
+            std = float(np.std(recent, ddof=1))
+            if std <= 0:
+                continue
+            results[sym] = float((revenues[-1] - mean) / std)
+'''
+    elif name.startswith("rev_accel_") and name[-1].isdigit():
+        # acceleration 變體：rev_accel_2m_6m, rev_accel_6m_12m 等
+        import re
+        m = re.search(r"(\d+)m_(\d+)m$", name)
+        if m:
+            short, long = int(m.group(1)), int(m.group(2))
+        else:
+            short, long = 3, 12
+        code += f'''
+            if len(revenues) < {long}:
+                continue
+            rev_short = float(np.mean(revenues[-{short}:]))
+            rev_long = float(np.mean(revenues[-{long}:]))
+            if rev_long <= 0:
+                continue
+            results[sym] = float(rev_short / rev_long)
+'''
+    elif "accel_x_zscore" in name:
+        # 組合因子：acceleration × zscore
+        code += '''
+            if len(revenues) < 24:
+                continue
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_12m = float(np.mean(revenues[-12:]))
+            if rev_12m <= 0:
+                continue
+            accel = rev_3m / rev_12m
+            mean_24 = float(np.mean(revenues[-24:]))
+            std_24 = float(np.std(revenues[-24:], ddof=1))
+            if std_24 <= 0:
+                continue
+            zscore = (revenues[-1] - mean_24) / std_24
+            results[sym] = float(accel * zscore)
+'''
     elif "cfo_over_ni" in name or "capex" in name or "inventory" in name or "upstream" in name or "sensitivity" in name:
         # These require financial_statement data not yet available
         logger.warning(
@@ -1384,12 +1434,98 @@ class AlphaResearchAgent:
 # ── CLI ────────────────────────────────────────────────────────
 
 
+def _generate_parameter_variants(agent: AlphaResearchAgent) -> int:
+    """當所有模板假說都已測完時，自動生成參數變體。
+
+    基於已知有效的因子模式，變化 lookback window 等參數，
+    產生新假說寫入 hypothesis_templates.json。
+
+    Returns: 新增的假說數量。
+    """
+    templates_path = Path("data/research/hypothesis_templates.json")
+    try:
+        with open(templates_path, encoding="utf-8") as f:
+            templates = json.load(f)
+    except Exception:
+        return 0
+
+    tested = {t.hypothesis.get("name", "") for t in agent.memory.trajectories}
+    added = 0
+
+    # 基於 zscore 的變體（zscore 是目前大規模 IC 最強的自動因子）
+    zscore_variants = [
+        ("rev_zscore_12m", 12, "12 月 z-score（shorter window, more responsive）"),
+        ("rev_zscore_36m", 36, "36 月 z-score（longer window, more stable）"),
+        ("rev_zscore_18m", 18, "18 月 z-score（middle ground）"),
+    ]
+    for name, months, desc in zscore_variants:
+        if name not in tested:
+            if "revenue_surprise_magnitude" not in templates:
+                templates["revenue_surprise_magnitude"] = []
+            if not any(t["name"] == name for t in templates["revenue_surprise_magnitude"]):
+                templates["revenue_surprise_magnitude"].append({
+                    "name": name,
+                    "description": desc,
+                    "formula_sketch": f"(rev[-1] - mean(rev[-{months}:])) / std(rev[-{months}:])",
+                    "academic_basis": "SUE with varying lookback",
+                    "data_requirements": ["revenue"],
+                })
+                added += 1
+
+    # 基於 acceleration 的變體（不同短/長期窗口）
+    accel_variants = [
+        ("rev_accel_2m_6m", 2, 6, "2M/6M ratio（more responsive）"),
+        ("rev_accel_6m_12m", 6, 12, "6M/12M ratio（standard）"),
+        ("rev_accel_3m_24m", 3, 24, "3M/24M ratio（long-term comparison）"),
+    ]
+    for name, short, long, desc in accel_variants:
+        if name not in tested:
+            if "multi_period_momentum" not in templates:
+                templates["multi_period_momentum"] = []
+            if not any(t["name"] == name for t in templates["multi_period_momentum"]):
+                templates["multi_period_momentum"].append({
+                    "name": name,
+                    "description": desc,
+                    "formula_sketch": f"mean(rev[-{short}:]) / mean(rev[-{long}:])",
+                    "academic_basis": "Revenue momentum with varying windows",
+                    "data_requirements": ["revenue"],
+                })
+                added += 1
+
+    # 組合因子（acceleration × zscore）
+    combo_variants = [
+        ("rev_accel_x_zscore", "acceleration × z-score composite"),
+    ]
+    for name, desc in combo_variants:
+        if name not in tested:
+            if "factor_combination" not in templates:
+                templates["factor_combination"] = []
+            if not any(t["name"] == name for t in templates["factor_combination"]):
+                templates["factor_combination"].append({
+                    "name": name,
+                    "description": desc,
+                    "formula_sketch": "rank(rev_3m/rev_12m) * rank(zscore_24m)",
+                    "academic_basis": "Multi-signal composite",
+                    "data_requirements": ["revenue"],
+                })
+                added += 1
+
+    if added > 0:
+        with open(templates_path, "w", encoding="utf-8") as f:
+            json.dump(templates, f, indent=2, ensure_ascii=False)
+        logger.info("Generated %d parameter variants", added)
+
+    return added
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Alpha Research Agent")
     parser.add_argument("--rounds", type=int, default=1, help="Number of research rounds")
     parser.add_argument("--interval", type=int, default=5, help="Seconds between rounds")
     parser.add_argument("--direction", type=str, default=None, help="Force research direction")
     parser.add_argument("--status", action="store_true", help="Print memory status")
+    parser.add_argument("--daemon", action="store_true",
+                        help="Daemon mode: run indefinitely, auto-generate variants when exhausted")
     args = parser.parse_args()
 
     agent = AlphaResearchAgent()
@@ -1398,24 +1534,61 @@ def main() -> None:
         agent.print_status()
         return
 
-    for i in range(args.rounds):
-        print(f"\n{'='*60}")
-        print(f"Round {i+1}/{args.rounds}")
-        print(f"{'='*60}")
+    if args.daemon:
+        # Daemon 模式：無限運行，假說用完時自動生成變體
+        logger.info("Daemon mode started — will run indefinitely")
+        round_num = 0
+        idle_count = 0
+        while True:
+            round_num += 1
+            traj = agent.run_one_cycle(direction=args.direction)
 
-        traj = agent.run_one_cycle(direction=args.direction)
+            name = traj.hypothesis.get("name", "?")
+            if traj.failure_step == "hypothesis" and "No untested" in (traj.failure_reason or ""):
+                idle_count += 1
+                if idle_count == 1:
+                    # 第一次無假說：嘗試生成變體
+                    n_new = _generate_parameter_variants(agent)
+                    if n_new > 0:
+                        logger.info("Generated %d variants — resuming research", n_new)
+                        idle_count = 0
+                        continue
+                # 沒有新假說可生成，進入長休眠（等待外部加入）
+                if idle_count <= 3:
+                    logger.info("No hypotheses available (idle %d) — sleeping 5 min", idle_count)
+                    time.sleep(300)
+                else:
+                    # 長期無假說，每 30 分鐘檢查一次
+                    time.sleep(1800)
+                continue
 
-        name = traj.hypothesis.get("name", "?")
-        if traj.passed:
-            print(f"  PASS: {name} (fitness={traj.fitness:.2f})")
-        else:
-            print(f"  FAIL: {name} at {traj.failure_step}: {traj.failure_reason}")
-        print(f"  Time: {traj.duration_seconds:.1f}s")
+            idle_count = 0
+            if traj.passed:
+                logger.info("Round %d PASS: %s (fitness=%.2f)", round_num, name, traj.fitness)
+            else:
+                logger.info("Round %d FAIL: %s at %s", round_num, name, traj.failure_step)
 
-        if i < args.rounds - 1:
             time.sleep(args.interval)
+    else:
+        # 有限輪模式
+        for i in range(args.rounds):
+            print(f"\n{'='*60}")
+            print(f"Round {i+1}/{args.rounds}")
+            print(f"{'='*60}")
 
-    agent.print_status()
+            traj = agent.run_one_cycle(direction=args.direction)
+
+            name = traj.hypothesis.get("name", "?")
+            if traj.passed:
+                print(f"  PASS: {name} (fitness={traj.fitness:.2f})")
+            else:
+                print(f"  FAIL: {name} at {traj.failure_step}: {traj.failure_reason}")
+            print(f"  Time: {traj.duration_seconds:.1f}s")
+
+            if i < args.rounds - 1:
+                time.sleep(args.interval)
+
+        agent.print_status()
 
 
 if __name__ == "__main__":
