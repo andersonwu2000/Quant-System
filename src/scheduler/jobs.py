@@ -702,6 +702,18 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             len(deviations),
             [(d["symbol"], f"{d['deviation']:.1%}") for d in deviations[:5]],
         )
+        # 偏差過多時發送告警通知
+        if len(deviations) >= 5:
+            try:
+                if notifier.is_configured():
+                    import asyncio as _aio
+                    _aio.ensure_future(notifier.send(
+                        "Reconciliation Alert",
+                        f"{len(deviations)} positions deviate > 2% from target. "
+                        f"Top: {', '.join(d['symbol'] for d in deviations[:3])}",
+                    ))
+            except Exception:
+                logger.debug("Reconciliation notification failed", exc_info=True)
 
     # 6. T2: 記錄回測比較數據（用於未來 R² 計算）
     _record_backtest_comparison(

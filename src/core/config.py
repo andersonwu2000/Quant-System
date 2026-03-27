@@ -40,7 +40,7 @@ class TradingConfig(BaseSettings):
     data_cache_dir: str = ".cache/market_data"
 
     # ── 風控 ──
-    max_position_pct: float = 0.05
+    max_position_pct: float = 0.10    # 10%（配合 15 支等權策略的 ~6.7%，含容差）
     max_sector_pct: float = 0.20
     max_daily_drawdown_pct: float = 0.03
     kill_switch_weekly_drawdown_pct: float = 0.10

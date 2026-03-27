@@ -193,9 +193,16 @@ def create_app() -> FastAPI:
                                     _cached_feed = _create_feed(config.data_source, syms)
                                 _cached_syms = syms
                             if _cached_feed is not None:
-                                realtime_risk.poll_prices_from_feed(_cached_feed)
+                                n_updated = realtime_risk.poll_prices_from_feed(_cached_feed)
+                                # ShioajiFeed 失敗 → fallback 到 Yahoo/FinMind
+                                if n_updated == 0 and _poll_feed_source is not None and _cached_feed is _poll_feed_source:
+                                    logger.warning("ShioajiFeed returned 0 prices — falling back to Yahoo")
+                                    _cached_feed = _create_feed(config.data_source, syms)
+                                    _cached_syms = syms
+                                    if _cached_feed is not None:
+                                        realtime_risk.poll_prices_from_feed(_cached_feed)
                         except Exception:
-                            logger.debug("Price poll failed", exc_info=True)
+                            logger.warning("Price poll failed", exc_info=True)
 
                 asyncio.create_task(_price_poll_loop())
                 logger.info("Price polling fallback started (60s interval)")

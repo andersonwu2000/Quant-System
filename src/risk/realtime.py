@@ -130,19 +130,24 @@ class RealtimeRiskMonitor:
                         len(liq_orders),
                     )
 
-    def poll_prices_from_feed(self, feed: Any) -> None:
+    def poll_prices_from_feed(self, feed: Any) -> int:
         """Fallback price update when tick callbacks are unavailable.
 
-        Call this periodically (e.g. every 60s) in simulation/paper mode
-        where Shioaji doesn't push ticks.
+        Returns number of successfully updated symbols.
         """
+        updated = 0
         for symbol in list(self.portfolio.positions.keys()):
             try:
                 price = feed.get_latest_price(symbol)
                 if price and price > 0:
                     self.on_price_update(symbol, price)
+                    updated += 1
             except Exception:
-                pass
+                logger.debug("Price poll failed for %s", symbol)
+        if updated == 0 and self.portfolio.positions:
+            logger.warning("Price poll: 0/%d symbols updated — feed may be broken",
+                          len(self.portfolio.positions))
+        return updated
 
     def reset_daily(self) -> None:
         """Call at market open to reset intraday tracking."""
