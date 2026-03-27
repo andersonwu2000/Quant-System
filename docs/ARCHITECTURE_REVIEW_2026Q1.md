@@ -279,8 +279,8 @@ ExecutionService(cost_model=cost)
 
 | 項目 | 優先級 | 預估 | 風險 | 保障措施 |
 |------|:---:|:---:|------|---------|
-| U1: 統一 execution 路徑 | 🔄 進行中 | 2-3 hr | 高（改 BacktestEngine 核心） | 先寫測試、分步驟、每步 commit + test |
-| U3: 營收數據進 Context | 高 | 1-2 hr | 高（改策略核心邏輯） | 先建 ctx.get_revenue()，再逐一遷移策略 |
+| U1: 統一 execution 路徑 | ✅ 完成 | 5 步驟 | OrderExecutor Protocol + execute_from_weights | 1739 tests passed |
+| U3: 營收數據進 Context | 🔄 進行中 | 1-2 hr | 高（改策略核心邏輯） | 先建 ctx.get_revenue()，再逐一遷移策略 |
 | V2: 時間語義統一 | 中 | 2 hr | 中（涉及多模組 index） | 先統一新代碼，舊代碼漸進遷移 |
 
 ### 執行約束
