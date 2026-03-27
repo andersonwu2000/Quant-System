@@ -154,7 +154,8 @@ class TrustFollowStrategy(Strategy):
                 yoy_values = np.asarray(rev_df["yoy_growth"])
                 latest_yoy = float(yoy_values[-1]) if len(yoy_values) > 0 else 0
 
-                if latest_yoy < self.min_yoy_growth:
+                # #10 fix: NaN comparisons return False, so NaN would pass filter
+                if np.isnan(latest_yoy) or latest_yoy < self.min_yoy_growth:
                     continue
 
                 candidates.append((symbol, trust_cumulative))

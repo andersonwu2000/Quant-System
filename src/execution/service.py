@@ -43,6 +43,8 @@ class ExecutionConfig:
     check_market_hours: bool = True
     queue_off_hours_orders: bool = True
     # Cost model (forwarded to PaperBroker / SinopacBroker simulation)
+    # Note: float (not Decimal) is intentional for config simplicity.
+    # These rates are converted to Decimal at computation time in broker adapters.
     commission_rate: float = 0.001425
     tax_rate: float = 0.003
     default_slippage_bps: float = 5.0
@@ -225,6 +227,9 @@ class ExecutionService:
                 return []
 
         # TWAP: paper/live 模式下也拆單（目前一次全部送出，未來可排程）
+        # Note: current_bars may be None in paper/live mode — _apply_twap_split
+        # handles this gracefully: falls back to order.price, and if both are None
+        # the order is passed through unsplit.
         if self._twap is not None:
             orders = self._apply_twap_split(orders, current_bars)
 

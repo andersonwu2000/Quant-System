@@ -85,7 +85,10 @@ def weights_to_orders(
     if not target_weights:
         return []
 
-    # 驗證總權重不超過合理上限
+    # 驗證總權重不超過合理上限。
+    # Threshold = 1.5: allows up to 50% gross leverage (e.g. 130/30 strategy)
+    # while catching clearly erroneous inputs (un-normalized scores, double-counting).
+    # Weights between 1.0 and 1.5 pass through unchanged to support leveraged strategies.
     total_weight = sum(target_weights.values())
     if total_weight > 1.5:
         logger.warning(

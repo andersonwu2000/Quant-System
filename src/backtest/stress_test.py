@@ -267,6 +267,11 @@ def _run_with_feed(
     這是一個簡化版本：直接呼叫 engine.run()，
     因為 engine._load_data 會重新下載。
     我們改為直接使用 analytics 來處理。
+
+    Note: rebalance_freq from config is intentionally ignored here.
+    Stress tests call strategy.on_bar() every trading day to maximize
+    stress exposure. The strategy itself controls rebalancing via its
+    internal logic (e.g. monthly cache in trust_follow).
     """
     from decimal import Decimal
 

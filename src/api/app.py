@@ -48,9 +48,8 @@ def _seed_admin(config: object) -> None:
     pw_hash, pw_salt = hash_password(cfg.admin_password)
     store.create("admin", "Administrator", pw_hash, pw_salt, "admin")
     logger.warning(
-        "Default admin account created. Username: admin  Password: %s  "
-        "Please change it immediately after first login.",
-        cfg.admin_password,
+        "Default admin account created. Username: admin  "
+        "Please change the password immediately after first login.",
     )
 
 

@@ -6,6 +6,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+import threading
+
 import sqlalchemy as sa
 
 from src.data.store import _create_engine, users_table
@@ -14,17 +16,21 @@ from src.core.config import get_config
 logger = logging.getLogger(__name__)
 
 _engine: sa.Engine | None = None
+_engine_lock = threading.Lock()
 
 
 def _get_engine() -> sa.Engine:
+    """Get or create cached SQLAlchemy engine (thread-safe, double-checked locking)."""
     global _engine
     if _engine is None:
-        url = get_config().database_url
-        if url.startswith("sqlite"):
-            from pathlib import Path
-            db_path = url.replace("sqlite:///", "")
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        _engine = _create_engine(url)
+        with _engine_lock:
+            if _engine is None:
+                url = get_config().database_url
+                if url.startswith("sqlite"):
+                    from pathlib import Path
+                    db_path = url.replace("sqlite:///", "")
+                    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+                _engine = _create_engine(url)
     return _engine
 
 
@@ -164,12 +170,16 @@ class UserStore:
 
 # 全局單例
 _user_store: UserStore | None = None
+_user_store_lock = threading.Lock()
 
 
 def get_user_store() -> UserStore:
+    """Get or create the global UserStore singleton (thread-safe)."""
     global _user_store
     if _user_store is None:
-        _user_store = UserStore()
+        with _user_store_lock:
+            if _user_store is None:
+                _user_store = UserStore()
     return _user_store
 
 

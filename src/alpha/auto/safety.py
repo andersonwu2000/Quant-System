@@ -51,7 +51,12 @@ class SafetyChecker:
         self._config = config
         self._store = store
 
-    def check(self, portfolio_nav: float, initial_nav: float) -> SafetyResult:
+    def check(
+        self,
+        portfolio_nav: float,
+        initial_nav: float,
+        peak_nav: float | None = None,
+    ) -> SafetyResult:
         """Run all safety checks and return aggregated result.
 
         Parameters
@@ -59,7 +64,11 @@ class SafetyChecker:
         portfolio_nav:
             Current portfolio net asset value.
         initial_nav:
-            Starting portfolio net asset value (baseline for drawdown).
+            Starting portfolio net asset value (fallback if peak_nav not provided).
+        peak_nav:
+            High-water-mark NAV. If provided, drawdown is computed from peak
+            (standard definition). Falls back to ``initial_nav`` for backward
+            compatibility.
 
         Returns
         -------
@@ -67,9 +76,10 @@ class SafetyChecker:
         """
         result = SafetyResult()
 
-        # 1. Drawdown from initial NAV
-        if initial_nav > 0:
-            result.drawdown = (initial_nav - portfolio_nav) / initial_nav
+        # 1. Drawdown from peak NAV (standard definition); fall back to initial NAV
+        baseline = peak_nav if peak_nav is not None and peak_nav > 0 else initial_nav
+        if baseline > 0:
+            result.drawdown = (baseline - portfolio_nav) / baseline
         else:
             result.drawdown = 0.0
 

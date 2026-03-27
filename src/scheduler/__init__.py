@@ -91,7 +91,12 @@ class SchedulerService:
         return self._running
 
     async def _run_pipeline(self, config: TradingConfig) -> None:
-        """Phase S: 統一交易管線。"""
+        """Phase S: 統一交易管線。
+
+        Note: The locked() check + acquire is technically TOCTOU, but acceptable
+        because asyncio.Lock is single-threaded — no preemption between check and
+        acquire within the same coroutine execution slice.
+        """
         if _pipeline_lock.locked():
             logger.warning("Pipeline lock held, skipping")
             return

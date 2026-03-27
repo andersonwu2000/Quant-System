@@ -218,14 +218,16 @@ async def execute_rebalance(config: TradingConfig) -> None:
             logger.info("All orders rejected by risk engine")
             return
 
-        # 透過 ExecutionService 下單
-        trades = exec_svc.submit_orders(approved_orders, state.portfolio)
+        # Acquire mutation lock to prevent race with kill switch / pipeline
+        async with state.mutation_lock:
+            # 透過 ExecutionService 下單
+            trades = exec_svc.submit_orders(approved_orders, state.portfolio)
 
-        # 更新 Portfolio
-        if trades:
-            apply_trades(state.portfolio, trades)
-            _save_trade_log(trades, active_strategy_name)  # R10.5
-            logger.info("Rebalance completed: %d trades executed", len(trades))
+            # 更新 Portfolio
+            if trades:
+                apply_trades(state.portfolio, trades)
+                _save_trade_log(trades, active_strategy_name)  # R10.5
+                logger.info("Rebalance completed: %d trades executed", len(trades))
 
         # 發送通知
         if notifier.is_configured():
@@ -383,12 +385,14 @@ async def monthly_revenue_rebalance(config: TradingConfig) -> None:
             logger.info("All orders rejected by risk engine")
             return
 
-        # 下單
-        trades = exec_svc.submit_orders(approved, state.portfolio)
-        if trades:
-            apply_trades(state.portfolio, trades)
-            _save_trade_log(trades, "revenue_momentum_hedged")  # R10.5
-            logger.info("Monthly rebalance: %d trades, NAV=%s", len(trades), state.portfolio.nav)
+        # Acquire mutation lock to prevent race with kill switch / pipeline
+        async with state.mutation_lock:
+            # 下單
+            trades = exec_svc.submit_orders(approved, state.portfolio)
+            if trades:
+                apply_trades(state.portfolio, trades)
+                _save_trade_log(trades, "revenue_momentum_hedged")  # R10.5
+                logger.info("Monthly rebalance: %d trades, NAV=%s", len(trades), state.portfolio.nav)
 
         # 通知
         if notifier.is_configured():
@@ -587,8 +591,10 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     notifier = create_notifier(config)
 
     # #8: 確保 nav_sod 有設定（實盤管線不像回測引擎會自動設）
-    if state.portfolio.nav_sod == 0 and state.portfolio.nav > 0:
-        state.portfolio.nav_sod = state.portfolio.nav
+    # Acquire mutation_lock for portfolio mutation to prevent race with kill switch
+    async with state.mutation_lock:
+        if state.portfolio.nav_sod == 0 and state.portfolio.nav > 0:
+            state.portfolio.nav_sod = state.portfolio.nav
 
     if not state.execution_service.is_initialized:
         logger.error("ExecutionService not initialized, skipping pipeline")

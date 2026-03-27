@@ -72,7 +72,7 @@ class FactorEvaluator:
         self,
         data: dict[str, pd.DataFrame] | None = None,
         existing_factor_ics: dict[str, pd.Series] | None = None,
-        min_icir_l1: float = 0.02,
+        min_ic_l1: float = 0.02,
         min_icir_l2: float = 0.15,
         max_turnover: float = 0.90,  # quintile 取樣的 turnover，營收因子天然 70-90%
         max_correlation: float = 0.50,
@@ -82,7 +82,7 @@ class FactorEvaluator:
     ):
         self.data = data or {}
         self.existing_factor_ics = existing_factor_ics or {}
-        self.min_icir_l1 = min_icir_l1
+        self.min_ic_l1 = min_ic_l1
         self.min_icir_l2 = min_icir_l2
         self.max_turnover = max_turnover
         self.max_correlation = max_correlation
@@ -122,9 +122,9 @@ class FactorEvaluator:
         fwd_20 = self._get_fwd(close_panel, 20, fwd_cache)
         ic_20d = self._compute_ic(factor_values, fwd_20)
         result.ic_20d = ic_20d
-        if abs(ic_20d) < self.min_icir_l1:
+        if abs(ic_20d) < self.min_ic_l1:
             result.level_reached = "L1"
-            result.failure_reason = f"|IC_20d| = {abs(ic_20d):.4f} < {self.min_icir_l1}"
+            result.failure_reason = f"|IC_20d| = {abs(ic_20d):.4f} < {self.min_ic_l1}"
             result.duration_seconds = time.perf_counter() - t0
             return result
 
@@ -180,6 +180,10 @@ class FactorEvaluator:
             return result
 
         # L4: Fitness
+        # Note: ic_20d and best_icir may be from different horizons.
+        # This is intentional: ic_20d is the primary signal quality metric,
+        # best_icir captures the best risk-adjusted IC across horizons.
+        # Both contribute to fitness as independent quality signals.
         fitness = compute_fitness(result.ic_20d, best_icir, turnover)
         result.fitness = fitness
 
@@ -335,8 +339,18 @@ class FactorEvaluator:
         for name, existing_ic in self.existing_factor_ics.items():
             if len(existing_ic) < 10:
                 continue
-            min_len = min(len(new_ic), len(existing_ic))
-            corr = float(new_ic.iloc[:min_len].corr(existing_ic.iloc[:min_len]))
+            # #8 fix: if both have DatetimeIndex, align by date; otherwise by position
+            if (hasattr(new_ic.index, 'dtype') and hasattr(existing_ic.index, 'dtype')
+                    and pd.api.types.is_datetime64_any_dtype(new_ic.index)
+                    and pd.api.types.is_datetime64_any_dtype(existing_ic.index)):
+                aligned_new, aligned_existing = new_ic.align(existing_ic, join="inner")
+                if len(aligned_new) < 10:
+                    continue
+                corr = float(aligned_new.corr(aligned_existing))
+            else:
+                # Fallback: align by position (both computed from same date range)
+                min_len = min(len(new_ic), len(existing_ic))
+                corr = float(new_ic.iloc[:min_len].corr(existing_ic.iloc[:min_len]))
             if abs(corr) > abs(max_corr):
                 max_corr = corr
                 max_name = name

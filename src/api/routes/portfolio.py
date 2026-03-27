@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from decimal import Decimal
 from typing import Any, cast
 
@@ -34,27 +35,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 _engine: sa.Engine | None = None
+_engine_lock = threading.Lock()
 
 
 def _get_engine() -> sa.Engine:
-    """Get or create a cached engine for portfolio persistence."""
+    """Get or create a cached engine for portfolio persistence.
+
+    Thread-safe: uses double-checked locking to avoid races during
+    concurrent first access from multiple request threads.
+    """
     global _engine
     if _engine is None:
-        config = get_config()
-        url = config.database_url
-        if url.startswith("sqlite") and url != "sqlite:///:memory:":
-            from pathlib import Path
-            db_path = url.replace("sqlite:///", "")
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        _engine = _create_engine(url)
-        metadata.create_all(_engine)
+        with _engine_lock:
+            if _engine is None:
+                config = get_config()
+                url = config.database_url
+                if url.startswith("sqlite") and url != "sqlite:///:memory:":
+                    from pathlib import Path
+                    db_path = url.replace("sqlite:///", "")
+                    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+                _engine = _create_engine(url)
+                metadata.create_all(_engine)
     return _engine
 
 
 def reset_portfolio_engine() -> None:
     """Reset cached engine (for testing)."""
     global _engine
-    _engine = None
+    with _engine_lock:
+        _engine = None
 
 
 def _get_repo() -> PortfolioRepository:

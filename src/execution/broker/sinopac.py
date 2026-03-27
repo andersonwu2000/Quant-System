@@ -565,13 +565,19 @@ class SinopacBroker(BrokerAdapter):
         """股數 → (數量, 是否零股)。
 
         台股 1000 股 = 1 張。若 < 1000 股為零股，回傳 (股數, True)。
-        整股回傳 (張數, False)。
+        整股回傳 (張數, False)。餘數會被丟棄並記錄警告。
         """
         lot_size = 1000
         int_shares = int(shares)
         if int_shares < lot_size:
             return (int_shares, True)  # 零股：數量為股數
         lots = int_shares // lot_size
+        remainder = int_shares % lot_size
+        if remainder > 0:
+            logger.warning(
+                "%s: %d shares → %d lots (%d shares), discarding %d share remainder",
+                symbol, int_shares, lots, lots * lot_size, remainder,
+            )
         return (lots, False)  # 整股：數量為張數
 
     @property

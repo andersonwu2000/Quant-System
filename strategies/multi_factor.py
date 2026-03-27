@@ -171,12 +171,13 @@ class MultiFactorStrategy(Strategy):
 
         mom_ranks = rank_percentile(mom_values)
         value_ranks = rank_percentile(value_values)
+        quality_ranks = rank_percentile(quality_values)
 
         signals: dict[str, float] = {}
         for i, symbol in enumerate(symbols):
             momentum_score = mom_ranks[i]
             value_score = value_ranks[i]
-            quality_score = quality_values[i]
+            quality_score = quality_ranks[i]
 
             composite = (
                 self.momentum_weight * momentum_score

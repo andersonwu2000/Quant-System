@@ -161,11 +161,15 @@ def _apply_turnover_penalty(
         current = float(current_weights.get(sym, 0.0)) if sym in current_weights.index else 0.0
         diff = target - current
 
-        # 換手率懲罰：如果差異太小不值得交易，就保持現狀
+        # 換手率懲罰：只有當交易成本超過目標信號強度（proxy for alpha）
+        # 且變動幅度較小時才保持現狀，避免無謂的微調交易。
+        # cost scales with |diff|, benefit uses |target| as alpha proxy.
         cost = abs(diff) * c.cost_bps / 10000 * 2  # 雙邊成本
-        benefit = abs(diff) * c.turnover_penalty
+        # Use target weight magnitude as proxy for alpha conviction;
+        # stronger targets justify higher transaction costs.
+        benefit = abs(target) * c.turnover_penalty
 
-        if cost > benefit and abs(diff) < c.max_weight * 0.5:
+        if benefit > 0 and cost > benefit and abs(diff) < c.max_weight * 0.5:
             # 成本大於收益，保持當前權重
             adjusted = current
         else:

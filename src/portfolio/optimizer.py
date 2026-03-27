@@ -506,8 +506,18 @@ class PortfolioOptimizer:
         daily_mu = mu / 252
         daily_sigma = sigma / 252
 
+        # Ensure numerical stability: force positive-definite via eigenvalue floor
+        eigvals, eigvecs = np.linalg.eigh(daily_sigma)
+        eigvals = np.maximum(eigvals, 1e-10)
+        daily_sigma = eigvecs @ np.diag(eigvals) @ eigvecs.T
+        # Symmetrize to avoid floating-point asymmetry
+        daily_sigma = (daily_sigma + daily_sigma.T) / 2
+
         for _ in range(cfg.resample_iterations):
-            sampled_returns = rng.multivariate_normal(daily_mu, daily_sigma, size=252)
+            try:
+                sampled_returns = rng.multivariate_normal(daily_mu, daily_sigma, size=252)
+            except np.linalg.LinAlgError:
+                continue
             sample_mu = sampled_returns.mean(axis=0) * 252
             sample_cov = np.cov(sampled_returns, rowvar=False) * 252
 
@@ -903,7 +913,11 @@ class PortfolioOptimizer:
         raw: dict[str, float],
         symbols: list[str],
     ) -> dict[str, float]:
-        """套用權重上下限約束。"""
+        """套用權重上下限約束。
+
+        Supports both long-only and long-short portfolios.
+        For long-short: negative weights are capped symmetrically at -max_weight.
+        """
         cfg = self.config
         w = dict(raw)
 
@@ -911,14 +925,21 @@ class PortfolioOptimizer:
             v = w.get(s, 0.0)
             if cfg.long_only:
                 v = max(v, 0.0)
+            else:
+                # #9: Symmetric cap for short positions
+                v = max(-cfg.max_weight, v)
             v = min(v, cfg.max_weight)
             if abs(v) < cfg.min_weight:
                 v = 0.0
             w[s] = v
 
         # 正規化
-        total = sum(w.values())
-        if total > 0:
-            w = {s: v / total for s, v in w.items() if v > 0}
+        if cfg.long_only:
+            total = sum(w.values())
+            if total > 0:
+                w = {s: v / total for s, v in w.items() if v > 0}
+        else:
+            # Long-short: keep both sides, remove zero-weight entries
+            w = {s: v for s, v in w.items() if v != 0.0}
 
         return w

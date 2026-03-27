@@ -65,6 +65,12 @@ class RiskModel:
 
         # 取最近 lookback 期
         r = returns.iloc[-cfg.lookback:].dropna(axis=1, how="all")
+        # fillna(0.0) treats missing returns as zero-return days. This introduces
+        # a slight downward bias in covariance for assets with sparse data, but is
+        # acceptable: (1) it keeps the covariance matrix well-defined (no NaN rows),
+        # (2) the bias is conservative (underestimates correlation → diversification),
+        # (3) Ledoit-Wolf shrinkage mitigates the effect. Alternative: pairwise
+        # complete observations — but that can produce non-PSD matrices.
         r = r.fillna(0.0)
 
         if r.shape[1] < 2:
@@ -479,7 +485,8 @@ def estimate_factor_covariance(
 
     # Residuals
     residuals = r_centered - F @ B.T  # (T, N)
-    Psi = np.diag(np.var(residuals, axis=0))  # diagonal idiosyncratic
+    # #18 fix: use ddof=1 for consistency with np.cov (which uses ddof=1 by default)
+    Psi = np.diag(np.var(residuals, axis=0, ddof=1))  # diagonal idiosyncratic
 
     # Structured covariance
     cov: npt.NDArray[np.float64] = B @ Sigma_f @ B.T + Psi

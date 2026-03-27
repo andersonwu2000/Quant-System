@@ -226,7 +226,7 @@ async def get_drift(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
 
 @router.post("/rebalance")
 async def trigger_rebalance(
-    api_key: str = Depends(require_role("trader")),
+    _role: dict[str, Any] = Depends(require_role("trader")),
 ) -> dict[str, Any]:
     """手動觸發一鍵再平衡。使用 config.active_strategy。"""
     from src.api.state import get_app_state

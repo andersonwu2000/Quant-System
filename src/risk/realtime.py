@@ -52,7 +52,12 @@ class RealtimeRiskMonitor:
     def on_price_update(self, symbol: str, price: Decimal) -> None:
         """Called on each tick — update portfolio prices and check risk.
 
-        Thread-safe: uses lock to protect portfolio mutation.
+        Thread-safe: uses portfolio.lock to protect portfolio mutation.
+        Portfolio.update_market_prices() also acquires portfolio.lock internally,
+        but since threading.Lock is reentrant-safe within the same thread (we call
+        update_market_prices while already holding the lock in this thread), we
+        call it directly on the dict to avoid nested lock acquisition.
+        No deadlock risk: Portfolio has a single threading.Lock and no other lock.
         """
         with self.portfolio.lock:
             # #4: 用台灣時間（UTC+8）判斷日期變更，避免 UTC midnight 提前 reset
@@ -65,8 +70,10 @@ class RealtimeRiskMonitor:
                 logger.info("RealtimeRiskMonitor auto-reset for new day %s", today_str)
             self._last_reset_date = today_str
 
-            # 1. Update portfolio market price
-            self.portfolio.update_market_prices({symbol: price})
+            # 1. Update portfolio market price (direct dict mutation to avoid
+            #    nested lock — update_market_prices() acquires portfolio.lock too)
+            if symbol in self.portfolio.positions:
+                self.portfolio.positions[symbol].market_price = price
             self._last_update = now
 
             # 2. Check intraday drawdown
@@ -76,6 +83,7 @@ class RealtimeRiskMonitor:
         if self._nav_high == 0:
             return
 
+        # Kill switch and alerts use current_nav snapshot taken inside lock — safe
         intraday_dd = (current_nav - self._nav_high) / self._nav_high
 
         # 3. Tiered alerts (outside lock to avoid blocking)

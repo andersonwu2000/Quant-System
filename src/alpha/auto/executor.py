@@ -111,11 +111,16 @@ class AlphaExecutor:
             logger.info("Pipeline produced empty weights — skipping execution")
             return ExecutionResult(target_weights={})
 
-        # 4. Convert to orders
+        # 4. Convert to orders — use price as of current_date (avoid look-ahead bias)
         prices: dict[str, Decimal] = {}
         for sym, df in data.items():
             if not df.empty:
-                prices[sym] = Decimal(str(float(df["close"].iloc[-1])))
+                if current_date is not None:
+                    available = df[df.index <= current_date]
+                    if not available.empty:
+                        prices[sym] = Decimal(str(float(available["close"].iloc[-1])))
+                else:
+                    prices[sym] = Decimal(str(float(df["close"].iloc[-1])))
 
         orders = weights_to_orders(
             target_weights=target_weights,

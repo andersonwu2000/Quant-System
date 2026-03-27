@@ -257,6 +257,7 @@ class StrategyValidator:
 
         # 8. Turnover + cost（兩邊都年化比較）
         # V2 fix: 用 gross alpha（net + cost）作為分母，而非 net return
+        # n_years uses calendar days / 365.25 (correct for annualization)
         n_years = max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
         annual_cost_rate = result.total_commission / cfg.initial_cash / n_years
         gross_alpha = result.annual_return + annual_cost_rate  # gross ≈ net + cost

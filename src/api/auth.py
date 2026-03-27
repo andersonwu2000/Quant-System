@@ -44,8 +44,8 @@ def verify_api_key(
             # 撤銷檢查：token 的 iat 必須 >= user 的 token_valid_after
             username = payload.get("sub", "")
             if username:
-                from src.api.user_store import get_user_store
-                user = get_user_store().get(username)
+                from src.data.user_store import get_user_store
+                user = get_user_store().get_by_username(username)
                 if user:
                     token_valid_after = user.get("token_valid_after")
                     token_iat = payload.get("iat")
@@ -157,10 +157,25 @@ def verify_jwt(
 
 
 def verify_ws_token(token: str) -> dict[str, Any] | None:
-    """驗證 WebSocket 連線的 JWT token，返回 payload 或 None。"""
+    """驗證 WebSocket 連線的 JWT token，返回 payload 或 None。
+
+    Includes token revocation check (token_valid_after) consistent with verify_api_key.
+    """
     config = get_config()
     try:
         result: dict[str, Any] = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
+        # Revocation check: token iat must be >= user's token_valid_after
+        username = result.get("sub", "")
+        if username and username != "api_key_user":
+            from src.data.user_store import get_user_store
+            user = get_user_store().get_by_username(username)
+            if user:
+                token_valid_after = user.get("token_valid_after")
+                token_iat = result.get("iat")
+                if token_valid_after and token_iat:
+                    valid_after_ts = datetime.fromisoformat(token_valid_after).timestamp()
+                    if token_iat < valid_after_ts:
+                        return None  # Token has been revoked
         return result
     except JWTError:
         return None

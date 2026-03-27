@@ -132,12 +132,13 @@ def quantile_backtest(
 
     quantile_returns = pd.DataFrame(quantile_returns_rows, index=used_dates)
 
-    # 平均報酬（年化 — 從實際交易日數推算，非硬編碼 252）
+    # 平均報酬（年化 — 從實際使用的交易日數推算，非硬編碼 252）
+    # #12 fix: use used_dates (dates that actually produced returns) not common_dates
     mean_returns = quantile_returns.mean()
-    if len(common_dates) >= 2:
-        calendar_days = (common_dates[-1] - common_dates[0]).days
+    if len(used_dates) >= 2:
+        calendar_days = (used_dates[-1] - used_dates[0]).days
         periods_per_year = (
-            len(common_dates) / (calendar_days / 365.25)
+            len(used_dates) / (calendar_days / 365.25)
             if calendar_days > 0
             else 252.0
         )
