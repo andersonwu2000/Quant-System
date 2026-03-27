@@ -365,6 +365,16 @@ class StrategyValidator:
         # V7 fix: 使用 config 的 fractional_shares 設定，而非強制 True
         # 台股用整張（fractional_shares=False）才能反映真實交易
         fractional = getattr(cfg, "fractional_shares", False)
+        # Validator 用寬鬆風控 — 目的是測試策略邏輯，不是測試風控規則
+        from src.risk.rules import (
+            max_position_weight, max_order_notional, daily_drawdown_limit,
+        )
+        validator_risk_rules = [
+            max_position_weight(0.15),       # 允許 15%/股（策略通常 10%）
+            max_order_notional(0.20),        # 單筆上限 20%
+            daily_drawdown_limit(0.05),      # 5% 日回撤
+        ]
+
         return BacktestConfig(
             universe=universe,
             start=start,
@@ -375,6 +385,7 @@ class StrategyValidator:
             rebalance_freq=cfg.rebalance_freq,  # type: ignore[arg-type]
             fractional_shares=fractional,
             market_lot_sizes={".TW": 1000, ".TWO": 1000},
+            risk_rules=validator_risk_rules,
             enable_kill_switch=True,
             kill_switch_cooldown="end_of_month",
             execution_delay=1,

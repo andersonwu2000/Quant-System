@@ -50,7 +50,33 @@
 
 修正 look-ahead bias 後，所有自動發現因子的大規模 ICIR 都不足 0.20。
 
-## 5. 結論
+## 5. StrategyValidator 13 項（revenue_momentum, TW50, 2019-2025）
+
+| # | Check | Value | Threshold | Result |
+|---|-------|-------|-----------|--------|
+| 1 | universe_size | 51 | >= 50 | PASS |
+| 2 | cagr | +9.56% | >= 8% | PASS |
+| 3 | sharpe | 0.926 | >= 0.7 | PASS |
+| 4 | max_drawdown | 33.37% | <= 50% | PASS |
+| 5 | annual_cost_ratio | 28% | < 50% | PASS |
+| 6 | walkforward_positive | 67% | >= 60% | PASS |
+| 7 | deflated_sharpe | 0.998 | N/A | PASS |
+| 8 | bootstrap_p(SR>0) | 99.8% | >= 80% | PASS |
+| 9 | oos_return (2025) | +34.81% | >= 0% | PASS |
+| 10 | vs_1n_excess | -13.07% | >= 0% | FAIL |
+| 11 | pbo | 0.500 | <= 0.50 | PASS |
+| 12 | worst_regime | -12.81% | >= -30% | PASS |
+| 13 | recent_period_sharpe | 0.458 | >= 0 | PASS |
+
+**12/13 通過**（唯一失敗：vs 0050 買入持有 -13.07%）
+
+Walk-Forward: 2022=-21.3%, 2023=+24.2%, 2024=+4.4%
+
+> 注意：Validator 使用寬鬆風控（max_position_weight=15%），因為策略目標權重 ~10%/股，
+> 而 config 預設 max_position_pct=5% 會擋住所有訂單。這是 Validator 測策略邏輯而非風控的設計。
+> 發現並修復了此問題（validator.py 現在自帶寬鬆 risk_rules）。
+
+## 6. 結論
 
 1. **revenue_acceleration 仍為最強因子**，ICIR(20d) +0.438，ICIR(60d) +0.582
 2. **revenue_new_high 為第二強**，ICIR(20d) +0.374，可考慮與 acceleration 組合
