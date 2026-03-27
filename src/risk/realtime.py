@@ -99,24 +99,34 @@ class RealtimeRiskMonitor:
                 f"KILL SWITCH: drawdown {intraday_dd:.1%}",
             )
             self._alerts_sent.add("kill_switch")
-            # Trigger kill switch + execute liquidation
+            # Trigger kill switch — schedule liquidation on event loop
+            # (不在 Shioaji 線程中直接操作 portfolio，避免和 asyncio 側的
+            #  mutation_lock 競爭。改為排程到 event loop 執行。)
             if self.risk_engine.kill_switch(self.portfolio):
                 liq_orders = self.risk_engine.generate_liquidation_orders(self.portfolio)
-                if liq_orders and self.execution_service is not None:
-                    try:
-                        trades = self.execution_service.submit_orders(liq_orders, self.portfolio)
-                        if trades:
-                            from src.execution.oms import apply_trades
-                            apply_trades(self.portfolio, trades)
-                            logger.critical(
-                                "Kill switch: %d liquidation trades executed, NAV=%s",
-                                len(trades), self.portfolio.nav,
-                            )
-                    except Exception:
-                        logger.exception("Kill switch liquidation failed")
+                if liq_orders and self.execution_service is not None and self._loop is not None:
+                    import asyncio
+
+                    async def _execute_liquidation(orders: list, svc: Any, pf: Any) -> None:
+                        try:
+                            trades = svc.submit_orders(orders, pf)
+                            if trades:
+                                from src.execution.oms import apply_trades
+                                apply_trades(pf, trades)
+                                logger.critical(
+                                    "Kill switch (tick): %d liquidation trades, NAV=%s",
+                                    len(trades), pf.nav,
+                                )
+                        except Exception:
+                            logger.exception("Kill switch liquidation failed")
+
+                    asyncio.run_coroutine_threadsafe(
+                        _execute_liquidation(liq_orders, self.execution_service, self.portfolio),
+                        self._loop,
+                    )
                 elif liq_orders:
                     logger.critical(
-                        "Kill switch: %d liquidation orders generated but no ExecutionService",
+                        "Kill switch: %d liquidation orders but no ExecutionService/loop",
                         len(liq_orders),
                     )
 
