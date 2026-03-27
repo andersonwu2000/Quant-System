@@ -317,7 +317,7 @@ ExecutionService(cost_model=cost)
 | W1.2 | daemon --daemon 模式（無限循環 + 自動變體） | ✅ 已完成 |
 | W1.3 | 因子 .py skip-if-exists（不覆寫外部寫入） | ✅ 已完成 |
 | W1.4 | memory.json 清空機制 | ✅ 已完成 |
-| W1.5 | 假說生成器的自動啟動腳本 | 🔲 待做 |
+| W1.5 | 假說生成器的自動啟動腳本 | ✅ scripts/start_research.bat |
 
 **預估**：W1.5 約 30 分鐘
 
@@ -348,11 +348,11 @@ API Server (已有)
 **實作項目**：
 | 步驟 | 說明 | 預估 |
 |------|------|:---:|
-| W2.1 | scripts/paper_trading_monitor.py — 輪詢 + 快照 | 1 hr |
-| W2.2 | 每日摘要報告生成（markdown） | 30 min |
-| W2.3 | 績效 vs 0050 追蹤 | 30 min |
-| W2.4 | 異常偵測 + 通知整合 | 30 min |
-| W2.5 | --daemon 模式持續運行 | 15 min |
+| W2.1 | scripts/paper_trading_monitor.py — 輪詢 + 快照 | ✅ |
+| W2.2 | 每日摘要報告生成（markdown） | ✅ |
+| W2.3 | 績效 vs 0050 追蹤 | ✅ |
+| W2.4 | 異常偵測 + 通知整合 | ✅ |
+| W2.5 | --daemon 模式持續運行 | ✅ |
 
 **預估**：約 3 小時
 
