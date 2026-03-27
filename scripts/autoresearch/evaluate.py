@@ -722,12 +722,81 @@ def main() -> None:
 
     if results["passed"]:
         print("\nstatus: PASSED (L5+ OOS validated)")
+        # Write deployment report (no API dependency)
+        _write_report(results)
         # Auto-submit to system pipeline for Validator + deploy
         _auto_submit(results)
     elif results["composite_score"] > 0:
         print(f"\nstatus: evaluated ({results['level']})")
     else:
         print("\nstatus: no_signal")
+
+
+def _write_report(results: dict) -> None:
+    """Write a factor report to docs/research/autoresearch/ when L5 passes.
+
+    No API dependency — runs purely from evaluate.py output.
+    """
+    try:
+        report_dir = PROJECT_ROOT / "docs" / "research" / "autoresearch"
+        report_dir.mkdir(parents=True, exist_ok=True)
+
+        # Read factor code
+        factor_path = Path(__file__).parent / "factor.py"
+        if not factor_path.exists():
+            factor_path = Path(__file__).parent / "work" / "factor.py"
+        factor_code = factor_path.read_text(encoding="utf-8") if factor_path.exists() else "(not found)"
+
+        # Extract name from git
+        name = "unknown"
+        try:
+            import subprocess
+            log = subprocess.run(
+                ["git", "log", "--oneline", "-1", "--format=%s"],
+                capture_output=True, text=True, timeout=5,
+                cwd=str(Path(__file__).parent),
+            )
+            if log.returncode == 0 and log.stdout.strip():
+                import re as _re
+                name = log.stdout.strip().replace("experiment: ", "")[:60]
+                name_safe = _re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+        except Exception:
+            name_safe = "unknown"
+
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        report_path = report_dir / f"{ts}_{name_safe}.md"
+
+        content = (
+            f"# Factor Report: {name}\n\n"
+            f"> Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"> Status: L5 OOS Validated\n\n"
+            f"## Metrics\n\n"
+            f"| Metric | Value |\n"
+            f"|--------|-------|\n"
+            f"| Composite Score | {results['composite_score']} |\n"
+            f"| IC (20d) | {results['ic_20d']} |\n"
+            f"| Best ICIR | {results['best_icir']} ({results['best_horizon']}) |\n"
+            f"| Fitness | {results['fitness']} |\n"
+            f"| Positive Years | {results['positive_years']}/{results['total_years']} |\n"
+            f"| Turnover | {results['avg_turnover']} |\n"
+            f"| Large-scale ICIR | {results['large_icir_20d']} |\n"
+            f"| Max Correlation | {results['max_correlation']} ({results['correlated_with']}) |\n\n"
+            f"## ICIR by Horizon\n\n"
+            f"| Horizon | ICIR |\n"
+            f"|---------|------|\n"
+        )
+        for h, icir in results["icir_by_horizon"].items():
+            content += f"| {h} | {icir} |\n"
+
+        content += (
+            f"\n## Factor Code\n\n"
+            f"```python\n{factor_code}```\n"
+        )
+
+        report_path.write_text(content, encoding="utf-8")
+        print(f"\nreport: {report_path}")
+    except Exception as e:
+        print(f"\n[WARN] report write failed: {e}")
 
 
 def _auto_submit(results: dict) -> None:
