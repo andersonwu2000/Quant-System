@@ -228,7 +228,7 @@ class FactorEvaluator:
 
     def _get_fwd(self, close: pd.DataFrame, horizon: int, cache: dict[int, pd.DataFrame]) -> pd.DataFrame:
         if horizon not in cache:
-            cache[horizon] = close.pct_change(horizon).shift(-horizon)
+            cache[horizon] = close.pct_change(horizon, fill_method=None).shift(-horizon)
         return cache[horizon]  # already a DataFrame from pct_change().shift()
 
     @staticmethod
