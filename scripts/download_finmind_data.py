@@ -164,6 +164,17 @@ def download_dataset(
                 if hasattr(df.index, "tz") and df.index.tz is not None:
                     df.index = df.index.tz_localize(None)
 
+            # Price dataset: merge with existing data (don't lose history)
+            if dataset_key == "price" and out_path.exists():
+                try:
+                    existing = pd.read_parquet(out_path)
+                    if not existing.empty:
+                        merged = pd.concat([existing, df])
+                        merged = merged[~merged.index.duplicated(keep="last")].sort_index()
+                        df = merged
+                except Exception:
+                    pass  # 合併失敗就用新數據覆蓋
+
             df.to_parquet(out_path)
             logger.info("  %s: %d 列 → %s", bare, len(df), out_path)
             success += 1

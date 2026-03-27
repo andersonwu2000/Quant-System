@@ -92,7 +92,9 @@ def _get_revenue_at(
     # 台灣月營收於次月 10 日前公布，例如 1 月營收最晚 2/10 公布
     # 保守使用 40 天 lag：date 欄位為營收月份（如 2024-01-01），
     # 實際公布約在 2024-02-10，距 2024-01-01 約 40 天
-    usable_cutoff = as_of - pd.DateOffset(days=40)
+    # Strip timezone to avoid tz-naive vs tz-aware comparison errors
+    as_of_naive = as_of.tz_localize(None) if as_of.tzinfo is not None else as_of
+    usable_cutoff = as_of_naive - pd.DateOffset(days=40)
     mask = df["date"] <= usable_cutoff
     available = df[mask]
     if len(available) < 12:

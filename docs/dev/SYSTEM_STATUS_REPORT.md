@@ -182,12 +182,13 @@
 | 7 | DSR | 0.846 | ❌ |
 | 8 | Bootstrap | 100% | ✅ |
 | 9 | OOS 2025 H2 | +37.0% | ✅ |
-| 10 | vs 1/N | +2.5% | ✅ |
-| 11 | PBO | 0% | ✅ |
-| 12 | Worst regime | -4.1% | ✅ |
-| 13 | Factor decay | -1.575 | ❌ |
+| 10 | vs 1/N | -14.23% | ❌ |
+| 11 | PBO | 0.167 | ✅ |
+| 12 | Worst regime | -17.27% | ✅ |
+| 13 | Factor decay (recent Sharpe) | 1.570 | ✅ |
 
-**通過 10/13。** 策略邊緣可行，尚無 Paper Trading 實績。詳見 `docs/dev/test/RESEARCH_SUMMARY.md`。
+**通過 12/13（2026-03-27 最新驗證）。** 唯一失敗: vs 0050 買入持有 (-14.23%)。
+OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/dev/test/20260327_rev_accel_validator.md`。
 
 ---
 
@@ -336,8 +337,8 @@ Research Pipeline（獨立，不操作 Portfolio）
 | 項目 | 狀態 | 影響 |
 |------|------|------|
 | CA 憑證（永豐金） | ⏳ 申請中 | 阻塞 Phase N5（完整實盤循環） |
-| Paper Trading 30 天驗證 | ⏳ 未開始 | 阻塞實盤決策 |
-| 策略驗證門檻邊緣 | ⚠️ 10/13 通過 | 需 Paper Trading 最終確認 |
+| Paper Trading 30 天驗證 | 🟡 就緒 | Shioaji 連線成功，策略產出正常 |
+| 策略驗證 | ✅ 12/13 通過 | vs 0050 失敗，其餘全過 |
 
 ---
 
@@ -384,4 +385,4 @@ Research Pipeline（獨立，不操作 Portfolio）
 - revenue_yoy ICIR 0.188（修正前 0.674，被高估 72%）
 - revenue_momentum Validator 10/13 通過（relaxed 版）
 - 策略邊緣可行（CAGR +14.3%, Sharpe 0.89），OOS 為負
-- **0 天 Paper Trading 實績 — 回測已到極限，需實盤驗證**
+- **Paper Trading 就緒（2026-03-27）— Shioaji 連線成功，策略選股正常，待啟動 API server**
