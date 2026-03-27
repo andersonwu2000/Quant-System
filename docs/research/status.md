@@ -1,17 +1,17 @@
 ﻿# Autoresearch Status Report
 
-> Updated: 2026-03-28 03:17:12
+> Updated: 2026-03-28 03:53:52
 
 ## Dashboard
 
 | Item | Value |
 |------|-------|
-| Agent | Running (Up 49 minutes) |
-| Watchdog | Running (Up 49 minutes) |
-| Experiments | 15 |
-| Keep / Discard / Crash | 2 / 13 / 0 |
-| L5 OOS Passed | 7 (46.7%) |
-| L0 Early Reject | 5 |
+| Agent | Running (Up 36 seconds) |
+| Watchdog | Running (Up 36 seconds) |
+| Experiments | 22 |
+| Keep / Discard / Crash | 2 / 20 / 0 |
+| L5 OOS Passed | 12 (54.5%) |
+| L0 Early Reject | 7 |
 | Deployed | 0 |
 | Best Score | 12.7635 |
 | Best Factor | OBV slope t-stat 63d (large_icir=0.0602 below threshold) |
@@ -20,6 +20,13 @@
 
 | Score | ICIR | Level | Status | Description |
 |------:|-----:|-------|--------|-------------|
+| 4.6323 | 0.3321 | L5 | discard | rolling Sharpe 63d quality momentum (L5 pass, corr=0.051 independent, composite below OBV) |
+| 0 | 0.0000 | L0 | discard | closing strength t-stat 63d (IC=0.019 just below L1 threshold) |
+| 0 | 0.0000 | L0 | discard | trust-net-buy ratio 20d with OBV fallback (IC=0.008, ratio normalization kills signal) |
+| 10.2261 | 0.5165 | L5 | discard | liquidity-conditional dvol>=300M (large_icir=0.4049 great Stage2, ICIR worse due to more 52wk usage) |
+| 11.6867 | 0.6265 | L5 | discard | liquidity-conditional OBV(liquid)/52wk(illiquid) dvol>=50M (large_icir=0.2037 PASSES Stage2, composite below OBV) |
+| 8.5727 | 0.4613 | L5 | discard | revenue accel 3M/6M + OBV fallback hybrid (composite below OBV) |
+| 10.123 | 0.5433 | L5 | discard | OBV + 52wk rank sum (large_icir=0.3567, composite below OBV) |
 | 0.51 | 0.1020 | L1 | discard | OTC intraday slope t-stat (ICIR=0.1020 too weak) |
 | 12.7635 | 0.6783 | L5 | discard | vol-win-rate slope (mathematically identical to OBV slope) |
 | 0 | 0.0000 | L0 | discard | CMF slope t-stat 63d (IC=0.0175, just below L1 threshold) |
@@ -50,6 +57,7 @@ None.
 ## Recent Commits
 
 ```
+aefb0d5 experiment: OBV slope t-stat 42d (shorter window than 63d)
 121a8c9 init: autoresearch workspace
 ```
 

@@ -6,7 +6,7 @@
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 
 $WorkDir = "D:\Finance\docker\autoresearch\work"
-$OutFile = "D:\Finance\docs\research\autoresearch\status.md"
+$OutFile = "D:\Finance\docs\research\status.md"
 $Now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 # --- Gather data ---

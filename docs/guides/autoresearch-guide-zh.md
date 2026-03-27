@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File scripts/autoresearch/run.ps1
 
 一鍵啟動全部：Docker 容器 + 狀態報告（每 10 分鐘）+ 因子研究循環。
 
-狀態報告自動更新到 `docs/research/autoresearch/status.md`。
+狀態報告自動更新到 `docs/research/status.md`。
 
 > 也可以只跑研究不跑報告：`powershell -File scripts/autoresearch/loop-docker.ps1`
 
@@ -49,7 +49,7 @@ docker compose down
 | 操作 | 指令 |
 |------|------|
 | 查看實驗進度 | `cat docker/autoresearch/work/results.tsv` |
-| 查看狀態報告 | `powershell -File scripts/autoresearch/status.ps1` 然後開 `docs/research/autoresearch/status.md` |
+| 查看狀態報告 | `powershell -File scripts/autoresearch/status.ps1` 然後開 `docs/research/status.md` |
 | 查看 Watchdog 日誌 | `docker logs autoresearch-watchdog --tail 20` |
 | 查看容器狀態 | `docker compose -f docker/autoresearch/docker-compose.yml ps` |
 | 重啟容器 | `docker compose -f docker/autoresearch/docker-compose.yml restart` |
@@ -73,9 +73,10 @@ docker compose down
 部署成功的因子會自動產生報告：
 
 ```
-docs/research/autoresearch/
+docs/research/
 ├── status.md                              ← 狀態報告（status.ps1 生成）
-└── 20260328_143000_dual_sharpe_12_8.md    ← 部署報告（自動生成）
+└── autoresearch/
+    └── 20260328_143000_dual_sharpe_12_8.md    ← 部署報告（自動生成）
 ```
 
 報告包含：指標、Validator 15 項結果、因子原始碼。
