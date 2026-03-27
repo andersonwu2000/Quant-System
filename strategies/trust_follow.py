@@ -139,7 +139,7 @@ class TrustFollowStrategy(Strategy):
                 if rev_df.empty or len(rev_df) < 12:
                     continue
 
-                revenues = rev_df["revenue"].values
+                revenues = np.asarray(rev_df["revenue"])
 
                 # 3M avg hits 12M high
                 rev_3m_avg = float(np.asarray(revenues[-3:]).mean()) if len(revenues) >= 3 else 0
@@ -151,7 +151,7 @@ class TrustFollowStrategy(Strategy):
                     continue
 
                 # 營收 YoY
-                yoy_values = rev_df["yoy_growth"].values
+                yoy_values = np.asarray(rev_df["yoy_growth"])
                 latest_yoy = float(yoy_values[-1]) if len(yoy_values) > 0 else 0
 
                 if latest_yoy < self.min_yoy_growth:

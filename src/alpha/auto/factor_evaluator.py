@@ -229,7 +229,7 @@ class FactorEvaluator:
     def _get_fwd(self, close: pd.DataFrame, horizon: int, cache: dict[int, pd.DataFrame]) -> pd.DataFrame:
         if horizon not in cache:
             cache[horizon] = close.pct_change(horizon).shift(-horizon)
-        return pd.DataFrame(cache[horizon])
+        return cache[horizon]  # already a DataFrame from pct_change().shift()
 
     @staticmethod
     def _compute_ic(factor: pd.DataFrame, fwd: pd.DataFrame) -> float:
@@ -300,7 +300,7 @@ class FactorEvaluator:
         top_quintile = ranks >= (1 - 1.0 / n_quantiles)
 
         changes: float = 0.0
-        total = 0
+        total: int = 0
         prev = None
         # 月頻取樣（每 20 天），對應月度再平衡
         for i in range(0, len(top_quintile), 20):

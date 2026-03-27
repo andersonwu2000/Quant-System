@@ -80,7 +80,7 @@ def quantile_backtest(
     turnover_sums: dict[str, float] = {q: 0.0 for q in q_labels}
     turnover_counts = 0
 
-    used_dates: list[Any] = []
+    used_dates: list[pd.Timestamp] = []
 
     for dt in common_dates:
         fv = factor_values.loc[dt, common_symbols].dropna()

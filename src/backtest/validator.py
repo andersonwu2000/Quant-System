@@ -393,7 +393,7 @@ class StrategyValidator:
         cfg = self.config
         start_year = int(start[:4])
         end_year = int(end[:4])
-        results = []
+        results: list[dict[str, Any]] = []
 
         # Generate windows
         for test_year in range(start_year + cfg.wf_train_years, end_year + 1):
@@ -412,7 +412,7 @@ class StrategyValidator:
                     "trades": r.total_trades,
                 })
             except Exception as e:
-                results.append({"year": test_year, "sharpe": 0.0, "error": str(e)})  # type: ignore[dict-item]
+                results.append({"year": test_year, "sharpe": 0.0, "error": str(e)})
 
         return results
 
