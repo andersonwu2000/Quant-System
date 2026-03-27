@@ -23,7 +23,7 @@ Repeat until the human interrupts you:
    - If composite_score > previous best → `status=keep`, factor is promising
    - If composite_score <= previous best → `status=discard`, `git reset --hard HEAD~1`
    - If crash → `status=crash`, `git reset --hard HEAD~1`, log error
-   - If `level=L4` and `passed=True` → tag: `git tag factor-<name>` (preserve for later)
+   - If `level=L5` and `passed=True` → tag: `git tag factor-<name>` (preserve for later)
 8. **Go to step 1**
 
 ## What You Can Do
@@ -34,32 +34,69 @@ Repeat until the human interrupts you:
 - Try different lookback windows, normalization methods, transformations
 - Create composite factors (rank(A) * rank(B))
 
+## SECURITY — Strict File Access Rules
+
+**You may ONLY modify these 2 files. This is a hard rule, not a suggestion:**
+
+| File | Permission | Purpose |
+|------|-----------|---------|
+| `scripts/autoresearch/factor.py` | READ + WRITE | Your experiment code |
+| `scripts/autoresearch/results.tsv` | READ + WRITE | Experiment log |
+
+**ALL other files are READ-ONLY. You must NEVER:**
+
+- Edit, Write, or overwrite `evaluate.py`, `program.md`, or ANY file outside the 2 above
+- Create new files anywhere in the repository
+- Delete or move any existing file
+- Run `rm`, `mv`, `cp`, `sed -i`, `echo >`, `tee`, or any command that writes to files other than the 2 above
+- Run `pip install`, `npm install`, or any package manager
+- Access network, download data, or call external APIs
+- Run arbitrary Python scripts other than `evaluate.py`
+
+**Git commands are limited to:**
+- `git add scripts/autoresearch/factor.py`
+- `git commit -m "..."`
+- `git reset --hard HEAD~1`
+- `git tag factor-<name>`
+- `git log`
+
 ## What You Cannot Do
 
-- Edit `evaluate.py` — this is the fixed evaluation harness (READ ONLY)
+- Edit `evaluate.py` — this is the fixed evaluation harness (READ ONLY, OS-enforced)
 - Install new packages — only use what's already available (numpy, pandas, scipy)
 - Access data beyond what's in the `data` dict — evaluate.py controls data access
 - Skip the evaluation — every idea must be tested
 - Bypass the 40-day revenue delay — evaluate.py enforces this before calling your code
+- Create files in `src/`, `docs/`, `strategies/`, or anywhere outside autoresearch/
 
 ## Evaluation Pipeline (what evaluate.py does)
 
-Your factor goes through 5 gates. **L1 fails fast (~30s instead of ~3min).**
+Your factor goes through 6 gates. **L1 fails fast (~30s instead of ~3min).**
 
 ```
-L1: |IC_20d| >= 0.02            — tested on first 30 dates only (early exit)
-L2: |ICIR| >= 0.15              — full evaluation, all horizons (5/10/20/60d)
+L1: |IC_20d| >= 0.02            — tested on first 30 IS dates only (early exit)
+L2: |ICIR| >= 0.15              — full IS evaluation, all horizons (5/10/20/60d)
 L3: dedup corr <= 0.50          — IC-series correlation with known factors
-    positive_years >= 5/8       — yearly stability
+    positive_years >= 4/6.5     — yearly stability (IS period: 2017 to mid-2023)
 L4: fitness >= 3.0              — WorldQuant BRAIN formula
-Stage 2: large_icir_20d >= 0.20 — 865+ symbols (only if L4 passed)
+L5: OOS holdout validation      — 2023-07 to 2024-12 (agent never sees this data)
+    IC sign consistency         — OOS IC must have same sign as IS IC
+    ICIR decay <= 60%           — OOS |ICIR| >= IS |ICIR| * 0.40
+    positive months >= 50%      — at least half the OOS months are positive
+Stage 2: large_icir_20d >= 0.20 — 865+ symbols (only if L5 passed)
 ```
+
+**L1-L4 use IN-SAMPLE data only (2017 to mid-2023). L5 validates on a HOLDOUT period
+(mid-2023 to end-2024) that your factor never sees during development. This prevents
+overfitting from running many experiments — no matter how many trials you run, L5 is
+an independent check on unseen data.**
 
 If your factor fails L1, it's a weak signal — try a completely different approach.
 If it fails L2, the signal exists but isn't stable — try smoothing or different windows.
 If it fails L3 (dedup), you reinvented an existing factor — try something genuinely new.
 If it fails L3 (stability), the signal is regime-dependent — try regime-conditional logic.
-If it passes L4 but fails Stage 2, it works on blue chips but not broadly — niche factor.
+If it fails L5 (OOS), the factor is overfit to IS — it looked good in-sample but doesn't generalize.
+If it passes L5 but fails Stage 2, it works on blue chips but not broadly — niche factor.
 
 ## Available Data
 

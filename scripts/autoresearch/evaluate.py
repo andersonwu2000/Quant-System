@@ -35,6 +35,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 REVENUE_DELAY_DAYS = 40        # Taiwan monthly revenue publication delay
 MIN_SYMBOLS = 30               # Minimum symbols per date for valid IC
 EVAL_START = "2017-01-01"      # Evaluation period start
+IS_END = "2023-06-30"          # In-sample period end (L1-L4)
+OOS_START = "2023-07-01"       # Out-of-sample period start (L5)
 EVAL_END = "2024-12-31"        # Evaluation period end
 SAMPLE_FREQ_DAYS = 20          # Sample IC every 20 trading days
 FORWARD_HORIZONS = [5, 10, 20, 60]  # Forward return horizons (trading days)
@@ -43,8 +45,12 @@ FORWARD_HORIZONS = [5, 10, 20, 60]  # Forward return horizons (trading days)
 MIN_IC_L1 = 0.02              # L1: minimum |IC_20d| — fast reject
 MIN_ICIR_L2 = 0.15            # L2: minimum ICIR (best horizon)
 MAX_CORRELATION = 0.50         # L3: max IC-series correlation with known factors
-MIN_POSITIVE_YEARS = 5         # L3: minimum years with positive mean IC
+MIN_POSITIVE_YEARS = 4         # L3: minimum years with positive mean IC (IS=6.5yr)
 MIN_FITNESS = 3.0              # L4: minimum WorldQuant BRAIN fitness
+
+# L5: OOS validation thresholds (Phase X anti-overfitting)
+OOS_ICIR_DECAY_MAX = 0.60     # OOS |ICIR| must be >= IS |ICIR| * (1 - decay)
+OOS_MIN_POSITIVE_RATIO = 0.50 # OOS months with positive IC >= 50%
 
 # Dedup: known good factors' IC series (from legacy L3 check)
 DEDUP_FACTORS_FILE = PROJECT_ROOT / "data" / "research" / "baseline_ic_series.json"
@@ -310,13 +316,14 @@ def _check_dedup(ic_series_20d: list[float], known: dict[str, list[float]]) -> t
 def evaluate() -> dict:
     """Run the full evaluation pipeline with early-exit gates.
 
-    Stage 1: Core universe (50 symbols) — fast screening
+    Stage 1: Core universe (50 symbols), IN-SAMPLE period — fast screening
       L1: |IC_20d| >= 0.02     (early exit if fail — saves ~2 min)
       L2: |ICIR| >= 0.15
       L3: dedup correlation <= 0.50, yearly stability
       L4: fitness >= 3.0
+      L5: OOS holdout validation (IC sign, ICIR decay, monthly stability)
 
-    Stage 2 (if L4 passed): Large universe (865+ symbols) — confirmation
+    Stage 2 (if L5 passed): Large universe (865+ symbols) — confirmation
       Recompute ICIR on full universe, require ICIR(20d) >= 0.20
     """
     from factor import compute_factor
@@ -326,15 +333,22 @@ def evaluate() -> dict:
     bars = data["bars"]
     known_ics = _load_dedup_ic_series()
 
-    # Build sample dates
+    # Build sample dates — split into IS and OOS
     all_dates: set[pd.Timestamp] = set()
     for df in bars.values():
         all_dates |= set(df.index)
     eval_dates = sorted(d for d in all_dates
                         if pd.Timestamp(EVAL_START) <= d <= pd.Timestamp(EVAL_END))
-    sample_dates = eval_dates[::SAMPLE_FREQ_DAYS]
 
-    print(f"Stage 1: {len(sample_dates)} dates, {len(bars)} symbols")
+    is_dates = [d for d in eval_dates if d <= pd.Timestamp(IS_END)]
+    oos_dates = [d for d in eval_dates if pd.Timestamp(OOS_START) <= d <= pd.Timestamp(EVAL_END)]
+    is_sample = is_dates[::SAMPLE_FREQ_DAYS]
+    oos_sample = oos_dates[::SAMPLE_FREQ_DAYS]
+
+    # L1-L4 use IS only; L5 uses OOS
+    sample_dates = is_sample
+
+    print(f"Stage 1: {len(is_sample)} IS dates + {len(oos_sample)} OOS dates, {len(bars)} symbols")
 
     # ── Stage 1: L1 early screening (20d IC only, first 30 dates) ──
     t0 = time.time()
@@ -482,6 +496,74 @@ def evaluate() -> dict:
 
     print(f"  L4 passed: ICIR={best_icir:.4f}, fitness={fitness:.2f}")
 
+    # ── L5: Out-of-Sample Validation (Phase X anti-overfitting) ──
+    oos_ics_20d: list[float] = []
+    oos_ic_by_month: dict[str, list[float]] = {}
+
+    if oos_sample:
+        print(f"\n  L5 OOS validation: {len(oos_sample)} dates ({OOS_START} to {EVAL_END})")
+        for as_of in oos_sample:
+            masked_data = _mask_data(data, as_of)
+            active = [s for s in universe if s in bars and as_of in bars[s].index]
+            if len(active) < MIN_SYMBOLS:
+                continue
+            try:
+                values = compute_factor(active, as_of, masked_data)
+            except Exception:
+                continue
+            values = {k: v for k, v in (values or {}).items()
+                      if isinstance(v, (int, float)) and np.isfinite(v)}
+            if len(values) < MIN_SYMBOLS:
+                continue
+            fwd = _compute_forward_returns(bars, as_of, 20)
+            ic = _compute_ic(values, fwd)
+            if ic is not None:
+                oos_ics_20d.append(ic)
+                month_key = as_of.strftime("%Y-%m")
+                oos_ic_by_month.setdefault(month_key, []).append(ic)
+
+    oos_ic_mean = float(np.mean(oos_ics_20d)) if oos_ics_20d else 0.0
+    oos_ic_std = float(np.std(oos_ics_20d, ddof=1)) if len(oos_ics_20d) > 1 else 1.0
+    oos_icir = oos_ic_mean / oos_ic_std if oos_ic_std > 0 else 0.0
+    oos_positive_months = sum(
+        1 for ics in oos_ic_by_month.values() if np.mean(ics) > 0
+    )
+    oos_total_months = len(oos_ic_by_month)
+    oos_positive_ratio = oos_positive_months / oos_total_months if oos_total_months > 0 else 0.0
+
+    is_ic_sign = 1 if ic_20d >= 0 else -1
+    oos_ic_sign = 1 if oos_ic_mean >= 0 else -1
+
+    # L5 gate checks
+    l5_failure = ""
+    if is_ic_sign != oos_ic_sign:
+        l5_failure = f"OOS IC sign flip: IS={ic_20d:.4f}, OOS={oos_ic_mean:.4f}"
+    elif abs(best_icir) > 0 and abs(oos_icir) < abs(best_icir) * (1 - OOS_ICIR_DECAY_MAX):
+        l5_failure = (f"OOS ICIR decay too large: IS={best_icir:.4f}, OOS={oos_icir:.4f}, "
+                      f"decay={1 - abs(oos_icir)/abs(best_icir):.0%} > {OOS_ICIR_DECAY_MAX:.0%}")
+    elif oos_positive_ratio < OOS_MIN_POSITIVE_RATIO and oos_total_months >= 6:
+        l5_failure = (f"OOS positive months {oos_positive_months}/{oos_total_months} "
+                      f"({oos_positive_ratio:.0%}) < {OOS_MIN_POSITIVE_RATIO:.0%}")
+
+    print(f"  OOS ICIR(20d): {oos_icir:.4f} (IS: {best_icir:.4f}, "
+          f"decay: {1 - abs(oos_icir)/abs(best_icir):.0%})" if abs(best_icir) > 0
+          else f"  OOS ICIR(20d): {oos_icir:.4f}")
+    print(f"  OOS positive months: {oos_positive_months}/{oos_total_months}")
+
+    if l5_failure:
+        return _make_result(
+            level="L4", failure=f"L5 OOS fail: {l5_failure}",
+            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+            fitness=fitness, positive_years=positive_years, total_years=total_years,
+            max_correlation=max_corr, correlated_with=corr_with,
+            oos_icir=oos_icir, oos_positive_months=oos_positive_months,
+            oos_total_months=oos_total_months,
+            elapsed=time.time() - t0,
+        )
+
+    print(f"  L5 passed: OOS validated")
+
     # ── Stage 2: Large-scale IC verification (865+ symbols) ──
     large_icir_20d = 0.0
     large_universe = _load_universe(large=True)
@@ -527,12 +609,14 @@ def evaluate() -> dict:
     elapsed = time.time() - t0
 
     return _make_result(
-        level="L4", passed=True,
+        level="L5", passed=True,
         ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
         icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
         fitness=fitness, positive_years=positive_years, total_years=total_years,
         max_correlation=max_corr, correlated_with=corr_with,
         large_icir_20d=large_icir_20d,
+        oos_icir=oos_icir, oos_positive_months=oos_positive_months,
+        oos_total_months=oos_total_months,
         elapsed=elapsed,
     )
 
@@ -548,6 +632,7 @@ def _make_result(
     fitness: float = 0.0, positive_years: int = 0, total_years: int = 0,
     max_correlation: float = 0.0, correlated_with: str = "",
     large_icir_20d: float = 0.0, elapsed: float = 0.0,
+    oos_icir: float = 0.0, oos_positive_months: int = 0, oos_total_months: int = 0,
 ) -> dict:
     composite = (
         abs(best_icir) * 5.0
@@ -570,6 +655,9 @@ def _make_result(
         "max_correlation": round(max_correlation, 3),
         "correlated_with": correlated_with,
         "large_icir_20d": round(large_icir_20d, 4),
+        "oos_icir": round(oos_icir, 4),
+        "oos_positive_months": oos_positive_months,
+        "oos_total_months": oos_total_months,
         "elapsed_seconds": round(elapsed, 1),
     }
 
@@ -580,8 +668,9 @@ def _make_result(
 
 def main() -> None:
     print("=" * 60)
-    print("Alpha Factor Evaluation Harness v2 (READ ONLY)")
-    print("  L1 early-exit | IC-series dedup | large-scale verification")
+    print("Alpha Factor Evaluation Harness v3 (READ ONLY)")
+    print("  L1-L4 in-sample | L5 OOS holdout | large-scale verification")
+    print(f"  IS: {EVAL_START} to {IS_END} | OOS: {OOS_START} to {EVAL_END}")
     print("=" * 60)
 
     try:
@@ -605,6 +694,8 @@ def main() -> None:
     print(f"positive_years:   {results['positive_years']}/{results['total_years']}")
     print(f"max_correlation:  {results['max_correlation']:.3f} ({results['correlated_with']})")
     print(f"large_icir_20d:   {results['large_icir_20d']:.4f}")
+    print(f"oos_icir:         {results['oos_icir']:.4f}")
+    print(f"oos_months:       {results['oos_positive_months']}/{results['oos_total_months']}")
     print(f"level:            {results['level']}")
     print(f"passed:           {results['passed']}")
     if results["failure"]:
@@ -615,7 +706,7 @@ def main() -> None:
         print(f"icir_{h}:          {icir:.4f}")
 
     if results["passed"]:
-        print("\nstatus: PASSED (L4+)")
+        print("\nstatus: PASSED (L5+ OOS validated)")
         # Auto-submit to system pipeline for Validator + deploy
         _auto_submit(results)
     elif results["composite_score"] > 0:
