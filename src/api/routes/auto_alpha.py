@@ -652,3 +652,140 @@ async def get_factor_pool(
         excluded_factors=[],
         total_available=len(all_names),
     )
+
+
+# ── Autoresearch Integration ────────────────────────────────
+
+
+class SubmitFactorRequest(BaseModel):
+    """autoresearch session 提交通過 L4 的因子。"""
+    name: str = Field(..., description="Factor name (e.g. 'rev_accel_trust_combo')")
+    code: str = Field(..., description="factor.py content")
+    composite_score: float = Field(..., description="evaluate.py composite_score")
+    icir_20d: float = 0.0
+    large_icir_20d: float = 0.0
+    description: str = ""
+
+
+class SubmitFactorResponse(BaseModel):
+    status: str
+    validator_passed: int = 0
+    validator_total: int = 0
+    deployed: bool = False
+    message: str = ""
+
+
+@router.post("/submit-factor", response_model=SubmitFactorResponse)
+async def submit_factor(
+    req: SubmitFactorRequest,
+    _role: dict[str, Any] = Depends(require_role("researcher")),
+) -> SubmitFactorResponse:
+    """autoresearch session 提交因子 → 跑 Validator 15 項 → 自動部署。
+
+    流程：
+    1. 保存 factor.py 到 src/strategy/factors/research/{name}.py
+    2. 用 strategy_builder 包裝成 Strategy
+    3. 跑 StrategyValidator 15 項
+    4. 通過門檻 → 部署到 paper trading
+    """
+    from pathlib import Path
+    import importlib.util
+
+    factor_dir = Path("src/strategy/factors/research")
+    factor_dir.mkdir(parents=True, exist_ok=True)
+    factor_path = factor_dir / f"{req.name}.py"
+
+    # 1. 保存因子代碼
+    factor_path.write_text(req.code, encoding="utf-8")
+    logger.info("Factor submitted: %s (score=%.2f)", req.name, req.composite_score)
+
+    # 2. 驗證可載入
+    try:
+        spec = importlib.util.spec_from_file_location(f"research_{req.name}", factor_path)
+        if spec is None or spec.loader is None:
+            return SubmitFactorResponse(status="error", message="Cannot load factor module")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        compute_fn = getattr(mod, f"compute_{req.name}", None) or getattr(mod, "compute_factor", None)
+        if compute_fn is None:
+            return SubmitFactorResponse(status="error", message="No compute function found")
+    except Exception as e:
+        return SubmitFactorResponse(status="error", message=f"Load error: {e}")
+
+    # 3. 跑 StrategyValidator
+    try:
+        from src.alpha.auto.strategy_builder import build_from_research_factor
+        from src.backtest.validator import StrategyValidator, ValidationConfig
+
+        strategy = build_from_research_factor(factor_name=req.name, top_n=15)
+        market_dir = Path("data/market")
+        universe = sorted([
+            p.stem.replace("_1d", "")
+            for p in market_dir.glob("*.TW_1d.parquet")
+            if not p.stem.startswith("00")
+            and len(list(open(str(p), "rb").read(1) for _ in [1])) > 0
+        ])
+        # 過濾太短的
+        import pandas as pd
+        good_universe = []
+        for sym in universe[:200]:  # cap for speed
+            try:
+                df = pd.read_parquet(market_dir / f"{sym}_1d.parquet")
+                if len(df) >= 500:
+                    good_universe.append(sym)
+            except Exception:
+                continue
+
+        config = ValidationConfig(
+            min_cagr=0.08, min_sharpe=0.7, max_drawdown=0.40,
+            n_trials=1, oos_start="2025-01-01", oos_end="2025-12-31",
+            initial_cash=10_000_000, min_universe_size=50,
+            wf_train_years=2,
+        )
+
+        validator = StrategyValidator(config)
+        report = validator.validate(strategy, good_universe, "2018-01-01", "2025-12-31")
+
+        n_passed = report.n_passed
+        n_total = report.n_total
+        logger.info("Validator: %s %d/%d", req.name, n_passed, n_total)
+
+    except Exception as e:
+        logger.exception("Validator failed for %s", req.name)
+        return SubmitFactorResponse(
+            status="validator_error",
+            message=f"Validator error: {e}",
+        )
+
+    # 4. 部署判定
+    deployed = False
+    # excl DSR ≥ 14
+    checks = report.checks
+    n_excl_dsr = sum(1 for c in checks if c.passed or c.name == "deflated_sharpe")
+    dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
+
+    if n_excl_dsr >= 14 and dsr_val >= 0.70:
+        try:
+            from src.alpha.auto.paper_deployer import PaperDeployer
+            deployer = PaperDeployer()
+            can, reason = deployer.can_deploy()
+            if can:
+                deployer.deploy(
+                    name=f"auto_{req.name}",
+                    factor_name=req.name,
+                    total_nav=10_000_000,
+                )
+                deployed = True
+                logger.info("Auto-deployed: %s", req.name)
+            else:
+                logger.info("Cannot deploy %s: %s", req.name, reason)
+        except Exception as e:
+            logger.warning("Deploy failed for %s: %s", req.name, e)
+
+    return SubmitFactorResponse(
+        status="completed",
+        validator_passed=n_passed,
+        validator_total=n_total,
+        deployed=deployed,
+        message=f"{'Deployed' if deployed else 'Not deployed'} ({n_passed}/{n_total})",
+    )

@@ -601,10 +601,57 @@ def main() -> None:
 
     if results["passed"]:
         print("\nstatus: PASSED (L4+)")
+        # Auto-submit to system pipeline for Validator + deploy
+        _auto_submit(results)
     elif results["composite_score"] > 0:
         print(f"\nstatus: evaluated ({results['level']})")
     else:
         print("\nstatus: no_signal")
+
+
+def _auto_submit(results: dict) -> None:
+    """Submit passed factor to API for Validator 15-check + auto-deploy."""
+    try:
+        import requests
+        factor_code = Path(__file__).parent.joinpath("factor.py").read_text(encoding="utf-8")
+        # Extract factor name from git log or use generic
+        name = f"autoresearch_{int(time.time())}"
+        try:
+            import subprocess
+            log = subprocess.run(
+                ["git", "log", "--oneline", "-1", "--format=%s"],
+                capture_output=True, text=True, timeout=5,
+                cwd=str(Path(__file__).parent),
+            )
+            if log.returncode == 0 and log.stdout.strip():
+                raw = log.stdout.strip().replace("experiment: ", "").replace(" ", "_")[:40]
+                name = f"ar_{raw}"
+        except Exception:
+            pass
+
+        resp = requests.post(
+            "http://127.0.0.1:8000/api/v1/auto-alpha/submit-factor",
+            json={
+                "name": name,
+                "code": factor_code,
+                "composite_score": results["composite_score"],
+                "icir_20d": results["icir_by_horizon"].get("20d", 0),
+                "large_icir_20d": results["large_icir_20d"],
+                "description": f"autoresearch L4+ (score={results['composite_score']:.2f})",
+            },
+            headers={"X-API-Key": "dev-key"},
+            timeout=300,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            print("\n--- SYSTEM PIPELINE ---")
+            print(f"validator: {data.get('validator_passed', '?')}/{data.get('validator_total', '?')}")
+            print(f"deployed:  {data.get('deployed', False)}")
+            print(f"message:   {data.get('message', '')}")
+        else:
+            print(f"\n[WARN] submit-factor failed: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        print(f"\n[WARN] auto-submit failed: {e} (API server may not be running)")
 
 
 if __name__ == "__main__":
