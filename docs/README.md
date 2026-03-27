@@ -22,6 +22,7 @@
 | `user-guide-zh.md` | 使用指南（策略、CLI、因子庫） |
 | `developer-guide-zh.md` | 開發指南（架構、模組、新增策略/因子） |
 | `api-reference-zh.md` | API 端點參考（117 端點） |
+| `autoresearch-guide-zh.md` | 自動因子研究操作指南（啟動/停止/監控/故障排除） |
 
 ## Claude Code 參考（`claude/`）
 
