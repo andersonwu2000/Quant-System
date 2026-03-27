@@ -64,7 +64,7 @@ Keep updates minimal — only touch sections affected by the change.
 
 ### 關鍵檔案（修改前必須看 `.claude/hooks/pre-edit-check.md`）
 - `src/backtest/analytics.py` — Sharpe/Sortino/CAGR/MDD/DSR
-- `src/backtest/validator.py` — 13 項驗證閘門
+- `src/backtest/validator.py` — 15 項驗證閘門
 - `src/backtest/engine.py` — NAV/cash/settlement/execution
 - `src/execution/broker/simulated.py` — 成本模型
 - `src/strategy/research.py` — IC/ICIR/forward returns

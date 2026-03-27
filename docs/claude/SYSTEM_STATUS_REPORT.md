@@ -14,7 +14,7 @@
 |------|------|
 | 後端 Python 檔案 | ~160 |
 | 後端 LOC | ~29,000 |
-| 測試數量 | **1,707**（含 16 個管線整合測試） |
+| 測試數量 | **1,725） |
 | API 端點 | **117**（16 路由模組） |
 | Alpha 因子 | **83**（66 技術 + 17 基本面） |
 | 策略 | **13** |
@@ -32,7 +32,7 @@
 |------|:----:|---------|
 | `src/api/` | 24 | 117 REST 端點 + WebSocket 5 頻道 + JWT/RBAC |
 | `src/alpha/` | 25 | Alpha Pipeline + FilterStrategy + Regime + Attribution + Auto-Alpha（9 子模組） |
-| `src/backtest/` | 12 | BacktestEngine + 40+ 指標 + WF/PBO/DSR + StrategyValidator（13 項閘門） |
+| `src/backtest/` | 12 | BacktestEngine + 40+ 指標 + WF/PBO/DSR + StrategyValidator（15 項閘門） |
 | `src/strategy/` | 12 | 83 因子 + 3 最佳化器 + Registry（13 策略） |
 | `src/portfolio/` | 4 | 14 最佳化方法 + 風險模型（LW/GARCH/PCA）+ 幣別對沖 |
 | `src/execution/` | 16 | SimBroker + SinopacBroker + TWAP + OMS + 對帳 |
@@ -167,7 +167,7 @@
 
 ## 5. 驗證狀態
 
-### StrategyValidator 13 項（revenue_momentum relaxed, 313 支 × 2018-2025）
+### StrategyValidator 15 項（revenue_momentum relaxed, 313 支 × 2018-2025）
 
 > **注意**：以下為真實性修正後數值（40 天營收延遲 + 漲跌停 + ADV 限制 + 整張交易）
 
@@ -187,7 +187,7 @@
 | 12 | Worst regime | -17.27% | ✅ |
 | 13 | Factor decay (recent Sharpe) | 1.570 | ✅ |
 
-**通過 12/13（2026-03-27 最新驗證）。** 唯一失敗: vs 0050 買入持有 (-14.23%)。
+**通過 14/15（實驗 #21，2026-03-27）。唯一失敗: OOS 2025 Sharpe -1.199。
 OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/research/20260327_rev_accel_validator.md`。
 
 ---
@@ -285,7 +285,7 @@ OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/research/202603
 
 | 項目 | 數值 |
 |------|------|
-| pytest 測試數 | 1,707 passed |
+| pytest 測試數 | 1,725 passed |
 | ruff lint | 0 errors |
 | CI jobs | 9（lint + test + typecheck + build + e2e + android + release） |
 
@@ -361,7 +361,7 @@ Research Pipeline（獨立，不操作 Portfolio）
 | 樣本外驗證 (OOS) | ✅ | Walk-Forward 年度 OOS + OOS 2025 H2（Validator 第 6、9 項） |
 | 多市場、多時間段壓力測試 | ⚠️ | 有 worst regime 檢查（Validator 第 12 項），但**僅台股單一市場**，無跨市場驗證 |
 | 交易成本模擬 | ✅ | SimBroker: sqrt 滑點 + 佣金 0.1425% + 證交稅 0.3% + 漲跌停 ±9.5% + ADV 10% 限制 |
-| 確認 Alpha 顯著穩健 | ✅ | Harvey t>3.0 + DSR + Bootstrap + PBO（Validator 13 項閘門） |
+| 確認 Alpha 顯著穩健 | ✅ | Harvey t>3.0 + DSR + Bootstrap + PBO（Validator 15 項閘門） |
 
 ### 假陽性陷阱防護
 
@@ -391,7 +391,7 @@ Research Pipeline（獨立，不操作 Portfolio）
 **核心結論**（含 40 天營收延遲 + 大規模驗證）：
 - revenue_acceleration 大規模 ICIR(20d) +0.240, ICIR(60d) +0.426（#16 基準，全因子最強）
 - revenue_new_high 大規模 ICIR(20d) +0.207, ICIR(60d) +0.364（第二強）
-- revenue_momentum_hedged Validator 12/13（paper trading 主策略）
+- revenue_momentum_hedged Validator 14/15（實驗 #21，Sharpe 1.076）
 - 自動發現因子在修正 look-ahead bias 後全部 L1 失敗（IC < 0.02）
 - Paper Trading 已上線：portfolio 持久化、kill switch 清倉、mutation lock
 
