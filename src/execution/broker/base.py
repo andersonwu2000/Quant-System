@@ -38,9 +38,9 @@ class BrokerAdapter(ABC):
 
 class PaperBroker(BrokerAdapter):
     """
-    紙上交易券商 — 用即時行情模擬成交。
+    紙上交易券商 — 用最新收盤價模擬即時成交。
 
-    用於模擬盤測試，不實際下單。
+    用於模擬盤測試，不實際下單。訂單提交後立即以 order.price 成交。
     """
 
     def __init__(self) -> None:
@@ -49,7 +49,14 @@ class PaperBroker(BrokerAdapter):
         self._cash = Decimal("10000000")
 
     def submit_order(self, order: Order) -> str:
-        """紙上交易直接成交。"""
+        """紙上交易直接以委託價成交。"""
+        from src.core.models import OrderStatus
+        order.filled_qty = order.quantity
+        order.filled_avg_price = order.price or Decimal("0")
+        order.status = OrderStatus.FILLED
+        # 簡易手續費（台股 0.1425%）
+        notional = order.quantity * (order.price or Decimal("0"))
+        order.commission = notional * Decimal("0.001425")
         return order.id
 
     def cancel_order(self, order_id: str) -> bool:

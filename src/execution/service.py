@@ -167,7 +167,9 @@ class ExecutionService:
             return trades
 
         # Paper/Live 模式：檢查交易時段 + 券商下單
-        if self._config.check_market_hours and not is_tradable():
+        # Paper mode 跳過市場時段檢查，允許隨時成交
+        skip_hours = mode == "paper"
+        if self._config.check_market_hours and not skip_hours and not is_tradable():
             if self._config.queue_off_hours_orders:
                 for order in orders:
                     self._order_queue.enqueue({

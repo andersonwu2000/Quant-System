@@ -197,14 +197,28 @@ class SinopacBroker(BrokerAdapter):
                 self._trades[broker_id] = trade
                 self._order_map[broker_id] = order
 
-            order.status = OrderStatus.SUBMITTED
             order.client_order_id = broker_id
 
-            logger.info(
-                "Order submitted: %s %s %s @ %s (broker_id=%s)",
-                order.side.value, order.quantity, order.instrument.symbol,
-                order.price, broker_id,
-            )
+            # Simulation mode: 模擬即時成交（Shioaji sim 盤外不撮合）
+            if self._config.simulation:
+                order.status = OrderStatus.FILLED
+                order.filled_qty = order.quantity
+                order.filled_avg_price = order.price or Decimal("0")
+                notional = order.quantity * (order.price or Decimal("0"))
+                order.commission = notional * Decimal("0.001425")
+                if order.side == Side.SELL:
+                    order.commission += notional * Decimal("0.003")
+                logger.info(
+                    "Order FILLED (sim): %s %s %s @ %s",
+                    order.side.value, order.quantity, order.instrument.symbol, order.price,
+                )
+            else:
+                order.status = OrderStatus.SUBMITTED
+                logger.info(
+                    "Order submitted: %s %s %s @ %s (broker_id=%s)",
+                    order.side.value, order.quantity, order.instrument.symbol,
+                    order.price, broker_id,
+                )
             return broker_id
 
         except Exception:
@@ -486,8 +500,10 @@ class SinopacBroker(BrokerAdapter):
     def _resolve_contract(self, symbol: str) -> Any:
         """從 Shioaji 取得合約物件。"""
         try:
+            # 移除 .TW/.TWO suffix（本系統用 Yahoo 格式，Shioaji 用純代碼）
+            code = symbol.replace(".TW", "").replace(".TWO", "")
             # 台股代碼（純數字或數字+英文）
-            contract = self._api.Contracts.Stocks.get(symbol, None)
+            contract = self._api.Contracts.Stocks.get(code, None)
             if contract is None:
                 # 嘗試期貨
                 contract = self._api.Contracts.Futures.get(symbol, None)
