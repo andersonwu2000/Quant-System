@@ -36,8 +36,8 @@ def compute_factor(
 
             # 12-1 Sharpe
             s12 = _sharpe(close[-252:-21])
-            # 9-1 Sharpe
-            s6 = _sharpe(close[-189:-21])
+            # 8-1 Sharpe
+            s6 = _sharpe(close[-168:-21])
 
             if s12 is None or s6 is None:
                 continue
