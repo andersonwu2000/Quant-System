@@ -5,7 +5,8 @@ RUN pip install --no-cache-dir \
     "numpy>=2.0,<3" \
     "pandas>=2.0,<4" \
     "scipy>=1.12,<2" \
-    "pyarrow>=15,<24"
+    "pyarrow>=15,<24" \
+    "requests>=2.28,<3"
 
 # Copy immutable evaluation harness + watchdog
 COPY scripts/autoresearch/evaluate.py /app/evaluate.py

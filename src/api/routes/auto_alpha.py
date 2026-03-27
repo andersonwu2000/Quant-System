@@ -780,10 +780,10 @@ async def submit_factor(
     deployed = False
     # excl DSR ≥ 14
     checks = report.checks
-    n_excl_dsr = sum(1 for c in checks if c.passed or c.name == "deflated_sharpe")
+    n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
     dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
 
-    if n_excl_dsr >= 14 and dsr_val >= 0.70:
+    if n_excl_dsr >= 13 and dsr_val >= 0.70:
         try:
             from src.alpha.auto.paper_deployer import PaperDeployer
             deployer = PaperDeployer()

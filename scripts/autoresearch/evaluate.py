@@ -310,7 +310,7 @@ def _check_dedup(ic_series_20d: list[float], known: dict[str, list[float]]) -> t
 def evaluate() -> dict:
     """Run the full evaluation pipeline with early-exit gates.
 
-    Stage 1: Core universe (50 symbols), IN-SAMPLE period — fast screening
+    Stage 1: Core universe (200 symbols), IN-SAMPLE period — fast screening
       L1: |IC_20d| >= 0.02     (early exit if fail — saves ~2 min)
       L2: |ICIR| >= 0.15
       L3: dedup correlation <= 0.50, yearly stability
@@ -388,7 +388,7 @@ def evaluate() -> dict:
     # L1 early exit
     if abs(early_ic) < MIN_IC_L1:
         return _make_result(
-            level="L0", failure=f"|IC_20d|={abs(early_ic):.4f} < {MIN_IC_L1} (early exit)",
+            level="L1", failure=f"|IC_20d|={abs(early_ic):.4f} < {MIN_IC_L1} (early exit)",
             ic_20d=early_ic, elapsed=early_time,
         )
 
@@ -469,7 +469,7 @@ def evaluate() -> dict:
     # ── Gate checks (L2-L4) ──
     if abs(best_icir) < MIN_ICIR_L2:
         return _make_result(
-            level="L1", failure=f"|ICIR|={abs(best_icir):.4f} < {MIN_ICIR_L2}",
+            level="L2", failure=f"|ICIR|={abs(best_icir):.4f} < {MIN_ICIR_L2}",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             elapsed=elapsed,
@@ -477,7 +477,7 @@ def evaluate() -> dict:
 
     if abs(max_corr) > MAX_CORRELATION:
         return _make_result(
-            level="L2", failure=f"corr={max_corr:.3f} with {corr_with} > {MAX_CORRELATION}",
+            level="L3", failure=f"corr={max_corr:.3f} with {corr_with} > {MAX_CORRELATION}",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             max_correlation=max_corr, correlated_with=corr_with,
@@ -486,7 +486,7 @@ def evaluate() -> dict:
 
     if positive_years < MIN_POSITIVE_YEARS and total_years >= MIN_POSITIVE_YEARS:
         return _make_result(
-            level="L2", failure=f"positive_years={positive_years}/{total_years} < {MIN_POSITIVE_YEARS}",
+            level="L3", failure=f"positive_years={positive_years}/{total_years} < {MIN_POSITIVE_YEARS}",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             positive_years=positive_years, total_years=total_years,
@@ -495,7 +495,7 @@ def evaluate() -> dict:
 
     if fitness < MIN_FITNESS:
         return _make_result(
-            level="L3", failure=f"fitness={fitness:.2f} < {MIN_FITNESS}",
+            level="L4", failure=f"fitness={fitness:.2f} < {MIN_FITNESS}",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             fitness=fitness, positive_years=positive_years, total_years=total_years,
@@ -545,9 +545,11 @@ def evaluate() -> dict:
     # L5 gate checks
     # P-01: failure messages hide OOS values to prevent indirect overfitting
     l5_failure = ""
+    # Compare OOS 20d ICIR with IS 20d ICIR (same horizon, fair comparison)
+    is_icir_20d = float(icir_by_horizon.get("20d", 0))
     if is_ic_sign != oos_ic_sign:
         l5_failure = "OOS IC sign inconsistent with IS"
-    elif abs(best_icir) > 0 and abs(oos_icir) < abs(best_icir) * (1 - OOS_ICIR_DECAY_MAX):
+    elif abs(is_icir_20d) > 0 and abs(oos_icir) < abs(is_icir_20d) * (1 - OOS_ICIR_DECAY_MAX):
         l5_failure = "OOS ICIR decay exceeds threshold"
     elif oos_positive_ratio < OOS_MIN_POSITIVE_RATIO and oos_total_months >= 6:
         l5_failure = "OOS monthly consistency below threshold"
@@ -558,7 +560,7 @@ def evaluate() -> dict:
 
     if l5_failure:
         return _make_result(
-            level="L4", failure=f"L5 OOS fail: {l5_failure}",  # generic msg, no OOS values
+            level="L5", failure=f"L5 OOS fail: {l5_failure}",  # generic msg, no OOS values
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             fitness=fitness, positive_years=positive_years, total_years=total_years,
@@ -588,7 +590,7 @@ def evaluate() -> dict:
             for as_of in large_dates:
                 masked = _mask_data(large_data, as_of)
                 active = [s for s in large_universe if s in large_bars and as_of in large_bars[s].index]
-                if len(active) < 50:
+                if len(active) < MIN_SYMBOLS:
                     continue
                 try:
                     vals = compute_factor(active, as_of, masked)
@@ -596,7 +598,7 @@ def evaluate() -> dict:
                     continue
                 vals = {k: v for k, v in (vals or {}).items()
                         if isinstance(v, (int, float)) and np.isfinite(v)}
-                if len(vals) < 50:
+                if len(vals) < MIN_SYMBOLS:
                     continue
                 fwd = _compute_forward_returns(large_bars, as_of, 20)
                 ic = _compute_ic(vals, fwd)
@@ -788,10 +790,10 @@ def _run_validator(results: dict) -> dict | None:
             print(f"  [{mark}] {c.name}: {c.value} (threshold: {c.threshold})")
         print(f"\nvalidator: {n_passed}/{n_total}")
 
-        # Deployment threshold: >= 14 (excl DSR) + DSR >= 0.70
-        n_excl_dsr = sum(1 for c in checks if c.passed or c.name == "deflated_sharpe")
+        # Deployment threshold: >= 13/14 non-DSR checks pass + DSR >= 0.70
+        n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
         dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
-        deployed = n_excl_dsr >= 14 and dsr_val >= 0.70
+        deployed = n_excl_dsr >= 13 and dsr_val >= 0.70
 
         print(f"deploy_eligible: {deployed}")
 
@@ -809,8 +811,17 @@ def _run_validator(results: dict) -> dict | None:
 def _write_report(results: dict, validator_report: dict) -> None:
     """Write a factor report only when Validator passes deployment threshold."""
     try:
+        # Try project docs first, fallback to work/ (Docker read-only root)
         report_dir = PROJECT_ROOT / "docs" / "research" / "autoresearch"
-        report_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            report_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # Docker: /app/docs is read-only, write to work/ instead
+            work_dir = Path(__file__).parent / "work"
+            if not work_dir.exists():
+                work_dir = Path(__file__).parent
+            report_dir = work_dir / "reports"
+            report_dir.mkdir(parents=True, exist_ok=True)
 
         # Read factor code
         factor_path = Path(__file__).parent / "factor.py"
@@ -886,7 +897,10 @@ def _auto_submit(results: dict) -> None:
     """Submit passed factor to API for Validator 15-check + auto-deploy."""
     try:
         import requests
-        factor_code = Path(__file__).parent.joinpath("factor.py").read_text(encoding="utf-8")
+        factor_path = Path(__file__).parent / "factor.py"
+        if not factor_path.exists():
+            factor_path = Path(__file__).parent / "work" / "factor.py"
+        factor_code = factor_path.read_text(encoding="utf-8")
         # Extract factor name from git log or use generic
         name = f"autoresearch_{int(time.time())}"
         try:

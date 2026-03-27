@@ -40,5 +40,3 @@ networks:
   autoresearch-net:
     internal: true
 
-volumes:
-  autoresearch-work:

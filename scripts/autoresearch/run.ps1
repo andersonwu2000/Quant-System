@@ -73,7 +73,7 @@ $statusJob = Start-Job -ScriptBlock {
 } -ArgumentList $StatusInterval, "$ScriptDir\status.ps1"
 
 Write-Host "  Status reporter running (Job ID: $($statusJob.Id))" -ForegroundColor Green
-Write-Host "  Reports at: docs\research\autoresearch\status.md" -ForegroundColor Gray
+Write-Host "  Reports at: docs\research\status.md" -ForegroundColor Gray
 
 # --- Step 3: Run Claude Code loop (foreground) ---
 Write-Host "`n[3/3] Starting research loop..." -ForegroundColor Yellow

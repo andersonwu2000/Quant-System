@@ -75,6 +75,7 @@ Repeat until the human interrupts you:
 Your factor goes through 6 gates. **L1 fails fast (~30s instead of ~3min).**
 
 ```
+L0: factor.py <= 60 lines       — complexity gate (reject overly complex factors)
 L1: |IC_20d| >= 0.02            — tested on first 30 IS dates only (early exit)
 L2: |ICIR| >= 0.15              — full IS evaluation, all horizons (5/10/20/60d)
 L3: dedup corr <= 0.50          — IC-series correlation with known factors
