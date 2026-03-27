@@ -176,7 +176,11 @@ class SinopacBroker(BrokerAdapter):
         order_type = getattr(sj.constant.OrderType, self._config.default_order_type.value)
 
         # 數量轉換：本專案以「股」為單位，Shioaji 整股以「張」(1000 股) 為單位
-        quantity = self._shares_to_lots(order.quantity, order.instrument.symbol)
+        quantity, is_odd_lot = self._shares_to_lots(order.quantity, order.instrument.symbol)
+        if quantity <= 0:
+            order.status = OrderStatus.REJECTED
+            order.reject_reason = f"Zero quantity after lot conversion: {order.quantity}"
+            return ""
 
         sj_order = self._api.Order(
             price=float(order.price) if order.price else 0,
@@ -185,6 +189,12 @@ class SinopacBroker(BrokerAdapter):
             price_type=price_type,
             order_type=order_type,
         )
+        # 零股需要使用盤中零股子類型
+        if is_odd_lot:
+            try:
+                sj_order.stock_order_lot = sj.constant.StockOrderLot.IntradayOdd
+            except AttributeError:
+                pass  # 舊版 Shioaji 可能沒有此常數
 
         try:
             if self._config.non_blocking:
@@ -520,14 +530,18 @@ class SinopacBroker(BrokerAdapter):
             return sj.constant.StockPriceType.MKT
         return sj.constant.StockPriceType.LMT
 
-    def _shares_to_lots(self, shares: Decimal, symbol: str) -> int:
-        """股數 → 張數（台股 1000 股 = 1 張）。
+    def _shares_to_lots(self, shares: Decimal, symbol: str) -> tuple[int, bool]:
+        """股數 → (數量, 是否零股)。
 
-        若為零股（< 1000 股），改用零股子類型。
+        台股 1000 股 = 1 張。若 < 1000 股為零股，回傳 (股數, True)。
+        整股回傳 (張數, False)。
         """
         lot_size = 1000
-        lots = int(shares) // lot_size
-        return max(lots, 1)  # 至少 1 張
+        int_shares = int(shares)
+        if int_shares < lot_size:
+            return (int_shares, True)  # 零股：數量為股數
+        lots = int_shares // lot_size
+        return (lots, False)  # 整股：數量為張數
 
     @property
     def simulation(self) -> bool:

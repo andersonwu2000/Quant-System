@@ -185,7 +185,7 @@ async def get_drift(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
     nav = float(portfolio.nav) if portfolio.nav > 0 else 1
     current_weights: dict[str, float] = {}
     for sym, pos in portfolio.positions.items():
-        market_value = float(pos.quantity * pos.last_price)
+        market_value = float(pos.quantity * pos.market_price)
         current_weights[sym] = market_value / nav
 
     # Compute drift

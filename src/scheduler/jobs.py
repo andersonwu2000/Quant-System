@@ -152,11 +152,9 @@ async def execute_rebalance(config: TradingConfig) -> None:
 async def monthly_revenue_update(max_retries: int = 1) -> bool:
     """每月營收數據更新。回傳 True 表示成功。
 
-    修正：
-    - 動態計算 --start（當前 - 2 年），不再硬編碼 (R10.2)
-    - 失敗重試 1 次 (R10.6)
-    - 回傳成功/失敗狀態供 caller 決定是否繼續 rebalance (R10.1)
+    使用 asyncio.to_thread 避免 subprocess.run 阻塞 event loop。
     """
+    import asyncio
     import subprocess
     import sys
     from datetime import datetime, timedelta
@@ -164,13 +162,16 @@ async def monthly_revenue_update(max_retries: int = 1) -> bool:
     start_date = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")
     logger.info("Monthly revenue data update triggered (start=%s)", start_date)
 
+    def _run_sync() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "scripts.download_finmind_data",
+             "--symbols-from-market", "--dataset", "revenue", "--start", start_date],
+            capture_output=True, text=True, timeout=600,
+        )
+
     for attempt in range(max_retries + 1):
         try:
-            result = subprocess.run(
-                [sys.executable, "-m", "scripts.download_finmind_data",
-                 "--symbols-from-market", "--dataset", "revenue", "--start", start_date],
-                capture_output=True, text=True, timeout=600,
-            )
+            result = await asyncio.to_thread(_run_sync)
             if result.returncode == 0:
                 logger.info("Revenue data update completed successfully (attempt %d)", attempt + 1)
                 return True
@@ -359,7 +360,7 @@ def _save_trade_log(trades: list, strategy_name: str) -> None:
         "n_trades": len(trades),
         "trades": [
             {
-                "symbol": str(getattr(t, "symbol", getattr(t, "instrument", {}))),
+                "symbol": str(getattr(t, "symbol", getattr(getattr(t, "instrument", None), "symbol", "?"))),
                 "side": str(getattr(t, "side", "")),
                 "quantity": str(getattr(t, "quantity", "")),
                 "price": str(getattr(t, "price", "")),
@@ -510,8 +511,8 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
 async def _async_revenue_update() -> bool:
     """非同步包裝 monthly_revenue_update。"""
     try:
-        await monthly_revenue_update()
-        return True
+        result = await monthly_revenue_update()
+        return result  # monthly_revenue_update 回傳 bool
     except Exception:
         logger.exception("Revenue update failed")
         return False
