@@ -13,7 +13,7 @@
 |------|------|
 | 審查涵蓋模組 | 引擎、風控、回測、管線、因子研究、Paper Trading |
 | 發現並修復 bug | **80+** |
-| 測試數（修復後） | **1,707** |
+| 測試數（修復後） | **1,580+** |
 | 全量測試通過率 | 100%（排除 Sinopac 外部依賴） |
 
 ### 按類別分佈
@@ -390,22 +390,22 @@ Total: ~8-10 小時
 
 | 版本 | Validator | CAGR | Sharpe | OOS |
 |------|:---------:|:----:|:------:|:---:|
-| revenue_momentum (relaxed) | 10/13 | +10.1% | 0.728 | +37% |
-| rev_accel (validator) | 12/15 | +18.1% | 0.873 | +264% |
-| rev_accel_x_zscore (auto) | 通過 L5 | — | — | — |
+| revenue_momentum (15-check) | 12/15 | +9.56% | 0.926 | +34.8% |
+| rev_accel_x_zscore (auto) | 12/15 | Large ICIR +0.416 | — | excl DSR 13/15 |
 
-### Paper Trading 現況（2026-03-27 EOD）
+### Paper Trading 現況（2026-03-27）
 
 - 模式：paper（Shioaji simulation）
-- 持倉：12 支台股
-- NAV：~$8.44M（初始 $10M，-15.6%）
+- 持倉：8 支台股
+- NAV：$9,988,602（初始 $10M，-0.1% 手續費）
 - 已修問題：
-  - 舊持倉不清理 → pipeline 現在取 target + 持倉的價格
-  - 風控門檻衝突 → max_position_pct 5% → 10%
-  - ShioajiFeed snapshot polling for simulation mode
-- 殘留問題：
-  - Shioaji session timeout → polling 靜默失敗（需 Yahoo fallback）
-  - NAV 只在收盤後更新（無盤中即時估值）
+  - Portfolio 持久化（atomic write + startup restore）
+  - Kill switch 執行清倉 + re-trigger guard
+  - Mutation lock 防並發
+  - Price polling fallback（ShioajiFeed 失敗 → Yahoo）
+  - 風控門檻 5% → 10%（配合策略 6.7%/股）
+  - Live mode async fill callback
+  - Live mode 拒絕 PaperBroker fallback
 
 ---
 
