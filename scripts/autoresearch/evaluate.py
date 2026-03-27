@@ -202,17 +202,32 @@ def _load_dedup_ic_series() -> dict[str, list[float]]:
 # Revenue Delay Enforcement (agent cannot bypass)
 # ---------------------------------------------------------------------------
 
-def _mask_revenue(data: dict, as_of: pd.Timestamp) -> dict:
-    """Return a copy of data with revenue truncated by REVENUE_DELAY_DAYS."""
-    masked = dict(data)
+def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
+    """Return a copy of data with ALL time-series truncated to as_of.
+
+    Safety: agent cannot see future data regardless of what factor.py does.
+    - bars: truncated to as_of (no future prices)
+    - revenue: truncated to as_of - 40 days (publication delay)
+    - institutional: truncated to as_of
+    - pe/pb/roe: passed as-is (point-in-time snapshots)
+    """
     cutoff = as_of - pd.DateOffset(days=REVENUE_DELAY_DAYS)
-    masked["revenue"] = {
-        sym: df[df["date"] <= cutoff].copy()
-        for sym, df in data["revenue"].items()
-    }
-    masked["institutional"] = {
-        sym: df[df["date"] <= as_of].copy()
-        for sym, df in data["institutional"].items()
+    masked = {
+        "bars": {
+            sym: df.loc[:as_of].copy()
+            for sym, df in data["bars"].items()
+        },
+        "revenue": {
+            sym: df[df["date"] <= cutoff].copy()
+            for sym, df in data["revenue"].items()
+        },
+        "institutional": {
+            sym: df[df["date"] <= as_of].copy()
+            for sym, df in data["institutional"].items()
+        },
+        "pe": data["pe"],
+        "pb": data["pb"],
+        "roe": data["roe"],
     }
     return masked
 
@@ -327,7 +342,7 @@ def evaluate() -> dict:
     early_limit = min(30, len(sample_dates))
 
     for as_of in sample_dates[:early_limit]:
-        masked_data = _mask_revenue(data, as_of)
+        masked_data = _mask_data(data, as_of)
         active = [s for s in universe if s in bars and as_of in bars[s].index]
         if len(active) < MIN_SYMBOLS:
             continue
@@ -366,7 +381,7 @@ def evaluate() -> dict:
     prev_top: set[str] | None = None
 
     for as_of in sample_dates:
-        masked_data = _mask_revenue(data, as_of)
+        masked_data = _mask_data(data, as_of)
         active = [s for s in universe if s in bars and as_of in bars[s].index]
         if len(active) < MIN_SYMBOLS:
             continue
@@ -483,7 +498,7 @@ def evaluate() -> dict:
             # Sample fewer dates for speed (every 40 days)
             large_dates = eval_dates[::40]
             for as_of in large_dates:
-                masked = _mask_revenue(large_data, as_of)
+                masked = _mask_data(large_data, as_of)
                 active = [s for s in large_universe if s in large_bars and as_of in large_bars[s].index]
                 if len(active) < 50:
                     continue
