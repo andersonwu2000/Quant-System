@@ -28,7 +28,7 @@ test.describe("Smoke tests", () => {
     // Metric cards for key values should be present
     const main = page.locator("main");
     await expect(main.getByText("NAV")).toBeVisible({ timeout: 10_000 });
-    await expect(main.getByText("Cash")).toBeVisible();
+    await expect(main.getByText("現金")).toBeVisible();
   });
 
   test("navigate to each page via sidebar links", async ({ page }) => {
