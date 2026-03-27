@@ -6,7 +6,6 @@ Direction: revenue_acceleration_2nd_order
 """
 
 from __future__ import annotations
-import numpy as np
 import pandas as pd
 from pathlib import Path
 

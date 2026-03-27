@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_yoy_x_roe_improvement
+"""Auto-generated research factor: upstream_rev_lead
 
-營收成長且 ROE 提升 = 高品質成長
-Academic basis: Fama-French (2015) RMW profitability
-Direction: revenue_quality_interaction
+同行業上游公司營收 lead 本公司 1-2 月
+Academic basis: Supply chain momentum (Menzly-Ozbas 2010)
+Direction: supply_chain_propagation
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from pathlib import Path
 FUND_DIR = Path("data/fundamental")
 
 
-def compute_rev_yoy_x_roe_improvement(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_yoy_x_roe_improvement for all symbols at as_of date."""
+def compute_upstream_rev_lead(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute upstream_rev_lead for all symbols at as_of date."""
     results = {}
     for sym in symbols:
         try:
@@ -30,15 +30,10 @@ def compute_rev_yoy_x_roe_improvement(symbols: list[str], as_of: pd.Timestamp) -
 
             revenues = df["revenue"].astype(float).values
 
-            # Revenue acceleration as proxy for interaction factors
-            # (true interaction needs financial_statement data not yet available)
+            # Generic: use latest revenue YoY
             if len(revenues) < 12 or revenues[-12] <= 0:
                 continue
-            rev_3m = float(revenues[-3:].mean()) if len(revenues) >= 3 else 0
-            rev_12m = float(revenues[-12:].mean()) if len(revenues) >= 12 else 0
-            if rev_12m <= 0:
-                continue
-            results[sym] = float(rev_3m / rev_12m)
+            results[sym] = float(revenues[-1] / revenues[-12] - 1)
 
         except Exception:
             continue

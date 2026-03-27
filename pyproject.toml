@@ -58,6 +58,14 @@ quant = "src.cli.main:app"
 target-version = "py312"
 line-length = 100
 
+[tool.ruff.lint.per-file-ignores]
+"scripts/experiment*.py" = ["E402", "E701", "E702", "E722", "F841"]
+"scripts/run_*.py" = ["E402"]
+"scripts/verify_*.py" = ["E402"]
+"scripts/full_factor_analysis.py" = ["E402"]
+"scripts/large_scale_factor_analysis.py" = ["E402"]
+"src/strategy/factors/research/*.py" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

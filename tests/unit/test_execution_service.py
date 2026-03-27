@@ -87,27 +87,28 @@ class TestExecutionServicePaper:
         assert result is True
         assert svc.broker is not None
 
-    def test_market_hours_check_rejects(self) -> None:
+    def test_paper_mode_skips_market_hours(self) -> None:
+        """Paper mode skips market hours check — orders go through even when closed."""
         config = ExecutionConfig(
             mode="paper", check_market_hours=True, queue_off_hours_orders=False
         )
         svc = ExecutionService(config)
         svc._initialized = True
         svc._broker = MagicMock()
+        svc._broker.submit_order.return_value = "mock_id"
 
         order = _make_order()
 
-        with patch("src.execution.service.is_tradable", return_value=False), \
-             patch("src.execution.service.get_current_session") as mock_session:
-            mock_session.return_value = MagicMock(value="after_hours")
-            trades = svc.submit_orders([order], Portfolio())
+        with patch("src.execution.service.is_tradable", return_value=False):
+            svc.submit_orders([order], Portfolio())
 
-        assert trades == []
-        assert order.status == OrderStatus.REJECTED
+        # Paper mode skips market hours — broker.submit_order should be called
+        svc._broker.submit_order.assert_called_once()
 
-    def test_market_hours_check_queues(self) -> None:
+    def test_live_mode_market_hours_queues(self) -> None:
+        """Live mode should queue orders when market is closed."""
         config = ExecutionConfig(
-            mode="paper", check_market_hours=True, queue_off_hours_orders=True
+            mode="live", check_market_hours=True, queue_off_hours_orders=True
         )
         svc = ExecutionService(config)
         svc._initialized = True

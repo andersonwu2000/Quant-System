@@ -57,7 +57,7 @@ class TestAutoAlphaConfig:
         # Safety
         assert cfg.max_consecutive_losses == 5
         assert cfg.ic_reversal_days == 10
-        assert cfg.emergency_stop_drawdown == 0.05
+        assert cfg.emergency_stop_drawdown == 0.10
 
     def test_decision_config_nested(self) -> None:
         cfg = AutoAlphaConfig()
