@@ -239,9 +239,9 @@ def main():
                         continue
                     df = data[sym]
                     after = df.index[df.index > as_of]
-                    if len(after) < horizon:
+                    if len(after) <= horizon:
                         continue
-                    ret = float(df.loc[after[horizon - 1], "close"] / df.loc[after[0], "close"] - 1)
+                    ret = float(df.loc[after[horizon], "close"] / df.loc[after[0], "close"] - 1)
                     xs.append(fv)
                     ys.append(ret)
 

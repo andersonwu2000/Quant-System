@@ -256,31 +256,36 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
                 continue
             results[sym] = float(current / np.mean(same_month) - 1)
 '''
-    elif "vs_trend_residual" in name or "breakout" in name:
+    elif "vs_trend_residual" in name:
         code += '''
             if len(revenues) < 12:
                 continue
             recent_6 = revenues[-6:]
-            # Linear trend: fit on indices 0..4, predict at index 5
             x = np.arange(len(recent_6))
-            coeffs = np.polyfit(x, recent_6, 1)  # [slope, intercept]
+            coeffs = np.polyfit(x, recent_6, 1)
             predicted_next = coeffs[0] * len(recent_6) + coeffs[1]
             actual = revenues[-1]
             if predicted_next > 0:
                 results[sym] = float((actual - predicted_next) / predicted_next)
 '''
-    elif "x_gross_margin" in name or "x_roe" in name or "x_operating" in name:
+    elif "breakout" in name:
         code += '''
-            # Revenue acceleration as proxy for interaction factors
-            # (true interaction needs financial_statement data not yet available)
-            if len(revenues) < 12 or revenues[-12] <= 0:
+            if len(revenues) < 12:
                 continue
-            rev_3m = float(revenues[-3:].mean()) if len(revenues) >= 3 else 0
-            rev_12m = float(revenues[-12:].mean()) if len(revenues) >= 12 else 0
-            if rev_12m <= 0:
+            max_12 = float(np.max(revenues[-12:]))
+            if max_12 <= 0:
                 continue
-            results[sym] = float(rev_3m / rev_12m)
+            # How much current revenue exceeds 12-month high (0 if below)
+            results[sym] = float(max(0, revenues[-1] / max_12 - 1))
 '''
+    elif "x_gross_margin" in name or "x_roe" in name or "x_operating" in name:
+        # Interaction factors need financial_statement data — cannot proxy as rev_acceleration
+        logger.warning(
+            "[Factor] '%s' is an interaction factor requiring financial_statement data. "
+            "Cannot implement with revenue-only data (would be a revenue_acceleration clone).",
+            name,
+        )
+        return None
     elif "coefficient_of_variation" in name:
         code += '''
             if len(revenues) < 12:
@@ -306,17 +311,14 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
             results[sym] = float(streak)
 '''
     elif "rank_change" in name:
-        code += '''
-            # Revenue rank change requires cross-sectional data
-            # Use revenue 6-month momentum as proxy for relative improvement
-            if len(revenues) < 6:
-                continue
-            rev_3m = float(np.mean(revenues[-3:]))
-            rev_6m = float(np.mean(revenues[-6:]))
-            if rev_6m <= 0:
-                continue
-            results[sym] = float(rev_3m / rev_6m - 1)
-'''
+        # Cross-sectional rank change requires all symbols computed simultaneously
+        # Cannot implement per-symbol in this loop structure
+        logger.warning(
+            "[Factor] '%s' requires cross-sectional rank computation. "
+            "Cannot implement in per-symbol loop.",
+            name,
+        )
+        return None
     elif "zscore" in name:
         code += '''
             if len(revenues) < 24:
@@ -330,9 +332,9 @@ def compute_{name}(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
 '''
     elif "beat_magnitude" in name:
         code += '''
-            if len(revenues) < 13 or revenues[-13] <= 0:
+            if len(revenues) < 13 or revenues[-12] <= 0:
                 continue
-            yoy = revenues[-1] / revenues[-13] - 1
+            yoy = revenues[-1] / revenues[-12] - 1
             # Squared positive surprise (penalize negative)
             results[sym] = float(max(0, yoy) ** 2)
 '''
@@ -847,9 +849,17 @@ class AlphaResearchAgent:
             except Exception:
                 continue
 
-        # Load factor compute function
+        # Load factor compute function (same mechanism as _compute_factor_values)
+        factor_path = FACTOR_DIR / f"{factor_name}.py"
+        if not factor_path.exists():
+            logger.warning("[Large-Scale] Factor file not found: %s", factor_path)
+            return {"icir_5d": 0, "icir_20d": 0, "icir_60d": 0, "hit_20d": 0, "n_months": 0}
         try:
-            mod = importlib.import_module(f"src.strategy.factors.research.{factor_name}")
+            spec = importlib.util.spec_from_file_location(f"research_{factor_name}", factor_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Cannot create spec for {factor_path}")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
             compute_fn = getattr(mod, f"compute_{factor_name}")
         except Exception as e:
             logger.warning("[Large-Scale] Cannot load factor %s: %s", factor_name, e)
@@ -890,9 +900,9 @@ class AlphaResearchAgent:
                         continue
                     df = price_data[sym]
                     after = df.index[df.index > as_of]
-                    if len(after) < h:
+                    if len(after) <= h:
                         continue
-                    ret = float(df.loc[after[h - 1], "close"] / df.loc[after[0], "close"] - 1)
+                    ret = float(df.loc[after[h], "close"] / df.loc[after[0], "close"] - 1)
                     xs.append(fv)
                     ys.append(ret)
                 if len(xs) < 20:
@@ -1092,10 +1102,30 @@ class AlphaResearchAgent:
         deploy_eligible = True
         reasons = []
         if validator_result:
-            n_pass = validator_result.get("n_passed", 0)
-            if n_pass < 12:
+            checks = validator_result.get("checks", [])
+            n_excl_dsr = sum(1 for c in checks if c["passed"] or c["name"] == "deflated_sharpe")
+            if n_excl_dsr < 12:
                 deploy_eligible = False
-                reasons.append(f"Validator {n_pass}/13 < 12")
+                reasons.append(f"Validator (excl DSR) {n_excl_dsr}/13 < 12")
+            # DSR 寬鬆門檻
+            dsr_val = next((float(c["value"]) for c in checks if c["name"] == "deflated_sharpe"), 0)
+            if dsr_val < 0.70:
+                deploy_eligible = False
+                reasons.append(f"DSR {dsr_val:.3f} < 0.70")
+            # recent sharpe
+            recent_val = next((float(c["value"]) for c in checks if c["name"] == "recent_period_sharpe"), 0)
+            if recent_val < -0.10:
+                deploy_eligible = False
+                reasons.append(f"recent_sharpe {recent_val:.3f} < -0.10")
+            # CAGR check
+            cagr_str = next((c["value"] for c in checks if c["name"] == "cagr"), "0")
+            try:
+                cagr_val = float(str(cagr_str).strip().rstrip("%").lstrip("+")) / 100
+            except (ValueError, TypeError):
+                cagr_val = 0
+            if cagr_val < 0.08:
+                deploy_eligible = False
+                reasons.append(f"CAGR {cagr_val:.1%} < 8%")
         if large_ic:
             if large_ic.get("icir_20d", 0) < 0.20:
                 deploy_eligible = False
