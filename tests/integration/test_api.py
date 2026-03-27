@@ -37,6 +37,11 @@ def _reset_state():
         )
     )
 
+    # Reset user_store singletons to prevent cross-test state bleed
+    from src.data import user_store as _us_mod
+    _us_mod._user_store = None
+    _us_mod._engine = None
+
     # Disable rate limiters to prevent cross-test state bleed
     from src.api.app import limiter
     from src.api.routes.auth import _login_limiter
@@ -47,6 +52,8 @@ def _reset_state():
 
     limiter.enabled = True
     _login_limiter.enabled = True
+    _us_mod._user_store = None
+    _us_mod._engine = None
     reset_app_state()
 
 

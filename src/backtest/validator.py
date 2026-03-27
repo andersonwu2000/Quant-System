@@ -477,9 +477,6 @@ class StrategyValidator:
 
             returns_matrix = pd.DataFrame(variants)
             n_parts = min(len(sharpes), 6)
-            if len(sharpes) < n_parts:
-                logger.info("PBO: too few rows (%d) for %d partitions, returning inconclusive", len(sharpes), n_parts)
-                return 0.5
             pbo_result = compute_pbo(returns_matrix, n_partitions=n_parts)
             return pbo_result.pbo
         except Exception as e:

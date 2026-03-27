@@ -25,7 +25,9 @@ def compute_rev_seasonal_deviation(symbols: list[str], as_of: pd.Timestamp) -> d
             if df.empty or "revenue" not in df.columns:
                 continue
             df["date"] = pd.to_datetime(df["date"])
-            df = df[df["date"] <= as_of].sort_values("date")
+            # 40 天營收公布延遲（台灣月營收於次月 10 日前公布）
+            usable_cutoff = as_of - pd.DateOffset(days=40)
+            df = df[df["date"] <= usable_cutoff].sort_values("date")
             if len(df) < 12:
                 continue
 
@@ -33,13 +35,21 @@ def compute_rev_seasonal_deviation(symbols: list[str], as_of: pd.Timestamp) -> d
 
             if len(revenues) < 36:
                 continue
-            # Current month revenue vs same month average of past 3 years
-            current = revenues[-1]
-            month_idx = len(revenues) - 1
-            same_month = [revenues[month_idx - 12*k] for k in range(1, 4) if month_idx - 12*k >= 0]
-            if not same_month or np.mean(same_month) <= 0:
+            # 用日期欄位的月份匹配（不依賴 index 位置，避免缺月錯位）
+            dates = df["date"].values
+            current_month = pd.Timestamp(dates[-1]).month
+            current_rev = float(df.iloc[-1]["revenue"])
+            same_month_revs = []
+            for j in range(len(df) - 1):
+                if pd.Timestamp(dates[j]).month == current_month:
+                    v = float(df.iloc[j]["revenue"])
+                    if v > 0:
+                        same_month_revs.append(v)
+            # 只取最近 3 年同月
+            same_month_revs = same_month_revs[-3:]
+            if not same_month_revs or np.mean(same_month_revs) <= 0:
                 continue
-            results[sym] = float(current / np.mean(same_month) - 1)
+            results[sym] = float(current_rev / np.mean(same_month_revs) - 1)
 
         except Exception:
             continue

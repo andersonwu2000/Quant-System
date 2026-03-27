@@ -6,6 +6,7 @@ Direction: revenue_acceleration_2nd_order
 """
 
 from __future__ import annotations
+import numpy as np
 import pandas as pd
 from pathlib import Path
 
@@ -24,13 +25,15 @@ def compute_rev_accel_2nd_derivative(symbols: list[str], as_of: pd.Timestamp) ->
             if df.empty or "revenue" not in df.columns:
                 continue
             df["date"] = pd.to_datetime(df["date"])
-            df = df[df["date"] <= as_of].sort_values("date")
+            # 40 天營收公布延遲（台灣月營收於次月 10 日前公布）
+            usable_cutoff = as_of - pd.DateOffset(days=40)
+            df = df[df["date"] <= usable_cutoff].sort_values("date")
             if len(df) < 12:
                 continue
 
             revenues = df["revenue"].astype(float).values
 
-            # YoY for each month
+            # YoY for each month, then 2nd derivative (jerk)
             if len(revenues) < 24:
                 continue
             yoy = []
@@ -39,10 +42,12 @@ def compute_rev_accel_2nd_derivative(symbols: list[str], as_of: pd.Timestamp) ->
                     yoy.append(revenues[i] / revenues[i-12] - 1)
                 else:
                     yoy.append(0)
-            if len(yoy) < 2:
+            if len(yoy) < 3:
                 continue
-            # Acceleration = latest YoY - previous YoY
-            results[sym] = float(yoy[-1] - yoy[-2])
+            # 2nd derivative: (yoy[-1]-yoy[-2]) - (yoy[-2]-yoy[-3])
+            accel_now = yoy[-1] - yoy[-2]
+            accel_prev = yoy[-2] - yoy[-3]
+            results[sym] = float(accel_now - accel_prev)
 
         except Exception:
             continue
