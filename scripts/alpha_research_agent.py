@@ -350,12 +350,88 @@ class AlphaResearchAgent:
             self._evaluator.total_tested = self.memory.total_rounds + 83
         return self._evaluator
 
+    def _get_direction_with_untested(self):
+        """找到有未測假說的方向（避免選已耗盡的方向）。"""
+        from src.alpha.auto.experience_memory import DirectionStatus
+
+        tested = {t.hypothesis.get("name", "") for t in self.memory.trajectories}
+
+        # Load templates
+        templates_path = Path("data/research/hypothesis_templates.json")
+        if templates_path.exists():
+            try:
+                with open(templates_path, encoding="utf-8") as f:
+                    all_templates = json.load(f)
+            except Exception:
+                all_templates = dict(HYPOTHESIS_TEMPLATES)
+        else:
+            all_templates = dict(HYPOTHESIS_TEMPLATES)
+
+        # Find directions with untested hypotheses
+        candidates = []
+        for d in self.memory.directions:
+            if d.status not in ("pending", "exploring"):
+                continue
+            templates = all_templates.get(d.name, [])
+            has_untested = any(
+                t["name"] not in tested and not self.memory.is_forbidden(t["name"])
+                for t in templates
+            )
+            if has_untested:
+                candidates.append(d)
+
+        if not candidates:
+            return None
+
+        def _sort_key(d: DirectionStatus) -> tuple:
+            try:
+                p = int(str(d.priority).lstrip("P"))
+            except (ValueError, TypeError):
+                p = 99
+            return (p, int(d.hypothesis_count or 0))
+
+        candidates.sort(key=_sort_key)
+        return candidates[0]
+
+    def _sync_directions_from_templates(self) -> None:
+        """從 hypothesis_templates.json 同步方向到 memory。
+
+        確保 Claude Code 新增的方向/假說能被 get_next_direction() 看到。
+        """
+        from src.alpha.auto.experience_memory import DirectionStatus
+
+        templates_path = Path("data/research/hypothesis_templates.json")
+        if not templates_path.exists():
+            return
+
+        try:
+            with open(templates_path, encoding="utf-8") as f:
+                all_templates = json.load(f)
+        except Exception:
+            return
+
+        existing_names = {d.name for d in self.memory.directions}
+        for direction_name in all_templates:
+            if direction_name not in existing_names:
+                self.memory.directions.append(DirectionStatus(
+                    name=direction_name,
+                    status="pending",
+                    priority=5,
+                    hypothesis_count=0,
+                    pass_count=0,
+                    best_icir=0.0,
+                ))
+                logger.info("Synced new direction: %s", direction_name)
+
     def run_one_cycle(self, direction: str | None = None) -> ResearchTrajectory:
         """執行一輪研究循環。"""
         t0 = time.perf_counter()
         tid = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:4]
 
         # 1. IDEA — 選擇方向 + 假說
+        # 先同步 JSON 模板中的方向到 memory（確保新加的方向被探索）
+        self._sync_directions_from_templates()
+
         if direction:
             dir_status = None
             for d in self.memory.directions:
@@ -363,7 +439,8 @@ class AlphaResearchAgent:
                     dir_status = d
                     break
         else:
-            dir_status = self.memory.get_next_direction()
+            # 找有可用假說的方向（跳過已耗盡的）
+            dir_status = self._get_direction_with_untested()
 
         if dir_status is None:
             logger.warning("No available research direction")
@@ -928,8 +1005,27 @@ class AlphaResearchAgent:
         logger.info("Discovery report: %s", report_path)
 
     def _generate_hypothesis(self, direction: str) -> Hypothesis | None:
-        """從模板產出假說（跳過已測試的）。"""
-        templates = HYPOTHESIS_TEMPLATES.get(direction, [])
+        """從模板產出假說（跳過已測試的）。
+
+        模板來源：
+        1. data/research/hypothesis_templates.json（Claude Code 動態生成）
+        2. HYPOTHESIS_TEMPLATES（硬編碼 fallback）
+
+        Claude Code 可隨時在對話中新增假說到 JSON 文件，
+        下一輪研究會自動讀取新假說。
+        """
+        # 優先讀 JSON 文件（Claude Code 可動態維護）
+        templates_path = Path("data/research/hypothesis_templates.json")
+        if templates_path.exists():
+            try:
+                with open(templates_path, encoding="utf-8") as f:
+                    all_templates = json.load(f)
+                templates = all_templates.get(direction, [])
+            except Exception:
+                templates = HYPOTHESIS_TEMPLATES.get(direction, [])
+        else:
+            templates = HYPOTHESIS_TEMPLATES.get(direction, [])
+
         tested = {t.hypothesis.get("name", "") for t in self.memory.trajectories}
 
         for tmpl in templates:

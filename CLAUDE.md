@@ -2,6 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Reference Documents（子文件系統）
+
+CLAUDE.md 只保留**行為規範和開發規則**。技術細節分拆到 `docs/claude/` 目錄：
+
+| 文件 | 用途 | 何時讀取 |
+|------|------|---------|
+| `docs/claude/ARCHITECTURE.md` | 系統架構、模組邊界、API、前端、策略列表 | 修改代碼、新增模組、理解系統結構時 |
+| `docs/claude/EXPERIMENT_STANDARDS.md` | 實驗方法論標準、部署門檻、基準因子 | 跑實驗、寫報告、評估因子時 |
+| `docs/dev/SYSTEM_STATUS_REPORT.md` | 模組清單、測試覆蓋、功能矩陣、缺陷追蹤 | 完成任何功能變更後更新 |
+| `docs/dev/DEVELOPMENT_PLAN.md` | 開發計畫 Phase A~I + R1~R4 | 規劃新工作時 |
+
+### 文件維護規則
+
+1. **修改代碼後** → 更新 `docs/dev/SYSTEM_STATUS_REPORT.md` 受影響的段落
+2. **修改架構後** → 更新 `docs/claude/ARCHITECTURE.md` 對應的模組描述
+3. **修改實驗方法後** → 更新 `docs/claude/EXPERIMENT_STANDARDS.md`，所有後續實驗遵循新標準
+4. **新增子文件** → 在本表格中加入指引
+5. **子文件內容過時** → 立即更新，不要等；過時的文件比沒有文件更危險
+
+---
+
 ## Release Rules
 
 - **GitHub Release 必須包含 APK**：每次建立 GitHub Release 時，一定要建置 Android debug APK (`apps/android` → `./gradlew.bat assembleDebug`) 並上傳為 release asset，命名格式為 `quant-trading-v{VERSION}.apk`。
@@ -70,24 +91,12 @@ Multi-asset portfolio research and optimization system covering TW stocks, US st
 Monorepo: Python backend + React web + Android native (Kotlin/Compose). Targets Taiwan stock market defaults (commission 0.1425%, sell tax 0.3%) but works with any market via Yahoo Finance or FinMind.
 
 **Monorepo structure:**
-- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (~150 files, ~27,000 LOC)
+- `src/`, `tests/`, `strategies/`, `migrations/` — Python backend (~160 files, ~29,000 LOC)
 - `apps/web/` — React 18 + Vite + Tailwind dashboard (incl. Alpha Research page)
 - `apps/android/` — Android native (Kotlin + Jetpack Compose + Material 3)
 - `apps/shared/` — `@quant/shared` TypeScript package (types, API client, WS manager, format utils)
 
-Frontend workspace managed by bun (`apps/package.json` workspaces).
-
-**Documentation:**
-- `docs/dev/SYSTEM_STATUS_REPORT.md` — System status report (module inventory, feature matrix, gap analysis)
-- `docs/dev/DEVELOPMENT_PLAN.md` — Development plan (Phase A~I + R1-R4: multi-asset infra → cross-asset alpha → optimizer → backtest → live → auto-alpha → academic → alpha expansion → refactoring)
-- `docs/dev/DEVELOPMENT_LOG.md` — Development log (5-day history, key decisions, milestones)
-- `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md` — Multi-asset architecture design
-- `docs/dev/architecture/AUTOMATED_ALPHA_ARCHITECTURE.md` — Auto-alpha system design
-- `docs/dev/evaluations/BROKER_API_EVALUATION.md` — Broker API comparison (Shioaji chosen)
-- `docs/dev/archive/Project Requirements (Archived).md` — Archived project requirements
-- `docs/api-reference-zh.md` — API reference (Traditional Chinese)
-- `docs/developer-guide-zh.md` — Developer guide (Traditional Chinese)
-- `docs/user-guide-zh.md` — User guide (Traditional Chinese)
+**Documentation:** See Reference Documents table above.
 
 ## Commands
 
@@ -127,216 +136,41 @@ scripts/start.bat            # Windows: backend + web in separate windows
 # === Docker ===
 docker compose up -d         # API (port 8000) + PostgreSQL
 docker compose down          # stop all services
+
+# === Alpha Research ===
+python -m scripts.alpha_research_agent --rounds 20 --interval 5   # 自動因子研究
+python -m scripts.large_scale_factor_check                        # 大規模 IC 驗證
 ```
 
-## Architecture
+## Auto-Alpha Research Pipeline
 
-**Data flow**: DataFeed → Strategy.on_bar() → target weights → RiskEngine → SimBroker/Broker → Trade → Portfolio update
+因子從假說到部署的完整流程（詳見 `docs/claude/EXPERIMENT_STANDARDS.md`）：
 
-Key design decisions:
-- **Strategy returns target weight dicts** (`dict[str, float]`), not orders. `weights_to_orders()` in `src/strategy/engine.py` handles the conversion.
-- **Risk rules are pure function factories** in `src/risk/rules.py` — no inheritance. Each returns a `RiskRule` dataclass. The engine runs rules sequentially; first REJECT stops evaluation.
-- **Time causality**: `Context` wraps `DataFeed` + `Portfolio` and truncates data to `current_time` during backtest. `HistoricalFeed.set_current_date()` enforces this at the feed level.
-- **All monetary values use `Decimal`**, never `float`.
-- **Timezone handling**: All DatetimeIndex data is normalized to tz-naive UTC. Both `HistoricalFeed.load()` and `YahooFeed._download()` strip timezone info.
-
-**Module boundaries** (detailed inventory in `docs/dev/SYSTEM_STATUS_REPORT.md` §4):
-- `src/core/` — `models.py` (**Unified** Instrument, Bar, Position, Order, Portfolio, Trade, enums), `config.py` (Pydantic Settings), `logging.py` (structlog), `repository.py`, `calendar.py` (TWTradingCalendar — 台股交易日曆含國定假日), `trading_pipeline.py` (`execute_one_bar()` — 回測/實盤共用交易流程). - `src/instrument/` — `InstrumentRegistry` (get/get_or_create/search/by_market/by_asset_class). Re-exports Instrument from domain. `_infer_instrument()` auto-detects asset type from symbol pattern. Cost templates (TW_STOCK_DEFAULTS, US_FUTURES_DEFAULTS, etc.).
-- `src/alpha/` — Alpha research layer (within-asset selection). `pipeline.py` orchestrates end-to-end: universe filtering → factor computation → neutralization → orthogonalization → composite signal → quantile backtest → cost-aware portfolio construction. `AlphaStrategy` adapter wraps pipeline as `Strategy`. `filter_strategy.py` provides condition-based screening (`FilterCondition` + `FilterStrategyConfig` + `FilterStrategy`, 13 built-in factor calculators, pre-configured `revenue_momentum_filter()` / `trust_follow_filter()` factories). `regime.py` classifies market regimes (shared with allocation layer). `auto/` (9 files: AutoAlphaConfig, UniverseSelector, AlphaResearcher, AlphaDecisionEngine, AlphaExecutor, AlphaScheduler, AlphaStore, AlertManager, SafetyChecker, FactorPerformanceTracker, DynamicFactorPool).
-- `src/allocation/` — Tactical asset allocation (between-asset selection). `macro_factors.py`: 4 macro factors (growth/inflation/rates/credit) from FRED z-scores. `cross_asset.py`: momentum/volatility/value per AssetClass. `tactical.py`: TacticalEngine combines strategic weights + macro + cross-asset + regime → `dict[AssetClass, float]`. API: `POST /api/v1/allocation`.
-- `src/portfolio/` — Multi-asset portfolio optimization. `optimizer.py`: 14 methods (EW/InverseVol/RiskParity/MVO/BlackLitterman/HRP/Robust/Resampled/CVaR/MaxDrawdown/GlobalMinVariance/MaxSharpe/IndexTracking), `BLView` for views, `OptimizationResult` with risk/return/Sharpe/risk contributions. `risk_model.py`: covariance estimation (historical/EWM/Ledoit-Wolf shrinkage/GARCH/PCA factor model), correlation, volatilities, portfolio risk, marginal risk contribution. `currency.py`: `CurrencyHedger` with tiered hedge ratios, `HedgeRecommendation`.
-- `src/strategy/` — Strategy ABC (`on_bar()` → weights), `factors/` package (technical.py + fundamental.py + kakushadze.py — 66 price-volume factors + 17 fundamental = 83 total, vectorized), optimizers (equal_weight, signal_weight, risk_parity), registry (auto-discovery from `strategies/` + `alpha` strategy), research (IC analysis, factor decay).
-- `src/risk/` — RiskEngine executes declarative rules; `kill_switch()` at 5% daily drawdown. RiskMonitor tracks metrics. `RealtimeRiskMonitor` — tick-level intraday drawdown with tiered alerts (2%/3%/5%) and automatic kill switch.
-- `src/execution/` — `broker/` subpackage: `base.py` (BrokerAdapter ABC, PaperBroker), `simulated.py` (SimBroker — slippage, per-instrument commission/tax, T+N settlement), `sinopac.py` (SinopacBroker — Shioaji SDK wrapper). `quote/` subpackage: `sinopac.py` (SinopacQuoteManager — tick/bidask subscription). `service.py` (ExecutionService — mode-aware routing: backtest/paper/live), `smart_order.py` (TWAP splitter), OMS (order lifecycle), market hours validation, EOD reconciliation.
-- `src/backtest/` — BacktestEngine (InstrumentRegistry integration, multi-currency detection), 40+ analytics, HTML/CSV reports, walk-forward, validation, `experiment.py` (parallel grid backtesting), `validator.py` (**StrategyValidator — 11 項強制驗證閘門**: CAGR/Sharpe/MDD/Walk-Forward/PBO/DSR/Bootstrap/OOS/vs-1N/Cost/Factor-Decay).
-- `src/data/` — DataFeed ABC (`get_bars`, `get_fx_rate`, `get_futures_chain`), YahooFeed (local-first: reads `data/market/*.parquet`, downloads only if missing), FinMindFeed, FredDataSource (macro data), LocalMarketData (permanent parquet store in `data/market/`).
-- `src/api/` — FastAPI REST + WebSocket, 14 route modules (incl. `/alpha`, `/allocation`, `/execution`, `/auto-alpha`), JWT auth, Prometheus.
-- `src/notifications/` — Discord / LINE / Telegram.
-- `src/scheduler/` — APScheduler with three execution paths (see Scheduling section below).
-
-**Adding a new strategy**: Create a file in `strategies/`, subclass `Strategy` from `src/strategy/base.py`, implement `name()` and `on_bar(ctx) -> dict[str, float]`. Register it in `_resolve_strategy()` in both `src/api/routes/backtest.py` and `src/cli/main.py`.
-
-**Adding a new data source**: Create a file in `src/data/sources/`, subclass `DataFeed` from `src/data/feed.py`, implement `get_bars()`, `get_latest_price()`, `get_universe()`. Output: `DataFrame[open, high, low, close, volume]` + tz-naive `DatetimeIndex`. Register in `create_feed()` factory in `src/data/sources/__init__.py`.
-
-## API Layer
-
-**Routes** (`src/api/routes/`): auth, admin, portfolio, strategies, orders, backtest, risk, system — all mounted under `/api/v1`.
-
-**Key endpoints**:
-- `POST /api/v1/auth/login` — JWT token issuance
-- `POST /api/v1/auth/register` — User registration
-- `POST /api/v1/backtest` — Run backtest
-- `POST /api/v1/backtest/walk-forward` — Walk-forward analysis
-- `GET/POST/DELETE /api/v1/portfolio/saved` — Persisted portfolio CRUD
-- `POST /api/v1/portfolio/saved/{id}/rebalance-preview` — Suggested trades via `weights_to_orders()`
-- `GET /api/v1/portfolio/saved/{id}/trades` — Trade history
-- `GET /api/v1/strategies` — List available strategies
-- `POST /api/v1/orders` — Create order
-- `PUT /api/v1/orders/{id}` — Modify order (price/quantity)
-- `DELETE /api/v1/orders/{id}` — Cancel order
-- `GET /api/v1/risk/rules` — Risk rule status
-- `POST /api/v1/risk/kill-switch` — Kill switch control
-- `GET /api/v1/risk/realtime` — Real-time intraday drawdown + alerts
-- `GET /api/v1/system/health` — Health check
-- `GET /api/v1/execution/status` — Execution service status
-- `GET /api/v1/execution/market-hours` — Current trading session
-- `POST /api/v1/execution/reconcile` — EOD position reconciliation
-- `GET /api/v1/execution/paper-trading/status` — Paper trading status
-- `GET /api/v1/auto-alpha/status` — Auto-alpha running state
-- `POST /api/v1/auto-alpha/start` — Start auto-alpha scheduler
-- `POST /api/v1/auto-alpha/run-now` — Execute one cycle immediately
-- `GET /api/v1/strategy/selection/latest` — Latest monthly stock selection (Web v2)
-- `GET /api/v1/strategy/selection/history` — Historical selections (Web v2)
-- `GET /api/v1/strategy/regime` — Bear market detection status + indicators (Web v2)
-- `GET /api/v1/strategy/drift` — Target vs actual portfolio drift (Web v2)
-- `POST /api/v1/strategy/rebalance` — One-click rebalance trigger (Web v2)
-- `GET /api/v1/strategy/data-status` — Revenue data freshness (Web v2)
-
-**Middleware & cross-cutting concerns**:
-- `src/api/middleware.py` — AuditMiddleware logs all mutation requests (POST/PUT/DELETE) with user, path, status, duration
-- `src/api/auth.py` — JWT token issuance + API key verification; role hierarchy enforcement
-- `src/api/password.py` — PBKDF2-SHA256 password hashing (standard library, zero deps)
-- Rate limiting via slowapi (60 requests/minute default, 10/minute for backtest)
-- CORS configured via `QUANT_ALLOWED_ORIGINS`
-- Prometheus metrics via `/metrics` endpoint
-
-**WebSocket** (`src/api/ws.py`): channels — `portfolio`, `alerts`, `orders`, `market`. Token-based auth (optional in dev mode). Ping/pong keep-alive. Broadcast uses `asyncio.gather` with 5s timeout and dead connection cleanup. `market` channel connected to SinopacQuoteManager tick/bidask in paper/live mode. `RealtimeRiskMonitor` monitors intraday drawdown via tick callbacks.
-
-**Logging** (`src/core/logging.py`): Structured logging via structlog. Supports `text` and `json` output formats, configured by `QUANT_LOG_FORMAT`.
-## Frontend Architecture
-
-**Shared package** (`apps/shared/`):
-- `src/types/` — TypeScript interfaces matching backend Pydantic schemas (UserRole hierarchy, Portfolio, BacktestResult, etc.)
-- `src/api/client.ts` — Platform-agnostic HTTP client with `ClientAdapter` injection (each platform provides its own auth/storage)
-- `src/api/ws.ts` — `WSManager` with auto-reconnect and exponential backoff; URL builder injected via `initWs()`
-- `src/api/endpoints.ts` — Typed API endpoint definitions (25+ endpoints, 1:1 with backend routes)
-- `src/hooks/pollBacktestResult.ts` — Backtest result polling utility
-- `src/utils/format.ts` — Number/currency/date formatters
-
-**Platform adapters** (keep platform-specific code out of shared):
-- Web: `apps/web/src/core/api/client.ts` — localStorage for API key, browser-relative URLs, Vite proxy
-- Android: `apps/android/` — Kotlin + Jetpack Compose + Hilt DI + OkHttp
-
-**Key pattern**: Web barrel files (`@core/api/index.ts`, etc.) re-export from `@quant/shared`. Feature code imports from `@core/*` — never directly from `@quant/shared`.
-
-**Web pages** (11 feature pages):
-- Dashboard (`/`) — MarketTicker, NavChart, PositionTable (WebSocket real-time)
-- Trading (`/trading`) — Portfolio + Orders + Paper Trading (consolidated)
-- Strategies (`/strategies`) — List + start/stop controls
-- Research (`/research`) — Alpha + Backtest + Allocation (consolidated)
-- Auto-Alpha (`/auto-alpha`) — Auto-Alpha Dashboard + factor allocation + performance
-- Risk (`/risk`) — Rules, alerts, kill switch
-- Guide (`/guide`) — 7-chapter interactive guide
-- Settings (`/settings`) — API key, password, Getting Started
-- Admin (`/admin`) — User CRUD, audit logs
-
-**Web UI patterns**:
-- Shared `<Card>` component for consistent card styling across all pages
-- JWT role extracted from token (not localStorage) via `extractRoleFromJwt()`
-- `PageSkeleton` for loading states
-- `DataTable` with TanStack React Virtual for virtual scrolling
-- `Toast` notification system
-- `ErrorBoundary` + `RouteErrorBoundary` for error handling
-- Path aliases: `@core`, `@feat`, `@shared`, `@test`
-
-**Android app** (`apps/android/`):
-- Kotlin + Jetpack Compose + Material 3
-- Hilt DI + OkHttp + Retrofit
-- Screens: Dashboard, Backtest, Strategies, Orders, Risk, Settings
-- SecureStorage for credentials, WebSocket real-time updates
-
-**Internationalization**: English + Traditional Chinese (en/zh). Context-based i18n with `useT` hook (web). Language preference persisted to localStorage.
-
-**Web frontend tests**: Vitest with jsdom (`apps/web/vitest.config.ts`). Test files colocated (e.g. `BacktestPage.test.tsx`, `RiskPage.test.tsx`, `AdminPage.test.tsx`). E2E tests via Playwright (`apps/web/e2e/`).
-
-## Strategies
-
-13 strategies (11 built-in + 2 pipeline):
-
-| Strategy | File | Logic |
-|----------|------|-------|
-| Momentum | `strategies/momentum.py` | Price trend-following |
-| MA Crossover | `strategies/ma_crossover.py` | Fast/slow MA crossover signals |
-| Mean Reversion | `strategies/mean_reversion.py` | Buy oversold, sell overbought |
-| RSI Oversold | `strategies/rsi_oversold.py` | Buy when RSI < 30 |
-| Multi-Factor | `strategies/multi_factor.py` | Momentum + value + quality, risk-parity weighted |
-| Pairs Trading | `strategies/pairs_trading.py` | Statistical arbitrage on correlated instruments |
-| Sector Rotation | `strategies/sector_rotation.py` | Rotate capital by relative momentum across sectors |
-| Revenue Momentum | `strategies/revenue_momentum.py` | Monthly revenue momentum + price confirmation. Sort by revenue_acceleration (3M/12M, ICIR 0.476 after 40-day lag correction) |
-| **Revenue Momentum Hedged** | `strategies/revenue_momentum_hedged.py` | **= Revenue Momentum + composite regime hedge (MA200 OR vol_spike, bear→0% position). Paper Trading 主策略** |
-| Trust Follow | `strategies/trust_follow.py` | Investment trust net buy + revenue growth |
-| Multi-Strategy Combo | `strategies/multi_strategy_combo.py` | Multi-strategy inverse-volatility weighted combination |
-| Alpha | `src/alpha/strategy.py` | Configurable factor pipeline with neutralization + cost-aware construction |
-| Multi-Asset | `src/strategy/multi_asset.py` | Two-layer: tactical allocation → within-class selection → portfolio optimization |
-
-## Scheduling
-
-Three independent execution paths — **should not run simultaneously**:
-
-| Path | Trigger | Strategy | Cron | Config |
-|------|---------|----------|------|--------|
-| **General Rebalance** | APScheduler | Any active strategy from registry | `QUANT_REBALANCE_CRON` (default: 1st of month 09:00) | `QUANT_SCHEDULER_ENABLED` |
-| **Auto-Alpha Pipeline** | `/auto-alpha/start` API | AlphaPipeline (daily factor ranking) | 8 stages from 08:30~13:35 | Manual start/stop |
-| **Monthly Revenue** | APScheduler | `revenue_momentum_hedged` | 11th of month: 08:30 update + 09:05 rebalance | `QUANT_REVENUE_SCHEDULER_ENABLED` |
-
-**Monthly Revenue flow** (Paper Trading 主路徑):
 ```
-Every 11th 08:30 → monthly_revenue_update()  → download latest FinMind revenue parquet
-Every 11th 09:05 → monthly_revenue_rebalance() → revenue_momentum_hedged.on_bar()
-                                                   → regime detection → stock selection → orders → notify
+假說生成 → 因子實作 → L5 快篩 (ICIR≥0.30)
+  → 大規模 IC 驗證 (865+ 支, ICIR(20d)≥0.20)
+  → StrategyValidator (≥12/13)
+  → 部署檢查 (Sharpe>0050, CAGR>8%, recent_sharpe>0)
+  → Paper Trading (5% NAV, 30 天觀察)
 ```
 
-## Infrastructure
+**假說生成**：由 Claude Code 根據 experience memory (`data/research/memory.json`) 和學術文獻動態生成。不使用硬編碼模板。生成新假說時應考慮：
+1. 已測試因子的成功/失敗模式
+2. 禁區列表（forbidden regions）
+3. 學術文獻依據
+4. 與現有因子的差異化（避免高相關）
 
-**Database**: PostgreSQL 16 (SQLite for development). Migrations managed by Alembic (`migrations/`). 4 migrations: initial schema, users, token revocation, portfolio persistence.
+## Architecture Quick Reference
 
-**Docker**: Multi-stage Dockerfile (Python 3.12-slim, non-root user `appuser`). `docker-compose.yml` runs `api` (Uvicorn 2 workers) + `db` (PostgreSQL 16 Alpine) services with health checks and persistent volumes (`pg_data`, `cache_data`).
+See `docs/claude/ARCHITECTURE.md` for full details.
 
-**CI/CD** (`.github/workflows/ci.yml`) — 9 jobs:
-- `backend-lint` — ruff check + mypy strict
-- `backend-test` — pytest (1,385 tests)
-- `web-typecheck` — tsc --noEmit
-- `web-test` — vitest (depends on web-typecheck)
-- `web-build` — vite build (depends on web-typecheck)
-- `shared-test` — vitest for @quant/shared
-- `android-build` — Gradle assembleDebug
-- `e2e-test` — Playwright chromium
-- `release` — GitHub Release + APK artifact (on push to master)
+**Key patterns:**
+- Strategy returns `dict[str, float]` weights, not orders
+- Risk rules are pure function factories (no inheritance)
+- All monetary values use `Decimal`
+- DatetimeIndex normalized to tz-naive
+- Local-first data: read `data/market/*.parquet`, download only if missing
 
-**Scripts**:
-- `scripts/benchmark.py` — Performance benchmarking for backtests (quick/full modes)
-- `scripts/start.bat` — Windows one-click launcher (backend + web)
+**Configuration:** All via `QUANT_` env vars or `.env`. See `src/core/config.py`.
 
-## Configuration
-
-All config via `QUANT_` prefixed env vars or `.env` file (see `.env.example`). Defined in `src/core/config.py` as Pydantic Settings. Access via `get_config()` singleton; use `override_config()` in tests.
-Key config:
-- `mode`: `"backtest"` (default), `"paper"`, or `"live"` — operating mode
-- `data_source`: `"yahoo"` (default) or `"finmind"` — selects data feed
-- `data_cache_size`: LRU cache size for in-memory bar data (default 128)
-- `finmind_token`: FinMind API token (optional, increases rate limit)
-- `tw_lot_size`: Taiwan stock lot size (default 1000 for round lots, set 1 for odd lots)
-- `settlement_days`: T+N settlement simulation (default 0 = disabled)
-- `max_ffill_days`: Forward-fill limit for missing data (default 5)
-- `commission_rate`: Trading commission rate (default 0.001425)
-- `default_slippage_bps`: Default slippage in basis points (default 5.0)
-- `max_position_pct`: Max single position percentage (default 0.05)
-- `max_daily_drawdown_pct`: Max daily drawdown percentage (default 0.03)
-- `scheduler_enabled`, `rebalance_cron`: APScheduler config
-- `api_key`, `jwt_secret`: Authentication secrets
-- `allowed_origins`: CORS origins
-- `max_failed_logins` (default 5), `lockout_minutes` (default 15): Account security
-- Notification config: `discord_webhook_url`, `line_notify_token`, `telegram_bot_token`, `telegram_chat_id`
-- `log_level`, `log_format`: Logging configuration
-
-## Security
-
-- **Authentication**: JWT (HS256) + API Key dual-mode
-- **Authorization**: 5-level role hierarchy (viewer < researcher < trader < risk_manager < admin)
-- **Password**: PBKDF2-SHA256 hashing
-- **Token revocation**: `valid_after` timestamp per user
-- **Account lockout**: Configurable failed login limit + lockout duration
-- **Rate limiting**: slowapi (memory-backed)
-- **Audit**: AuditMiddleware logs all mutations
-- **Container**: Non-root Docker user
-- **Android**: EncryptedSharedPreferences for credentials
+**Security:** JWT + API Key, 5-level roles, PBKDF2 passwords, audit logging.

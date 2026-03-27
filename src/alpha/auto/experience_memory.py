@@ -156,7 +156,17 @@ class ExperienceMemory:
         if not pending:
             return None
         # 按優先級排序，同優先級取假說數最少的
-        pending.sort(key=lambda d: (d.priority, d.hypothesis_count))
+        def _sort_key(d: DirectionStatus) -> tuple[int, int]:
+            try:
+                p = int(str(d.priority).lstrip("P"))
+            except (ValueError, TypeError):
+                p = 99
+            try:
+                h = int(d.hypothesis_count)
+            except (ValueError, TypeError):
+                h = 0
+            return (p, h)
+        pending.sort(key=_sort_key)
         return pending[0]
 
     def is_forbidden(self, factor_name: str) -> bool:
