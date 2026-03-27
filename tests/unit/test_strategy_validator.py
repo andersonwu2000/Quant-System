@@ -67,11 +67,14 @@ class TestValidationConfig:
     def test_defaults(self) -> None:
         cfg = ValidationConfig()
         assert cfg.min_sharpe == 0.7
-        assert cfg.min_cagr == 0.15
+        assert cfg.min_cagr == 0.08
+        assert cfg.max_drawdown == 0.40
         assert cfg.max_pbo == 0.50
         assert cfg.min_prob_sharpe_positive == 0.80
         assert cfg.max_annual_turnover == 0.80
         assert cfg.min_universe_size == 50
+        assert cfg.max_market_corr == 0.90
+        assert cfg.max_cvar_95 == -0.05
 
     def test_custom_thresholds(self) -> None:
         cfg = ValidationConfig(
@@ -123,7 +126,7 @@ class TestChecklistCompleteness:
         # 6. OOS holdout
         assert hasattr(cfg, "oos_start")
         assert hasattr(cfg, "oos_end")
-        assert hasattr(cfg, "oos_min_return")
+        assert hasattr(cfg, "oos_min_sharpe")
         # 7. vs benchmark
         assert hasattr(cfg, "min_excess_return")
         # 8. Turnover + cost
@@ -136,3 +139,7 @@ class TestChecklistCompleteness:
         # 11. Factor decay
         assert hasattr(cfg, "decay_lookback_days")
         assert hasattr(cfg, "min_recent_sharpe")
+        # 14. Market correlation
+        assert hasattr(cfg, "max_market_corr")
+        # 15. CVaR
+        assert hasattr(cfg, "max_cvar_95")

@@ -82,18 +82,38 @@
 
 研究腳本 `scripts/alpha_research_agent.py` 每輪自動從 JSON 讀取未測假說。
 
-### 3.2 部署篩選（六層）
+### 3.2 StrategyValidator 15 項（2026-03-27 更新）
+
+| # | 檢查 | 門檻 | 說明 |
+|---|------|------|------|
+| 1 | universe_size | ≥ 50 | 選股池不能太小 |
+| 2 | cagr | ≥ 8% | 絕對報酬門檻（從 15% 降低） |
+| 3 | sharpe | ≥ 0.7 | 風險調整報酬 |
+| 4 | max_drawdown | ≤ 40% | 收緊自 50%（機構標準） |
+| 5 | annual_cost_ratio | < 50% | 成本 / gross alpha |
+| 6 | walkforward_positive | ≥ 60% | WF 年正率 |
+| 7 | deflated_sharpe | ≥ 0.70 | 寬鬆門檻（90+ trials 下 0.95 不可能） |
+| 8 | bootstrap_p(SR>0) | ≥ 80% | Bootstrap 統計信心 |
+| 9 | oos_sharpe | ≥ 0 | 改為 Sharpe > 0（比 return > 0 更嚴） |
+| 10 | vs_1n_excess | ≥ 0% | 超越等權基準 |
+| 11 | pbo | ≤ 50% | 過擬合概率 |
+| 12 | worst_regime | ≥ -30% | 最差市場環境 |
+| 13 | recent_period_sharpe | ≥ 0 | 因子是否衰退 |
+| 14 | market_correlation | \|corr\| ≤ 0.90 | 獨立 alpha（非市場 beta） |
+| 15 | cvar_95 | ≥ -5% | 日尾部風險 |
+
+### 3.3 部署篩選（六層）
 
 | 階段 | 條件 | 說明 |
 |------|------|------|
 | L5 快篩 | ICIR ≥ 0.30 | 小樣本快速檢查（數秒） |
 | 大規模 IC | ICIR(20d) ≥ 0.20 | 全 universe 驗證（865+ 檔，數分鐘） |
-| StrategyValidator | ≥ 11/13 通過（排除 DSR） | 13 項驗證閘門，deflated_sharpe 為參考項 |
+| StrategyValidator | ≥ 13/15 通過（排除 DSR） | 15 項驗證閘門 |
 | vs 基準 | Sharpe > 0050.TW | 風險調整必須打敗大盤 |
 | 絕對報酬 | CAGR > 8% | 絕對報酬門檻 |
-| 近期表現 | recent_period_sharpe > -0.10 | 允許輕微噪音（-0.10 內視為零） |
+| 近期表現 | recent_period_sharpe > -0.10 | 允許輕微噪音 |
 
-> **deflated_sharpe 說明**：自動研究累計測試 90+ 因子後，n_trials 導致 DSR 原始門檻 0.95 結構性不可能通過。改為寬鬆門檻 ≥ 0.70（低於 0.70 仍視為過擬合風險，阻擋部署）。
+> **deflated_sharpe 說明**：90+ trials 下 DSR 0.95 需 Sharpe > 2.0（業界不現實）。0.70 對應 Sharpe ~1.5，是合理門檻。Bailey & López de Prado 原意是排名工具而非絕對門檻。
 
 ### 3.3 關鍵約束（2026-03-27 大規模審計後確立）
 

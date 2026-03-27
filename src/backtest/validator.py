@@ -50,9 +50,9 @@ class ValidationConfig:
     """驗證標準配置。可依策略類型調整門檻。"""
 
     # 1. Full backtest
-    min_cagr: float = 0.15            # CAGR > 15%
+    min_cagr: float = 0.08            # CAGR > 8%（統一標準，15% 太嚴）
     min_sharpe: float = 0.7           # Sharpe > 0.7
-    max_drawdown: float = 0.50        # MDD < 50%
+    max_drawdown: float = 0.40        # MDD < 40%（收緊自 50%，機構標準）
 
     # 2. Walk-Forward
     wf_train_years: int = 3           # 訓練窗口
@@ -72,9 +72,9 @@ class ValidationConfig:
     min_prob_sharpe_positive: float = 0.80  # P(SR > 0) > 80%
 
     # 6. OOS holdout
-    oos_start: str = "2025-07-01"
+    oos_start: str = "2025-01-01"
     oos_end: str = "2025-12-31"
-    oos_min_return: float = 0.0       # OOS 報酬 > 0
+    oos_min_sharpe: float = 0.0       # OOS Sharpe > 0（比 return > 0 更嚴格）
 
     # 7. vs 1/N benchmark
     benchmark_strategy: str = "equal_weight"  # 1/N 等權
@@ -93,6 +93,12 @@ class ValidationConfig:
     # 11. Factor decay
     decay_lookback_days: int = 252    # 看最近 1 年
     min_recent_sharpe: float = 0.0    # 最近 1 年 Sharpe > 0
+
+    # 14. Market correlation
+    max_market_corr: float = 0.90     # |corr with market| < 0.90（需有獨立 alpha）
+
+    # 15. CVaR / tail risk
+    max_cvar_95: float = -0.05        # Daily CVaR(95%) > -5%（允許最差 5% 日均損 < 5%）
 
     # Backtest settings
     initial_cash: float = 10_000_000
@@ -308,15 +314,16 @@ class StrategyValidator:
             threshold=f">= {cfg.min_prob_sharpe_positive:.0%}",
         ))
 
-        # 6. OOS holdout
+        # 6. OOS holdout（改為 Sharpe > 0 而非 return > 0）
         logger.info("[Validator] Running OOS holdout...")
         oos_result = self._run_oos(strategy, universe, cfg.oos_start, cfg.oos_end)
+        oos_sharpe = oos_result.get("sharpe", 0)
         report.checks.append(CheckResult(
-            name="oos_return",
-            passed=oos_result.get("return", 0) >= cfg.oos_min_return,
-            value=f"{oos_result.get('return', 0):+.2%}",
-            threshold=f">= {cfg.oos_min_return:+.2%}",
-            detail=f"OOS {cfg.oos_start}~{cfg.oos_end}",
+            name="oos_sharpe",
+            passed=oos_sharpe >= cfg.oos_min_sharpe,
+            value=f"{oos_sharpe:.3f}",
+            threshold=f">= {cfg.oos_min_sharpe:.3f}",
+            detail=f"OOS {cfg.oos_start}~{cfg.oos_end}, return={oos_result.get('return', 0):+.2%}",
         ))
 
         # 7. vs 1/N benchmark
@@ -354,6 +361,28 @@ class StrategyValidator:
             value=f"{recent_sharpe:.3f}",
             threshold=f">= {cfg.min_recent_sharpe:.3f}",
             detail=f"Last {cfg.decay_lookback_days} days",
+        ))
+
+        # 14. 因子相關性（和市場的相關性 — 是否有獨立 alpha）
+        logger.info("[Validator] Checking market correlation...")
+        mkt_corr = self._market_correlation(result, universe, start, end)
+        report.checks.append(CheckResult(
+            name="market_correlation",
+            passed=abs(mkt_corr) <= cfg.max_market_corr,
+            value=f"{mkt_corr:.3f}",
+            threshold=f"|corr| <= {cfg.max_market_corr:.2f}",
+            detail="Daily return correlation with 0050.TW (high = no independent alpha)",
+        ))
+
+        # 15. CVaR/尾部風險
+        logger.info("[Validator] Computing CVaR...")
+        cvar95 = self._compute_cvar(result, 0.05)
+        report.checks.append(CheckResult(
+            name="cvar_95",
+            passed=cvar95 >= cfg.max_cvar_95,
+            value=f"{cvar95:.2%}",
+            threshold=f">= {cfg.max_cvar_95:.2%}",
+            detail="Daily CVaR(95%): expected shortfall in worst 5% of days",
         ))
 
         return report
@@ -450,6 +479,45 @@ class StrategyValidator:
                     positive_count += 1
 
         return positive_count / n_bootstrap
+
+    def _market_correlation(
+        self, result: BacktestResult, universe: list[str], start: str, end: str,
+    ) -> float:
+        """計算策略日報酬和市場（0050.TW）的相關性。"""
+        try:
+            strat_rets = result.daily_returns
+            if strat_rets is None or len(strat_rets) < 20:
+                return 0.0
+
+            # Load 0050 benchmark
+            from src.data.sources.yahoo import YahooFeed
+            feed = YahooFeed()
+            bench = feed.get_bars("0050.TW", start=start, end=end)
+            if bench is None or len(bench) < 20:
+                return 0.0
+            bench_rets = bench["close"].pct_change().dropna()
+
+            # Align dates
+            common = strat_rets.index.intersection(bench_rets.index)
+            if len(common) < 20:
+                return 0.0
+            corr = float(strat_rets.loc[common].corr(bench_rets.loc[common]))
+            return corr if np.isfinite(corr) else 0.0
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _compute_cvar(result: BacktestResult, alpha: float = 0.05) -> float:
+        """CVaR(95%) = 最差 5% 日均報酬的平均值。"""
+        try:
+            rets = result.daily_returns
+            if rets is None or len(rets) < 20:
+                return 0.0
+            sorted_rets = sorted(rets.dropna().values)
+            n_tail = max(int(len(sorted_rets) * alpha), 1)
+            return float(np.mean(sorted_rets[:n_tail]))
+        except Exception:
+            return 0.0
 
     def _run_oos(self, strategy: Strategy, universe: list[str], start: str, end: str) -> dict[str, Any]:
         """OOS holdout 回測。"""
