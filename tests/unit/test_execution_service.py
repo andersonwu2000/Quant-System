@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.core.models import Instrument, Order, OrderStatus, OrderType, Portfolio, Side
+from src.core.models import Instrument, Order, OrderType, Portfolio, Side
 from src.execution.service import ExecutionConfig, ExecutionService
 
 

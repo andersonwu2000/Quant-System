@@ -141,7 +141,8 @@ class TestSinopacBrokerSubmitOrder:
             broker_id = broker.submit_order(order)
 
         assert broker_id == "ORD001"
-        assert order.status == OrderStatus.SUBMITTED
+        # Simulation mode fills immediately
+        assert order.status == OrderStatus.FILLED
         broker._api.place_order.assert_called_once()
 
     def test_submit_sell_order(self) -> None:
