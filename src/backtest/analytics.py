@@ -294,7 +294,8 @@ def compute_analytics(
     total_return = float(last_nav / initial_cash - 1)
 
     # 年化報酬 (假設 252 交易日)
-    n_days = len(nav_series)
+    # A1 fix: len(nav_series)-1 = 報酬天數（數據點比報酬多 1）
+    n_days = max(len(nav_series) - 1, 1)
     n_years = n_days / 252
     annual_return = float((1 + total_return) ** (1 / max(n_years, 0.01)) - 1) if total_return > -1 else -1.0
 

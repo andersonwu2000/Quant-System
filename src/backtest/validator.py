@@ -199,6 +199,14 @@ class StrategyValidator:
         cfg = self.config
         report = ValidationReport(strategy_name=strategy.name())
 
+        # V8 fix: OOS 重疊防護 — IS end 不能超過 OOS start
+        if pd.Timestamp(end) > pd.Timestamp(cfg.oos_start):
+            logger.warning(
+                "IS end (%s) > OOS start (%s) — truncating IS to avoid data leakage",
+                end, cfg.oos_start,
+            )
+            end = (pd.Timestamp(cfg.oos_start) - pd.DateOffset(days=1)).strftime("%Y-%m-%d")
+
         # 10. Selection bias check（前置：universe 夠大嗎？）
         report.checks.append(CheckResult(
             name="universe_size",
@@ -238,15 +246,17 @@ class StrategyValidator:
             return report
 
         # 8. Turnover + cost（兩邊都年化比較）
+        # V2 fix: 用 gross alpha（net + cost）作為分母，而非 net return
         n_years = max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
         annual_cost_rate = result.total_commission / cfg.initial_cash / n_years
-        cost_ratio = annual_cost_rate / abs(result.annual_return) if result.annual_return > 0 else 0
+        gross_alpha = result.annual_return + annual_cost_rate  # gross ≈ net + cost
+        cost_ratio = annual_cost_rate / abs(gross_alpha) if gross_alpha > 0 else 1.0
         report.checks.append(CheckResult(
             name="annual_cost_ratio",
-            passed=cost_ratio <= cfg.max_cost_ratio if result.annual_return > 0 else True,
+            passed=cost_ratio <= cfg.max_cost_ratio if gross_alpha > 0 else False,
             value=f"{cost_ratio:.0%}",
             threshold=f"< {cfg.max_cost_ratio:.0%} of gross",
-            detail=f"Annual cost: {annual_cost_rate:.2%}, Gross CAGR: {result.annual_return:.2%}, Trades: {result.total_trades}",
+            detail=f"Annual cost: {annual_cost_rate:.2%}, Gross CAGR: {gross_alpha:.2%}, Net CAGR: {result.annual_return:.2%}",
         ))
 
         # 2. Walk-Forward
@@ -271,7 +281,9 @@ class StrategyValidator:
                 if len(ret) > 10:
                     from scipy.stats import skew, kurtosis
                     sk = float(skew(ret.dropna()))
-                    ku = float(kurtosis(ret.dropna()))
+                    # V1 fix: scipy kurtosis(fisher=True) returns excess kurtosis (normal=0)
+                    # deflated_sharpe expects normal kurtosis (normal=3), so add 3
+                    ku = float(kurtosis(ret.dropna())) + 3.0
                     dsr = deflated_sharpe(result.sharpe, cfg.n_trials, len(ret), sk, ku)
                 else:
                     dsr = 0.0
@@ -350,6 +362,9 @@ class StrategyValidator:
 
     def _make_bt_config(self, universe: list[str], start: str, end: str) -> BacktestConfig:
         cfg = self.config
+        # V7 fix: 使用 config 的 fractional_shares 設定，而非強制 True
+        # 台股用整張（fractional_shares=False）才能反映真實交易
+        fractional = getattr(cfg, "fractional_shares", False)
         return BacktestConfig(
             universe=universe,
             start=start,
@@ -358,7 +373,8 @@ class StrategyValidator:
             commission_rate=cfg.commission_rate,
             tax_rate=cfg.tax_rate,
             rebalance_freq=cfg.rebalance_freq,  # type: ignore[arg-type]
-            fractional_shares=True,
+            fractional_shares=fractional,
+            market_lot_sizes={".TW": 1000, ".TWO": 1000},
             enable_kill_switch=True,
             kill_switch_cooldown="end_of_month",
             execution_delay=1,
@@ -438,25 +454,21 @@ class StrategyValidator:
     def _compute_pbo(self, wf_results: list[dict[str, Any]]) -> float:
         """用 Walk-Forward 各年的 Sharpe 估算 PBO。
 
-        NOTE: This is an approximate PBO implementation. It constructs
-        synthetic strategy variants by adding noise to WF period Sharpes,
-        rather than using truly independent strategy configurations.
-        Results should be interpreted as indicative, not exact.
+        V4/V5 fix: 當 WF 年度不足時回傳 0.5（inconclusive），不再回傳 0.0（no overfit）。
+        同時標記此方法是近似值（synthetic noise variants，非真正 CSCV）。
 
-        原理：將 WF 各年當作不同「策略變體」，
-        用 CSCV 檢查 IS 最優年是否在 OOS 也最優。
-        至少需要 4 年 WF 結果。
+        NOTE: 正確的 PBO (Bailey 2015 CSCV) 需要每日報酬矩陣 × 多策略配置。
+        此處用 WF Sharpe + noise 作為近似，結果僅供參考。
         """
         sharpes = [r.get("sharpe", 0) for r in wf_results if "error" not in r]
         if len(sharpes) < 4:
-            return 0.0  # 數據不夠，無法判定
+            # V5 fix: 數據不足 → inconclusive (0.5)，而非 optimistic (0.0)
+            logger.info("PBO: insufficient WF data (%d years < 4), returning inconclusive (0.5)", len(sharpes))
+            return 0.5
 
         try:
-            # 構造 returns matrix：每年的 Sharpe 作為一個「策略」的表現
-            # 用 bootstrap 模擬多策略變體
             rng = np.random.default_rng(42)
             n_variants = max(len(sharpes), 5)
-            # 產生加噪版本作為策略變體
             variants = {}
             for i in range(n_variants):
                 noise = rng.normal(0, 0.1, len(sharpes))
@@ -464,11 +476,15 @@ class StrategyValidator:
             variants["original"] = sharpes
 
             returns_matrix = pd.DataFrame(variants)
-            pbo_result = compute_pbo(returns_matrix, n_partitions=min(len(sharpes), 6))
+            n_parts = min(len(sharpes), 6)
+            if len(sharpes) < n_parts:
+                logger.info("PBO: too few rows (%d) for %d partitions, returning inconclusive", len(sharpes), n_parts)
+                return 0.5
+            pbo_result = compute_pbo(returns_matrix, n_partitions=n_parts)
             return pbo_result.pbo
         except Exception as e:
-            logger.warning("PBO computation failed: %s", e)
-            return 0.0
+            logger.warning("PBO computation failed: %s — returning inconclusive", e)
+            return 0.5
 
     def _check_regime_breakdown(
         self,
