@@ -108,11 +108,19 @@ class ExecutionService:
                 if self._config.sinopac_api_key:
                     connected = broker.connect()
                     if not connected:
+                        if mode == "live":
+                            # Live mode: 不允許 fallback 到 PaperBroker（會造成假交易）
+                            logger.critical(
+                                "FATAL: Shioaji connection failed in LIVE mode. "
+                                "Refusing to fall back to PaperBroker — this would create "
+                                "phantom trades. Fix the connection and restart."
+                            )
+                            self._initialized = False
+                            return False
+                        # Paper mode: fallback 可接受（模擬環境）
                         logger.critical(
-                            "FALLBACK: Shioaji connection failed in %s mode — "
-                            "falling back to PaperBroker. Fills will use simulated costs, "
-                            "NOT real broker execution!",
-                            mode,
+                            "FALLBACK: Shioaji connection failed in paper mode — "
+                            "falling back to PaperBroker."
                         )
                         self._broker = PaperBroker()
                         self._fallback_mode = True
@@ -123,14 +131,22 @@ class ExecutionService:
                 self._broker = broker
                 self._initialized = True
                 logger.info("ExecutionService initialized: %s mode (SinopacBroker)", mode)
+
+                # Live mode: 註冊 async fill callback 以更新 portfolio
+                if not self._config.sinopac_simulation:
+                    broker.register_callback(self._on_broker_fill)
+                    logger.info("Registered async fill callback for live mode")
+
                 return True
 
             except ImportError:
+                if mode == "live":
+                    logger.critical(
+                        "FATAL: shioaji not installed — cannot run in LIVE mode."
+                    )
+                    return False
                 logger.critical(
-                    "FALLBACK: shioaji package not installed — "
-                    "falling back to PaperBroker for %s mode. "
-                    "Fills will use simulated costs, NOT real broker execution!",
-                    mode,
+                    "FALLBACK: shioaji not installed — falling back to PaperBroker for paper mode."
                 )
                 self._broker = PaperBroker()
                 self._fallback_mode = True
@@ -307,6 +323,51 @@ class ExecutionService:
     def fallback_mode(self) -> bool:
         """True if broker connection failed and we fell back to PaperBroker."""
         return self._fallback_mode
+
+    def set_portfolio(self, portfolio: Any, loop: Any = None) -> None:
+        """設定 portfolio 和 event loop 供 async fill callback 使用。
+
+        必須在 app startup 時呼叫，否則 live mode 的成交回報無法更新 portfolio。
+        """
+        self._portfolio = portfolio
+        self._event_loop = loop
+
+    def _on_broker_fill(self, order: Order) -> None:
+        """Broker 成交回報 callback（在 Shioaji 背景線程中呼叫）。
+
+        當 order.status == FILLED 時，建立 Trade 並排程到 event loop 執行 apply_trades。
+        """
+        if order.status != OrderStatus.FILLED:
+            return
+
+        portfolio = getattr(self, '_portfolio', None)
+        loop = getattr(self, '_event_loop', None)
+        if portfolio is None or loop is None:
+            logger.warning("Async fill: no portfolio/loop set, skipping apply_trades for %s",
+                          order.instrument.symbol)
+            return
+
+        trade = Trade(
+            timestamp=datetime.now(timezone.utc),
+            symbol=order.instrument.symbol,
+            side=order.side,
+            quantity=order.filled_qty or order.quantity,
+            price=order.filled_avg_price or Decimal("0"),
+            commission=order.commission,
+            slippage_bps=order.slippage_bps,
+            strategy_id=order.strategy_id,
+            order_id=order.id,
+        )
+
+        import asyncio
+
+        async def _apply() -> None:
+            from src.execution.oms import apply_trades
+            apply_trades(portfolio, [trade])
+            logger.info("Async fill applied: %s %s %s @ %s",
+                       trade.side.value, trade.quantity, trade.symbol, trade.price)
+
+        asyncio.run_coroutine_threadsafe(_apply(), loop)
 
     def shutdown(self) -> None:
         """優雅關閉。"""

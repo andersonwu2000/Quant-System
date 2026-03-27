@@ -100,6 +100,9 @@ def create_app() -> FastAPI:
         if config.mode in ("paper", "live"):
             loop = asyncio.get_running_loop()
 
+            # Live mode: 設定 portfolio + event loop 供 async fill callback 使用
+            state.execution_service.set_portfolio(state.portfolio, loop)
+
             from src.execution.broker.sinopac import SinopacBroker
             from src.execution.quote.sinopac import SinopacQuoteManager, TickData
             from src.risk.realtime import RealtimeRiskMonitor

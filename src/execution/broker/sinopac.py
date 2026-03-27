@@ -122,12 +122,19 @@ class SinopacBroker(BrokerAdapter):
             )
 
             # CA 憑證（實盤下單必要，模擬模式可跳過）
-            if ca and not self._config.simulation:
-                self._api.activate_ca(
-                    ca_path=ca,
-                    ca_passwd=ca_pwd,
-                )
-                logger.info("CA certificate activated")
+            if not self._config.simulation:
+                if not ca:
+                    logger.critical(
+                        "LIVE MODE: CA certificate path not configured! "
+                        "Orders will be REJECTED by the exchange. "
+                        "Set QUANT_SINOPAC_CA_PATH and QUANT_SINOPAC_CA_PASSWORD."
+                    )
+                else:
+                    self._api.activate_ca(
+                        ca_path=ca,
+                        ca_passwd=ca_pwd,
+                    )
+                    logger.info("CA certificate activated")
 
             # 註冊成交回報 callback
             self._api.set_order_callback(self._on_order_callback)
