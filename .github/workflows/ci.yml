@@ -20,13 +20,14 @@ jobs:
 
   backend-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install ".[dev]"
-      - run: pytest tests/ -v
+      - run: pytest tests/ -v --timeout=60 -x
 
   web-typecheck:
     runs-on: ubuntu-latest
@@ -204,7 +205,7 @@ jobs:
             | 項目 | 狀態 |
             |------|------|
             | Backend Lint | ✅ |
-            | Backend Tests (1323) | ✅ |
+            | Backend Tests (1680+) | ✅ |
             | Web Typecheck | ✅ |
             | Web Tests | ✅ |
             | Web Build | ✅ |
