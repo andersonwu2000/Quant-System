@@ -485,30 +485,58 @@ class AlphaResearchAgent:
         with open(eval_path, "w", encoding="utf-8") as f:
             json.dump(asdict(eval_result), f, indent=2, ensure_ascii=False, default=str)
 
-        # L5 通過 → 自動跑 StrategyValidator 13 項
+        # L5 通過 → 大規模 IC 驗證 → StrategyValidator → 部署
         if traj.passed:
+            # Step A: 大規模 IC 驗證（865+ 支台股）
+            large_ic = self._run_large_scale_ic(hypothesis.name)
+            traj.eval_results["large_icir_5d"] = large_ic.get("icir_5d", 0)
+            traj.eval_results["large_icir_20d"] = large_ic.get("icir_20d", 0)
+            traj.eval_results["large_icir_60d"] = large_ic.get("icir_60d", 0)
+            traj.eval_results["large_hit_20d"] = large_ic.get("hit_20d", 0)
+            traj.eval_results["large_n_months"] = large_ic.get("n_months", 0)
+
+            large_icir_20d = large_ic.get("icir_20d", 0)
+            if large_icir_20d < 0.20:
+                logger.info(
+                    "[Large-Scale] %s: ICIR(20d)=%.3f < 0.20, skip Validator",
+                    hypothesis.name, large_icir_20d,
+                )
+                traj.eval_results["large_scale_pass"] = False
+                self._write_discovery_report(traj, eval_result, None, large_ic)
+                self.memory.save(self.memory_path)
+                return traj
+
+            logger.info(
+                "[Large-Scale] %s: ICIR(20d)=%.3f PASS",
+                hypothesis.name, large_icir_20d,
+            )
+            traj.eval_results["large_scale_pass"] = True
+
+            # Step B: StrategyValidator 13 項
             validator_result = self._run_strategy_validator(hypothesis, eval_result)
             traj.eval_results["validator_passed"] = validator_result.get("n_passed", 0)
             traj.eval_results["validator_total"] = validator_result.get("n_total", 0)
-            self.memory.save(self.memory_path)  # 存 validator 結果
+            self.memory.save(self.memory_path)
 
-            self._write_discovery_report(traj, eval_result, validator_result)
+            self._write_discovery_report(traj, eval_result, validator_result, large_ic)
 
-            # 判斷是否自動部署到 Paper Trading
-            self._try_auto_deploy(hypothesis, validator_result)
+            # Step C: 判斷是否自動部署
+            self._try_auto_deploy(hypothesis, validator_result, large_ic)
 
         return traj
 
     def _try_auto_deploy(
         self, hypothesis: Hypothesis, validator_result: dict[str, Any],
+        large_ic: dict[str, float] | None = None,
     ) -> None:
         """判斷因子是否符合自動部署條件，若符合則部署到 Paper Trading。
 
         部署條件（全部滿足）：
-        1. StrategyValidator >= 12/13（提高門檻，10/13 太寬鬆）
-        2. Sharpe > 0050.TW Sharpe（風險調整打敗大盤）
+        1. StrategyValidator >= 12/13
+        2. Sharpe > 0050.TW Sharpe
         3. CAGR > 8%
         4. recent_period_sharpe > 0（最近 1 年不能虧）
+        5. 大規模 ICIR(20d) >= 0.20（865+ 支台股驗證）
         """
         n_passed = validator_result.get("n_passed", 0)
         n_total = validator_result.get("n_total", 13)
@@ -560,6 +588,12 @@ class AlphaResearchAgent:
             logger.info("[Deploy] %s: recent Sharpe %.3f <= 0, skip deploy", hypothesis.name, recent_sharpe)
             return
 
+        # 5. 大規模 ICIR 門檻
+        large_icir = large_ic.get("icir_20d", 0) if large_ic else 0
+        if large_icir < 0.20:
+            logger.info("[Deploy] %s: large ICIR(20d) %.3f < 0.20, skip deploy", hypothesis.name, large_icir)
+            return
+
         # 全部通過 → 部署到 Paper Trading
         try:
             from src.alpha.auto.paper_deployer import PaperDeployer
@@ -597,6 +631,114 @@ class AlphaResearchAgent:
             return float(daily_ret.mean() / daily_ret.std() * np.sqrt(252))
         except Exception:
             return 0.8  # fallback
+
+    def _run_large_scale_ic(self, factor_name: str) -> dict[str, float]:
+        """大規模 IC 驗證（865+ 支台股，月度 Spearman IC）。
+
+        Returns:
+            dict with icir_5d, icir_20d, icir_60d, hit_20d, n_months
+        """
+        import importlib
+        import numpy as np
+        from scipy.stats import spearmanr
+
+        logger.info("[Large-Scale] Running IC check for %s ...", factor_name)
+        t0 = time.perf_counter()
+
+        # Load revenue cache
+        fund_dir = Path("data/fundamental")
+        rev_cache: dict[str, pd.DataFrame] = {}
+        for p in sorted(fund_dir.glob("*_revenue.parquet")):
+            sym = p.stem.replace("_revenue", "")
+            try:
+                df = pd.read_parquet(p)
+                if df.empty or "revenue" not in df.columns:
+                    continue
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date")
+                df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
+                rev_cache[sym] = df
+            except Exception:
+                continue
+
+        # Load factor compute function
+        try:
+            mod = importlib.import_module(f"src.strategy.factors.research.{factor_name}")
+            compute_fn = getattr(mod, f"compute_{factor_name}")
+        except Exception as e:
+            logger.warning("[Large-Scale] Cannot load factor %s: %s", factor_name, e)
+            return {"icir_5d": 0, "icir_20d": 0, "icir_60d": 0, "hit_20d": 0, "n_months": 0}
+
+        # Use full price data
+        price_data = self._load_data()
+        all_symbols = sorted(price_data.keys())
+
+        # Monthly sampling
+        sample_dates = sorted(set().union(*[set(price_data[s].index) for s in all_symbols[:200]]))
+        monthly = pd.DatetimeIndex(sample_dates).to_period("M").unique()
+
+        horizons = [5, 20, 60]
+        ic_store: dict[int, list[float]] = {h: [] for h in horizons}
+        n_months = 0
+
+        for period in monthly:
+            as_of = period.to_timestamp() + pd.DateOffset(months=1) - pd.DateOffset(days=1)
+            if as_of < pd.Timestamp("2017-01-01") or as_of > pd.Timestamp("2025-12-31"):
+                continue
+
+            active = [s for s in all_symbols if s in price_data and len(price_data[s][price_data[s].index <= as_of]) > 120]
+            if len(active) < 50:
+                continue
+
+            try:
+                fvals = compute_fn(active, as_of)
+            except Exception:
+                continue
+            if len(fvals) < 20:
+                continue
+
+            for h in horizons:
+                xs, ys = [], []
+                for sym, fv in fvals.items():
+                    if sym not in price_data:
+                        continue
+                    df = price_data[sym]
+                    after = df.index[df.index > as_of]
+                    if len(after) < h:
+                        continue
+                    ret = float(df.loc[after[h - 1], "close"] / df.loc[after[0], "close"] - 1)
+                    xs.append(fv)
+                    ys.append(ret)
+                if len(xs) < 20:
+                    continue
+                ic, _ = spearmanr(xs, ys)
+                if not np.isnan(ic):
+                    ic_store[h].append(ic)
+
+            n_months += 1
+
+        # Compute ICIRs
+        result: dict[str, float] = {"n_months": n_months}
+        for h in horizons:
+            ics = ic_store[h]
+            if len(ics) > 5:
+                std = float(np.std(ics, ddof=1))
+                icir = float(np.mean(ics)) / std if std > 0 else 0
+                result[f"icir_{h}d"] = round(icir, 3)
+                if h == 20:
+                    result["hit_20d"] = round(sum(1 for x in ics if x > 0) / len(ics) * 100, 1)
+            else:
+                result[f"icir_{h}d"] = 0
+                if h == 20:
+                    result["hit_20d"] = 0
+
+        elapsed = time.perf_counter() - t0
+        logger.info(
+            "[Large-Scale] %s: ICIR(5d)=%+.3f, ICIR(20d)=%+.3f, ICIR(60d)=%+.3f, Hit=%.1f%%, %d months, %.0fs",
+            factor_name, result.get("icir_5d", 0), result.get("icir_20d", 0),
+            result.get("icir_60d", 0), result.get("hit_20d", 0), n_months, elapsed,
+        )
+        return result
 
     def _run_strategy_validator(
         self, hypothesis: Hypothesis, eval_result: EvaluationResult,
@@ -647,6 +789,7 @@ class AlphaResearchAgent:
     def _write_discovery_report(
         self, traj: ResearchTrajectory, eval_result: EvaluationResult,
         validator_result: dict[str, Any] | None = None,
+        large_ic: dict[str, float] | None = None,
     ) -> None:
         """成果寫到 docs/dev/auto/。"""
         auto_dir = Path("docs/dev/auto")
@@ -729,27 +872,57 @@ class AlphaResearchAgent:
                     else:
                         lines.append(f"- **{c['name']}** ({c['value']}): 未達門檻")
 
-        # 與現有策略比較
-        lines.extend([
-            "",
-            "## 與現有因子比較",
-            "",
-            "| 因子 | ICIR | 說明 |",
-            "|------|:----:|------|",
-            f"| **{traj.hypothesis.get('name', '?')}** | **{eval_result.best_icir:+.3f}** | **本次發現** |",
-            "| revenue_yoy（基線） | +0.674 | 已驗證的核心因子 |",
-            "| revenue_acceleration | +0.847 | 60d 最強因子 |",
-            "| momentum_6m | +0.217 | 最佳 price-volume 因子 |",
-        ])
+        # 大規模 IC 驗證
+        if large_ic and large_ic.get("n_months", 0) > 0:
+            icir_5 = large_ic.get("icir_5d", 0)
+            icir_20 = large_ic.get("icir_20d", 0)
+            icir_60 = large_ic.get("icir_60d", 0)
+            hit_20 = large_ic.get("hit_20d", 0)
+            n_m = large_ic.get("n_months", 0)
+            passed = icir_20 >= 0.20
+            lines.extend([
+                "",
+                f"## 大規模 IC 驗證（865+ 支台股，{n_m} 個月）",
+                "",
+                "| Factor | ICIR(5d) | ICIR(20d) | ICIR(60d) | Hit%(20d) |",
+                "|--------|:--------:|:---------:|:---------:|:---------:|",
+                f"| **{traj.hypothesis.get('name', '?')}** | {icir_5:+.3f} | **{icir_20:+.3f}** | {icir_60:+.3f} | {hit_20:.1f}% |",
+                "| revenue_acceleration (#16 基準) | +0.202 | +0.240 | +0.426 | 63.9% |",
+                "| revenue_new_high (#16 基準) | +0.246 | +0.207 | +0.364 | 61.3% |",
+                "",
+                f"**大規模 ICIR(20d) = {icir_20:+.3f} — {'PASS (≥0.20)' if passed else 'FAIL (<0.20)'}**",
+            ])
+        elif large_ic is not None:
+            lines.extend([
+                "",
+                "## 大規模 IC 驗證",
+                "",
+                "未能完成大規模驗證。",
+            ])
+
+        # 部署判定
+        deploy_eligible = True
+        reasons = []
+        if validator_result:
+            n_pass = validator_result.get("n_passed", 0)
+            if n_pass < 12:
+                deploy_eligible = False
+                reasons.append(f"Validator {n_pass}/13 < 12")
+        if large_ic:
+            if large_ic.get("icir_20d", 0) < 0.20:
+                deploy_eligible = False
+                reasons.append(f"大規模 ICIR(20d) {large_ic.get('icir_20d', 0):.3f} < 0.20")
 
         lines.extend([
             "",
-            "## 下一步",
+            "## 部署判定",
             "",
-            "- [ ] 人工審閱假說邏輯",
-            "- [ ] 決定是否加入正式因子庫",
-            "- [ ] 決定是否部署到 Paper Trading",
         ])
+        if deploy_eligible:
+            lines.append("**符合所有部署條件（Validator ≥12/13 + 大規模 ICIR ≥0.20）。**")
+        else:
+            lines.append(f"**不符合部署條件：{'; '.join(reasons)}**")
+
 
         report_path.write_text("\n".join(lines), encoding="utf-8")
         logger.info("Discovery report: %s", report_path)
