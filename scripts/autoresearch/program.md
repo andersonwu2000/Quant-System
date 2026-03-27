@@ -16,6 +16,7 @@ Repeat until the human interrupts you:
 1. **Think** — based on results.tsv + your knowledge of quantitative finance, choose what to try next
 2. **Edit `factor.py`** — implement your idea. You may ONLY edit `factor.py`. Do NOT touch `evaluate.py`.
 3. **Commit** — `git add factor.py && git commit -m "experiment: <description>"`
+   (NOTE: only factor.py is tracked by git. results.tsv is .gitignored — git reset won't erase it.)
 4. **Run** — `python evaluate.py > run.log 2>&1`
 5. **Parse** — extract the composite_score and level from run.log
 6. **Record** — append a row to results.tsv

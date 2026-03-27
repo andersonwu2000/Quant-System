@@ -545,10 +545,9 @@ def evaluate() -> dict:
         l5_failure = (f"OOS positive months {oos_positive_months}/{oos_total_months} "
                       f"({oos_positive_ratio:.0%}) < {OOS_MIN_POSITIVE_RATIO:.0%}")
 
-    print(f"  OOS ICIR(20d): {oos_icir:.4f} (IS: {best_icir:.4f}, "
-          f"decay: {1 - abs(oos_icir)/abs(best_icir):.0%})" if abs(best_icir) > 0
-          else f"  OOS ICIR(20d): {oos_icir:.4f}")
-    print(f"  OOS positive months: {oos_positive_months}/{oos_total_months}")
+    # P-01 fix: only show pass/fail to agent, not exact OOS values
+    # (prevents indirect OOS overfitting via feedback leakage)
+    print(f"  OOS validation: {'PASS' if not l5_failure else 'FAIL'}")
 
     if l5_failure:
         return _make_result(
@@ -694,8 +693,8 @@ def main() -> None:
     print(f"positive_years:   {results['positive_years']}/{results['total_years']}")
     print(f"max_correlation:  {results['max_correlation']:.3f} ({results['correlated_with']})")
     print(f"large_icir_20d:   {results['large_icir_20d']:.4f}")
-    print(f"oos_icir:         {results['oos_icir']:.4f}")
-    print(f"oos_months:       {results['oos_positive_months']}/{results['oos_total_months']}")
+    # P-01: hide exact OOS values from agent (only show pass/fail)
+    print(f"oos_validated:    {results['level'] == 'L5'}")
     print(f"level:            {results['level']}")
     print(f"passed:           {results['passed']}")
     if results["failure"]:
