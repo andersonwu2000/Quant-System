@@ -131,7 +131,8 @@ class ExecutionService:
                             "FALLBACK: Shioaji connection failed in paper mode — "
                             "falling back to PaperBroker."
                         )
-                        self._broker = PaperBroker()
+                        from src.execution.cost_model import CostModel
+                        self._broker = PaperBroker(cost_model=CostModel.from_config(self._config))
                         self._fallback_mode = True
                         self._initialized = True
                         return True
@@ -157,7 +158,8 @@ class ExecutionService:
                 logger.critical(
                     "FALLBACK: shioaji not installed — falling back to PaperBroker for paper mode."
                 )
-                self._broker = PaperBroker()
+                from src.execution.cost_model import CostModel
+                self._broker = PaperBroker(cost_model=CostModel.from_config(self._config))
                 self._fallback_mode = True
                 self._initialized = True
                 return True
