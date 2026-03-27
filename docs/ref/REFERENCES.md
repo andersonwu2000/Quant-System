@@ -1,6 +1,6 @@
 # Portfolio Optimization Reference Library
 
-> 對應 `docs/dev/SYSTEM_STATUS_REPORT.md` §11 學術基準差距分析
+> 對應 `docs/claude/SYSTEM_STATUS_REPORT.md` §11 學術基準差距分析
 > 按優先級排列，每項標註對應的系統缺口
 
 ---

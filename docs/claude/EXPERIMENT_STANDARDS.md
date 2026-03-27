@@ -52,18 +52,51 @@
 
 ---
 
-## 3. Auto-Alpha 部署標準
+## 3. Auto-Alpha 研究管線
 
-策略從研究到部署需通過以下層層篩選：
+### 3.1 假說生成
+
+假說模板存放在 `data/research/hypothesis_templates.json`，由 Claude Code 動態維護。
+
+**生成新假說時應考慮：**
+1. Experience memory 中的成功/失敗模式（`data/research/memory.json`）
+2. 禁區列表（已知無效的因子模式）
+3. 學術文獻依據
+4. 與現有因子的差異化（避免高相關）
+5. 數據可得性（僅用本地已有的 revenue / financial_statement parquet）
+
+**模板格式：**
+```json
+{
+  "direction_name": [
+    {
+      "name": "factor_name",
+      "description": "因子描述",
+      "formula_sketch": "公式概要",
+      "academic_basis": "學術依據",
+      "data_requirements": ["revenue"]
+    }
+  ]
+}
+```
+
+研究腳本 `scripts/alpha_research_agent.py` 每輪自動從 JSON 讀取未測假說。
+
+### 3.2 部署篩選（六層）
 
 | 階段 | 條件 | 說明 |
 |------|------|------|
-| L5 快篩 | ICIR ≥ 0.30 | 小樣本快速檢查 |
-| 大規模驗證 | ICIR(20d) ≥ 0.20 | 全 universe 驗證（約 865 檔） |
-| StrategyValidator | ≥ 12/13 通過 | 13 項驗證閘門 |
-| vs 基準 | Sharpe > 0050.TW buy-and-hold Sharpe | 必須打敗大盤 |
+| L5 快篩 | ICIR ≥ 0.30 | 小樣本快速檢查（數秒） |
+| 大規模 IC | ICIR(20d) ≥ 0.20 | 全 universe 驗證（865+ 檔，數分鐘） |
+| StrategyValidator | ≥ 12/13 通過 | 13 項驗證閘門（數分鐘） |
+| vs 基準 | Sharpe > 0050.TW | 風險調整必須打敗大盤 |
 | 絕對報酬 | CAGR > 8% | 絕對報酬門檻 |
-| 近期表現 | recent_period_sharpe > 0 | 最近 252 個交易日 Sharpe 為正 |
+| 近期表現 | recent_period_sharpe > 0 | 最近 252 個交易日不能虧 |
+
+### 3.3 報告流程
+
+L5 通過後，不論後續是否通過，都寫報告到 `docs/dev/auto/{factor_name}.md`。
+報告包含：L5 結果、大規模 IC 表格（含基準對比）、Validator 13 項、部署判定。
 
 ---
 

@@ -19,7 +19,7 @@ DataFeed → Strategy.on_bar() → target weights → RiskEngine → SimBroker/B
 
 ## Module Boundaries
 
-Detailed inventory in `docs/dev/SYSTEM_STATUS_REPORT.md` §4.
+Detailed inventory in `docs/claude/SYSTEM_STATUS_REPORT.md` §4.
 
 - `src/core/` — `models.py` (**Unified** Instrument, Bar, Position, Order, Portfolio, Trade, enums), `config.py` (Pydantic Settings), `logging.py` (structlog), `repository.py`, `calendar.py` (TWTradingCalendar — 台股交易日曆含國定假日), `trading_pipeline.py` (`execute_one_bar()` — 回測/實盤共用交易流程).
 - `src/instrument/` — `InstrumentRegistry` (get/get_or_create/search/by_market/by_asset_class). Re-exports Instrument from domain. `_infer_instrument()` auto-detects asset type from symbol pattern. Cost templates (TW_STOCK_DEFAULTS, US_FUTURES_DEFAULTS, etc.).

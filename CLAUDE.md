@@ -10,12 +10,12 @@ CLAUDE.md 只保留**行為規範和開發規則**。技術細節分拆到 `docs
 |------|------|---------|
 | `docs/claude/ARCHITECTURE.md` | 系統架構、模組邊界、API、前端、策略列表 | 修改代碼、新增模組、理解系統結構時 |
 | `docs/claude/EXPERIMENT_STANDARDS.md` | 實驗方法論標準、部署門檻、基準因子 | 跑實驗、寫報告、評估因子時 |
-| `docs/dev/SYSTEM_STATUS_REPORT.md` | 模組清單、測試覆蓋、功能矩陣、缺陷追蹤 | 完成任何功能變更後更新 |
-| `docs/dev/DEVELOPMENT_PLAN.md` | 開發計畫 Phase A~I + R1~R4 | 規劃新工作時 |
+| `docs/claude/SYSTEM_STATUS_REPORT.md` | 模組清單、測試覆蓋、功能矩陣、缺陷追蹤 | 完成任何功能變更後更新 |
+| `docs/dev/plans/` | 各 Phase 獨立計畫書（A~S） | 規劃新工作時 |
 
 ### 文件維護規則
 
-1. **修改代碼後** → 更新 `docs/dev/SYSTEM_STATUS_REPORT.md` 受影響的段落
+1. **修改代碼後** → 更新 `docs/claude/SYSTEM_STATUS_REPORT.md` 受影響的段落
 2. **修改架構後** → 更新 `docs/claude/ARCHITECTURE.md` 對應的模組描述
 3. **修改實驗方法後** → 更新 `docs/claude/EXPERIMENT_STANDARDS.md`，所有後續實驗遵循新標準
 4. **新增子文件** → 在本表格中加入指引
@@ -29,7 +29,7 @@ CLAUDE.md 只保留**行為規範和開發規則**。技術細節分拆到 `docs
 
 ## Maintenance Rules
 
-After completing any feature addition, bug fix, refactoring, architecture change, or dependency update, **update `docs/dev/SYSTEM_STATUS_REPORT.md`** to reflect the changes. Sections to check and update:
+After completing any feature addition, bug fix, refactoring, architecture change, or dependency update, **update `docs/claude/SYSTEM_STATUS_REPORT.md`** to reflect the changes. Sections to check and update:
 - **Module inventory** (§3–§5): file counts, LOC, new/removed modules
 - **Strategy list** (§6): if strategies were added/removed
 - **Test coverage** (§8): new test files, updated test counts
