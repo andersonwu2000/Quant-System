@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_accel_x_zscore
+"""Auto-generated research factor: rev_3m_vs_6m_acceleration
 
-acceleration × z-score composite
-Academic basis: Multi-signal composite
-Direction: factor_combination
+3 月均營收 / 6 月均營收（短期加速度）
+Academic basis: Short-term vs medium-term momentum
+Direction: multi_period_momentum
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_accel_x_zscore for all symbols at as_of date."""
+def compute_rev_3m_vs_6m_acceleration(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_3m_vs_6m_acceleration for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,14 +53,13 @@ def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 24:
+            if len(revenues) < 6:
                 continue
-            recent = revenues[-24:]
-            mean = float(np.mean(recent))
-            std = float(np.std(recent, ddof=1))
-            if std <= 0:
+            rev_3m = float(np.mean(revenues[-3:]))
+            rev_6m = float(np.mean(revenues[-6:]))
+            if rev_6m <= 0:
                 continue
-            results[sym] = float((revenues[-1] - mean) / std)
+            results[sym] = float(rev_3m / rev_6m)
 
         except Exception:
             continue

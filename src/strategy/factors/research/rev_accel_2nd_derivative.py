@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_accel_x_zscore
+"""Auto-generated research factor: rev_accel_2nd_derivative
 
-acceleration × z-score composite
-Academic basis: Multi-signal composite
-Direction: factor_combination
+營收加速度的二階導數（加速度的變化率）
+Academic basis: Second-order momentum
+Direction: revenue_acceleration_2nd_order
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_accel_x_zscore for all symbols at as_of date."""
+def compute_rev_accel_2nd_derivative(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_accel_2nd_derivative for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,14 +53,21 @@ def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[
 
             revenues = usable["revenue"].astype(float).values
 
+            # YoY for each month, then 2nd derivative (jerk)
             if len(revenues) < 24:
                 continue
-            recent = revenues[-24:]
-            mean = float(np.mean(recent))
-            std = float(np.std(recent, ddof=1))
-            if std <= 0:
+            yoy = []
+            for i in range(12, len(revenues)):
+                if revenues[i-12] > 0:
+                    yoy.append(revenues[i] / revenues[i-12] - 1)
+                else:
+                    yoy.append(0)
+            if len(yoy) < 3:
                 continue
-            results[sym] = float((revenues[-1] - mean) / std)
+            # 2nd derivative: (yoy[-1]-yoy[-2]) - (yoy[-2]-yoy[-3])
+            accel_now = yoy[-1] - yoy[-2]
+            accel_prev = yoy[-2] - yoy[-3]
+            results[sym] = float(accel_now - accel_prev)
 
         except Exception:
             continue

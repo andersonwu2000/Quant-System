@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_accel_x_zscore
+"""Auto-generated research factor: rev_coefficient_of_variation
 
-acceleration × z-score composite
-Academic basis: Multi-signal composite
-Direction: factor_combination
+近 12 月營收變異係數的倒數（穩定成長優於暴漲暴跌）
+Academic basis: Earnings quality / persistence literature
+Direction: revenue_stability
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_accel_x_zscore for all symbols at as_of date."""
+def compute_rev_coefficient_of_variation(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_coefficient_of_variation for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,14 +53,15 @@ def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 24:
+            if len(revenues) < 12:
                 continue
-            recent = revenues[-24:]
+            recent = revenues[-12:]
+            std = float(np.std(recent))
             mean = float(np.mean(recent))
-            std = float(np.std(recent, ddof=1))
-            if std <= 0:
+            if std <= 0 or mean <= 0:
                 continue
-            results[sym] = float((revenues[-1] - mean) / std)
+            # Inverse CV: higher = more stable growth (lower relative volatility)
+            results[sym] = float(mean / std)
 
         except Exception:
             continue

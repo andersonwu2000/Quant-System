@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_accel_x_zscore
+"""Auto-generated research factor: rev_zscore_vs_history
 
-acceleration × z-score composite
-Academic basis: Multi-signal composite
-Direction: factor_combination
+本月營收的 z-score（vs 過去 24 月的 mean/std）
+Academic basis: Standardized unexpected earnings (SUE)
+Direction: revenue_surprise_magnitude
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_accel_x_zscore for all symbols at as_of date."""
+def compute_rev_zscore_vs_history(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_zscore_vs_history for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:

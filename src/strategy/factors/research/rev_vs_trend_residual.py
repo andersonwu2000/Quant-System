@@ -1,8 +1,8 @@
-"""Auto-generated research factor: rev_accel_x_zscore
+"""Auto-generated research factor: rev_vs_trend_residual
 
-acceleration × z-score composite
-Academic basis: Multi-signal composite
-Direction: factor_combination
+實際營收 vs 近 6 月線性趨勢的殘差
+Academic basis: Earnings surprise (Ball-Brown 1968)
+Direction: earnings_surprise_proxy
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def _get_revenue(sym: str) -> pd.DataFrame | None:
         return None
 
 
-def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
-    """Compute rev_accel_x_zscore for all symbols at as_of date."""
+def compute_rev_vs_trend_residual(symbols: list[str], as_of: pd.Timestamp) -> dict[str, float]:
+    """Compute rev_vs_trend_residual for all symbols at as_of date."""
     results = {}
     usable_cutoff = as_of - pd.DateOffset(days=40)
     for sym in symbols:
@@ -53,14 +53,16 @@ def compute_rev_accel_x_zscore(symbols: list[str], as_of: pd.Timestamp) -> dict[
 
             revenues = usable["revenue"].astype(float).values
 
-            if len(revenues) < 24:
+            if len(revenues) < 12:
                 continue
-            recent = revenues[-24:]
-            mean = float(np.mean(recent))
-            std = float(np.std(recent, ddof=1))
-            if std <= 0:
-                continue
-            results[sym] = float((revenues[-1] - mean) / std)
+            recent_6 = revenues[-6:]
+            x = np.arange(len(recent_6))
+            coeffs = np.polyfit(x, recent_6, 1)
+            # 殘差：實際值 vs 趨勢線在最後一個點的擬合值
+            fitted_last = coeffs[0] * (len(recent_6) - 1) + coeffs[1]
+            actual = revenues[-1]
+            if fitted_last > 0:
+                results[sym] = float((actual - fitted_last) / fitted_last)
 
         except Exception:
             continue
