@@ -265,11 +265,16 @@ async def trigger_rebalance(
         if not target_weights:
             return {"status": "no_targets", "message": "Strategy returned empty weights (possibly bear regime)", "trades": []}
 
-        # Generate orders preview
+        # Generate orders
+        from decimal import Decimal as D
         prices = {}
+        volumes = {}
         for s in target_weights:
             try:
                 prices[s] = feed.get_latest_price(s)
+                bars = feed.get_bars(s, start=None, end=None)
+                if bars is not None and len(bars) >= 20:
+                    volumes[s] = D(str(int(bars["volume"].iloc[-20:].mean())))
             except Exception:
                 pass
 
@@ -277,6 +282,9 @@ async def trigger_rebalance(
             target_weights=target_weights,
             portfolio=state.portfolio,
             prices=prices,
+            market_lot_sizes=config.market_lot_sizes,
+            fractional_shares=config.fractional_shares,
+            volumes=volumes if volumes else None,
         )
 
         # Save selection
