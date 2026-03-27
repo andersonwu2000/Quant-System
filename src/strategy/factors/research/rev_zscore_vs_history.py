@@ -31,7 +31,7 @@ def compute_rev_zscore_vs_history(symbols: list[str], as_of: pd.Timestamp) -> di
             if len(df) < 12:
                 continue
 
-            revenues = df["revenue"].astype(float).values
+            revenues = np.asarray(df["revenue"].astype(float))
 
             if len(revenues) < 24:
                 continue
