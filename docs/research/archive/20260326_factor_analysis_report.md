@@ -230,12 +230,12 @@ DeMiguel et al. (2009) "1/N" 結論在台股完全驗證。75 個因子、多種
 
 | 檔案 | 說明 |
 |------|------|
-| `docs/dev/test/20260326_1.md` | 研究預報 + Round 0 基線 |
-| `docs/dev/test/round1_report.md` | 256 config grid 回測（Round 1） |
-| `docs/dev/test/20260326_2.md` | 實驗 1-5：ivol 深挖 + PBO |
-| `docs/dev/test/20260326_3.md` | 實驗 6-8：寬 universe 驗證 |
-| `docs/dev/test/20260326_4.md` | 實驗 9-10：市值分層 + 籌碼面 |
-| `docs/dev/test/20260326_5.md` | 實驗 11-15：籌碼面 + 最終驗證 |
-| `docs/dev/test/factor_analysis.csv` | 66 因子全掃描結果（CSV） |
+| `docs/research/20260326_1.md` | 研究預報 + Round 0 基線 |
+| `docs/research/round1_report.md` | 256 config grid 回測（Round 1） |
+| `docs/research/20260326_2.md` | 實驗 1-5：ivol 深挖 + PBO |
+| `docs/research/20260326_3.md` | 實驗 6-8：寬 universe 驗證 |
+| `docs/research/20260326_4.md` | 實驗 9-10：市值分層 + 籌碼面 |
+| `docs/research/20260326_5.md` | 實驗 11-15：籌碼面 + 最終驗證 |
+| `docs/research/factor_analysis.csv` | 66 因子全掃描結果（CSV） |
 | `scripts/run_factor_analysis.py` | 因子分析腳本 |
 | `scripts/full_factor_analysis.py` | Pipeline 版因子分析腳本 |

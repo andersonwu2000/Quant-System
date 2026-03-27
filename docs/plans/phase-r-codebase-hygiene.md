@@ -17,7 +17,7 @@
 
 17 個 Phase（A~Q）散落在獨立 markdown，沒有全局進度總覽。今天就發現 4 份文件狀態過時。
 
-**動作**：在 `docs/dev/PHASE_TRACKER.md` 建立一頁式進度表，格式：
+**動作**：在 `docs/PHASE_TRACKER.md` 建立一頁式進度表，格式：
 
 ```
 | Phase | 名稱 | 狀態 | 通過率 | 備註 |
@@ -39,7 +39,7 @@
 
 系統建了完整的 Paper Trading 基礎設施，但策略只通過 4/7 驗證門檻（實驗 #15）。應在 RESEARCH_SUMMARY.md 明確標記「回測邊緣、尚未實盤驗證」。
 
-**動作**：更新 `docs/dev/test/RESEARCH_SUMMARY.md`，加入誠實的驗證狀態段落。
+**動作**：更新 `docs/research/RESEARCH_SUMMARY.md`，加入誠實的驗證狀態段落。
 
 ---
 
@@ -47,7 +47,7 @@
 
 Phase P 投入大量工程但產出尚未驗證。應標記為實驗性，避免誤導。
 
-**動作**：在 `docs/dev/plans/phase-p-auto-research.md` 加入實驗性警告。
+**動作**：在 `docs/plans/phase-p-auto-research.md` 加入實驗性警告。
 
 ---
 

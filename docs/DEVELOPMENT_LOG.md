@@ -208,7 +208,7 @@ Android 修復 + CI 完善 + 文件重寫
 | 策略數 | 9 |
 | Alpha 因子 | 27 (11 技術 + 10 Kakushadze + 6 基本面) |
 | 最佳化方法 | 14 (EW/IV/RP/MVO/BL/HRP/CVaR/Robust/Resampled/MaxSharpe/GMV/IndexTracking/Semi-variance/MaxDrawdown) |
-| 風控規則 | 10 |
+| 風控規則 | 12 |
 | API 端點 | 74 |
 | 數據源 | 5 (Yahoo/FinMind/FRED/Shioaji/Scanner) |
 | 參考論文 | 21 篇 (已下載分類至 `docs/ref/`) |
@@ -306,7 +306,7 @@ Day 5:  + Auto-Alpha + 學術最佳化 (14 方法) + 27 因子 + R1-R4 重構 + 
 - 最佳策略 (mom6m + turnover_vol 大型股) 毛超額 +7.3%/年，但成本拖累 6.6% → **淨超額僅 +0.7%**
 - **統計不顯著** (t=0.24, p=0.81)，**OOS 為負** (-3.2%)
 - 1/N 等權在台股很難被公開數據因子打敗（DeMiguel 2009 驗證）
-- 實驗報告見 `docs/dev/test/20260326_1.md` ~ `20260326_6.md`
+- 實驗報告見 `docs/research/20260326_1.md` ~ `20260326_6.md`
 
 ### 2026-03-26：即時行情 + 風控即時化完成
 
@@ -348,8 +348,8 @@ Day 5:  + Auto-Alpha + 學術最佳化 (14 方法) + 27 因子 + R1-R4 重構 + 
 
 ## 參考資源
 
-- `docs/dev/SYSTEM_STATUS_REPORT.md` — 系統現況追蹤（738 行）
-- `docs/dev/DEVELOPMENT_PLAN.md` — 開發計畫 v7.0
-- `docs/dev/architecture/MULTI_ASSET_ARCHITECTURE.md` — 架構設計
+- `docs/claude/SYSTEM_STATUS_REPORT.md` — 系統現況追蹤（738 行）
+- `docs/plans/DEVELOPMENT_PLAN.md` — 開發計畫 v7.0
+- `docs/architecture/MULTI_ASSET_ARCHITECTURE.md` — 架構設計
 - `docs/ref/REFERENCES.md` — 論文索引 (21 篇 + 6 本書 + 10 個 code references)
 - `docs/ref/papers/` — 按 portfolio/data-modeling/backtesting/alpha 分類的論文 PDF

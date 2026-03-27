@@ -179,6 +179,6 @@ pe_ratio ICIR = -0.282：**高 PE 股票未來報酬更低**。
 
 ## 7. 數據檔案
 
-- 完整結果：`docs/dev/test/fundamental_factor_analysis.csv`
+- 完整結果：`docs/research/fundamental_factor_analysis.csv`
 - 分析腳本：`scripts/run_fundamental_analysis.py`
 - 數據來源：`data/fundamental/`（FinMind）+ `data/market/`（Yahoo/FinMind）

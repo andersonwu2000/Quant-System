@@ -250,7 +250,7 @@ def compute_fundamental_factor_values(
 - 對 14 個基本面因子（6 舊 + 8 新）× TW50 計算 IC/ICIR
 - 持有期：5 天 / 20 天 / 60 天
 - 分層：全市場 / 大型股 / 小型股
-- 輸出：`docs/dev/test/fundamental_factor_analysis.csv`
+- 輸出：`docs/research/fundamental_factor_analysis.csv`
 
 ### K4.2 與 price-volume 因子對比
 
@@ -306,8 +306,8 @@ def compute_fundamental_factor_values(
 
 ### K5.4 輸出
 
-- `docs/dev/test/fundamental_walkforward_report.md` — 實驗報告
-- `docs/dev/test/fundamental_walkforward.csv` — 完整結果
+- `docs/research/fundamental_walkforward_report.md` — 實驗報告
+- `docs/research/fundamental_walkforward.csv` — 完整結果
 
 ---
 

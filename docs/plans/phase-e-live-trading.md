@@ -7,7 +7,7 @@
 建立從策略到實際券商下單的完整交易管道。
 
 ## 券商選擇
-永豐金 Shioaji SDK — 評估見 `docs/dev/evaluations/BROKER_API_EVALUATION.md`
+永豐金 Shioaji SDK — 評估見 `docs/evaluations/BROKER_API_EVALUATION.md`
 - Python 原生、跨平台、`simulation=True` 一鍵切換
 - 認證：api_key + secret_key → CA 憑證 (.pfx)
 

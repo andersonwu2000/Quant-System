@@ -201,7 +201,7 @@ Strategy.on_bar(ctx) → target weights: dict[str, float]
      ↓
 weights_to_orders() — 含乘數、lot_size、總權重驗證
      ↓
-RiskEngine — 10 規則（含 asset_class/currency/leverage）
+RiskEngine — 12 規則（含 asset_class/currency/leverage）
      ↓
 SimBroker — per-instrument 費率、sqrt 滑點、漲跌停
      ↓
@@ -338,7 +338,7 @@ class Order:
 | Backtest | `/backtest` | 回測 + 比較 + 月報 |
 | Alpha | `/alpha` | 因子研究 (16 因子) |
 | Allocation | `/allocation` | 戰術配置計算 + 視覺化 |
-| Risk | `/risk` | 10 規則 + 告警 + kill switch |
+| Risk | `/risk` | 12 規則 + 告警 + kill switch |
 | Settings | `/settings` | API key + 語言 + 主題 |
 | Admin | `/admin` | 用戶管理 + 審計 |
 
@@ -383,7 +383,7 @@ src/                          ~120 .py files
 ├── portfolio/       ✅  4 files — 組合最佳化 (6 法 + LW + 對沖)
 ├── strategy/        ✅  8 files — 9 策略 + 因子庫 + MultiAssetStrategy
 ├── backtest/        ✅  6 files — 回測引擎 (多幣別 + FX 時序)
-├── risk/            ✅  4 files — 10 規則 + kill switch
+├── risk/            ✅  4 files — 12 規則 + kill switch
 ├── execution/       ✅ 10 files — SinopacBroker + ExecutionService + 對帳 + 觸價
 ├── data/            ✅ 15 files — Yahoo + FinMind + FRED + Shioaji + Scanner
 ├── instrument/      ✅  3 files — Registry + 自動推斷

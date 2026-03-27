@@ -14,12 +14,12 @@
 |------|------|
 | 後端 Python 檔案 | ~160 |
 | 後端 LOC | ~29,000 |
-| 測試數量 | **1,401**（含 16 個管線整合測試） |
+| 測試數量 | **1,707**（含 16 個管線整合測試） |
 | API 端點 | **117**（16 路由模組） |
 | Alpha 因子 | **83**（66 技術 + 17 基本面） |
 | 策略 | **13** |
 | 最佳化方法 | 14 |
-| 風控規則 | 10 |
+| 風控規則 | 12 |
 | 數據源 | 4（Yahoo / FinMind / FRED / Shioaji） |
 | 本地價格 parquet | 895 支台股（含 40 支已下市） |
 | 本地基本面 parquet | 408 檔（8 dataset × 51 支） |
@@ -37,7 +37,7 @@
 | `src/portfolio/` | 4 | 14 最佳化方法 + 風險模型（LW/GARCH/PCA）+ 幣別對沖 |
 | `src/execution/` | 16 | SimBroker + SinopacBroker + TWAP + OMS + 對帳 |
 | `src/data/` | 15 | Yahoo/FinMind/FRED/Shioaji + 品質檢查 + Parquet 快取 |
-| `src/risk/` | 5 | 10 規則 + Kill Switch + RealtimeRiskMonitor |
+| `src/risk/` | 5 | 12 規則 + Kill Switch + RealtimeRiskMonitor |
 | `src/allocation/` | 4 | 宏觀四因子 + 跨資產信號 + 戰術引擎 |
 | `src/core/` | 6 | 模型 + 設定 + 日誌 + 交易日曆 + Trading Pipeline |
 | `src/scheduler/` | 2 | APScheduler：月營收更新 + 月度再平衡 + 通知 |
@@ -236,7 +236,7 @@ OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/research/202603
 
 **風險模型**: 歷史/EWM/Ledoit-Wolf/GARCH(1,1)/PCA + VaR/CVaR + James-Stein 均值收縮
 
-## 8. 風控規則（10 條）
+## 8. 風控規則（12 條）
 
 | # | 規則 | 層級 | 預設 |
 |---|------|------|------|

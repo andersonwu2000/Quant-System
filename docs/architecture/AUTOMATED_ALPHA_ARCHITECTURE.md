@@ -12,7 +12,7 @@
 
 ```
 手動研究 → 17 次實驗 → revenue_momentum 策略 → StrategyValidator 11/13 → 等 CA 憑證
-Phase P Agent → 3 個新因子（ICIR 0.47-0.80）→ docs/dev/auto/ 報告 → 人工審閱
+Phase P Agent → 3 個新因子（ICIR 0.47-0.80）→ docs/research/ 報告 → 人工審閱
 ```
 
 ### 目標（本架構）
@@ -80,7 +80,7 @@ CronCreate 排程 → 每 2 小時
     → 實作因子代碼（src/strategy/factors/research/）
     → 五層驗證（L1-L5）
     → 蒸餾回 Memory
-    → 通過者寫報告到 docs/dev/auto/
+    → 通過者寫報告到 docs/research/
 ```
 
 **安全**：Harvey (2016) 動態門檻、禁區機制、不動核心代碼
@@ -167,7 +167,7 @@ config = FilterStrategyConfig(
     └── DD 超過 3% → 自動停止 + 通知
 
 每週：
-    └── 週報 → docs/dev/auto/{strategy}/weekly_{date}.md
+    └── 週報 → docs/research/{strategy}/weekly_{date}.md
 
 每月：
     └── 月報（含 vs 回測比較）→ 通知使用者審閱

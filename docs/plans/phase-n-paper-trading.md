@@ -9,7 +9,7 @@
 ## 背景
 
 策略研究完成：
-- rev_yoy ICIR 0.674, t=16.1, p<0.000001（13 次實驗）
+- rev_yoy ICIR 0.037（修正前 0.674））, t=16.1, p<0.000001（13 次實驗）
 - composite_b0% StrategyValidator 10/13（OOS -3.7%）
 - 引擎 676 支 × 7Y 55 秒
 

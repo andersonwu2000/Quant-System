@@ -2,7 +2,7 @@
 
 > 完成日期：2026-03-26
 > 狀態：✅ 完成
-> 參考：`docs/dev/SYSTEM_STATUS_REPORT.md` §11 + `docs/ref/papers/`
+> 參考：`docs/claude/SYSTEM_STATUS_REPORT.md` §11 + `docs/ref/papers/`
 
 ## 目標
 基於 *Portfolio Optimization: Theory and Application* (Palomar, 608 頁) 教科書差距分析 + 論文，將系統提升至學術水準。

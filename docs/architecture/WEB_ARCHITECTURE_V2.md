@@ -69,7 +69,7 @@ v1 是在研究階段逐步堆疊出來的 15 個 feature 目錄。問題：
 /risk                   ← 風控
 ├── 當日 Drawdown（即時 WebSocket）
 ├── Kill Switch 開關
-├── 風控規則狀態（10 條）
+├── 風控規則狀態（12 條）
 └── 歷史告警列表
 
 /backtest               ← 回測（簡化版）

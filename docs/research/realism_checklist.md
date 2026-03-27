@@ -15,7 +15,7 @@
 | T+1 執行延遲 | `execution_delay=1` | 訊號日 T，成交日 T+1 開盤價 |
 | Kill Switch 5% | 日度 drawdown > 5% 停止 | 防崩盤 |
 | 月度再平衡 | `rebalance_freq="monthly"` | 每月只交易一次 |
-| 風控 10 條規則 | `RiskEngine` | max position / sector / drawdown |
+| 風控 12 條規則 | `RiskEngine` | max position / sector / drawdown |
 | 空頭偵測 | `composite_b0%` | Bear 時 0% 倉位 |
 
 ## 待改善 🟡

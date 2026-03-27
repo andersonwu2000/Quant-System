@@ -277,7 +277,7 @@ python -m src.cli.main backtest -s sector_rotation -u AAPL -u MSFT -u GOOGL -u A
 **核心概念**：台股上市公司每月公布營收，營收加速成長的公司股價通常有延續性。
 
 具體做法：
-- 計算月營收年增率（rev_yoy）作為主要排序因子（ICIR 0.674）
+- 計算月營收年增率（rev_yoy）作為主要排序因子（ICIR 0.037（修正前 0.674）））
 - 使用營收加速度（3 個月 / 12 個月營收比率）排序
 - 搭配價格趨勢確認，過濾假信號
 

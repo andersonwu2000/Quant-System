@@ -126,7 +126,7 @@ strategies/                   # 用戶自定義策略（13 個）
 ├── multi_factor.py           # 多因子複合策略（momentum + value + quality, risk-parity 加權）
 ├── pairs_trading.py          # 配對交易策略
 ├── sector_rotation.py        # 板塊輪動策略
-├── revenue_momentum.py       # 月營收動量 + 價格確認（rev_yoy ICIR 0.674）
+├── revenue_momentum.py       # 月營收動量 + 價格確認（rev_yoy ICIR 0.037（修正前 0.674）））
 ├── revenue_momentum_hedged.py # = Revenue Momentum + 複合 regime hedge（Paper Trading 主策略）
 ├── trust_follow.py           # 投信跟單 + 營收成長
 └── multi_strategy_combo.py   # 多策略逆波動率加權組合
@@ -146,7 +146,7 @@ apps/
         └── utils/format.ts   # 數值/貨幣/日期格式化
 
 tests/
-├── unit/                     # 單元測試（1,341 個）
+├── unit/                     # 單元測試（1,707 個）
 └── integration/              # 整合測試
 ```
 
@@ -570,7 +570,7 @@ pytest tests/ --cov=src --cov-report=term-missing
 
 ### 測試結構
 
-後端共 1,341 個測試，涵蓋所有模組：
+後端共 1,707 個測試，涵蓋所有模組：
 
 - `tests/unit/test_models.py` — 領域模型測試（Position, Portfolio, Order）
 - `tests/unit/test_factors.py` — 因子計算測試

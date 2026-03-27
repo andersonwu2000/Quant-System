@@ -252,7 +252,7 @@ android-build:
 
 ## Phase 7：操作手冊
 
-產出 `docs/dev/ANDROID_SETUP.md`：
+產出 `docs/architecture/ANDROID_SETUP.md`：
 1. Android Studio 安裝與設定
 2. 開啟專案（File → Open → `apps/android/`）
 3. 設定後端 URL
@@ -260,7 +260,7 @@ android-build:
 5. 建構 APK（Build → Build Bundle / APK）
 6. 常見問題排解
 
-同步更新 `docs/dev/ANDROID_APP_PLAN.md` 與 `docs/dev/SYSTEM_STATUS_REPORT.md`。
+同步更新 `docs/architecture/ANDROID_APP_PLAN.md` 與 `docs/claude/SYSTEM_STATUS_REPORT.md`。
 
 ---
 

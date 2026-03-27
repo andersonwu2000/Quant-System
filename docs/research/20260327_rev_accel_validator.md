@@ -55,7 +55,7 @@ This check compares strategy annualized return vs 0050.TW buy-and-hold. The fail
 
 ### Previous Comparison (2020-2024 subset)
 
-In the earlier standalone test (docs/dev/test/20260327_rev_accel_vs_0050.md):
+In the earlier standalone test (docs/research/20260327_rev_accel_vs_0050.md):
 - revenue_acceleration Sharpe 0.927 > 0050 Sharpe 0.857
 - CAGR 14.81% vs 0050 14.69%
 

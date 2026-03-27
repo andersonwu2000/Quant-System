@@ -2,7 +2,7 @@
 
 > 完成日期：2026-03-26
 > 狀態：✅ 完成
-> 架構設計：`docs/dev/architecture/AUTOMATED_ALPHA_ARCHITECTURE.md`
+> 架構設計：`docs/architecture/AUTOMATED_ALPHA_ARCHITECTURE.md`
 
 ## 目標
 將手動 Alpha 研究流程自動化為每日排程驅動的閉環系統。
