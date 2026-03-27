@@ -9,16 +9,98 @@ Jobs:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.core.config import TradingConfig
 
 logger = logging.getLogger(__name__)
+
+# ── Pipeline execution record helpers ──────────────────────────
+
+PIPELINE_RUNS_DIR = Path("data/paper_trading/pipeline_runs")
+
+
+def _write_pipeline_record(
+    run_id: str,
+    status: str,
+    strategy: str = "",
+    error: str = "",
+    n_trades: int = 0,
+) -> Path:
+    """Write or update a pipeline execution record as JSON."""
+    PIPELINE_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    path = PIPELINE_RUNS_DIR / f"{run_id}.json"
+    record = {
+        "run_id": run_id,
+        "status": status,
+        "strategy": strategy,
+        "started_at": datetime.now().isoformat() if status == "started" else None,
+        "finished_at": datetime.now().isoformat() if status != "started" else None,
+        "n_trades": n_trades,
+        "error": error,
+    }
+    # Merge with existing record to preserve started_at
+    if path.exists() and status != "started":
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            record["started_at"] = existing.get("started_at")
+        except Exception:
+            pass
+    path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _today_run_id() -> str:
+    """Generate a run ID for the current execution: YYYY-MM-DD_HHMM."""
+    return datetime.now().strftime("%Y-%m-%d_%H%M")
+
+
+def _has_completed_run_today() -> bool:
+    """Check if a completed pipeline run already exists for today (idempotency)."""
+    today_prefix = datetime.now().strftime("%Y-%m-%d")
+    if not PIPELINE_RUNS_DIR.exists():
+        return False
+    for path in PIPELINE_RUNS_DIR.glob(f"{today_prefix}*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if record.get("status") in ("completed", "ok"):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def check_crashed_runs() -> list[dict]:
+    """Check for pipeline runs with status='started' (indicates a crash).
+
+    Returns list of crashed run records. Called on scheduler startup.
+    """
+    crashed: list[dict] = []
+    if not PIPELINE_RUNS_DIR.exists():
+        return crashed
+    for path in PIPELINE_RUNS_DIR.glob("*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if record.get("status") == "started":
+                crashed.append(record)
+                # Mark as crashed so we don't warn again next time
+                record["status"] = "crashed"
+                record["finished_at"] = datetime.now().isoformat()
+                record["error"] = "Process terminated unexpectedly (detected on startup)"
+                path.write_text(
+                    json.dumps(record, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+        except Exception:
+            continue
+    return crashed
 
 
 async def execute_rebalance(config: TradingConfig) -> None:
@@ -437,9 +519,12 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
                 return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
 
     # 2. 建立 Context
-    universe = list(state.portfolio.positions.keys())
+    # 策略需要全市場 universe 才能掃描和發現新標的（不只是現有持倉）
+    # 例如 revenue_momentum 需要掃描 800+ 支再篩選 15 支
+    universe = _get_tw_universe_fallback()
     if not universe:
-        universe = _get_tw_universe_fallback()
+        # Fallback: 至少用現有持倉
+        universe = list(state.portfolio.positions.keys())
     if not universe:
         return PipelineResult(status="error", strategy_name=strategy.name(), error="Empty universe")
 

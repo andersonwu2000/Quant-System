@@ -300,6 +300,49 @@ def max_gross_leverage(threshold: float = 1.5) -> RiskRule:
     return RiskRule(f"max_gross_leverage_{threshold}", check)
 
 
+# ─── 新增規則：行業集中度 (#20) ──────────────────────
+
+
+def max_sector_concentration(threshold: float = 0.40) -> RiskRule:
+    """同一行業/板塊的合計持倉不超過 NAV 的 threshold。
+
+    用 symbol suffix 判斷市場（.TW/.TWO = 台股），
+    用 Instrument.sector 判斷行業（若有設定）。
+    """
+    def check(order: Order, portfolio: Portfolio, market: MarketState) -> RiskDecision:
+        if portfolio.nav <= 0:
+            return RiskDecision.APPROVE()
+
+        # 取訂單股票的 sector
+        order_sector = getattr(order.instrument, "sector", "")
+        if not order_sector:
+            return RiskDecision.APPROVE()  # 無 sector 資訊則跳過
+
+        # 計算同 sector 的現有持倉
+        sector_mv = Decimal("0")
+        for pos in portfolio.positions.values():
+            pos_sector = getattr(pos.instrument, "sector", "")
+            if pos_sector == order_sector:
+                sector_mv += abs(pos.market_value)
+
+        # 加上本次訂單
+        price = order.price or market.prices.get(order.instrument.symbol, Decimal("0"))
+        order_value = order.quantity * price
+        if order.side == Side.BUY:
+            projected = sector_mv + order_value
+        else:
+            projected = max(sector_mv - order_value, Decimal("0"))
+
+        weight = float(projected / portfolio.nav)
+        if weight > threshold:
+            return RiskDecision.REJECT(
+                f"行業 {order_sector} 集中度 {weight:.1%} 超過上限 {threshold:.0%}"
+            )
+        return RiskDecision.APPROVE()
+
+    return RiskRule(f"max_sector_concentration_{threshold}", check)
+
+
 # ─── 新增規則：累計回撤限制 (#21) ─────────────────────
 
 
