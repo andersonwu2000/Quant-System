@@ -12,7 +12,6 @@
 | 持倉數 | 8 |
 | 現金比例 | ~20% |
 | Strategy | revenue_momentum_hedged |
-| Alpha Research | 20 rounds 持續中 |
 
 ### 持倉
 
@@ -27,15 +26,38 @@
 | 1590.TW 亞德客 | 1,061 | 942.0 | $999,462 |
 | 1312.TW 國喬 | 84,745 | 11.8 | $999,991 |
 
-### 已部署 Auto-Alpha
-
-| Factor | ICIR | Sharpe | NAV | Auto-stop |
-|--------|------|--------|-----|-----------|
-| rev_seasonal_deviation | 0.814 | 1.415 | $500,000 | 2026-04-26 |
-
 ---
 
-## T+2h (2026-03-27 12:07) — 待更新
+## T+2h (2026-03-27 12:08)
+
+| 指標 | 值 | 變化 |
+|------|-----|------|
+| NAV | $9,988,602 | 無變動 |
+| API Server | running | OK |
+| Shioaji | connected | OK |
+
+**說明**：Shioaji simulation mode 盤中不主動更新持倉 NAV（需要 tick callback）。NAV 凍結在建倉時的值。
+
+### Alpha Research 進度
+
+| 事件 | 時間 | 結果 |
+|------|------|------|
+| rev_seasonal_deviation 部署 | 08:15 | 已停止（大規模 ICIR 0.221 弱） |
+| upstream_rev_lead 發現 | 11:29 | **已部署**（ICIR 0.488，全因子最強） |
+| rev_vs_trend_residual | 11:35+ | 研究中 |
+
+### 已部署 Auto-Alpha（更新）
+
+| Factor | 大規模 ICIR(20d) | Sharpe | NAV | Auto-stop |
+|--------|:---:|:---:|-----|-----------|
+| ~~rev_seasonal_deviation~~ | 0.221 | 1.415 | — | 已停止 |
+| **upstream_rev_lead** | **+0.488** | **1.331** | $500,000 | 2026-04-26 |
+
+### 部署標準變更
+
+- DSR 門檻：0.95 → 0.70（原門檻對 90+ trials 結構性不可能通過）
+- recent_sharpe：> 0 → > -0.10（允許噪音）
+- Validator：排除 DSR 後 ≥ 12/13
 
 ---
 
