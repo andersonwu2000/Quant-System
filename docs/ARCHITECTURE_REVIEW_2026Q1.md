@@ -12,7 +12,7 @@
 | 項目 | 數值 |
 |------|------|
 | 審查涵蓋模組 | 引擎、風控、回測、管線、因子研究、Paper Trading |
-| 發現並修復 bug | **80+** |
+| 發現並修復 bug | **88+** |
 | 測試數（修復後） | **1,725** |
 | 全量測試通過率 | 100%（排除 Sinopac 外部依賴） |
 
@@ -61,52 +61,21 @@
 
 **優先級**：高（回測 vs 實盤不一致的根源）
 
-### 2.3 回測引擎和實盤管線雙軌
+### 2.3 回測引擎和實盤管線雙軌（已修）
 
-**問題**：
+**問題**：回測和實盤分別實作相同邏輯。
 
-```
-回測：BacktestEngine.run() → _do_rebalance() → execute_one_bar() → SimBroker
-實盤：execute_pipeline() → weights_to_orders() → ExecutionService → PaperBroker
-```
+**修復**：Pipeline 改用 `execute_from_weights()`（`trading_pipeline.py`），和回測共用 `weights_to_orders` → `risk_engine.check_orders` → broker 路徑。風控 MarketState 已統一傳入。成本模型從 config 統一讀取。
 
-兩條路徑分別實作了相同邏輯，但細節不同：
+**殘留**：execution_delay（回測支援 T+1，實盤即時成交）和數據源差異仍存在。
 
-| 差異 | 回測 | 實盤 |
-|------|------|------|
-| execution_delay | 支援 0/1 天 | 無（即時成交） |
-| 成本模型 | SimBroker（sqrt impact） | PaperBroker（固定 bps）或 SinopacBroker（固定 bps） |
-| 風控 MarketState | 有（prices + volumes + prev_close） | 有（剛修） |
-| 數據源 | HistoricalFeed（本地 parquet） | create_feed（Yahoo/FinMind） |
-| 共用函式 | execute_one_bar | 不用 |
+### 2.4 配置分散（部分修復）
 
-**影響**：
-- 回測能賺但實盤不行（Quantopian 教訓）
-- 任何改動要改兩個地方
-- 風控、成本、執行延遲的差異會導致 R² < 1
+**問題**：`commission_rate` 出現在 6 個 config dataclass 裡。
 
-**建議**：實盤管線也使用 `execute_one_bar`，只替換 broker（SimBroker → PaperBroker/SinopacBroker）。
+**已修**：`ExecutionConfig` 從 `TradingConfig` 傳入費率，再傳給 `PaperBroker` 和 `SinopacConfig`。`default_rules()` 從 `TradingConfig` 讀門檻。
 
-**優先級**：高（Phase S 的核心目標，但只做了表面統一）
-
-### 2.4 配置分散
-
-**問題**：`commission_rate` 出現在 6 個 config dataclass 裡：
-
-```
-TradingConfig.commission_rate
-BacktestConfig.commission_rate
-ExecutionConfig.commission_rate
-SimConfig.commission_rate
-SinopacConfig.sim_commission_rate
-PaperBroker.__init__(commission_rate=)
-```
-
-靠手動傳遞保持一致。改了一處忘改其他會導致回測和實盤用不同費率。
-
-**建議**：所有 broker/engine 都從 `TradingConfig` 讀取，不另存 copy。
-
-**優先級**：中
+**殘留**：`BacktestConfig` 和 `SimConfig` 仍有各自的副本。完整的 `CostModel` 物件尚未實作。
 
 ### 2.5 自動因子代碼生成
 
@@ -155,114 +124,57 @@ PaperBroker.__init__(commission_rate=)
 
 **教訓**：風控規則的門檻和策略的權重分配必須協調設計，不能獨立修改。
 
-### 2.10 Shioaji Simulation Mode 限制
+### 2.10 Shioaji Simulation Mode 限制（已修）
 
-**問題**：
-- Simulation mode 不推送 tick → NAV 盤中不更新
-- Simulation mode 的 snapshot API 可能不可用 → price polling 靜默失敗
-- 沒有 fallback 到 Yahoo feed
+**問題**：Simulation mode 不推 tick，且 snapshot API 可能不可用。
 
-**現狀**：加了 ShioajiFeed snapshot polling，但如果 Shioaji session timeout，polling 失敗且只有 debug log。
+**已修**：
+- 偵測 `is_simulation` → 啟動 price polling（不再被跳過）
+- ShioajiFeed snapshot 失敗 → fallback 到 Yahoo feed
+- polling 間隔 60 秒，快取 feed 物件
 
-**建議**：polling 失敗超過 N 次後自動 fallback 到 Yahoo feed。
+**殘留**：Yahoo feed 只有收盤價，盤中 NAV 仍無法即時更新（需正式 Shioaji 帳號的 tick 推送）。
 
 ---
 
 ## 3. 重構計畫
 
-### Phase U：回測/實盤統一（最高優先級）
+### Phase U：回測/實盤統一
 
-**目標**：實盤管線使用 `execute_one_bar`，和回測共用同一條代碼路徑。
+#### U1：統一 execution 路徑 ✅ 已完成
 
-#### U1：統一 execution 路徑
+Pipeline 改用 `execute_from_weights()`（`src/core/trading_pipeline.py`），和回測共用 `weights_to_orders` → `risk_engine.check_orders` → `broker.execute/submit` 路徑。
 
-```python
-# 現在（兩條路徑）
-# 回測：execute_one_bar(strategy, ctx, portfolio, risk_engine, prices, ..., sim_broker=sim_broker)
-# 實盤：weights = strategy.on_bar(ctx); orders = weights_to_orders(...); trades = exec_svc.submit_orders(...)
+#### U2：統一成本模型 ✅ 已完成
 
-# 目標（一條路徑）
-trades = execute_one_bar(
-    strategy, ctx, portfolio, risk_engine, prices,
-    broker=exec_svc,  # SimBroker / PaperBroker / SinopacBroker 都實作相同介面
-    ...
-)
-```
+`ExecutionConfig` 加入 `commission_rate`、`tax_rate`、`default_slippage_bps`，從 `TradingConfig` 傳入。`SinopacConfig` 加入 `sim_commission_rate` 等欄位。所有 broker 從 config 讀費率。
 
-**改動**：
-- `execute_one_bar` 接受 `BrokerAdapter`（而非 `SimBroker`）
-- `BrokerAdapter.execute(orders, bars, timestamp) → list[Trade]` 統一介面
-- PaperBroker/SinopacBroker 實作 `execute()` 方法
-- Pipeline 呼叫 `execute_one_bar` 而非自己組裝
+#### U3：營收數據進 Context — 🔵 未執行
 
-**預估**：2-3 小時
-
-#### U2：統一成本模型
-
-```python
-# 現在
-SimBroker: sqrt impact + configurable rates
-PaperBroker: fixed bps + config rates
-SinopacBroker sim: fixed bps + hardcoded rates (剛改為 config)
-
-# 目標
-所有 broker 使用相同的 CostModel 物件
-```
-
-**改動**：
-- 新增 `CostModel` dataclass（slippage_model, commission_rate, tax_rate, min_commission）
-- 從 `TradingConfig` 建立，傳給所有 broker
-- SimBroker、PaperBroker、SinopacBroker 都使用同一個 CostModel
-
-**預估**：1 小時
-
-#### U3：營收數據進 Context
-
-```python
-# 現在
-strategy 直接 pd.read_parquet("data/fundamental/...")
-
-# 目標
-revenue = ctx.get_revenue(symbol)  # 已含 40 天截斷
-```
-
-**改動**：
-- `Context` 加入 `get_revenue(symbol) → pd.DataFrame`
-- 內部透過 `FundamentalsProvider.get_revenue()` 取得
-- 自動做 40 天截斷（策略不需要自己管延遲）
-- revenue_momentum.py 改為用 ctx.get_revenue()
+策略仍直接讀 parquet。需要在 Context 加入 `get_revenue()` 方法。
 
 **預估**：1-2 小時
 
-### Phase V：配置統一（中優先級）
+### Phase V：配置統一
 
-#### V1：單一成本配置源
+#### V1：單一成本配置源 ✅ 部分完成
 
-```python
-# 目標
-config = get_config()
-cost = CostModel.from_config(config)  # 一處定義
-BacktestEngine(cost_model=cost)
-ExecutionService(cost_model=cost)
-```
+`ExecutionConfig` 加入成本欄位，從 `TradingConfig` 傳入 broker。但 `BacktestConfig` 和 `SimConfig` 仍有各自的副本。
 
-不再有 SimConfig.slippage_bps、BacktestConfig.commission_rate 等重複欄位。
+#### V2：時間語義統一 ✅ 部分完成
 
-**預估**：1 小時
+Pipeline 和 RealtimeRiskMonitor 改用 UTC+8。但 parquet index、feed、strategy 仍混用。
 
-#### V2：時間語義統一
+### 未執行項目
 
-所有內部時間統一為 `pd.Timestamp`（tz-naive，代表交易日的日期）。外部顯示時才轉 UTC+8。
-
-**預估**：2 小時（涉及多個模組的 index 處理）
-
-### 不重構項目
-
-| 項目 | 原因 |
-|------|------|
-| Portfolio 分離 | lock 已夠用，分離代價大 |
-| 因子 DSL | 字串模板 + 快取夠用 |
-| Event bus | 功能不多，直接呼叫夠用 |
+| 項目 | 原因 | 狀態 |
+|------|------|:----:|
+| U3 營收數據進 Context | 需要改策略代碼 | 🔵 |
+| V1 完整 CostModel 物件 | 需要刪除重複欄位 | 🔵 |
+| V2 完整時間統一 | 涉及多模組 | 🔵 |
+| Portfolio 分離 | lock 已夠用 | 不做 |
+| 因子 DSL | 模板 + 快取夠用 | 不做 |
+| Event bus | 直接呼叫夠用 | 不做 |
 
 ---
 
@@ -449,11 +361,18 @@ scripts/paper_trading_monitor.py 保留為 CLI 工具（手動快照/報告）
 
 60-78. 類型標註、swallowed exceptions、assert safety、feed cache、redundant wraps、np.asarray 一致性等
 
-### 實際運行發現 — 3 項
+### 實際運行發現 — 10 項
 
 79. Pipeline 只取 target 價格 → 舊持倉無法賣出 → 取 target ∪ positions
 80. 風控門檻 5% vs 策略 6.7% → 14/15 訂單被拒 → config 改 10%
 81. ShioajiFeed snapshot 可能因 session timeout 靜默失敗 → 需 Yahoo fallback
+82. Snapshots 目錄為空（asyncio task 重啟後消失）→ pipeline 後主動存
+83. pipeline_runs 目錄不存在 → _execute_pipeline_inner 也寫紀錄
+84. Selection/trade/reconciliation 無 run_id 關聯 → 所有 artifact 加 run_id
+85. empty target_weights 直接 return → 改為關閉所有持倉
+86. Large-Scale IC divide by zero（close=0 的下市股）→ guard base_price > 0
+87. 因子計算 175K 次 read_parquet（430s/輪）→ 模組級快取（4x 加速，104s/輪）
+88. pct_change FutureWarning → fill_method=None
 
 ---
 
