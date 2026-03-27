@@ -31,7 +31,7 @@ def compute_rev_coefficient_of_variation(symbols: list[str], as_of: pd.Timestamp
             if len(df) < 12:
                 continue
 
-            revenues = df["revenue"].astype(float).values
+            revenues = np.asarray(df["revenue"].astype(float))
             recent = revenues[-12:]
             std = float(np.std(recent))
             mean = float(np.mean(recent))

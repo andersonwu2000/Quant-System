@@ -25,22 +25,24 @@ def compute_rev_vs_trend_residual(symbols: list[str], as_of: pd.Timestamp) -> di
             if df.empty or "revenue" not in df.columns:
                 continue
             df["date"] = pd.to_datetime(df["date"])
-            df = df[df["date"] <= as_of].sort_values("date")
+            # 40 天營收公布延遲（台灣月營收於次月 10 日前公布）
+            usable_cutoff = as_of - pd.DateOffset(days=40)
+            df = df[df["date"] <= usable_cutoff].sort_values("date")
             if len(df) < 12:
                 continue
 
-            revenues = df["revenue"].astype(float).values
+            revenues = np.asarray(df["revenue"].astype(float))
 
             if len(revenues) < 12:
                 continue
             recent_6 = revenues[-6:]
-            # Linear trend: fit on indices 0..4, predict at index 5
             x = np.arange(len(recent_6))
-            coeffs = np.polyfit(x, recent_6, 1)  # [slope, intercept]
-            predicted_next = coeffs[0] * len(recent_6) + coeffs[1]
+            coeffs = np.polyfit(x, recent_6, 1)
+            # 殘差：實際值 vs 趨勢線在最後一個點的擬合值
+            fitted_last = coeffs[0] * (len(recent_6) - 1) + coeffs[1]
             actual = revenues[-1]
-            if predicted_next > 0:
-                results[sym] = float((actual - predicted_next) / predicted_next)
+            if fitted_last > 0:
+                results[sym] = float((actual - fitted_last) / fitted_last)
 
         except Exception:
             continue

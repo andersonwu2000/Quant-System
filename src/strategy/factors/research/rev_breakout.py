@@ -29,7 +29,7 @@ def compute_rev_breakout(symbols: list[str], as_of: pd.Timestamp) -> dict[str, f
             if len(df) < 12:
                 continue
 
-            revenues = df["revenue"].astype(float).values
+            revenues = np.asarray(df["revenue"].astype(float))
 
             if len(revenues) < 12:
                 continue

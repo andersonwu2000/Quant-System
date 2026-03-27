@@ -256,8 +256,9 @@ OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/dev/test/202603
 | 模組 | 功能 |
 |------|------|
 | SimBroker | 回測撮合：sqrt 滑點 + min NT$20 手續費 + 證交稅 + 零股加滑點 + 漲跌停流動性檢查（±9.5%）+ ADV 10% 量限 |
+| PaperBroker | 紙上交易：佣金 0.1425%（min NT$20）+ 賣出證交稅 0.3%（與 SimBroker 一致） |
 | SinopacBroker | Shioaji SDK：非阻塞下單 + 成交回報 + 斷線重連 |
-| ExecutionService | 模式路由（backtest/paper/live） |
+| ExecutionService | 模式路由（backtest/paper/live）+ fallback_mode 標記 + CRITICAL 日誌 |
 | OMS | 訂單生命週期 + 成交記錄 |
 | TWAPSplitter | 大單拆 N 筆子單 |
 | Reconcile | EOD 持倉對帳 + auto_correct |
@@ -298,12 +299,16 @@ Trading Pipeline（唯一交易管線）
     Strategy: QUANT_ACTIVE_STRATEGY（預設 revenue_momentum_hedged）
 
     execute_pipeline(config):
-        1. 數據更新（營收策略 → FinMind，其他 → 跳過，失敗 → 中止+通知）
-        2. 建立 Context（feed + fundamentals）
-        3. strategy.on_bar(ctx) → target_weights
-        4. weights_to_orders → RiskEngine → ExecutionService
-        5. 持久化（selection log + trade log）
-        6. 通知（Discord/LINE/Telegram）
+        0. 冪等性檢查（今日已完成 → 跳過）
+        1. 寫入 pipeline_runs/ 執行記錄（status=started）
+        2. asyncio.wait_for(timeout=config.backtest_timeout) 包裝
+        3. 數據更新（營收策略 → FinMind，其他 → 跳過，失敗 → 中止+通知）
+        4. 建立 Context（feed + fundamentals）
+        5. strategy.on_bar(ctx) → target_weights
+        6. weights_to_orders → RiskEngine → ExecutionService
+        7. 持久化（selection log + trade log + pipeline_runs/）
+        8. 通知（Discord/LINE/Telegram）
+        9. Timeout/crash → 記錄 status=failed，啟動時 check_crashed_runs() 偵測
 
 Research Pipeline（獨立，不操作 Portfolio）
     觸發: CronCreate 或 POST /auto-alpha/start

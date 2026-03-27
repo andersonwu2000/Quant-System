@@ -31,7 +31,7 @@ def compute_rev_rank_change(symbols: list[str], as_of: pd.Timestamp) -> dict[str
             if len(df) < 12:
                 continue
 
-            revenues = df["revenue"].astype(float).values
+            revenues = np.asarray(df["revenue"].astype(float))
             rev_3m = float(np.mean(revenues[-3:]))
             rev_6m = float(np.mean(revenues[-6:]))
             if rev_6m <= 0:

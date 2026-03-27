@@ -6,6 +6,7 @@ Direction: revenue_quality_interaction
 """
 
 from __future__ import annotations
+import numpy as np
 import pandas as pd
 from pathlib import Path
 
@@ -30,7 +31,7 @@ def compute_rev_yoy_x_gross_margin_chg(symbols: list[str], as_of: pd.Timestamp) 
             if len(df) < 12:
                 continue
 
-            revenues = df["revenue"].astype(float).values
+            revenues = np.asarray(df["revenue"].astype(float))
 
             # Revenue acceleration as proxy for interaction factors
             # (true interaction needs financial_statement data not yet available)
