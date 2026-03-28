@@ -82,33 +82,42 @@
 
 研究腳本 `scripts/alpha_research_agent.py` 每輪自動從 JSON 讀取未測假說。
 
-### 3.2 StrategyValidator 15 項（2026-03-27 更新）
+### 3.2 StrategyValidator 16 項（2026-03-28 Phase AC 凍結）
 
-| # | 檢查 | 門檻 | 說明 |
-|---|------|------|------|
-| 1 | universe_size | ≥ 50 | 選股池不能太小 |
-| 2 | cagr | ≥ 8% | 絕對報酬門檻（從 15% 降低） |
-| 3 | sharpe | ≥ 0.7 | 風險調整報酬 |
-| 4 | max_drawdown | ≤ 40% | 收緊自 50%（機構標準） |
-| 5 | annual_cost_ratio | < 50% | 成本 / gross alpha |
-| 6 | walkforward_positive | ≥ 60% | WF 年正率 |
-| 7 | deflated_sharpe | ≥ 0.70 | 寬鬆門檻（90+ trials 下 0.95 不可能） |
-| 8 | bootstrap_p(SR>0) | ≥ 80% | Bootstrap 統計信心 |
-| 9 | oos_sharpe | ≥ 0 | 改為 Sharpe > 0（比 return > 0 更嚴） |
-| 10 | vs_1n_excess | ≥ 0% | 超越等權基準 |
-| 11 | pbo | ≤ 50% | 過擬合概率 |
-| 12 | worst_regime | ≥ -30% | 最差市場環境 |
-| 13 | recent_period_sharpe | ≥ 0 | 因子是否衰退 |
-| 14 | market_correlation | \|corr\| ≤ 0.90 | 獨立 alpha（非市場 beta） |
-| 15 | cvar_95 | ≥ -5% | 日尾部風險 |
+| # | 檢查名 | 門檻 | 說明 | 方法論變更 |
+|---|--------|------|------|-----------|
+| 1 | universe_size | ≥ 50 | 選股池不能太小 | — |
+| 2 | cagr | ≥ 8% | 絕對報酬門檻 | — |
+| 3 | sharpe | ≥ 0.7 | 風險調整報酬 | — |
+| 4 | max_drawdown | ≤ 40% | 收緊自 50%（機構標準） | — |
+| 5 | annual_cost_ratio | < 50% of gross | 成本 / gross alpha | V2: 分母改 gross（非 net） |
+| 6 | temporal_consistency | ≥ 60% | WF 年正率（OOS Sharpe > 0 的比例） | 更名自 walkforward_positive |
+| 7 | deflated_sharpe | ≥ 0.70 | DSR（N=15 independent directions） | Lo(2002) SE; N 由外部傳入 |
+| 8 | bootstrap_p_sharpe_positive | ≥ 80% | P(Sharpe > 0) | Stationary Bootstrap (Politis & Romano 1994, avg_block=20) |
+| 9 | oos_sharpe | ≥ 0.30 | Rolling OOS: today-549d ~ yesterday | 滾動 OOS（非固定期間） |
+| 10 | vs_ew_universe | ≥ 0% | 超額 vs 等權 universe 平均 | Phase AC: 取代 vs 0050（消除 size premium 偏差） |
+| 11 | construction_sensitivity | ≤ 0.50 | 組合建構變異穩定性 | 更名自 pbo（非 Bailey CSCV；真正 PBO 在 watchdog） |
+| 12 | worst_regime | ≥ -30% | 市場危機期間累計報酬 | Phase AC: drawdown-based（0050 DD > 15%），非年度 |
+| 13 | recent_period_sharpe | ≥ 0 | 最近 252 交易日 Sharpe | — |
+| 14 | market_correlation | \|corr\| ≤ 0.80 | 和 0050.TW 日報酬相關性 | 收緊自 0.90 |
+| 15 | cvar_95 | ≥ -5% | Daily CVaR(95%) expected shortfall | — |
+| 16 | permutation_p | < 0.10 | 排列檢定 p-value | Phase AC 新增：shuffles real factor rankings |
+
+**方法論細節：**
+- **Stationary Bootstrap (#8)**：保留時間序列自相關結構，avg_block=20 天（月頻策略）
+- **Rolling OOS (#9)**：`oos_end = today - 1d`, `oos_start = today - 549d`，自動滾動避免 holdout leakage
+- **等權基準 (#10)**：universe 內所有股票等權持有，衡量選股 alpha（非 size premium）
+- **Drawdown Regime (#12)**：0050.TW 回撤 > 15% 的日期集合，測策略在市場危機中的表現
+- **Permutation Test (#16)**：保留因子值不變，打亂股票對應（固定 mapping per trial），100 次排列
 
 ### 3.3 Autoresearch 評估閘門（L1-L5 + Stage 2）
 
 定義於 `scripts/autoresearch/evaluate.py`（READ ONLY）。
 
-**期間分割：**
-- In-Sample (IS)：2017-01-01 ~ 2023-06-30（L1-L4 使用）
-- Out-of-Sample (OOS)：2023-07-01 ~ 2024-12-31（L5 使用，agent 不可見）
+**期間分割（Rolling，自動依 today 計算）：**
+- In-Sample (IS)：2017-01-01 ~ `today - 90d - 549d`（L1-L4 使用）
+- Out-of-Sample (OOS)：`today - 90d - 548d` ~ `today - 90d`（L5 使用，agent 不可見）
+- 例：2026-03-29 → IS 2017-01-01~2024-05-12, OOS 2024-05-13~2025-12-29
 
 **Universe：**
 - Core：200 支大中型股（依日均成交額排序，ADV ≥ 340M TWD）
@@ -148,10 +157,39 @@
 
 **報告生成條件：** 通過 L5 OOS 驗證（`passed=True`）。由 evaluate.py 的 `_write_report()` 直接寫入，不依賴 API server。報告包含完整指標和因子原始碼。
 
-**部署條件（額外需要 API server）：**
-1. StrategyValidator ≥ 14/15 通過（排除 DSR）
-2. DSR ≥ 0.70
-3. 自動部署到 Paper Trading
+**部署條件（硬/軟門檻，Phase AC §7 + FACTOR_PIPELINE_DEEP_REVIEW）：**
+
+硬門檻 — 統計/結構檢定（防過擬合，6 項）：
+| Check | 門檻 | 測什麼 |
+|-------|------|--------|
+| deflated_sharpe | ≥ 0.70 | 多重測試後 Sharpe 是否顯著 |
+| bootstrap_p_sharpe_positive | ≥ 80% | P(Sharpe > 0) 含自相關修正 |
+| vs_ew_universe | ≥ 0% | 選股 alpha（非 size premium） |
+| construction_sensitivity | ≤ 0.50 | portfolio 建構穩定性 |
+| market_correlation | ≤ 0.80 | 獨立於大盤（非 beta 搬運） |
+| permutation_p | < 0.10 | 信號打亂後 Sharpe 是否下降（條件式：需有 compute_fn） |
+
+硬門檻 — 經濟可行性（確保值得交易，4 項）：
+| Check | 門檻 | 測什麼 |
+|-------|------|--------|
+| cagr | ≥ 8% | 最低報酬門檻 |
+| sharpe | ≥ 0.7 | 風險調整報酬 |
+| annual_cost_ratio | < 50% | 成本不吃掉 alpha |
+| temporal_consistency | ≥ 60% | 不依賴單一年份 |
+
+軟門檻（sanity check，統計功效不足，報告但不擋部署）：
+| Check | 門檻 | 為什麼是軟門檻 |
+|-------|------|---------------|
+| oos_sharpe | ≥ 0.30 | SE=0.82，p=0.36（Lo 2002） |
+| recent_period_sharpe | ≥ 0 | SE=1.0，50% 拋硬幣 |
+| max_drawdown | ≤ 40% | 路徑依賴極強（Magdon-Ismail 2004） |
+| worst_regime | ≥ -30% | 描述性，非假設檢定 |
+| universe_size | ≥ 50 | 前置條件 |
+| cvar_95 | ≥ -5% | 描述性風險度量 |
+
+額外條件：Factor-Level PBO ≤ 0.70（watchdog 獨立計算，Bailey 2014 CSCV，累積 ≥20 因子後生效）
+
+**Thresholdout（Dwork et al. 2015）**：L5 OOS 判定加 Laplace 噪音（scale=0.05），降低每次查詢的資訊洩漏從 1 bit 到 ~0.7 bit。查詢計數存在 watchdog_data/（agent 不可見），budget 200 次。
 
 未通過 L5 的因子只記錄在 `results.tsv`，不寫報告。
 

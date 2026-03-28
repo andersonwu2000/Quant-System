@@ -37,7 +37,8 @@ services:
     tmpfs:
       - /tmp:size=512m
     volumes:
-      - ./work:/app/work
+      - ./work:/app/work:ro
+      - ./watchdog_data:/app/watchdog_data
       - ../../src:/app/src:ro
       - ../../data:/app/data:ro
       - ../../docs/research/autoresearch:/app/reports

@@ -1,8 +1,7 @@
-# Phase Q：策略精煉 — Sharpe 修正後重新達標
+# Phase Q：策略精煉 — Sharpe 修正後重新達標 ⚠️ 已被 Phase AA+AC 取代
 
-> 狀態：🟡 Q1 代碼已實作，Q2-Q3 待辦
-> 前置：Sharpe/Sortino 公式修正（幾何→算術），revenue_momentum 從 11/13 降到 8/13
-> 目標：改進策略使 StrategyValidator 13 項通過率回到 ≥ 11/13
+> 狀態：~~Q1 已實作~~ → **已被 Phase AA（策略構建）+ Phase AC（Validator 修正）取代**
+> Q 的目標（13 項通過率回到 11/13）已被重新定義：Phase AC 把 Validator 從 15 項升級到 16 項，Phase AA 加了 no-trade zone + 非對稱成本。當前結果 15/16（865 stocks）。
 
 ---
 

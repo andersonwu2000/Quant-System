@@ -1,18 +1,10 @@
-# Autoresearch infinite loop wrapper
-# -p + --max-turns allows multiple tool calls per session
-# When context fills or max-turns reached, auto-restart
-# State preserved in results.tsv + git
+# Autoresearch loop — auto-restart on context exhaustion
+# Usage: powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1
+# Stop: Ctrl+C
 
 $prompt = @"
-You are an autonomous alpha factor researcher. Execute these steps immediately without asking questions:
-
-1. Read scripts/autoresearch/program.md for the full protocol
-2. Read scripts/autoresearch/results.tsv to see what has been tried
-3. Read scripts/autoresearch/factor.py to see current state
-4. Start the experiment loop: edit factor.py -> git commit -> run evaluate.py -> record results -> repeat
-5. NEVER pause, summarize, or ask for confirmation. Just keep running experiments.
-
-Begin now. Your first action should be reading program.md.
+Read scripts/autoresearch/program.md for the full research protocol, then begin the experiment loop.
+Start now. Your first action should be reading program.md.
 "@
 
 while ($true) {
@@ -23,7 +15,7 @@ while ($true) {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 
-    claude -p $prompt --dangerously-skip-permissions --max-turns 200 --model sonnet
+    claude -p $prompt --dangerously-skip-permissions --max-turns 200
 
     Write-Host ""
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Session ended. Restarting in 10s..." -ForegroundColor Yellow

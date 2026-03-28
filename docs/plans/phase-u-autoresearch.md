@@ -1,4 +1,4 @@
-# Phase T：自動因子研究重構（autoresearch 模式）
+# Phase U：自動因子研究重構（autoresearch 模式）✅ 已完成
 
 > 日期：2026-03-27
 > 優先級：最高

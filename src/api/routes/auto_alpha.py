@@ -801,20 +801,17 @@ async def submit_factor(
             message=f"Validator error: {e}",
         )
 
-    # 4. 部署判定
+    # 4. 部署判定 — hard/soft threshold (Phase AC §7)
     deployed = False
-    # excl DSR ≥ 14
     checks = report.checks
-    n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
-    def _safe_float(s: str, default: float = 0.0) -> float:
-        try:
-            return float(s)
-        except (ValueError, TypeError):
-            return default
-    dsr_val = next((_safe_float(c.value) for c in checks if c.name == "deflated_sharpe"), 0.0)
-    pbo_val = next((_safe_float(c.value) for c in checks if c.name == "construction_sensitivity"), 1.0)
+    HARD_CHECKS = {
+        "cagr", "sharpe", "annual_cost_ratio", "temporal_consistency",
+        "deflated_sharpe", "bootstrap_p_sharpe_positive", "vs_ew_universe",
+        "construction_sensitivity", "market_correlation", "permutation_p",
+    }
+    hard_all_pass = all(c.passed for c in checks if c.name in HARD_CHECKS)
 
-    if n_excl_dsr >= 13 and dsr_val >= 0.70 and pbo_val <= 0.70:
+    if hard_all_pass:
         try:
             from src.alpha.auto.paper_deployer import PaperDeployer
             deployer = PaperDeployer()

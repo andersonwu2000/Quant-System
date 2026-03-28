@@ -1,6 +1,7 @@
-# Phase AB：Factor-Level PBO 重新設計
+# Phase AB：Factor-Level PBO 重新設計 ✅ 已完成（2026-03-29）
 
 > Bailey (2014) CSCV 的正確實作：N = 所有測試過的因子，不是 portfolio construction 變體
+> Phase 1-3 全部完成。已知 #1 greedy clustering 待改進（保守方向，不急）。
 
 ## 1. 問題
 
@@ -381,20 +382,54 @@ Phase 3（長期）：
 
 **結論：Phase 1 成功。DSR(N=15) 是正確的多重測試校正，沒有 kill 所有因子。**
 
-### Phase 2：Factor-Level PBO — 評估是否仍需要
+### Phase 2：Factor-Level PBO — ✅ 已完成（與 Phase 3 合併實作）
 
-Phase 1 結果顯示：
-- DSR(N=15) = 0.929 → 通過 0.70 門檻 ✅
-- PBO（construction sensitivity）= 0.266 → 通過 0.50 門檻 ✅
-- 14/15 只差 OOS Sharpe（市場因素）
+Phase 2 的三個 step 和 Phase 3 的獨立假說聚類被合併在同一次實作中：
 
-**Factor-Level PBO 的額外價值已降低：**
-- DSR(N=15) 已經反映了 15 個獨立方向的多重測試風險
-- construction sensitivity PBO 0.266 顯示策略穩健
-- 兩道保護已足夠
+| Step | 設計 | 實作位置 | 狀態 |
+|------|------|---------|:----:|
+| 2a | evaluate.py 存 daily returns | `evaluate.py:738-785 _store_factor_returns()` | ✅ |
+| 2b | watchdog 計算 Factor-Level PBO | `watchdog.py:364-468 _compute_factor_level_pbo()` | ✅ |
+| 2c | 報告整合 | `watchdog.py:454-465` 輸出 `factor_pbo.json` | ✅ |
+| Phase 3 | 獨立假說聚類 | `watchdog.py:404-427` returns correlation clustering | ✅ |
 
-**決定：Phase 2 暫緩。** 如果未來 autoresearch 擴展到更多獨立方向（N > 30），或 DSR 門檻需要進一步校準，再啟動 Phase 2。
+**Phase 1 結果**（DSR n_trials=15）：
+- DSR(N=15) = 0.929 → 通過 0.70 ✅
+- Construction sensitivity PBO = 0.266 → 通過 0.50 ✅
+- 14/15 只差 OOS Sharpe
 
-### Phase 3：自動化獨立假說判定 — 暫緩
+**Factor-Level PBO 作為 DSR 的補充**：DSR 是參數化的（假設 SR 分佈），Factor-Level PBO 是非參數化的（直接看排名）。兩者並存提供更完整的多重測試防護。
 
-依 Phase 2 決定連動暫緩。
+**已知問題**：見 Phase 3 審查結果（greedy clustering + IS selection bias）。
+
+### Phase 3：自動化獨立假說判定 — ✅ 已完成
+
+代碼位置：`docker/autoresearch/watchdog.py:364-468`、`scripts/autoresearch/evaluate.py:738-785`
+
+流程：evaluate.py 每次實驗後存 daily returns 到 `work/factor_returns/` → watchdog 累積 ≥20 個因子後計算 Factor-Level PBO。
+
+#### 代碼審查（2026-03-29）
+
+**正確的部分**：
+- 每個因子都存（含失敗的）— 符合 Bailey 要求
+- IC series correlation > 0.50 判定同一方向 — 符合 Phase AB 設計
+- 複用 `compute_pbo()` — 邏輯統一
+- 每 5 個新因子才重算 — 避免浪費
+- 結果存到 `factor_pbo.json` — 可被 status report 讀取
+
+**發現的問題**：
+
+| # | 問題 | 嚴重度 | 說明 |
+|---|------|:------:|------|
+| 1 | **Greedy clustering 依賴 column 順序** | MEDIUM | 如果 A-B corr=0.6、B-C corr=0.6、A-C=0.3，C 不會歸入 A 的 cluster（因為只和 seed 比）。結果取決於 column 順序。遺漏 transitive 相關 → N 被膨脹。應改用 hierarchical clustering 或 connected components |
+| 2 | **best per cluster 用 IS mean return** | MEDIUM | 選 IS 報酬最高的因子作為 cluster 代表 → 在 PBO 計算前就做了 IS selection → PBO 偏低。應改用中位數因子或隨機選 |
+| 3 | `_last_factor_pbo_count` 不持久化 | LOW | 容器重啟後重置為 0，立即重算。安全但浪費 |
+| 4 | `sys.path.insert(0, "/app")` 硬編碼 | LOW | 只在 Docker 內能跑 |
+| 5 | evaluate.py 路徑 fallback host/Docker 不一致 | LOW | Docker 內一致，host 跑需要手動建目錄 |
+| 6 | 沒清理舊 factor_returns parquet | LOW | 累積數百個 parquet，不影響正確性 |
+
+**#1 和 #2 會互相部分抵消**：#1 膨脹 N（更多 cluster → PBO 偏高），#2 選 IS 最強（PBO 偏低）。但抵消不是系統性的，取決於實際因子分佈。
+
+**修正狀態**：
+- #1：待修 — 改用 `scipy.cluster.hierarchy.fcluster(method='average', t=0.50)` 或 networkx connected components。偏保守方向（N 膨脹 → PBO 偏高），不緊急
+- #2：✅ 已修（2026-03-29）— 改用 `cluster[len(cluster)//2]`（中位數因子）。原 `max(..., key=mean_return)` 會造成 IS selection bias → PBO 偏低（危險方向）

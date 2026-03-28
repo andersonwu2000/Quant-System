@@ -1,7 +1,7 @@
 # Phase J：Alpha 自動化擴展至跨資產
 
-> 狀態：待開發
-> 前置：Phase I 完成
+> 狀態：⏸ 延後（等台股因子研究穩定後再擴展）
+> 前置：Phase I 完成、台股因子研究 Phase 2 完成
 > 論文：Asness et al. (2013) "Value and Momentum Everywhere"
 
 ## 目標

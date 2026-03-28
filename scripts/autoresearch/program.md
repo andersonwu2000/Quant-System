@@ -4,101 +4,72 @@ You are an autonomous quantitative researcher. Your job is to discover profitabl
 
 ## Setup (once per session)
 
-1. Read this file (`program.md`), `evaluate.py`, and `factor.py`
+1. Read this file (`program.md`) and `factor.py`. Do NOT read `evaluate.py` — it is a black-box evaluation harness.
 2. Read `results.tsv` to see what has been tried
-3. Run the baseline: `python evaluate.py` (unmodified factor.py)
+3. Run the baseline: `python evaluate.py 2>&1 | tail -30` (unmodified factor.py)
 4. Record baseline in results.tsv
 
-## Experiment Loop (runs forever)
+## Experiment Loop
 
 Repeat until the human interrupts you:
 
 1. **Think** — based on results.tsv + your knowledge of quantitative finance, choose what to try next
 2. **Edit `factor.py`** — implement your idea. You may ONLY edit `factor.py`. Do NOT touch `evaluate.py`.
 3. **Commit** — `git add factor.py && git commit -m "experiment: <description>"`
-   (NOTE: only factor.py is tracked by git. results.tsv is .gitignored — git reset won't erase it.)
-4. **Run** — `python evaluate.py > run.log 2>&1`
-5. **Parse** — extract the composite_score and level from run.log
+4. **Run** — `python evaluate.py 2>&1 | tail -30`
+5. **Parse** — extract ONLY these 4 values: `composite_score`, `best_icir`, `level`, `passed`. Do NOT try to extract or reason about OOS values, intermediate IC values, or any other metrics from the output.
 6. **Record** — append a row to results.tsv
 7. **Keep or discard:**
-   - If composite_score > previous best → `status=keep`, factor is promising
-   - If composite_score <= previous best → `status=discard`, `git reset --hard HEAD~1`
+   - If `level=L5` and `passed=True` → `status=keep`, tag: `git tag factor-<name>`
+   - If `level=L4` (promising but not yet OOS-validated) → `status=keep`
    - If crash → `status=crash`, `git reset --hard HEAD~1`, log error
-   - If `level=L5` and `passed=True` → tag: `git tag factor-<name>` (preserve for later)
+   - Otherwise → `status=discard`, `git reset --hard HEAD~1`
+   - **Diversity matters:** A factor reaching L3+ in a NEW dimension (e.g. institutional flows when you've only tried revenue) is more valuable than squeezing +0.01 from an already-explored dimension.
 8. **Go to step 1**
 
-## What You Can Do
+## File Access Rules
 
-- Change ANYTHING in `factor.py`: the compute function, imports, logic, parameters
-- Use any data available in the `data` dict passed to your function (OHLCV, revenue, fundamentals, institutional)
-- Combine multiple signals (momentum + revenue + value + ...)
-- Try different lookback windows, normalization methods, transformations
-- Create composite factors (rank(A) * rank(B))
-
-## SECURITY — Strict File Access Rules
-
-**You may ONLY modify these 2 files. This is a hard rule, not a suggestion:**
+**You may ONLY access these files:**
 
 | File | Permission | Purpose |
 |------|-----------|---------|
-| `scripts/autoresearch/factor.py` | READ + WRITE | Your experiment code |
-| `scripts/autoresearch/results.tsv` | READ + WRITE | Experiment log |
+| `factor.py` | READ + WRITE | Your experiment code |
+| `results.tsv` | READ + WRITE | Experiment log |
+| `program.md` | READ | This protocol |
 
-**ALL other files are READ-ONLY. You must NEVER:**
+**You must NEVER:**
 
-- Edit, Write, or overwrite `evaluate.py`, `program.md`, or ANY file outside the 2 above
-- Create new files anywhere in the repository
-- Delete or move any existing file
-- Run `rm`, `mv`, `cp`, `sed -i`, `echo >`, `tee`, or any command that writes to files other than the 2 above
+- Read `evaluate.py` or any file outside the 3 above (including `work/`, `watchdog_data/`, `src/`, `data/`, `docs/`)
+- Edit or overwrite `evaluate.py`, `program.md`, or any file other than `factor.py` and `results.tsv`
+- Create new files anywhere
+- Run `rm`, `mv`, `cp`, `sed -i`, `echo >`, `tee`, or any command that writes outside `factor.py` and `results.tsv`
 - Run `pip install`, `npm install`, or any package manager
 - Access network, download data, or call external APIs
 - Run arbitrary Python scripts other than `evaluate.py`
+- Read parquet files, JSON files, or any data files directly
 
 **Git commands are limited to:**
-- `git add scripts/autoresearch/factor.py`
-- `git commit -m "..."`
-- `git reset --hard HEAD~1`
+- `git add factor.py`
+- `git commit -m "experiment: ..."`
+- `git reset --hard HEAD~1` (only to undo YOUR most recent commit)
 - `git tag factor-<name>`
-- `git log`
+- `git log --oneline -5`
 
-## What You Cannot Do
+## Evaluation Pipeline (black box)
 
-- Edit `evaluate.py` — this is the fixed evaluation harness (READ ONLY, OS-enforced)
-- Install new packages — only use what's already available (numpy, pandas, scipy)
-- Access data beyond what's in the `data` dict — evaluate.py controls data access
-- Skip the evaluation — every idea must be tested
-- Bypass the 40-day revenue delay — evaluate.py enforces this before calling your code
-- Create files in `src/`, `docs/`, `strategies/`, or anywhere outside autoresearch/
+Your factor goes through multiple gates. You see:
+- `level`: how far it got (L0 → L1 → L2 → L3 → L4 → L5)
+- `passed`: True if it cleared all gates including OOS holdout
+- `composite_score`: overall quality metric
+- `best_icir`: best Information Coefficient Information Ratio
 
-## Evaluation Pipeline (what evaluate.py does)
-
-Your factor goes through 6 gates. **L1 fails fast (~30s instead of ~3min).**
-
-```
-L0: factor.py <= 60 lines       — complexity gate (reject overly complex factors)
-L1: |IC_20d| >= 0.02            — tested on first 30 IS dates only (early exit)
-L2: |ICIR| >= 0.15              — full IS evaluation, all horizons (5/10/20/60d)
-L3: dedup corr <= 0.50          — IC-series correlation with known factors
-    positive_years >= 4          — yearly stability (IS period, rolling)
-L4: fitness >= 3.0              — WorldQuant BRAIN formula
-L5: OOS holdout validation      — rolling 1.5 years (auto-computed, agent never sees this data)
-    IC sign consistency         — OOS IC must have same sign as IS IC
-    ICIR decay <= 60%           — OOS |ICIR| >= IS |ICIR| * 0.40
-    positive months >= 50%      — at least half the OOS months are positive
-Stage 2: large_icir_20d (reference) — 865+ symbols, recorded but not hard-gated
-```
-
-**L1-L4 use IN-SAMPLE data only. L5 validates on a rolling HOLDOUT period
-(most recent 1.5 years) that your factor never sees during development. This prevents
-overfitting from running many experiments — no matter how many trials you run, L5 is
-an independent check on unseen data.**
-
-If your factor fails L1, it's a weak signal — try a completely different approach.
-If it fails L2, the signal exists but isn't stable — try smoothing or different windows.
-If it fails L3 (dedup), you reinvented an existing factor — try something genuinely new.
-If it fails L3 (stability), the signal is regime-dependent — try regime-conditional logic.
-If it fails L5 (OOS), the factor is overfit to IS — it looked good in-sample but doesn't generalize.
-Stage 2 is informational — low large-scale ICIR means the factor may only work on large/mid-caps (which is fine for our portfolio).
+**What causes failure at each level:**
+- **L0**: factor.py too many lines (keep it under 80)
+- **L1**: signal too weak — try a completely different approach
+- **L2**: signal exists but unstable — try smoothing or different lookback windows
+- **L3**: either a clone of a known factor (try something genuinely new) or not stable across years
+- **L4**: overall quality insufficient
+- **L5**: does not generalize out-of-sample — try a fundamentally different signal, not a tweak
 
 ## Available Data
 
@@ -111,82 +82,56 @@ data["pb"][symbol]              # float: latest PB ratio
 data["roe"][symbol]             # float: latest ROE %
 ```
 
-## Factor Ideas to Explore
+## Factor Dimensions to Explore
 
-Start with what's known to work, then branch out:
+Explore broadly across these dimensions before going deep on any one:
 
-**Revenue-based (strongest in Taiwan market):**
-- Revenue acceleration (3M/12M ratio) — known ICIR ~0.44
-- Revenue new high (3M avg >= 12M max) — known CAGR 14.7%
-- Revenue YoY growth — basic but effective
-- Revenue z-score (surprise magnitude)
-- Seasonal deviation (vs same-month history)
+**Revenue-based:** acceleration, new highs, YoY growth, z-score, seasonal deviation
+**Technical:** momentum, mean reversion, RSI, low volatility anomaly, volume trends, illiquidity
+**Fundamental:** PE/PB value, ROE quality
+**Institutional flows (Taiwan-specific):** trust net buy, foreign investor flows, dealer patterns
+**Combinations:** cross-dimension composites (e.g. revenue × technical, fundamental × institutional)
 
-**Technical (use data["bars"]):**
-- 12-1 momentum (skip most recent month)
-- Mean reversion (z-score vs 20d MA)
-- RSI extremes (14d)
-- Volatility (low vol anomaly — 20d annualized)
-- Volume trends (volume momentum, OBV slope)
-- Amihud illiquidity (|return| / dollar volume)
-- Bollinger position (where in the bands?)
-- MACD histogram
+## Forbidden Zones
 
-**Fundamental (use data["pe"], data["pb"], data["roe"]):**
-- PE/PB value (inverted — lower PE = higher score)
-- ROE quality (higher = better)
-- Dividend yield
-
-**Institutional flows (use data["institutional"] — Taiwan-specific):**
-- Investment trust net buy (strong signal per FinLab research: CAGR 31.7%)
-- Foreign investor flows (reversal signal: CAGR -11.2% — use as contra)
-- Dealer hedging patterns
-
-**Combinations (most promising — try after single-factor baselines):**
-- Revenue acceleration x trust buy (best known combo)
-- Momentum x value (classic Fama-French)
-- Quality x low volatility
-- Revenue x institutional confirmation
-- Any pair of factors that individually scored well in results.tsv
-
-## Forbidden Zones (don't waste time)
-
-These are known dead ends from prior research:
+Known dead ends — don't waste time:
 
 - **Pure price reversal (< 5 days)** — too noisy, slippage eats alpha
-- **Factors requiring financial_statement data** — data["pe"]/["pb"]/["roe"] only have latest values, not time series. Don't try quarterly accounting ratios that need historical values.
-- **Single-stock patterns** — your factor must work cross-sectionally (rank across 50+ stocks). Patterns that only work for specific stocks are noise.
-- **Calendar effects** (January effect, month-end) — too weak and well-arbitraged
-- **Exact clones of existing factors** — the dedup check (L3) will catch these. If you get "corr > 0.50 with revenue_acceleration", you need a genuinely different signal, not just a parameter tweak.
+- **Financial statement time series** — `data["pe"]/["pb"]/["roe"]` only have latest values, not history
+- **Single-stock patterns** — must work cross-sectionally across 50+ stocks
+- **Calendar effects** — too weak and well-arbitraged
+- **Exact clones** — the dedup check will catch `corr > 0.50` with known factors
 
-## Strategy
+## Research Strategy
 
-1. **First 10 experiments**: Scan single factors across different dimensions (revenue, technical, fundamental, institutional). One experiment per dimension. Establish baseline scores.
-2. **Next 20 experiments**: Take top-performing singles and try parameter variations (different windows, normalizations). Focus on what scored highest.
-3. **After that**: Combine top performers into multi-factor composites. Try rank(A)*rank(B), weighted combinations, conditional logic.
-4. **If stuck**: Try non-linear transforms (log, exp, rank, z-score), different lookback periods, cross-sectional vs time-series normalization.
-5. **Learn from near-misses**: If a factor got ICIR=0.14 (just below 0.15), it's worth tweaking — try smoothing, different horizon, or combining with another signal.
+1. **Experiments 1-10**: One experiment per dimension (revenue, technical, fundamental, institutional, volume). Establish which dimensions have signal.
+2. **Experiments 11-30**: For each dimension that showed signal (reached L2+), try 2-3 variations (different windows, normalizations).
+3. **After 30**: Combine top performers across dimensions into multi-factor composites.
+4. **If stuck**: Try non-linear transforms, cross-sectional vs time-series normalization, interaction terms, regime-conditional logic.
+5. **Learn from near-misses**: ICIR=0.14 (just below L2's 0.15) is worth tweaking.
 
-## NEVER STOP
+**Key principle: breadth first, depth second.** Don't run 20 revenue variants before trying a single institutional factor.
 
-Once the experiment loop has begun, do NOT pause to ask the human if you should continue. Do NOT summarize or reflect unless writing to results.tsv. The human might be asleep. Just keep running experiments.
+## KEEP GOING
+
+Do NOT pause to ask the human. The human might be asleep. Just keep running experiments.
+
+**Context window management:** After every 30 experiments, write a brief summary to results.tsv (as a `#` comment line): which dimensions have signal, best scores, key lessons. This helps recover context if the session is interrupted.
 
 If you run out of ideas:
-- Re-read results.tsv — which near-misses (highest composite_score among discards) could be improved?
-- Try combining the top 3 keep-status factors from results.tsv
-- Try the OPPOSITE of what failed (if long momentum failed, try short-term reversal)
-- Try Kakushadze-style alpha formulas (rank correlations, delta operations, conditional signs)
-- Try regime-conditional factors (momentum in bull market, value in bear market — detect regime from 200d MA)
-- Try different normalizations of the SAME signal (raw, z-score, rank, percentile, winsorized)
-- Try interaction terms: factor_A * factor_B, factor_A / volatility, factor_A * sign(momentum)
+- Re-read results.tsv — which near-misses could be improved?
+- Try the OPPOSITE of what failed
+- Try Kakushadze-style formulas (rank correlations, delta operations, conditional signs)
+- Try regime-conditional factors (200d MA as regime detector)
+- Try interaction terms: factor_A × factor_B, factor_A / volatility
 
 ## Simplicity Criterion
 
-All else being equal, simpler is better. A 0.01 score improvement from a 50-line factor? Probably not worth it. A 0.01 improvement from a 5-line factor? Definitely keep. Deletions that maintain score are always good.
+Simpler is better. A marginal improvement from a 70-line factor? Not worth it. Same score from a 5-line factor? Always prefer. Deletions that maintain score are always good.
 
 ## results.tsv Format
 
-Tab-separated. Columns:
+Tab-separated:
 ```
 commit	composite_score	best_icir	level	status	description
 ```

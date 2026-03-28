@@ -1,7 +1,8 @@
-# Phase Z：向量化回測引擎
+# Phase Z：向量化回測引擎（Z1✅ Z2✅ Z3 延後）
 
 > 目標：將 Validator 的回測從 event-driven loop 改為 numpy 矩陣運算
 > 預估加速：PBO 100x、Full backtest 5-10x、整體 Validator 10 分鐘 → 1-2 分鐘
+> Z1（PBO 向量化）+ Z2（Shared Feed）已完成並部署。Z3（引擎加速）延後，當前效能已可接受。
 
 ## 1. 現狀分析
 

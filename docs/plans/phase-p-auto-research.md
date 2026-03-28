@@ -1,7 +1,7 @@
-# Phase P：自動化 Alpha 研究 — Claude Code 24 小時因子挖掘
+# Phase P：自動化 Alpha 研究 — Claude Code 24 小時因子挖掘 ⚠️ 已被 Phase U 取代
 
-> 狀態：🟢 P1-P5 已完成，P6-P7 待辦
-> 性質：**實驗性** — 基礎設施已建好，但產出尚未通過完整策略驗證（Walk-Forward + OOS）
+> 狀態：~~P1-P5 已完成~~ → **已被 Phase U（autoresearch 模式）完全取代**
+> Phase U 的 Karpathy 3-file 架構（evaluate.py + factor.py + program.md）取代了 Phase P 的 ExperienceMemory + hypothesis_templates 設計。`src/alpha/auto/experience_memory.py` 是孤島模組，未被任何代碼引用。
 > 依據：AlphaAgent (KDD 2025) + QuantaAlpha (2026) + RD-Agent(Q) (Microsoft) + FactorMiner + WorldQuant BRAIN
 > 目標：讓 Claude Code 自主研究新因子，7×24 持續產出可驗證的 alpha 假說
 

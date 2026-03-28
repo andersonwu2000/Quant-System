@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORK_DIR = Path("/app/work")
+WATCHDOG_DATA = Path("/app/watchdog_data")  # agent cannot access this
 CHECK_INTERVAL = 60
 STALE_THRESHOLD = 1800  # 30 min
 
@@ -131,7 +132,7 @@ def _process_pending():
     """Pick up pending validation markers, run Validator, write reports."""
     import json as _json
 
-    pending_dir = WORK_DIR / "pending"
+    pending_dir = WATCHDOG_DATA / "pending"
     if not pending_dir.exists():
         return
 
@@ -169,12 +170,40 @@ def _process_pending():
         validator_report = _run_background_validator(results, factor_code)
 
         if validator_report and validator_report.get("deployed"):
-            _write_background_report(results, validator_report, factor_code)
-            log(f"Validator: DEPLOYED ({validator_report['n_passed']}/{validator_report['n_total']})")
+            # Additional gate: Factor-Level PBO must be <= 0.70 (if available)
+            pbo_path = WATCHDOG_DATA / "factor_pbo.json"
+            factor_pbo_ok = True
+            factor_pbo_val = None
+            if pbo_path.exists():
+                try:
+                    import json as _j2
+                    fpbo = _j2.loads(pbo_path.read_text(encoding="utf-8"))
+                    factor_pbo_val = fpbo.get("factor_pbo")
+                    if factor_pbo_val is not None and factor_pbo_val > 0.70:
+                        factor_pbo_ok = False
+                except Exception:
+                    pass
+
+            if not factor_pbo_ok:
+                log(f"Validator: BLOCKED by Factor-Level PBO={factor_pbo_val:.3f} > 0.70 "
+                    f"({validator_report['n_passed']}/{validator_report['n_total']})")
+            else:
+                soft_fails = validator_report.get("soft_fails", [])
+                _write_background_report(results, validator_report, factor_code)
+                pbo_msg = f", factor_pbo={factor_pbo_val:.3f}" if factor_pbo_val is not None else ""
+                if soft_fails:
+                    log(f"Validator: DEPLOYED ({validator_report['n_passed']}/{validator_report['n_total']}{pbo_msg}) "
+                        f"[soft fails: {', '.join(soft_fails)}]")
+                else:
+                    log(f"Validator: DEPLOYED ({validator_report['n_passed']}/{validator_report['n_total']}{pbo_msg})")
         else:
             n_p = validator_report.get("n_passed", "?") if validator_report else "?"
             n_t = validator_report.get("n_total", "?") if validator_report else "?"
-            log(f"Validator: not deployed ({n_p}/{n_t})")
+            hard_fails = validator_report.get("hard_fails", []) if validator_report else []
+            if hard_fails:
+                log(f"Validator: not deployed ({n_p}/{n_t}) [hard fails: {', '.join(hard_fails)}]")
+            else:
+                log(f"Validator: not deployed ({n_p}/{n_t})")
 
         # Remove marker after processing
         marker_path.unlink()
@@ -188,7 +217,7 @@ def _process_pending():
 
 
 def _run_background_validator(results: dict, factor_code: str) -> dict | None:
-    """Run StrategyValidator 15 checks in background."""
+    """Run StrategyValidator 16 checks in background."""
     import sys
     import os
     import inspect
@@ -271,15 +300,26 @@ def _run_background_validator(results: dict, factor_code: str) -> dict | None:
         n_total = report.n_total
         checks = report.checks
 
-        n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
-        dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
-        pbo_val = next((float(c.value) for c in checks if c.name == "construction_sensitivity"), 1.0)
-        deployed = n_excl_dsr >= 13 and dsr_val >= 0.70 and pbo_val <= 0.70
+        # Hard/soft deployment threshold (Phase AC §7)
+        # Hard: must ALL pass (0 tolerance) — checks with statistical power
+        # Soft: report but don't block — sanity checks or descriptive metrics
+        HARD_CHECKS = {
+            "cagr", "sharpe", "annual_cost_ratio", "temporal_consistency",
+            "deflated_sharpe", "bootstrap_p_sharpe_positive", "vs_ew_universe",
+            "construction_sensitivity", "market_correlation", "permutation_p",
+        }
+        hard_all_pass = all(c.passed for c in checks if c.name in HARD_CHECKS)
+        soft_fails = [c.name for c in checks if c.name not in HARD_CHECKS and not c.passed]
+        deployed = hard_all_pass
+
+        hard_fails = [c.name for c in checks if c.name in HARD_CHECKS and not c.passed]
 
         return {
             "n_passed": n_passed,
             "n_total": n_total,
             "deployed": deployed,
+            "hard_fails": hard_fails,
+            "soft_fails": soft_fails,
             "checks": [(c.name, c.passed, str(c.value), str(c.threshold)) for c in checks],
         }
     except Exception as e:
@@ -349,7 +389,7 @@ def _compute_factor_level_pbo():
     """
     global _last_factor_pbo_count
 
-    returns_dir = WORK_DIR / "factor_returns"
+    returns_dir = WATCHDOG_DATA / "factor_returns"
     if not returns_dir.exists():
         return
 
@@ -377,13 +417,13 @@ def _compute_factor_level_pbo():
         if len(daily_returns_dict) < 20:
             return
 
-        returns_matrix = pd.DataFrame(daily_returns_dict).ffill(limit=5).dropna()
+        returns_matrix = pd.DataFrame(daily_returns_dict).fillna(0.0).dropna()
         if len(returns_matrix) < 120:
             return
 
         # Phase AB Phase 3: Independent hypothesis clustering
         # Factors with returns correlation > 0.50 are the same "direction"
-        # Keep only the best factor per cluster (highest mean return)
+        # Keep median factor per cluster (not IS-best, to avoid selection bias)
         corr_matrix = returns_matrix.corr()
         used = set()
         clusters: list[list[str]] = []
@@ -400,11 +440,12 @@ def _compute_factor_level_pbo():
                     used.add(other)
             clusters.append(cluster)
 
-        # Pick best per cluster (highest mean daily return)
+        # Pick median factor per cluster (avoid IS selection bias)
+        # Using IS-best would bias PBO downward (optimistic = dangerous)
         independent_factors: list[str] = []
         for cluster in clusters:
-            best = max(cluster, key=lambda c: returns_matrix[c].mean())
-            independent_factors.append(best)
+            ranked = sorted(cluster, key=lambda c: returns_matrix[c].mean())
+            independent_factors.append(ranked[len(ranked) // 2])
 
         n_raw = len(daily_returns_dict)
         n_independent = len(independent_factors)
@@ -431,7 +472,7 @@ def _compute_factor_level_pbo():
             f"{len(returns_matrix)} days, {result.n_combinations} combos)")
 
         # Write to a file for status.ps1 to pick up
-        pbo_path = WORK_DIR / "factor_pbo.json"
+        pbo_path = WATCHDOG_DATA / "factor_pbo.json"
         import json
         pbo_path.write_text(json.dumps({
             "factor_pbo": round(result.pbo, 4),

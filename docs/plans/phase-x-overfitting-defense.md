@@ -1,4 +1,4 @@
-# Phase X: Anti-Overfitting Defense for Autoresearch
+# Phase X: Anti-Overfitting Defense for Autoresearch ✅ 已被 Phase AC 實作
 
 ## Problem
 

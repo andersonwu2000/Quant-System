@@ -1,54 +1,25 @@
 ﻿# Autoresearch Status Report
 
-> Updated: 2026-03-28 03:53:52
+> Updated: 2026-03-28 23:19:22
 
 ## Dashboard
 
 | Item | Value |
 |------|-------|
-| Agent | Running (Up 36 seconds) |
-| Watchdog | Running (Up 36 seconds) |
-| Experiments | 22 |
-| Keep / Discard / Crash | 2 / 20 / 0 |
-| L5 OOS Passed | 12 (54.5%) |
-| L0 Early Reject | 7 |
+| Agent | Running (Up Less than a second) |
+| Watchdog | Running (Up Less than a second) |
+| Experiments | 0 |
+| Keep / Discard / Crash | 0 / 0 / 0 |
+| L5 OOS Passed | 0 (0%) |
+| L0 Early Reject | 0 |
 | Deployed | 0 |
-| Best Score | 12.7635 |
-| Best Factor | OBV slope t-stat 63d (large_icir=0.0602 below threshold) |
+| Best Score | 0 |
+| Best Factor | N/A |
 
 ## Experiments (latest first)
 
 | Score | ICIR | Level | Status | Description |
 |------:|-----:|-------|--------|-------------|
-| 4.6323 | 0.3321 | L5 | discard | rolling Sharpe 63d quality momentum (L5 pass, corr=0.051 independent, composite below OBV) |
-| 0 | 0.0000 | L0 | discard | closing strength t-stat 63d (IC=0.019 just below L1 threshold) |
-| 0 | 0.0000 | L0 | discard | trust-net-buy ratio 20d with OBV fallback (IC=0.008, ratio normalization kills signal) |
-| 10.2261 | 0.5165 | L5 | discard | liquidity-conditional dvol>=300M (large_icir=0.4049 great Stage2, ICIR worse due to more 52wk usage) |
-| 11.6867 | 0.6265 | L5 | discard | liquidity-conditional OBV(liquid)/52wk(illiquid) dvol>=50M (large_icir=0.2037 PASSES Stage2, composite below OBV) |
-| 8.5727 | 0.4613 | L5 | discard | revenue accel 3M/6M + OBV fallback hybrid (composite below OBV) |
-| 10.123 | 0.5433 | L5 | discard | OBV + 52wk rank sum (large_icir=0.3567, composite below OBV) |
-| 0.51 | 0.1020 | L1 | discard | OTC intraday slope t-stat (ICIR=0.1020 too weak) |
-| 12.7635 | 0.6783 | L5 | discard | vol-win-rate slope (mathematically identical to OBV slope) |
-| 0 | 0.0000 | L0 | discard | CMF slope t-stat 63d (IC=0.0175, just below L1 threshold) |
-| 10.2049 | 0.4470 | L5 | discard | OBV slope 126d (lower turnover but lower ICIR, negative large_icir) |
-| 12.7635 | 0.6783 | L5 | discard | normalized OBV slope (identical to OBV, scale doesn't affect t-stat) |
-| 9.3935 | 0.5101 | L5 | discard | log-price trend t-stat 63d (large_icir=0.2451 passes stage2, composite below OBV) |
-| 10.3051 | 0.5580 | L5 | discard | OBV x 52wk-high rank combo compact (large_icir=0.3835, composite below OBV) |
-| 0 | 0.0000 | L0 | discard | OBV x 52wk-high combo (too complex, 69 lines > 60 max) |
-| 5.4078 | 0.3530 | L5 | discard | 52-week high proximity (large_icir=0.4285 excellent, but lower composite) |
-| 0.7429 | -0.1486 | L1 | discard | low volatility anomaly -vol20d (ICIR just below 0.15 threshold) |
-| 0 | 0.0000 | L0 | discard | investment trust 20d net buy (institutional data starts 2019) |
-| 0 | 0.0000 | L0 | discard | revenue yoy_growth direct (no yoy_growth col, no data pre-2019) |
-| 0 | 0.0000 | L0 | discard | revenue acceleration 3M/12M (no data pre-2019) |
-| 12.7635 | 0.6783 | L5 | keep | OBV slope t-stat 63d (large_icir=0.0602 below threshold) |
-| 8.8004 | 0.3419 | L4 | keep | 12-1 momentum (baseline) |
-
-## Kept Factors
-
-| Score | ICIR | Level | Description |
-|------:|-----:|-------|-------------|
-| 8.8004 | 0.3419 | L4 | 12-1 momentum (baseline) |
-| 12.7635 | 0.6783 | L5 | OBV slope t-stat 63d (large_icir=0.0602 below threshold) |
 
 ## Alerts
 
@@ -57,8 +28,7 @@ None.
 ## Recent Commits
 
 ```
-aefb0d5 experiment: OBV slope t-stat 42d (shorter window than 63d)
-121a8c9 init: autoresearch workspace
+951132a init: baseline momentum
 ```
 
 ---

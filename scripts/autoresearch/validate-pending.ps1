@@ -1,11 +1,11 @@
 # Validate Pending Factors
-# Scans docs/research/autoresearch/ for reports marked "Validator: pending"
-# Submits each to API for 15-check validation
+# Scans watchdog_data/pending/ for markers, submits to API for 16-check validation
 # Usage: powershell -File scripts/autoresearch/validate-pending.ps1
 # Requires: API server running on localhost:8000
 
-$ReportDir = "D:\Finance\docs\research\autoresearch"
+$PendingDir = "D:\Finance\docker\autoresearch\watchdog_data\pending"
 $ApiUrl = "http://127.0.0.1:8000/api/v1/auto-alpha/submit-factor"
+$ApiKey = if ($env:QUANT_API_KEY) { $env:QUANT_API_KEY } else { "dev-key" }
 
 # Check API server
 try {
@@ -16,46 +16,24 @@ try {
     exit 1
 }
 
-$reports = Get-ChildItem "$ReportDir\*.md" | Where-Object { $_.Name -ne "status.md" }
-$pending = @()
+$markers = @(Get-ChildItem "$PendingDir\*.json" -ErrorAction SilentlyContinue)
 
-foreach ($r in $reports) {
-    $content = Get-Content $r.FullName -Raw -Encoding UTF8
-    if ($content -match "Validator: pending") {
-        $pending += $r
-    }
-}
-
-if ($pending.Count -eq 0) {
-    Write-Host "No pending reports found." -ForegroundColor Green
+if ($markers.Count -eq 0) {
+    Write-Host "No pending markers found." -ForegroundColor Green
     exit 0
 }
 
-Write-Host "Found $($pending.Count) pending report(s):" -ForegroundColor Yellow
-foreach ($r in $pending) {
-    Write-Host "  - $($r.Name)"
-}
+Write-Host "Found $($markers.Count) pending marker(s):" -ForegroundColor Yellow
+foreach ($m in $markers) { Write-Host "  - $($m.Name)" }
 
-foreach ($r in $pending) {
-    $content = Get-Content $r.FullName -Raw -Encoding UTF8
-
-    # Extract factor code from ```python ... ``` block
-    $code = ""
-    if ($content -match '(?s)```python\r?\n(.+?)```') {
-        $code = $Matches[1].Trim()
-    }
-
-    # Extract name from filename (timestamp_name.md)
-    $name = $r.BaseName -replace '^\d{8}_\d{6}_', ''
-
-    # Extract composite score
-    $score = 0
-    if ($content -match 'Composite Score \| ([0-9.]+)') {
-        $score = [double]$Matches[1]
-    }
+foreach ($m in $markers) {
+    $data = Get-Content $m.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    $code = $data.factor_code
+    $results = $data.results
+    $name = $m.BaseName
 
     if (-not $code) {
-        Write-Host "  SKIP: $($r.Name) - no factor code found" -ForegroundColor Gray
+        Write-Host "  SKIP: $($m.Name) - no factor code" -ForegroundColor Gray
         continue
     }
 
@@ -64,25 +42,22 @@ foreach ($r in $pending) {
     $body = @{
         name = $name
         code = $code
-        composite_score = $score
-        icir_20d = 0
-        large_icir_20d = 0
-        description = "validate-pending batch submission"
+        composite_score = $results.composite_score
+        icir_20d = if ($results.icir_by_horizon) { $results.icir_by_horizon."20d" } else { 0 }
+        large_icir_20d = $results.large_icir_20d
+        description = "validate-pending: $($results.level)"
     } | ConvertTo-Json -Depth 3
 
     try {
-        $resp = Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $body -ContentType "application/json" -Headers @{"X-API-Key"="dev-key"} -TimeoutSec 300
+        $resp = Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $body -ContentType "application/json" -Headers @{"X-API-Key"=$ApiKey} -TimeoutSec 300
 
         Write-Host "  Validator: $($resp.validator_passed)/$($resp.validator_total)" -ForegroundColor $(if ($resp.deployed) { "Green" } else { "Yellow" })
         Write-Host "  Deployed: $($resp.deployed)"
-        Write-Host "  Message: $($resp.message)"
 
-        # Update report: replace "pending" with actual results
-        $validatorLine = "Validator: $($resp.validator_passed)/$($resp.validator_total) | Deployed: $($resp.deployed)"
-        $content = $content -replace 'Validator: pending', $validatorLine
-        $content | Out-File $r.FullName -Encoding UTF8
-
-        Write-Host "  Report updated: $($r.Name)" -ForegroundColor Green
+        # Move processed marker
+        $doneDir = "$PendingDir\done"
+        if (-not (Test-Path $doneDir)) { New-Item -ItemType Directory -Path $doneDir | Out-Null }
+        Move-Item $m.FullName "$doneDir\$($m.Name)"
     } catch {
         Write-Host "  FAILED: $_" -ForegroundColor Red
     }

@@ -194,6 +194,7 @@ class WalkForwardAnalyzer:
         # Concatenated OOS Sharpe (more accurate than per-fold mean)
         if all_oos_daily:
             concat_oos = pd.concat(all_oos_daily).dropna()
+            concat_oos = concat_oos[~concat_oos.index.duplicated(keep='first')]
             oos_std = float(concat_oos.std()) if len(concat_oos) > 1 else 0.0
             oos_sharpe = float(concat_oos.mean() / oos_std * np.sqrt(252)) if oos_std > 0 else 0.0
         else:

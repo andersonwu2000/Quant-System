@@ -296,7 +296,8 @@ def compute_analytics(
     # A1 fix: len(nav_series)-1 = 報酬天數（數據點比報酬多 1）
     n_days = max(len(nav_series) - 1, 1)
     n_years = n_days / 252
-    annual_return = float((1 + total_return) ** (1 / max(n_years, 0.01)) - 1) if total_return > -1 else -1.0
+    # Guard: (1+r) must be > 0 for fractional exponent; total_return < -1 means NAV < 0 (impossible)
+    annual_return = float((1 + total_return) ** (1 / max(n_years, 0.01)) - 1) if total_return > -1.0 + 1e-9 else -1.0
 
     # 年化波動率
     volatility = float(daily_returns.std() * np.sqrt(252)) if len(daily_returns) > 1 else 0.0
@@ -337,7 +338,8 @@ def compute_analytics(
     win_rate, avg_trade_return = _trade_stats(trades)
 
     # 換手率
-    turnover = _estimate_turnover(trades, initial_cash, n_days)
+    avg_nav = float(nav_series.mean()) if len(nav_series) > 0 else initial_cash
+    turnover = _estimate_turnover(trades, avg_nav, n_days)
 
     # Rejected order stats
     _rejected = rejected_orders or []

@@ -39,14 +39,20 @@ REVENUE_DELAY_DAYS = 40        # Taiwan monthly revenue publication delay
 MIN_SYMBOLS = 50               # Minimum symbols per date for valid IC (200-stock universe)
 EVAL_START = "2017-01-01"      # Evaluation period start
 
-# Rolling OOS: auto-computed from today's date
+# Rolling OOS: computed at runtime (not import time) via _compute_dates()
 # OOS = most recent 1.5 years (before forward-return buffer)
 # Forward returns need ~60 trading days ≈ 3 months after EVAL_END
 from datetime import datetime as _dt, timedelta as _td
-_today = _dt.now()
-EVAL_END = (_today - _td(days=90)).strftime("%Y-%m-%d")         # 3 months before today
-OOS_START = (_today - _td(days=90 + 548)).strftime("%Y-%m-%d")  # 1.5 years before EVAL_END
-IS_END = (_today - _td(days=91 + 548)).strftime("%Y-%m-%d")     # day before OOS_START
+
+def _compute_dates() -> tuple[str, str, str]:
+    """Compute rolling dates at call time, not import time."""
+    today = _dt.now()
+    eval_end = (today - _td(days=90)).strftime("%Y-%m-%d")
+    oos_start = (today - _td(days=90 + 548)).strftime("%Y-%m-%d")
+    is_end = (today - _td(days=91 + 548)).strftime("%Y-%m-%d")
+    return eval_end, oos_start, is_end
+
+EVAL_END, OOS_START, IS_END = _compute_dates()
 SAMPLE_FREQ_DAYS = 20          # Sample IC every 20 trading days
 FORWARD_HORIZONS = [5, 10, 20, 60]  # Forward return horizons (trading days)
 
@@ -59,6 +65,12 @@ MIN_FITNESS = 3.0              # L4: minimum WorldQuant BRAIN fitness
 
 # L5: OOS validation thresholds (Phase X anti-overfitting)
 OOS_ICIR_DECAY_MAX = 0.60     # OOS |ICIR| must be >= IS |ICIR| * (1 - decay)
+
+# Thresholdout (Dwork et al. 2015): add noise to L5 pass/fail to preserve holdout validity
+# Safe budget ≈ τ² × n_oos_days. With τ=0.10, n=375 → B ≈ 3.75 (pure adaptive).
+# Thresholdout raises effective budget to O(n) by adding Laplace noise to comparisons.
+THRESHOLDOUT_NOISE_SCALE = 0.05   # Laplace scale for noisy L5 comparisons
+L5_QUERY_BUDGET = 200             # warn after this many L5 queries
 OOS_MIN_POSITIVE_RATIO = 0.50 # OOS months with positive IC >= 50%
 
 # Dedup: known good factors' IC series (from legacy L3 check)
@@ -70,6 +82,35 @@ UNIVERSE_FILE = PROJECT_ROOT / "data" / "research" / "universe.txt"
 
 # Large-scale universe for Stage 2 verification (865+ symbols)
 LARGE_UNIVERSE_FILE = PROJECT_ROOT / "data" / "research" / "large_universe.txt"
+
+
+# ---------------------------------------------------------------------------
+# L5 Query Counter (Thresholdout budget tracking)
+# ---------------------------------------------------------------------------
+
+def _get_l5_query_count() -> int:
+    """Read L5 query count from watchdog_data (agent cannot access)."""
+    counter_path = Path("/app/watchdog_data/l5_query_count.json")
+    if not counter_path.exists():
+        counter_path = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "l5_query_count.json"
+    if counter_path.exists():
+        try:
+            return json.loads(counter_path.read_text(encoding="utf-8")).get("count", 0)
+        except Exception:
+            return 0
+    return 0
+
+
+def _increment_l5_query_count() -> int:
+    """Increment and return new L5 query count."""
+    counter_path = Path("/app/watchdog_data/l5_query_count.json")
+    if not counter_path.parent.exists():
+        counter_path = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "l5_query_count.json"
+    counter_path.parent.mkdir(parents=True, exist_ok=True)
+    count = _get_l5_query_count() + 1
+    counter_path.write_text(json.dumps({"count": count, "updated": time.strftime("%Y-%m-%d %H:%M:%S")}),
+                           encoding="utf-8")
+    return count
 
 
 # ---------------------------------------------------------------------------
@@ -218,17 +259,20 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
     - pe/pb/roe: passed as-is (point-in-time snapshots)
     """
     cutoff = as_of - pd.DateOffset(days=REVENUE_DELAY_DAYS)
+    # Use slicing without .copy() for bars (largest data) — safe because
+    # factor.py receives a slice view and any mutation raises SettingWithCopyWarning.
+    # Revenue/institutional keep .copy() as they use boolean indexing (always copies).
     masked = {
         "bars": {
-            sym: df.loc[:as_of].copy()
+            sym: df.loc[:as_of]
             for sym, df in data["bars"].items()
         },
         "revenue": {
-            sym: df[df["date"] <= cutoff].copy()
+            sym: df[df["date"] <= cutoff]
             for sym, df in data["revenue"].items()
         },
         "institutional": {
-            sym: df[df["date"] <= as_of].copy()
+            sym: df[df["date"] <= as_of]
             for sym, df in data["institutional"].items()
         },
         "pe": data["pe"],
@@ -335,10 +379,10 @@ def evaluate() -> dict:
         factor_path = Path(__file__).parent / "work" / "factor.py"
     if factor_path.exists():
         n_lines = len(factor_path.read_text(encoding="utf-8").strip().splitlines())
-        if n_lines > 60:
+        if n_lines > 80:
             return _make_result(
                 level="L0",
-                failure=f"factor.py too complex: {n_lines} lines > 60 max",
+                failure=f"factor.py too complex: {n_lines} lines > 80 max",
                 elapsed=0.0,
             )
 
@@ -362,7 +406,7 @@ def evaluate() -> dict:
     # L1-L4 use IS only; L5 uses OOS
     sample_dates = is_sample
 
-    print(f"Stage 1: {len(is_sample)} IS dates + {len(oos_sample)} OOS dates, {len(bars)} symbols")
+    print(f"Stage 1: {len(is_sample)} IS dates, {len(bars)} symbols")
 
     # ── Stage 1: L1 early screening (20d IC only, first 30 dates) ──
     t0 = time.time()
@@ -515,7 +559,7 @@ def evaluate() -> dict:
     oos_ic_by_month: dict[str, list[float]] = {}
 
     if oos_sample:
-        print(f"\n  L5 OOS validation: {len(oos_sample)} dates ({OOS_START} to {EVAL_END})")
+        print(f"\n  L5 OOS validation: {len(oos_sample)} dates")
         for as_of in oos_sample:
             masked_data = _mask_data(data, as_of)
             active = [s for s in universe if s in bars and as_of in bars[s].index]
@@ -548,25 +592,36 @@ def evaluate() -> dict:
     is_ic_sign = 1 if ic_20d >= 0 else -1
     oos_ic_sign = 1 if oos_ic_mean >= 0 else -1
 
-    # L5 gate checks
-    # P-01: failure messages hide OOS values to prevent indirect overfitting
-    l5_failure = ""
-    # Compare OOS 20d ICIR with IS 20d ICIR (same horizon, fair comparison)
-    is_icir_20d = float(icir_by_horizon.get("20d", 0))
-    if is_ic_sign != oos_ic_sign:
-        l5_failure = "OOS IC sign inconsistent with IS"
-    elif abs(is_icir_20d) > 0 and abs(oos_icir) < abs(is_icir_20d) * (1 - OOS_ICIR_DECAY_MAX):
-        l5_failure = "OOS ICIR decay exceeds threshold"
-    elif oos_positive_ratio < OOS_MIN_POSITIVE_RATIO and oos_total_months >= 6:
-        l5_failure = "OOS monthly consistency below threshold"
+    # L5 gate checks with Thresholdout (Dwork et al. 2015)
+    # Add Laplace noise to comparisons to preserve holdout validity.
+    # Deterministic checks become noisy: agent gets ~0.7 bits per query instead of 1.0.
+    l5_query_n = _increment_l5_query_count()
+    rng_l5 = np.random.default_rng(hash((ic_20d, best_icir, l5_query_n)) % (2**31))
+    noise = lambda: float(rng_l5.laplace(0, THRESHOLDOUT_NOISE_SCALE))
 
-    # P-01 fix: only show pass/fail to agent, not exact OOS values
-    # (prevents indirect OOS overfitting via feedback leakage)
+    l5_failure = False
+    is_icir_20d = float(icir_by_horizon.get("20d", 0))
+    # Sub-check 1: IC sign consistency (add noise to sign comparison margin)
+    if is_ic_sign != oos_ic_sign and abs(oos_ic_mean) > noise():
+        l5_failure = True
+    # Sub-check 2: ICIR decay (noisy threshold)
+    elif abs(is_icir_20d) > 0 and abs(oos_icir) < abs(is_icir_20d) * (1 - OOS_ICIR_DECAY_MAX) + noise():
+        l5_failure = True
+    # Sub-check 3: monthly consistency (noisy threshold)
+    elif oos_positive_ratio < OOS_MIN_POSITIVE_RATIO + noise() and oos_total_months >= 6:
+        l5_failure = True
+
+    # Budget warning (printed to stderr, not visible to agent via tail -30)
+    if l5_query_n > L5_QUERY_BUDGET:
+        import sys
+        print(f"[WARN] L5 query budget exceeded: {l5_query_n}/{L5_QUERY_BUDGET}", file=sys.stderr)
+
+    # P-01: only show pass/fail — no reason, no direction, no magnitude
     print(f"  OOS validation: {'PASS' if not l5_failure else 'FAIL'}")
 
     if l5_failure:
         return _make_result(
-            level="L5", failure=f"L5 OOS fail: {l5_failure}",  # generic msg, no OOS values
+            level="L5", failure="L5 OOS validation failed",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             fitness=fitness, positive_years=positive_years, total_years=total_years,
@@ -591,8 +646,8 @@ def evaluate() -> dict:
             large_data = _load_all_data(large_universe)
             large_bars = large_data["bars"]
             large_ics: list[float] = []
-            # Sample fewer dates for speed (every 40 days)
-            large_dates = eval_dates[::40]
+            # Use IS dates only (not OOS) to avoid data leakage in Stage 2
+            large_dates = is_dates[::40]
             for as_of in large_dates:
                 masked = _mask_data(large_data, as_of)
                 active = [s for s in large_universe if s in large_bars and as_of in large_bars[s].index]
@@ -648,9 +703,9 @@ def _make_result(
     large_icir_20d: float = 0.0, elapsed: float = 0.0,
     oos_icir: float = 0.0, oos_positive_months: int = 0, oos_total_months: int = 0,
 ) -> dict:
+    # fitness already includes ICIR — don't double-count
     composite = (
-        abs(best_icir) * 5.0
-        + fitness * 0.3
+        fitness * 1.5
         + (positive_years / max(total_years, 1)) * 2.0
     )
     return {
@@ -684,7 +739,7 @@ def main() -> None:
     print("=" * 60)
     print("Alpha Factor Evaluation Harness v3 (READ ONLY)")
     print("  L1-L4 in-sample | L5 OOS holdout | large-scale verification")
-    print(f"  IS: {EVAL_START} to {IS_END} | OOS: {OOS_START} to {EVAL_END}")
+    print(f"  IS: {EVAL_START} to {IS_END} | OOS: [hidden]")
     print("=" * 60)
 
     try:
@@ -745,9 +800,12 @@ def _store_factor_returns(results: dict) -> None:
         from src.backtest.vectorized import VectorizedPBOBacktest
         from factor import compute_factor
 
-        returns_dir = Path(__file__).parent / "work" / "factor_returns"
-        if not returns_dir.exists():
-            returns_dir = Path(__file__).parent / "factor_returns"
+        # Store factor_returns OUTSIDE work/ so agent cannot read them
+        # Docker: /app/watchdog_data/factor_returns (separate volume)
+        # Host: docker/autoresearch/watchdog_data/factor_returns
+        returns_dir = Path("/app/watchdog_data/factor_returns")
+        if not returns_dir.parent.exists():
+            returns_dir = Path(__file__).resolve().parent.parent.parent / "docker" / "autoresearch" / "watchdog_data" / "factor_returns"
         returns_dir.mkdir(parents=True, exist_ok=True)
 
         # Use same universe and dates as evaluation
@@ -794,13 +852,17 @@ def _write_pending_marker(results: dict) -> None:
             factor_path = Path(__file__).parent / "work" / "factor.py"
         factor_code = factor_path.read_text(encoding="utf-8") if factor_path.exists() else ""
 
-        pending_dir = Path(__file__).parent / "work" / "pending"
-        if not pending_dir.exists():
-            pending_dir = Path(__file__).parent / "pending"
+        # Store pending markers OUTSIDE work/ so agent cannot read OOS data
+        pending_dir = Path("/app/watchdog_data/pending")
+        if not pending_dir.parent.exists():
+            pending_dir = Path(__file__).resolve().parent.parent.parent / "docker" / "autoresearch" / "watchdog_data" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
 
+        # Strip OOS-related fields to prevent agent reading them from pending/*.json
+        safe_results = {k: v for k, v in results.items()
+                        if k not in ("oos_icir", "oos_positive_months", "oos_total_months")}
         marker = {
-            "results": results,
+            "results": safe_results,
             "factor_code": factor_code,
             "timestamp": time.strftime("%Y%m%d_%H%M%S"),
         }
@@ -857,8 +919,7 @@ def _run_validator(results: dict) -> dict | None:
                 if not values:
                     return {}
                 sorted_syms = sorted(values, key=lambda s: values[s], reverse=True)
-                top_n = max(len(sorted_syms) // 5, 5)
-                selected = sorted_syms[:top_n]
+                selected = sorted_syms[:15]
                 w = 1.0 / len(selected)
                 return {s: w for s in selected}
 
@@ -876,17 +937,24 @@ def _run_validator(results: dict) -> dict | None:
         n_total = report.n_total
         checks = report.checks
 
-        # Print results
+        # Print results — hide OOS-related values to prevent information leakage
+        # Agent should not see exact OOS Sharpe, recent Sharpe, or regime values
+        OOS_CHECKS = {"oos_sharpe", "recent_period_sharpe", "worst_regime"}
         for c in checks:
             mark = "PASS" if c.passed else "FAIL"
-            print(f"  [{mark}] {c.name}: {c.value} (threshold: {c.threshold})")
+            if c.name in OOS_CHECKS:
+                print(f"  [{mark}] {c.name}: [hidden] (threshold: {c.threshold})")
+            else:
+                print(f"  [{mark}] {c.name}: {c.value} (threshold: {c.threshold})")
         print(f"\nvalidator: {n_passed}/{n_total}")
 
-        # Deployment threshold: >= 13/14 non-DSR checks + DSR >= 0.70 + PBO <= 0.85
-        n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
-        dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
-        pbo_val = next((float(c.value) for c in checks if c.name == "construction_sensitivity"), 1.0)
-        deployed = n_excl_dsr >= 13 and dsr_val >= 0.70 and pbo_val <= 0.70
+        # Hard/soft deployment threshold (Phase AC §7)
+        HARD_CHECKS = {
+            "cagr", "sharpe", "annual_cost_ratio", "temporal_consistency",
+            "deflated_sharpe", "bootstrap_p_sharpe_positive", "vs_ew_universe",
+            "construction_sensitivity", "market_correlation", "permutation_p",
+        }
+        deployed = all(c.passed for c in checks if c.name in HARD_CHECKS)
 
         print(f"deploy_eligible: {deployed}")
 
@@ -1029,7 +1097,7 @@ def _auto_submit(results: dict) -> None:
                 "large_icir_20d": results["large_icir_20d"],
                 "description": f"autoresearch L4+ (score={results['composite_score']:.2f})",
             },
-            headers={"X-API-Key": "dev-key"},
+            headers={"X-API-Key": _os.environ.get("QUANT_API_KEY", "dev-key")},
             timeout=300,
         )
         if resp.status_code == 200:

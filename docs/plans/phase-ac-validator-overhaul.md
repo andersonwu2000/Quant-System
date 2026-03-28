@@ -1,8 +1,10 @@
-# Phase AC：Validator 方法論修正
+# Phase AC：Validator 方法論修正 ✅ 已完成（2026-03-29）
 
-> 目標：修正 StrategyValidator 15 項中被學術文獻證實有方法論錯誤的檢查
+> 目標：修正 StrategyValidator 中被學術文獻證實有方法論錯誤的檢查
 > 教訓來源：PBO 三次實作三次錯（CLAUDE.md #10）。同樣的問題可能存在於其他 check。
 > 原則：**每項 check 都要能回答一個明確的問題，且方法論必須對齊原論文。**
+>
+> **結果：15 → 16 項檢查，全部方法論修正完成。865 stocks 驗證：15/16 通過（僅 OOS Sharpe fail，統計功效不足的 sanity check，非方法論問題）。**
 
 ---
 
@@ -25,13 +27,37 @@
 | 10 | **vs 0050** | 等權因子策略和市值加權 0050 比 → 自動帶 size premium |
 | 12 | **Regime** | 用年度切割不是真的 regime analysis |
 
-### P2：設計層面（需要加入新的驗證維度）
+### 統計功效不足（第二輪研究發現，2026-03-29）
+
+**性質**：不是方法論錯誤（測量的東西是對的），而是**樣本太小導致結果是噪音**。和 PBO 不同（PBO 是測錯東西），這些是不可修正的統計限制。
+
+| # | Check | 問題 | 定量證據 |
+|---|-------|------|---------|
+| 9 | **OOS Sharpe (375 天)** | 年化 Sharpe SE ≈ 0.82。Sharpe 0.3 的 z = 0.37, p = 0.36。**36% 的真實 SR=0 策略會通過** | Lo (2002): 需要 43 年日頻數據才能讓 SR=0.3 統計顯著 |
+| 13 | **Recent Sharpe (252 天)** | SE ≈ 1.0。真實 SR=0 → P(measured>0) = **50%（拋硬幣）**。真實 SR=0.5 → 31% 機率被誤殺 | Two Sigma: 252 天 Sharpe 無法區分 SR=0.5 和 SR=0 |
+
+**為什麼不是 P0**：這些 check 測量的方向正確（未來表現和最近表現），只是樣本不夠大。它們仍有**方向性價值**——排除 SR << -1 的災難性崩潰。
+
+**正確的解讀**：OOS >= 0.3 和 recent >= 0 是 **sanity check**（排除災難），不是統計檢定（證明有 alpha）。門檻不應該提高（提高也沒用，SE 太大），但也不應該被解讀為「策略在 OOS 表現好」。
+
+**不可修正的原因**：唯一的修正是增加數據量，但 OOS 期間增加到 3 年 → SE 仍是 0.58。需要 10+ 年才有真正的統計功效——此時 OOS 不再是「最近的」了。
+
+### 其他第二輪發現（中低優先級）
+
+| # | Check | 問題 | 嚴重度 |
+|---|-------|------|:------:|
+| 4 | **MDD** | 路徑依賴極強，同策略不同路徑可差 2x。Magdon-Ismail (2004): 零漂移 7 年期望 MDD=63%，方差極大 | P1 |
+| 5 | **Cost ratio** | 用 `initial_cash` 而非平均 NAV 算成本率；`CAGR + cost` 不是線性可加（幾何 vs 算術） | P2 |
+| 10 | **等權 benchmark** | 等權有 ~2.25% size+rebalancing premium（Solactive 2018）。vs EW >= 0% 太寬鬆 | P2 |
+| 4 | **Sharpe 自相關** | Lo (2002): 日頻 ρ~0.05 → Sharpe 高估 ~5%。Bootstrap(Stationary) 已補償 | P3 |
+| 15 | **CVaR 87 觀測** | 相對誤差 8-15%（Yamai & Yoshiba 2002）。-5% 門檻夠寬，目前 OK | P3 |
+
+### P2：設計層面
 
 | 問題 | 說明 |
 |------|------|
 | 15 項中 ~12 項共用同一個 backtest | 一個 overfit 的 equity curve 可以同時通過 CAGR/Sharpe/MDD/CVaR/cost |
-| 缺少 permutation test | 沒有「隨機打亂信號後 Sharpe 會降多少」的基準 |
-| 缺少 CPCV | 2024 年比較研究顯示 CPCV 防 false discovery 顯著優於 WF + holdout |
+| 缺少 permutation test | 沒有「隨機打亂信號後 Sharpe 會降多少」的基準（P2 延後） |
 
 ---
 
@@ -191,18 +217,18 @@ CPCV 和 PBO 的 CSCV 類似，但：
 | Step | 改動 | 工作量 | 狀態 |
 |------|------|--------|:----:|
 | 2.1 | DSR n_trials=15, min_dsr 0.95→0.70 | 5 個檔案各改 1 行 | ✅ 已完成（Phase AB） |
-| 2.3 | WF 改名 `temporal_consistency` | 改名 | 待執行 |
-| 3.1 | Market corr 0.90 → 0.80 | 改 1 個參數 | 待執行（覆核新增） |
-| 3.2 | Benchmark 改等權 universe average | 30 分鐘 | 待執行 |
+| 2.3 | WF 改名 `temporal_consistency` | 改名 | ✅ 已完成 |
+| 3.1 | Market corr 0.90 → 0.80 | 改 1 個參數 | ✅ 已完成 |
+| 3.2 | Benchmark 改等權 universe average | 30 分鐘 | ✅ 已完成 |
 | — | Rolling OOS `datetime.now()` bug | `__post_init__` 修正 | ✅ 已完成 |
 
-### 延後（Phase 2）
+### 原延後 → 已提前完成（使用者要求方法論正確優先）
 
-| Step | 改動 | 條件 |
-|------|------|------|
-| 2.2 | Bootstrap IID → Stationary | DSR 已覆蓋，列技術債 |
-| 3.4 | Regime 改 drawdown-based | 年度切割實務夠用 |
-| 4.1 | Permutation test | 覆核從「不做」升為 P2 — 提供 DSR 不能給的獨立資訊 |
+| Step | 改動 | 狀態 |
+|------|------|:----:|
+| 2.2 | Bootstrap IID → Stationary (Politis & Romano 1994, avg_block=20) | ✅ 已完成 |
+| 3.4 | Regime 改 drawdown-based (0050 DD > 15%) | ✅ 已完成 |
+| 4.1 | Permutation test (shuffle real factor rankings, fixed mapping) | ✅ 已完成（#16） |
 
 ### 覆核回覆（2026-03-28）
 
@@ -228,42 +254,96 @@ CPCV 和 PBO 的 CSCV 類似，但：
 
 ---
 
-## 6. 修正後的 Validator 15 項（覆核後）
+## 6. 修正後的 Validator 16 項（全部完成，2026-03-29 凍結）
 
-| # | Check | 測量什麼 | 門檻 | 改動 |
-|---|-------|---------|------|------|
-| 1 | universe_size | 選股池大小 | >= 50 | 不變 |
-| 2 | cagr | 絕對報酬 | >= 8% | 不變 |
-| 3 | sharpe | 風險調整報酬 | >= 0.7 | 不變 |
-| 4 | max_drawdown | 最大回撤 | <= 40% | 不變 |
-| 5 | annual_cost_ratio | 成本侵蝕 | < 50% | 不變 |
-| 6 | **temporal_consistency** | 年度一致性 | >= 60% 正 | **改名**（原 walkforward） |
-| 7 | deflated_sharpe | 多重測試修正 | >= 0.70 | ✅ **n_trials=15, min_dsr 0.70** |
-| 8 | bootstrap_p | P(Sharpe > 0) | >= 80% | 不變（Stationary 延後為技術債） |
-| 9 | oos_sharpe | 樣本外表現 | >= 0.3 | ✅ Rolling 1.5 年 + __post_init__ 修正 |
-| 10 | **vs_ew_universe** | 超額報酬 | >= 0% | **0050 → 等權 universe average** |
-| 11 | pbo | 過擬合機率 | <= 0.50 | 不變 |
-| 12 | worst_regime | 危機表現 | >= -30% | 不變（drawdown-based 延後） |
-| 13 | recent_sharpe | 因子衰退 | >= 0 | 不變 |
-| 14 | market_correlation | 獨立 alpha | \|corr\| <= **0.80** | **覆核收緊**（實測所有好策略 corr < 0.6） |
-| 15 | cvar_95 | 尾部風險 | >= -5% | 不變 |
+| # | Check | 測量什麼 | 門檻 | 改動 | 統計功效 |
+|---|-------|---------|------|------|---------|
+| 1 | universe_size | 選股池大小 | >= 50 | 不變 | N/A |
+| 2 | cagr | 絕對報酬 | >= 8% | 不變 | OK（7 年數據） |
+| 3 | sharpe | 風險調整報酬 | >= 0.7 | 不變 | OK（Lo 2002: 日頻 ρ~0.05 偏差 < 5%） |
+| 4 | max_drawdown | 最大回撤 | <= 40% | 不變 | ⚠️ 路徑依賴（P1 延後：Monte Carlo MDD） |
+| 5 | annual_cost_ratio | 成本侵蝕 | < 50% | 不變 | ⚠️ initial_cash 分母粗糙（P2） |
+| 6 | **temporal_consistency** | 年度一致性 | >= 60% 正 | ✅ **改名** | OK |
+| 7 | deflated_sharpe | 多重測試修正 | >= 0.70 | ✅ **n_trials=15** | OK |
+| 8 | bootstrap_p_sharpe_positive | P(Sharpe > 0) | >= 80% | ✅ **Stationary Bootstrap** | OK（保留自相關） |
+| 9 | oos_sharpe | 樣本外 sanity check | >= 0.3 | ✅ Rolling 1.5 年 | ❌ **SE=0.82，無統計功效**（不可修正） |
+| 10 | **vs_ew_universe** | 超額報酬 | >= 0% | ✅ **改等權** | ⚠️ 等權有 ~2% premium（P2） |
+| 11 | construction_sensitivity | 組合建構穩定性 | <= 0.50 | ✅ **改名**（非 Bailey PBO） | OK |
+| 12 | worst_regime | 危機表現 | >= -30% | ✅ **Drawdown-based** | ⚠️「不投資」漏洞（P2 延後） |
+| 13 | recent_sharpe | 因子衰退 sanity check | >= 0 | 不變 | ❌ **SE=1.0，拋硬幣**（不可修正） |
+| 14 | market_correlation | 獨立 alpha | \|corr\| <= **0.80** | ✅ **收緊** | OK |
+| 15 | cvar_95 | 尾部風險 | >= -5% | 不變 | OK（87 觀測，相對誤差 ~10%） |
+| 16 | **permutation_p** | 信號是否有選股內容 | < 0.10 | ✅ **新增** | OK（100 permutations） |
 
-**維持 15 項不增不減。** Permutation test 列 P2 延後（Phase Z1 就緒後再評估）。
+**16 項分為四類**（FACTOR_PIPELINE_DEEP_REVIEW 結論）：
+- **統計/結構檢定（防過擬合）**：#7 DSR, #8 Bootstrap, #10 vs EW, #11 PBO, #14 Market corr, #16 Permutation — 6 項真正有效的防線
+- **經濟可行性（值得交易嗎）**：#2 CAGR, #3 Sharpe, #5 Cost, #6 Temporal — 不防過擬合但確保最低經濟價值
+- **Sanity check（排除災難）**：#9 OOS Sharpe (SE=0.82), #13 Recent (SE=1.0) — 統計功效不足，只排除 SR << -1
+- **描述性指標**：#1 Universe, #4 MDD, #12 Regime, #15 CVaR — 風險度量，非假設檢定
 
 ---
 
-## 7. 風險
+## 7. 部署條件重構
+
+### 問題：「≥ 13/15 excl-DSR」允許任意 1 項失敗
+
+14 項非 DSR 檢查中，2 項是噪音（OOS SE=0.82, Recent SE=1.0），隨機 fail 30-50%。「允許 1 項失敗」的 buffer 經常被噪音 check 消耗，讓有意義的 check 失敗被容忍。
+
+**實際案例**：revenue_momentum_hedged 13/15，fail 在 oos_sharpe(-1.2) + pbo(0.702)。如果 OOS 隨機 pass（36% 機率），策略就會以 **PBO=0.702（過擬合）被部署**。
+
+### 修正：硬門檻 + 軟門檻
+
+```
+部署條件（新）：
+  硬門檻（全部必須通過，0 容忍）：
+    #2  CAGR >= 8%
+    #3  Sharpe >= 0.7
+    #5  Cost ratio < 50%
+    #6  Temporal consistency >= 60%
+    #7  DSR >= 0.70
+    #8  Bootstrap P(SR>0) >= 80%
+    #10 vs EW benchmark >= 0%
+    #11 PBO <= 0.50
+    #14 Market corr <= 0.80
+    #16 Permutation p < 0.10（如已實作）
+
+  軟門檻（報告但不 block）：
+    #1  Universe >= 50
+    #4  MDD <= 40%
+    #9  OOS Sharpe >= 0.3（SE=0.82，sanity check only）
+    #12 Worst regime >= -30%
+    #13 Recent Sharpe >= 0（SE=1.0，sanity check only）
+    #15 CVaR >= -5%
+```
+
+**效果**：
+- PBO=0.702 → 硬門檻 fail → 不部署（不管 OOS 結果）
+- OOS 隨機 fail → 軟門檻，不影響部署（但報告中顯示警告）
+- 不再有「噪音 check 的隨機結果決定有意義 check 是否被容忍」
+
+### 對現有策略的影響
+
+| 策略 | 硬門檻 | 軟門檻 fail | 舊條件 | 新條件 |
+|------|:------:|:-----------:|:------:|:------:|
+| revenue_momentum_hedged | fail: PBO 0.702 | OOS -1.2 | 可能部署（OOS 隨機 pass 時） | **不部署** |
+| vwap_position_63d | 全通過 | OOS -0.86 | 14/14 可部署 | **可部署** |
+| revwz_mafrac_combo | fail: PBO | — | 可能部署 | **不部署** |
+
+---
+
+## 8. 風險
 
 | 風險 | 緩解 |
 |------|------|
-| 等權 benchmark 可能讓所有策略 fail（台股等權近年很強） | 先計算等權 benchmark 的 CAGR/Sharpe，確認門檻合理 |
-| 改名 temporal_consistency 後外部 caller 壞掉 | grep 所有引用 walkforward_positive_ratio 的地方 |
-| DSR(N=15) + 等權 benchmark + corr 0.80 三重收緊 | 逐項改、逐項跑，不一次改完 |
-| Market corr 0.80 在未來策略可能太嚴 | 目前所有好策略 corr < 0.6，buffer 充足。如果新策略 corr 0.7-0.8 再評估 |
+| 等權 benchmark 可能讓所有策略 fail | 先計算等權 benchmark 的 CAGR/Sharpe |
+| 硬門檻太嚴導致無策略可部署 | 目前 vwap_position_63d 可通過，門檻經過驗證 |
+| DSR(N=15) + 等權 benchmark + corr 0.80 + 硬門檻四重收緊 | 改完後重跑 25 因子確認不是全滅 |
+| Market corr 0.80 在未來策略可能太嚴 | 目前所有好策略 corr < 0.6，buffer 充足 |
+| 軟門檻全 fail 仍可部署 | 軟門檻 fail >= 3 項時加人工審查步驟 |
 
 ---
 
-## 8. 參考文獻
+## 9. 參考文獻
 
 - Bailey, D. & Lopez de Prado, M. (2014). The Probability of Backtest Overfitting.
 - Bailey, D. & Lopez de Prado, M. (2014). The Deflated Sharpe Ratio.
@@ -297,20 +377,15 @@ CPCV 和 PBO 的 CSCV 類似，但：
 | 4.1 | Permutation test | ❌ 不做 | **⏸ 延後（P2）** | DSR 和 Permutation 測不同東西：DSR=多重測試顯著性，Permutation=信號是否有內容。策略可通過 DSR 但 fail Permutation（信號只是大盤動量）。Phase Z1 讓 100 次 permutation 只需 ~100 秒 |
 | 4.2 | CPCV | ❌ 不做 | **❌ 不做（同意）** | PBO + DSR 已覆蓋因子選擇的過擬合風險 |
 
-### 立即執行
+### 全部完成（2026-03-29）
 
 ```
-1. walkforward_positive_ratio → temporal_consistency（改名）
-2. vs_0050 → vs equal-weight universe average（實質改動）
-3. market_correlation 門檻 0.90 → 0.80（覆核新增）
-```
-
-### 延後（Phase 2）
-
-```
-4. Stationary Bootstrap（偏差 ~20%，已有 DSR 冗餘覆蓋，列技術債）
-5. Drawdown-based regime（理論更好但改動大）
-6. Permutation test（覆核從「不做」改為 P2 — 提供 DSR 不能給的獨立資訊）
+1. ✅ walkforward_positive_ratio → temporal_consistency（改名）
+2. ✅ vs_0050 → vs equal-weight universe average（實質改動）
+3. ✅ market_correlation 門檻 0.90 → 0.80（覆核新增）
+4. ✅ Stationary Bootstrap（Politis & Romano 1994, avg_block=20）
+5. ✅ Drawdown-based regime（0050 DD > 15%）
+6. ✅ Permutation test（新增 #16，shuffle real factor rankings）
 ```
 
 ### 不做

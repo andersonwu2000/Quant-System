@@ -1,417 +1,199 @@
-# 系統現況追蹤報告書
+# 系統現況報告
 
-> **日期**: 2026-03-28
-> **版本**: v13.0
-> **階段**: Phase A~S 完成, N/P/X/Y 進行中
-> **進度總覽**: `docs/plans/`
-> **開發計畫**: `docs/plans/`（各 Phase 獨立計畫書）
+> **更新**: 2026-03-28
+> **版本**: v14.0
 
 ---
 
-## 1. 系統概要
+## 1. Dashboard
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python 檔案 | ~160 |
-| 後端 LOC | ~29,000 |
-| 測試數量 | **1,725） |
-| API 端點 | **117**（16 路由模組） |
-| Alpha 因子 | **83**（66 技術 + 17 基本面） |
-| 策略 | **13** |
+| 後端 Python | ~160 檔 / ~29,000 LOC |
+| 測試 | **1,734+** passed |
+| CI | 9 jobs（lint + mypy + test + web + e2e + android + release） |
+| API 端點 | 117（16 路由模組） |
+| 因子 | 83（66 技術 + 17 基本面） |
+| 策略 | 13 |
 | 最佳化方法 | 14 |
 | 風控規則 | 12 |
 | 數據源 | 4（Yahoo / FinMind / FRED / Shioaji） |
-| 本地價格 parquet | 895 支台股（含 40 支已下市） |
-| 本地基本面 parquet | 408 檔（8 dataset × 51 支） |
+| 本地 parquet | 895 支台股價格 + 408 基本面檔 |
+| Autoresearch | 233 實驗, 25 tagged 因子, best ICIR 0.95 |
 
 ---
 
-## 2. 模組架構
+## 2. 當前狀態
+
+### 核心策略
+
+| 策略 | Validator | Sharpe | CAGR | 卡在 |
+|------|:---------:|:------:|:----:|------|
+| revenue_momentum_hedged | 13/15 | 0.926 | 12.8% | oos_sharpe(-0.73), construction_sensitivity(0.596) |
+
+**884 stocks, 15 項檢查（permutation 跳過：手寫策略無 compute_fn）。** 2 項 fail：OOS Sharpe（軟門檻）+ construction_sensitivity 0.596 > 0.50（硬門檻，PBO fillna 修正後惡化）。**不符合部署條件。**
+
+### 進行中的工作
+
+| 項目 | 狀態 | 文件 |
+|------|------|------|
+| **Phase 2 乾淨研究** | 🔜 下一步 | 研究記憶已清空，評估標準已凍結 |
+| Autoresearch (Docker) | ⏸ 等研究啟動 | `docs/guides/autoresearch-guide-zh.md` |
+| Paper Trading | 🟢 運行中 | `docs/paper-trading/` |
+| CA 憑證（永豐金） | ⏳ 申請中 | 阻塞 live mode |
+
+**近期完成的計畫：**
+
+| Phase | 名稱 | 完成日期 |
+|-------|------|---------|
+| AC | Validator 方法論修正（16 項） | 03-29 |
+| AB | Factor-Level PBO | 03-29 |
+| AA | 策略構建（no-trade + 非對稱成本） | 03-28 |
+| Z1+Z2 | 向量化回測 + Shared Feed | 03-28 |
+| Y | 容器化 Autoresearch | 03-28 |
+| X | Anti-Overfitting 設計（被 AC 實作） | 03-28 |
+| V | Kill Switch Debug | 03-28 |
+| U | Autoresearch 模式重構 | 03-27 |
+
+**延後或已取代的計畫：**
+
+| Phase | 名稱 | 狀態 |
+|-------|------|------|
+| P | Auto-Alpha Research | 被 Phase U 取代 |
+| Q | Strategy Refinement | 被 Phase AA+AC 取代 |
+| R | Codebase Hygiene | R7-R9 待完成（Paper Trading 前置） |
+| N | Paper Trading 30 天驗證 | N1-N3 完成，N5 卡 CA cert |
+| N2 | Web Rewrite | 核心 UI 完成，i18n 延後 |
+| J | Cross-Asset Automation | 延後（等台股研究穩定） |
+| S | Pipeline Unification | 延後（前置條件需重評） |
+| Z3 | 引擎加速 | 延後（當前效能可接受） |
+
+### 已知問題
+
+| 問題 | 嚴重度 | 狀態 |
+|------|:------:|------|
+| OOS Sharpe 統計功效不足 | MEDIUM | SE=0.82，不可修正；已降級為 sanity check |
+| PBO 系統性惡化（0.78→0.99） | ✅ 已解決 | Rolling OOS + construction_sensitivity ≤ 0.50 + Factor-Level PBO |
+| event-driven PBO 的 ThreadPool + shared strategy state | MEDIUM | 並發呼叫 base.on_bar() 可能互相干擾 |
+| 3 個殘留 bug（realtime lock, idempotency tz, risk_parity short） | LOW | `docs/dev/CODE_REVIEW_REPORT.md` §10 |
+
+---
+
+## 3. 模組概覽
+
+詳細架構見 `docs/claude/ARCHITECTURE.md`。
 
 | 模組 | 檔案 | 核心功能 |
 |------|:----:|---------|
-| `src/api/` | 24 | 117 REST 端點 + WebSocket 5 頻道 + JWT/RBAC |
-| `src/alpha/` | 25 | Alpha Pipeline + FilterStrategy + Regime + Attribution + Auto-Alpha（9 子模組） |
-| `src/backtest/` | 12 | BacktestEngine + 40+ 指標 + WF/PBO/DSR + StrategyValidator（15 項閘門） |
-| `src/strategy/` | 12 | 83 因子 + 3 最佳化器 + Registry（13 策略） |
-| `src/portfolio/` | 4 | 14 最佳化方法 + 風險模型（LW/GARCH/PCA）+ 幣別對沖 |
-| `src/execution/` | 16 | SimBroker + SinopacBroker + TWAP + OMS + 對帳 |
-| `src/data/` | 15 | Yahoo/FinMind/FRED/Shioaji + 品質檢查 + Parquet 快取 |
-| `src/risk/` | 5 | 12 規則 + Kill Switch + RealtimeRiskMonitor |
-| `src/allocation/` | 4 | 宏觀四因子 + 跨資產信號 + 戰術引擎 |
-| `src/core/` | 6 | 模型 + 設定 + 日誌 + 交易日曆 + Trading Pipeline |
-| `src/scheduler/` | 2 | APScheduler：月營收更新 + 月度再平衡 + 通知 |
-| `src/notifications/` | 6 | Discord / LINE / Telegram |
-| `strategies/` | 11 | 9 內建 + revenue_momentum_hedged + multi_strategy_combo |
+| `src/api/` | 24 | REST + WebSocket + JWT/RBAC |
+| `src/alpha/` | 25 | Alpha Pipeline + Auto-Alpha（9 子模組） |
+| `src/backtest/` | 12 | Engine + Validator(16項) + PBO(CSCV) + WF + 向量化(Z1) |
+| `src/strategy/` | 12 | 83 因子 + optimizer + registry |
+| `src/portfolio/` | 4 | 14 最佳化方法 + 風險模型 + 幣別對沖 |
+| `src/execution/` | 16 | SimBroker + Sinopac + TWAP + OMS + 零股分流 |
+| `src/data/` | 15 | 4 數據源 + 品質檢查 + Parquet 快取 |
+| `src/risk/` | 5 | 12 規則 + Kill Switch + RealtimeMonitor |
+| `src/scheduler/` | 2 | Trading Pipeline（統一入口） |
 
 ---
 
-## 3. 策略（13 個）
+## 4. 驗證與研究
 
-| # | 策略 | 類型 | 關鍵指標 |
-|---|------|------|---------|
-| 1 | Momentum | 規則型 | 12-1 月動量 |
-| 2 | Mean Reversion | 規則型 | Z-score |
-| 3 | RSI Oversold | 規則型 | RSI < 30 |
-| 4 | MA Crossover | 規則型 | 均線交叉 |
-| 5 | Multi-Factor | 規則型 | 動量+價值+品質 |
-| 6 | Pairs Trading | 規則型 | 共整合 + Kalman |
-| 7 | Sector Rotation | 規則型 | 板塊動量輪動 |
-| 8 | **Revenue Momentum** | 條件篩選 | 排序: revenue_acceleration ICIR 0.476 (修正後), CAGR +14.3%, Sharpe 0.89 |
-| 9 | **Revenue Momentum Hedged** | 條件篩選 | = #8 + 空頭偵測 (MA200 OR vol_spike), OOS 2025: -17.3% |
-| 10 | Trust Follow | 條件篩選 | 投信跟單 + 營收成長 |
-| 11 | Multi-Strategy Combo | 組合型 | 多策略等權 |
-| 12 | Alpha Pipeline | 管線型 | 可配置因子 + 中性化 |
-| 13 | Multi-Asset | 管線型 | 戰術配置 → Alpha → 最佳化 |
+### 最新 Validator 結果（Post-Audit Rerun, 2026-03-29）
 
----
+revenue_momentum_hedged, 884 支, 2018-2025:
 
-## 4. 因子庫（83 個）
+| Check | Value | Result |
+|-------|------:|:------:|
+| CAGR | +12.83% | ✅ |
+| Sharpe | 0.926 | ✅ |
+| MDD | -29.88% | ✅ |
+| Cost ratio | 22% | ✅ |
+| Temporal consistency | 75% | ✅ |
+| DSR | 0.924 | ✅ |
+| Bootstrap (Stationary) | 99.7% | ✅ |
+| **OOS Sharpe** | **-0.728** | **❌** |
+| vs EW universe | +8.66% | ✅ |
+| **Construction sensitivity** | **0.596** | **❌** |
+| Worst regime (DD-based) | -10.81% | ✅ |
+| Recent Sharpe | 2.447 | ✅ |
+| Market corr | 0.536 | ✅ |
+| CVaR 95 | -2.22% | ✅ |
+| Permutation p | skipped | — |
 
-### 4.1 技術因子 FACTOR_REGISTRY（66 個，35 標記冗餘/無效）
+**13/15 通過（permutation 跳過）。** 2 項 fail：OOS Sharpe（軟門檻）+ construction_sensitivity（硬門檻，PBO fillna 修正後 0.408→0.596）。詳見 `docs/research/20260329_validator_post_audit.md`。
 
-**原始價格因子（11 個）**
-
-| 因子 | 函式 | 方向 | 狀態 |
-|------|------|:----:|:----:|
-| momentum | `momentum()` | 正 | 有效 |
-| mean_reversion | `mean_reversion()` | 負 | 冗餘(bollinger) |
-| volatility | `volatility()` | 負 | 冗餘(ivol) |
-| rsi | `rsi()` | 負 | 有效 |
-| ma_cross | `moving_average_crossover()` | 正 | 有效 |
-| vpt | `volume_price_trend()` | 正 | 無效 |
-| reversal | `short_term_reversal()` | 負 | 無效 |
-| illiquidity | `amihud_illiquidity()` | 正 | 邊緣 |
-| ivol | `idiosyncratic_vol()` | 負 | 有效（大型股） |
-| skewness | `skewness()` | 負 | 冗餘(idio_skew) |
-| max_ret | `max_return()` | 負 | 冗餘(volatility) |
-
-**技術指標（15 個）**
-
-| 因子 | 論文 | 狀態 |
-|------|------|:----:|
-| bollinger_pos | Bollinger (2001) | 冗餘(rsi) |
-| macd_hist | Appel (2005) | 無效 |
-| obv_trend | Granville (1963) | 有效 |
-| adx | Wilder (1978) | 有效 |
-| cci | Lambert (1980) | 無效 |
-| williams_r | Williams (1979) | 冗餘(stochastic_k) |
-| stochastic_k | Lane (1984) | 無效 |
-| atr_ratio | Wilder (1978) | 冗餘(volatility) |
-| price_accel | Gu-Kelly-Xiu (2020) | 無效 |
-| vol_momentum | Gervais et al. (2001) | 無效 |
-| hl_range | Parkinson (1980) | 冗餘(volatility) |
-| close_to_high | George-Hwang (2004) | 無效 |
-| gap | Branch-Ma (2012) | 冗餘(overnight_ret) |
-| intraday_ret | Heston et al. (2010) | 冗餘(alpha_33) |
-| overnight_ret | Berkman et al. (2012) | 冗餘(gap) |
-
-**學術因子（10 個）**
-
-| 因子 | 論文 | 狀態 |
-|------|------|:----:|
-| momentum_1m | Jegadeesh-Titman (1993) | 無效 |
-| momentum_6m | Jegadeesh-Titman (1993) | 有效 |
-| momentum_12m | Jegadeesh-Titman (1993) | 冗餘(momentum) |
-| lt_reversal | De Bondt-Thaler (1985) | 邊緣(hit < 50%) |
-| beta | Sharpe (1964) | 無效(IC=0) |
-| idio_skew | Harvey-Siddique (2000) | 冗餘(skewness) |
-| max_daily_ret | Bali et al. (2011) | 冗餘(max_ret) |
-| turnover_vol | Chordia et al. (2001) | 有效（反向） |
-| price_delay | Hou-Moskowitz (2005) | 無效 |
-| zero_days | Lesmond et al. (1999) | 無效 |
-
-**Kakushadze 101 精選（30 個）** — 全部在台股成本結構下無效（換手率 55-84%）
-
-冗餘群分析（factor_dedup_report.md）：
-- 波動率群（6 個）：volatility/ivol/atr_ratio/hl_range/max_ret/max_daily_ret → 保留 `ivol`
-- 均值回歸群（4 個）：mean_reversion/bollinger_pos/rsi/alpha_4 → 保留 `rsi`
-- 日內報酬群（4 個）：intraday_ret/alpha_33/alpha_101/alpha_38 → 保留 `alpha_18`
-- gap = overnight_ret（corr = 1.000）
-
-### 4.2 基本面因子 FUNDAMENTAL_REGISTRY（17 個）
-
-| 因子 | 類型 | 數據源 | ICIR | 狀態 |
-|------|------|--------|:----:|:----:|
-| **revenue_yoy** | 營收 | FinMind 月營收 | 0.188（修正後, 修正前 0.674） | 有效但被高估 |
-| **revenue_acceleration** | 營收 | FinMind 月營收 | **0.476**（20d）/ **0.646**（60d）（修正後） | **最強因子** |
-| **revenue_new_high** | 營收 | FinMind 月營收 | 0.435 | 有效 |
-| **revenue_momentum** | 營收 | FinMind 月營收 | 0.481 | 有效 |
-| value_pe | Fama-French | FinMind PER | 0.282（反向） | 邊緣 |
-| value_pb | Fama-French | FinMind PER | 0.037 | 無效 |
-| quality_roe | Fama-French | FinMind 財報 | — | 未測 |
-| size | Fama-French | price×vol proxy | — | 未測 |
-| investment | Fama-French | FinMind 財報 | — | 缺數據 |
-| gross_profit | Novy-Marx | FinMind 財報 | — | 缺數據 |
-| dividend_yield | — | FinMind PER | 0.139 | 弱 |
-| foreign_net | 籌碼 | FinMind 法人 | 0.086 | 無效 |
-| trust_net | 籌碼 | FinMind 法人 | 0.040 | 無效 |
-| director_change | 籌碼 | FinMind 持股 | — | 未測 |
-| margin_change | 籌碼 | FinMind 融資融券 | 0.009 | 無效 |
-| daytrading_ratio | 情緒 | FinMind 當沖 | 0.085 | 無效 |
-| trust_cumulative | 籌碼 | FinMind 法人 | — | 策略用 |
-
-### 4.3 因子研究結論（17 次實驗）
+### 因子研究結論
 
 | 結論 | 證據 |
 |------|------|
-| **台股 alpha 在營收，不在價格** | 4 營收因子 ICIR > 0.15（修正後）；66 price-volume 全 < 0.3 |
-| **revenue_acceleration 是修正後最強因子** | ICIR 0.476（20d）/ 0.646（60d），受延遲影響最小 |
-| **revenue_yoy 被高估** | 修正前 ICIR 0.674 → 修正後 0.188（-72%，40 天延遲） |
-| **營收因子不衰減** | 5d→60d ICIR 持續增強（vs 價格因子衰減） |
-| **純營收組合 > 混合** | rev_yoy+mom_6m ICIR 0.024（混合後崩跌） |
-| **成本是台股瓶頸** | 換手率 > 10% 的因子全部虧損 |
-| **1/N 等權極難打敗** | DeMiguel 2009 在台股完全驗證 |
+| 台股 alpha 在營收，不在價格 | 4 營收因子 ICIR > 0.15；66 價格因子全 < 0.3 |
+| revenue_acceleration 最強 | ICIR(20d) +0.438, ICIR(60d) +0.582 |
+| 成本是台股瓶頸 | 換手率 > 10% 的因子全部虧損 |
+| 1/N 等權極難打敗 | DeMiguel 2009 在台股完全驗證 |
+
+詳見 `docs/research/RESEARCH_SUMMARY.md`。
+
+### 回測真實性
+
+8 項中 4 項完全實作（營收延遲、ADV cap、整張、selection bias），3 項部分實作（漲跌停、除權息、倖存者偏差），1 項未實作（盤後訊號，影響極小）。
+
+詳見 `docs/research/realism_checklist.md`。
 
 ---
 
-## 5. 驗證狀態
-
-### StrategyValidator 15 項（revenue_momentum relaxed, 313 支 × 2018-2025）
-
-> **注意**：以下為真實性修正後數值（40 天營收延遲 + 漲跌停 + ADV 限制 + 整張交易）
-
-| # | 檢查 | 值 | 結果 |
-|---|------|---:|:----:|
-| 1 | Universe | 313 | ✅ |
-| 2 | CAGR | +10.1% | ✅ |
-| 3 | Sharpe | 0.728 | ✅ |
-| 4 | MDD | 30.6% | ✅ |
-| 5 | 成本佔比 | 39.5% | ❌ |
-| 6 | Walk-Forward 4/5 | 80% | ✅ |
-| 7 | DSR | 0.846 | ❌ |
-| 8 | Bootstrap | 100% | ✅ |
-| 9 | OOS 2025 H2 | +37.0% | ✅ |
-| 10 | vs 1/N | -14.23% | ❌ |
-| 11 | PBO | 0.167 | ✅ |
-| 12 | Worst regime | -17.27% | ✅ |
-| 13 | Factor decay (recent Sharpe) | 1.570 | ✅ |
-
-**通過 14/15（實驗 #21，2026-03-27）。唯一失敗: OOS 2025 Sharpe -1.199。
-OOS 2025 報酬 +45.28%，Bootstrap P(SR>0) 99.9%。詳見 `docs/research/20260327_rev_accel_validator.md`。
-
----
-
-## 6. API（117 端點）
-
-| 路由 | 端點數 | 關鍵功能 |
-|------|:------:|---------|
-| auth | 3 | JWT 登入 + API Key |
-| admin | 5 | 用戶 CRUD |
-| portfolio | 11 | CRUD + optimize(14 方法) + risk-analysis + hedge |
-| backtest | 12 | 回測 + WF + grid + kfold + PBO + full-validation |
-| strategies | 5 | 列表 + 啟停 + factors(83) |
-| alpha | 12 | IC + turnover + attribution + regime + filter-strategy + correlation + neutralize + event-rebalancer |
-| auto_alpha | 16 | config + start/stop + status + history + factor-pool + safety + decision + WS |
-| allocation | 3 | tactical + macro-factors + cross-asset |
-| risk | 7 | rules + config + kill-switch + realtime |
-| execution | 15 | status + smart-order + market-hours + reconcile + stop-orders |
-| orders | 4 | CRUD |
-| scanner | 7 | top-volume + gainers + losers + regulatory |
-| data | 4 | quality-check + fundamentals + cache + macro |
-| scheduler | 3 | jobs + notify + trigger |
-| strategy_center | 7 | 策略中心 UI 支援 |
-| system | 4 | health + status + metrics + alerts |
-
----
-
-## 7. 組合最佳化（14 方法）
-
-| 方法 | 說明 |
-|------|------|
-| Equal Weight | 等權重 |
-| Inverse Volatility | 反波動率加權 |
-| Risk Parity | 等風險貢獻 |
-| Mean-Variance (MVO) | Markowitz |
-| Black-Litterman | 含 BLView 主觀觀點 |
-| HRP | 階層式風險平價 |
-| Robust | 橢圓不確定集穩健最佳化 |
-| Resampled (Michaud) | 蒙地卡羅重取樣 |
-| CVaR | Rockafellar-Uryasev LP 重構 |
-| Max Drawdown | 歷史模擬 SLSQP |
-| Global Min Variance | 最小波動率 |
-| Max Sharpe | Dinkelbach 分數規劃 |
-| Index Tracking | LASSO 稀疏追蹤 |
-| Semi-Variance | 下行風險最佳化 |
-
-**風險模型**: 歷史/EWM/Ledoit-Wolf/GARCH(1,1)/PCA + VaR/CVaR + James-Stein 均值收縮
-
-## 8. 風控規則（12 條）
-
-| # | 規則 | 層級 | 預設 |
-|---|------|------|------|
-| 1 | max_position_weight | 個股 | 5% |
-| 2 | max_order_notional | 個股 | 2% NAV |
-| 3 | daily_drawdown_limit | 組合 | 3% |
-| 4 | fat_finger_check | 個股 | 5% 偏離 |
-| 5 | max_daily_trades | 組合 | 100 筆 |
-| 6 | max_order_vs_adv | 個股 | 10% ADV |
-| 7 | price_circuit_breaker | 個股 | ±10% |
-| 8 | max_asset_class_weight | 跨資產 | 40% |
-| 9 | max_currency_exposure | 跨資產 | 60% |
-| 10 | max_gross_leverage | 跨資產 | 1.5x |
-
-## 9. 交易執行層
-
-| 模組 | 功能 |
-|------|------|
-| SimBroker | 回測撮合：sqrt 滑點 + min NT$20 手續費 + 證交稅 + 零股加滑點 + 漲跌停流動性檢查（±9.5%）+ ADV 10% 量限 |
-| PaperBroker | 紙上交易：佣金 0.1425%（min NT$20）+ 賣出證交稅 0.3%（與 SimBroker 一致） |
-| SinopacBroker | Shioaji SDK：非阻塞下單 + 成交回報 + 斷線重連 |
-| ExecutionService | 模式路由（backtest/paper/live）+ fallback_mode 標記 + CRITICAL 日誌 |
-| OMS | 訂單生命週期 + 成交記錄 |
-| TWAPSplitter | 大單拆 N 筆子單 |
-| Reconcile | EOD 持倉對帳 + auto_correct |
-| StopOrderManager | 觸價委託 |
-| MarketHours | 台股時段 + 國定假日 |
-
-## 10. 本地數據資產
-
-| 類別 | 檔案數 | 路徑 | 說明 |
-|------|:------:|------|------|
-| 價格 OHLCV | 895 | `data/market/*.parquet` | 2015-2025, 含 40 支已下市 |
-| 財報 | 51 | `data/fundamental/*_financial_statement.parquet` | EPS/ROE |
-| PER/PBR | 51 | `data/fundamental/*_per.parquet` | 每日本益比/淨值比 |
-| 月營收 | 312 | `data/fundamental/*_revenue.parquet` | 月營收 + YoY |
-| 法人買賣超 | 223 | `data/fundamental/*_institutional.parquet` | 外資/投信/自營 |
-| 融資融券 | 51 | `data/fundamental/*_margin.parquet` | 餘額 |
-| 董監持股 | 51 | `data/fundamental/*_shareholding.parquet` | 持股比例 |
-| 當沖 | 51 | `data/fundamental/*_daytrading.parquet` | 當沖量 |
-| 股利 | 51 | `data/fundamental/*_dividend.parquet` | 除權息 |
-
----
-
-## 11. 測試 + CI
-
-| 項目 | 數值 |
-|------|------|
-| pytest 測試數 | 1,725 passed |
-| ruff lint | 0 errors |
-| CI jobs | 9（lint + test + typecheck + build + e2e + android + release） |
-
----
-
-## 12. 自動化管線（Phase S 統一）
+## 5. 交易管線
 
 ```
-Trading Pipeline（唯一交易管線）
-    Cron: QUANT_TRADING_PIPELINE_CRON（預設 30 8 11 * *）
-    Strategy: QUANT_ACTIVE_STRATEGY（預設 revenue_momentum_hedged）
+Trading Pipeline（唯一入口）
+  Cron: QUANT_TRADING_PIPELINE_CRON
+  Strategy: QUANT_ACTIVE_STRATEGY
 
-    execute_pipeline(config):
-        0. 冪等性檢查（今日已完成 → 跳過）
-        1. 寫入 pipeline_runs/ 執行記錄（status=started）
-        2. asyncio.wait_for(timeout=config.backtest_timeout) 包裝
-        3. 數據更新（營收策略 → FinMind，其他 → 跳過，失敗 → 中止+通知）
-        4. 建立 Context（feed + fundamentals）
-        5. strategy.on_bar(ctx) → target_weights
-        6. weights_to_orders → RiskEngine → ExecutionService
-        7. 持久化（selection log + trade log + pipeline_runs/）
-        8. 通知（Discord/LINE/Telegram）
-        9. Timeout/crash → 記錄 status=failed，啟動時 check_crashed_runs() 偵測
+  execute_pipeline(config):
+    1. 冪等性檢查 → 2. 數據更新 → 3. strategy.on_bar(ctx)
+    → 4. weights_to_orders → 5. RiskEngine → 6. ExecutionService
+    → 7. 持久化 → 8. 通知
 
-Autoresearch Pipeline（獨立，不操作 Portfolio）
-    架構: Karpathy autoresearch pattern（3 檔案取代舊 1800 行 agent）
-    evaluate.py（READ ONLY）+ factor.py（agent 可改）+ program.md（協議）
-    閘門: L1-L4 in-sample → L5 OOS holdout → Stage 2 大規模 IC → Validator 15 項
-    畢業: L5 通過 → _auto_submit → Validator ≥13/15 → 自動 paper deploy
-    防過擬合: L5 只輸出 pass/fail（不洩漏 OOS 數值）, 60 行複雜度限制
-    容器化: Docker（Phase Y）— evaluate.py 在容器內跑，Claude Code 在 host
-    觸發: loop-docker.ps1（自動重啟）或 loop.ps1（非 Docker）
-
-入口: src/scheduler/__init__.py + src/scheduler/jobs.py
+Autoresearch Pipeline（獨立）
+  架構: Karpathy autoresearch（evaluate.py + factor.py + program.md）
+  閘門: L1-L4 IS → L5 OOS holdout → Stage 2 大規模 IC → Validator 16 項
+  容器化: Docker（Phase Y）
 ```
+
+詳見 `docs/guides/autoresearch-guide-zh.md`。
 
 ---
 
-## 13. 階段完成度
+## 6. Phase 進度
 
 詳見 `docs/PHASE_TRACKER.md`。
 
-| 階段 | 狀態 | 備註 |
-|------|:----:|------|
-| A~I | ✅ | 基礎建設 → Alpha 擴充 |
-| K（數據品質） | ✅ | |
-| L（策略轉型） | ✅ | 6/7 驗證通過 |
-| M（下行保護） | ✅ | |
-| N（Paper Trading） | 🟢 | Portfolio 持久化、kill switch 清倉、mutation lock、pipeline timeout |
-| N2（Web 重寫） | 🟡 | Step 1-4 完成，Step 5 待辦 |
-| P（自動因子挖掘） | ✅ | Karpathy 3 檔案架構取代舊 agent。40+ bug 已修 |
-| Q（策略精煉） | 🟡 | Q1 代碼已實作（12/13），Q2-Q3 待辦 |
-| R（整頓 + 實用性） | 🟢 | 7 輪代碼審計完成（88+ bug） |
-| S（管線統一） | ✅ | execute_pipeline 取代 3 個舊 job |
-| U（Autoresearch 重構） | ✅ | Karpathy pattern + API 整合 + 安全規則 |
-| X（防過擬合） | ✅ | L5 OOS holdout + 複雜度限制 + pass/fail only 反饋 |
-| Y（容器化） | 🟢 | Docker 隔離 + Watchdog + 自動重啟。已部署運行中 |
+| Phase | 狀態 | 說明 |
+|-------|:----:|------|
+| A~S | ✅ | 基礎建設 → 管線統一 |
+| U (Autoresearch) | ✅ | Karpathy pattern + API 整合 |
+| X (防過擬合) | ✅ | L5 OOS holdout + 複雜度限制 |
+| Y (容器化) | ✅ | Docker + Watchdog |
+| Z (向量化) | 🟢 | Z1(PBO)✅ Z2(shared feed)✅ Z3 待開工 |
+| AA (策略構建) | 📋 | inverse-vol + no-trade zone + cost-aware |
 
 ---
 
-## 14. 阻塞項
+## 7. 文件索引
 
-| 項目 | 狀態 | 影響 |
-|------|------|------|
-| CA 憑證（永豐金） | ⏳ 申請中 | 阻塞 live mode（非 simulation） |
-| Paper Trading 運行中 | ✅ | Shioaji simulation + portfolio 持久化 + kill switch 清倉 |
-| 策略驗證 | ✅ 12/13 通過 | revenue_momentum_hedged |
-| 自動因子研究 | ✅ | Karpathy autoresearch 運行中（Docker 容器化），首輪 35 實驗 best ICIR 0.52 |
-| Shioaji async fill callback | ⏳ | 非 simulation mode 的異步成交回報未接線 |
-
----
-
-## 15. Alpha 驗證管線 vs 假陽性防護
-
-### 驗證步驟覆蓋度
-
-| 步驟 | 狀態 | 實作 |
-|------|:----:|------|
-| 原始假設（學術依據） | ✅ | FACTOR_REGISTRY 各因子標注論文來源 |
-| 歷史回測 (In-Sample) | ✅ | `BacktestEngine` 完整回測 |
-| 樣本外驗證 (OOS) | ✅ | Walk-Forward 年度 OOS + OOS 2025 H2（Validator 第 6、9 項） |
-| 多市場、多時間段壓力測試 | ⚠️ | 有 worst regime 檢查（Validator 第 12 項），但**僅台股單一市場**，無跨市場驗證 |
-| 交易成本模擬 | ✅ | SimBroker: sqrt 滑點 + 佣金 0.1425% + 證交稅 0.3% + 漲跌停 ±9.5% + ADV 10% 限制 |
-| 確認 Alpha 顯著穩健 | ✅ | Harvey t>3.0 + DSR + Bootstrap + PBO（Validator 15 項閘門） |
-
-### 假陽性陷阱防護
-
-| 陷阱 | 狀態 | 處理方式 | 已知缺口 |
-|------|:----:|---------|---------|
-| 過度擬合 (Overfitting) | ✅ | PBO、WF OOS、Bootstrap、DSR + **L5 OOS holdout**（2023H2-2024，agent 不可見）+ 60 行複雜度限制 | L5 pass/fail 反饋長期仍有間接洩漏風險 |
-| 存活者偏差 (Survivorship Bias) | ⚠️ | Universe 含 40 支已下市股票 | **缺少完整歷史 universe 快照**（不知道某年某月有哪些股票在市場上），可能遺漏更多早期下市股票 |
-| 前視偏差 (Look-ahead Bias) | ✅ | 營收 +40 天公布延遲、`Context` 截斷數據到 `current_time`、`HistoricalFeed.set_current_date()` | — |
-| 多重測試問題 (Multiple Testing) | ✅ | Harvey t>3.0、DSR、**不使用全域 Bonferroni**（業界共識：會導致無法發現因子）。防禦靠 L5 OOS holdout + 家族分組 + paper trading 最終驗證 | — |
-
-### 待改善項目
-
-| 缺口 | 嚴重度 | 說明 |
-|------|:------:|------|
-| 跨市場驗證 | 中 | 只有台股，無法確認因子是台股特有還是普遍有效（但專案定位為台股，短期可接受） |
-| 存活者偏差不完整 | 中 | 有 40 支已下市，但缺歷史時點完整上市清單 |
-| 衝擊成本模型粗糙 | 低 | sqrt 滑點近似，未用 Almgren-Chriss 學術模型（ADV 10% 限制部分彌補） |
-| 獨立壓力情境 | 低 | Walk-Forward 已覆蓋 COVID + 升息，但無獨立 stress scenario（如 2008 模擬） |
-| `compute_forward_returns` 日期交集 | 中 | 大 universe 時所有股票日期交集為空集，需改用聯集（腳本層已修正，核心函式待修） |
-
----
-
-## 16. 實驗報告索引
-
-17 份實驗報告，詳見 `docs/research/RESEARCH_SUMMARY.md`。
-
-**核心結論**（含 40 天營收延遲 + 大規模驗證）：
-- revenue_acceleration 大規模 ICIR(20d) +0.240, ICIR(60d) +0.426（#16 基準，全因子最強）
-- revenue_new_high 大規模 ICIR(20d) +0.207, ICIR(60d) +0.364（第二強）
-- revenue_momentum_hedged Validator 14/15（實驗 #21，Sharpe 1.076）
-- 自動發現因子在修正 look-ahead bias 後全部 L1 失敗（IC < 0.02）
-- Paper Trading 已上線：portfolio 持久化、kill switch 清倉、mutation lock
-
-**2026-03-27 大規模代碼審計（7 輪，88+ bug）：**
-- 修正了 look-ahead bias、因子生成 generic fallback、kill switch 無限循環
-- 新增 portfolio 持久化、pipeline 崩潰恢復、mutation lock、16 個整合測試
-- 詳見 CLAUDE.md 歷史教訓
-
-**2026-03-28 Autoresearch 重構 + 容器化：**
-- 舊 alpha_research_agent.py（1800 行）→ Karpathy 3 檔案架構（~600 行）
-- 首輪裸跑發現 6 事件（殭屍 daemon、越權寫入、git reset 回滾基礎設施等）
-- Phase X: L5 OOS holdout（IS 2017~mid-2023 / OOS mid-2023~2024）
-- Phase Y: Docker 容器化（read-only root、internal network、watchdog）
-- 35 個實驗，best composite 12.49, ICIR 0.52（dual Sharpe 12+8 skip15）
-- 詳見 `docs/reviews/AUTORESEARCH_OPERATIONS_REVIEW_2026Q1.md`
+| 文件 | 用途 |
+|------|------|
+| `docs/claude/ARCHITECTURE.md` | 模組架構、API、前端 |
+| `docs/claude/BUG_HISTORY.md` | 60+ 已修復 bug |
+| `docs/claude/EXPERIMENT_STANDARDS.md` | 實驗方法論 |
+| `docs/research/RESEARCH_SUMMARY.md` | 22 份實驗報告 + 因子結論 |
+| `docs/research/realism_checklist.md` | 回測真實性 8 項 |
+| `docs/research/factor_validation_20260328.md` | 25 因子批次驗證 |
+| `docs/guides/api-reference-zh.md` | 117 API 端點 |
+| `docs/guides/autoresearch-guide-zh.md` | Autoresearch 操作 |
+| `docs/reviews/CODE_REVIEW_REPORT.md` | 代碼審查（80+ bug） |
+| `docs/reviews/AUTORESEARCH_OPERATIONS_REVIEW_2026Q1.md` | Autoresearch 運營檢討 |
+| `docs/reviews/autoresearch-alpha/AUTO_ALPHA_PIPELINE_REVIEW.md` | 因子研究管線檢討 |
+| `docs/plans/phase-aa-strategy-construction.md` | 策略構建改進計畫 |
+| `docs/plans/phase-z-vectorized-backtest.md` | 向量化回測計畫 |
+| `docs/PHASE_TRACKER.md` | Phase 進度總覽 |

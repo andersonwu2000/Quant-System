@@ -1,4 +1,4 @@
-# Phase Y：容器化 Autoresearch Agent
+# Phase Y：容器化 Autoresearch Agent ✅ 已完成
 
 > 解決 Phase X 檢討報告中識別的三個結構性問題：
 > 共享可變狀態、權限模型二元化、Git 角色耦合
@@ -536,3 +536,27 @@ Watchdog 負責偵測飽和與 OOS 衰退，輸出至 stdout（`docker logs auto
 | 安全驗證 | 10 分鐘 |
 | loop-docker.ps1 整合測試 | 15 分鐘 |
 | **總計** | **~1.5 小時** |
+
+---
+
+## 10. 殘留問題追蹤（2026-03-28 審查）
+
+| 問題 | 嚴重度 | 現狀 | 說明 |
+|------|:------:|:----:|------|
+| **Host 安全性** | HIGH | **仍存在** | `--dangerously-skip-permissions` 在 3 個啟動腳本中。Claude Code 在 host 有完整寫入權限。Docker 只保護 evaluate.py 執行環境，不保護 host 檔案系統。prompt 約束不等於安全保證。 |
+| **監控被動** | MEDIUM | **仍存在** | watchdog 只寫 stdout（`docker logs` 查看），無主動推送通知（無 Discord/LINE/Telegram）。agent 卡住 30 分鐘 watchdog 會 log「STALE」但沒人看就不知道。 |
+| 環境相容性 | MEDIUM | **已解決** | evaluate.py 用 `PROJECT_ROOT` env var，容器內 Linux 路徑、host 上 Windows 路徑各自獨立。 |
+| I/O 效能 | LOW | **影響小** | Windows Docker bind mount 理論上較慢，但 evaluate.py 一次性載入 parquet 到記憶體（~2-3 秒），非瓶頸。 |
+
+### Host 安全性緩解方案（未實作）
+
+目前唯一防護是 program.md 的 prompt 指令（「只編輯 work/factor.py」）。可能的硬性防護：
+
+1. **Claude Code hooks**（`settings.json` 的 `PreToolUse`）— 在 Edit/Write 前檢查路徑是否在 `docker/autoresearch/work/` 內，不是就 reject。**最實際的方案**，不需要改 Docker 配置。
+2. **Windows ACL** — 對 `src/`、`scripts/` 等目錄設定只讀 ACL，但 Claude Code 可能用管理員權限繞過。
+3. **Git pre-commit hook** — 拒絕修改 `work/` 以外的檔案。但 Claude Code 的 Edit tool 不走 git。
+
+### 監控被動緩解方案（未實作）
+
+1. **watchdog 加通知** — crash 連續 3 次或 stale 30 分鐘時呼叫 `src/notifications/` 的 Discord/LINE/Telegram。需要容器有 host API 存取（已有 internal network）。
+2. **run.ps1 加 health check** — 每 10 分鐘檢查 `docker logs --since 10m autoresearch-watchdog` 是否有 ALERT/WARNING，有的話印到 console。

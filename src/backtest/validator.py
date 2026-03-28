@@ -438,16 +438,23 @@ class StrategyValidator:
         ))
 
         # 16. Permutation test (Phase AC: is the signal real or random?)
-        logger.info("[Validator] Running permutation test...")
-        perm_p = self._permutation_test(
-            result=result, strategy=strategy, universe=universe, start=start, end=end)
-        report.checks.append(CheckResult(
-            name="permutation_p",
-            passed=perm_p < 0.10,
-            value=f"{perm_p:.3f}",
-            threshold="< 0.10",
-            detail="p-value: fraction of random shuffles with Sharpe >= strategy",
-        ))
+        # Only applicable when compute_fn is available (autoresearch factors).
+        # Hand-written strategies without compute_fn skip this check entirely.
+        _cfn_perm = compute_fn or getattr(strategy, '_compute_fn', None)
+        if _cfn_perm is not None:
+            logger.info("[Validator] Running permutation test...")
+            perm_p = self._permutation_test(
+                result=result, strategy=strategy, universe=universe, start=start, end=end,
+                compute_fn_override=_cfn_perm)
+            report.checks.append(CheckResult(
+                name="permutation_p",
+                passed=perm_p < 0.10,
+                value=f"{perm_p:.3f}",
+                threshold="< 0.10",
+                detail="p-value: fraction of random shuffles with Sharpe >= strategy",
+            ))
+        else:
+            logger.info("[Validator] Skipping permutation test (no compute_fn)")
 
         return report
 
@@ -633,6 +640,7 @@ class StrategyValidator:
         self, result: BacktestResult, strategy: Strategy,
         universe: list[str], start: str, end: str,
         n_permutations: int = 100,
+        compute_fn_override: Any = None,
     ) -> float:
         """Permutation test: shuffle factor signal cross-sectionally, compare Sharpe.
 
@@ -663,15 +671,13 @@ class StrategyValidator:
             # Permutation: shuffle the stock-to-factor-value mapping with a FIXED
             # permutation per trial. Same shuffle applied to ALL dates → preserves
             # the turnover structure of the real factor (same stocks stay together).
-            compute_fn = getattr(strategy, '_compute_fn', None)
+            compute_fn = compute_fn_override or getattr(strategy, '_compute_fn', None)
             if compute_fn is None:
                 try:
                     from factor import compute_factor as _cf  # type: ignore[import-not-found]
                     compute_fn = _cf
                 except ImportError:
-                    # Non-autoresearch strategy — can't extract factor function
-                    # Skip permutation (other 15 checks still protect)
-                    return 0.0  # p=0 → pass (not applicable, not inconclusive)
+                    return 1.0  # fail-closed
 
             # Get real factor's Sharpe via vectorized backtest
             real_rets = vbt.run_variant(compute_fn, top_n=15, weight_mode="equal")
@@ -700,9 +706,12 @@ class StrategyValidator:
             if len(factor_cache) < 10:
                 return 0.5  # not enough dates
 
+            # Derive seeds from factor cache hash (reproducible but not predictable from trial index)
+            import hashlib as _hl
+            _base_seed = int(_hl.md5(str(sorted(factor_cache.keys())).encode()).hexdigest()[:8], 16)
             random_sharpes = []
             for i in range(n_permutations):
-                perm_seed = 1000 + i
+                perm_seed = _base_seed + i
                 def shuffled_factor(symbols, as_of, data, _seed=perm_seed, _cache=factor_cache):
                     # Look up pre-computed values, shuffle mapping
                     vals = _cache.get(str(as_of), {})
@@ -840,7 +849,7 @@ class StrategyValidator:
         if len(daily_returns_dict) < 4:
             raise ValueError(f"Only {len(daily_returns_dict)} variants (need >=4)")
 
-        returns_matrix = pd.DataFrame(daily_returns_dict).ffill(limit=5).dropna()
+        returns_matrix = pd.DataFrame(daily_returns_dict).fillna(0.0).dropna()
         if len(returns_matrix) < 120:
             raise ValueError(f"Only {len(returns_matrix)} aligned days (need >=120)")
 
@@ -938,7 +947,7 @@ class StrategyValidator:
                            len(daily_returns_dict))
             return 1.0
 
-        returns_matrix = pd.DataFrame(daily_returns_dict).ffill(limit=5).dropna()
+        returns_matrix = pd.DataFrame(daily_returns_dict).fillna(0.0).dropna()
         if len(returns_matrix) < 120:
             logger.warning("PBO event-driven: only %d days (need >=120), returning 1.0",
                            len(returns_matrix))
@@ -983,7 +992,7 @@ class StrategyValidator:
                         strat_rets = result.daily_returns
                         common = strat_rets.index.intersection(crisis_dates)
                         if len(common) > 5:
-                            crisis_return = float(strat_rets.loc[common].sum())
+                            crisis_return = float((1 + strat_rets.loc[common]).prod() - 1)
                             n_crisis_days = len(common)
                             return CheckResult(
                                 name="worst_regime",

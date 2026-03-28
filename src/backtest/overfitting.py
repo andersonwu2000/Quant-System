@@ -80,13 +80,15 @@ def compute_pbo(
             f"Not enough data rows ({n_rows}) for {n_partitions} partitions"
         )
 
-    # Step 1: Split into S equal sub-periods
+    # Step 1: Split into S equal sub-periods (discard remainder for equal partitions)
     partition_size = n_rows // n_partitions
+    usable_rows = partition_size * n_partitions
+    trimmed = returns_matrix.iloc[:usable_rows]
     partitions: list[pd.DataFrame] = []
     for i in range(n_partitions):
         start_idx = i * partition_size
-        end_idx = start_idx + partition_size if i < n_partitions - 1 else n_rows
-        partitions.append(returns_matrix.iloc[start_idx:end_idx])
+        end_idx = start_idx + partition_size
+        partitions.append(trimmed.iloc[start_idx:end_idx])
 
     half = n_partitions // 2
 
