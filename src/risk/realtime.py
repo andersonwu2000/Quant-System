@@ -142,6 +142,20 @@ class RealtimeRiskMonitor:
                                         "Kill switch (tick): %d liquidation trades, NAV=%s",
                                         len(trades), pf.nav,
                                     )
+                                # Notify via Discord/LINE/Telegram
+                                try:
+                                    from src.core.config import get_config
+                                    from src.notifications.factory import create_notifier
+                                    _notifier = create_notifier(get_config())
+                                    if _notifier.is_configured():
+                                        await _notifier.send(
+                                            "KILL SWITCH (Tick)",
+                                            f"Kill switch triggered via tick monitoring.\n"
+                                            f"Liquidated {len(trades) if trades else 0} positions, "
+                                            f"NAV: {float(pf.nav):,.0f}",
+                                        )
+                                except Exception:
+                                    logger.debug("Kill switch notification failed", exc_info=True)
                         else:
                             # No app_state (tests / legacy): execute without coordination
                             trades = svc.submit_orders(orders, pf)

@@ -2,6 +2,7 @@
 
 Jobs:
 - execute_pipeline: 統一交易管線（Phase S）
+- execute_daily_reconcile: 收盤後自動對帳（broker vs system）
 - execute_rebalance: [deprecated] 通用排程再平衡
 - monthly_revenue_rebalance: [deprecated] 月度營收策略專用
 - monthly_revenue_update: 月度營收數據更新
@@ -867,3 +868,60 @@ def _save_selection_log(weights: dict[str, float], strategy_name: str = "") -> N
     path = out_dir / f"{today}.json"
     path.write_text(json.dumps(log, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("Selection log saved: %s", path)
+
+
+async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
+    """收盤後自動對帳：比對系統持倉與券商端持倉。
+
+    只在 paper/live mode 且 broker 已初始化時執行。
+    如有差異，透過通知系統（Discord/LINE/Telegram）告警。
+    """
+    from src.api.state import get_app_state
+    from src.execution.reconcile import reconcile
+    from src.notifications.factory import create_notifier
+
+    state = get_app_state()
+    notifier = create_notifier(config)
+
+    # 只有 paper/live mode 才需要對帳
+    if config.mode not in ("paper", "live"):
+        logger.debug("Daily reconcile skipped: mode=%s", config.mode)
+        return {"status": "skipped", "reason": "not paper/live mode"}
+
+    # 確認 broker 可用
+    exec_svc = state.execution_service
+    if not exec_svc.is_initialized or exec_svc.broker is None:
+        logger.warning("Daily reconcile skipped: broker not initialized")
+        return {"status": "skipped", "reason": "broker not initialized"}
+
+    try:
+        broker_positions = exec_svc.broker.query_positions()
+        result = reconcile(state.portfolio, broker_positions)
+
+        summary = result.summary()
+        logger.info("Daily reconcile completed:\n%s", summary)
+
+        if not result.is_clean and notifier.is_configured():
+            await notifier.send(
+                "Reconciliation Discrepancy",
+                f"{len(result.mismatched)} mismatched, "
+                f"{len(result.system_only)} system-only, "
+                f"{len(result.broker_only)} broker-only positions.\n\n"
+                + summary,
+            )
+
+        return {
+            "status": "clean" if result.is_clean else "discrepancy",
+            "matched": len(result.matched),
+            "mismatched": len(result.mismatched),
+            "system_only": len(result.system_only),
+            "broker_only": len(result.broker_only),
+        }
+    except Exception:
+        logger.exception("Daily reconcile failed")
+        if notifier.is_configured():
+            try:
+                await notifier.send("Reconcile Error", "Daily reconciliation failed — check logs")
+            except Exception:
+                pass
+        return {"status": "error"}

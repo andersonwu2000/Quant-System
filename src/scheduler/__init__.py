@@ -73,6 +73,18 @@ class SchedulerService:
             kwargs={"config": config},
         )
 
+        # ── 收盤後自動對帳（paper/live mode） ──
+        if config.mode in ("paper", "live"):
+            reconcile_cron = config.reconcile_cron
+            reconcile_trigger = CronTrigger.from_crontab(reconcile_cron)
+            self._scheduler.add_job(  # type: ignore[union-attr]
+                self._run_reconcile,
+                trigger=reconcile_trigger,
+                id="daily_reconcile",
+                kwargs={"config": config},
+            )
+            logger.info("Daily reconcile scheduled: cron=%s", reconcile_cron)
+
         self._scheduler.start()  # type: ignore[union-attr]
         self._running = True
         logger.info(
@@ -108,6 +120,16 @@ class SchedulerService:
                 logger.info("Pipeline result: %s (%d trades)", result.status, result.n_trades)
             except Exception:
                 logger.exception("Pipeline failed")
+
+    async def _run_reconcile(self, config: TradingConfig) -> None:
+        """Daily post-market reconciliation."""
+        try:
+            from src.scheduler.jobs import execute_daily_reconcile
+
+            result = await execute_daily_reconcile(config)
+            logger.info("Daily reconcile result: %s", result.get("status", "unknown"))
+        except Exception:
+            logger.exception("Daily reconcile failed")
 
     # Deprecated methods removed in Phase S cleanup.
     # Git history preserves them (commit fc5eab4).

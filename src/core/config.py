@@ -98,6 +98,8 @@ class TradingConfig(BaseSettings):
     active_strategy: str = "revenue_momentum_hedged"
     trading_pipeline_cron: str = "30 8 11 * *"
     pipeline_data_update: bool = True
+    # 收盤後自動對帳（paper/live mode）
+    reconcile_cron: str = "30 14 * * 1-5"   # 台股收盤後 14:30，平日
     # 舊 config（向後相容，deprecated）
     rebalance_cron: str = "0 9 1 * *"
     revenue_scheduler_enabled: bool = True

@@ -352,6 +352,19 @@ def create_app() -> FastAPI:
                             "type": "kill_switch",
                             "message": "Kill switch triggered — all strategies stopped, positions liquidated",
                         })
+                        # Notify via Discord/LINE/Telegram
+                        try:
+                            from src.notifications.factory import create_notifier
+                            _notifier = create_notifier(config)
+                            if _notifier.is_configured():
+                                await _notifier.send(
+                                    "KILL SWITCH",
+                                    "Kill switch triggered — all strategies stopped, "
+                                    "positions liquidated.\n"
+                                    f"NAV: {float(state.portfolio.nav):,.0f}",
+                                )
+                        except Exception:
+                            logger.debug("Kill switch notification failed", exc_info=True)
                 except Exception:
                     logger.warning("Kill switch monitor error", exc_info=True)
 
