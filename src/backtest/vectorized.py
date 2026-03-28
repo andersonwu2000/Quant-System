@@ -52,7 +52,7 @@ class VectorizedPBOBacktest:
             universe, start, end, Path(data_dir)
         )
         self._revenue = self._load_revenue(universe, Path(fund_dir))
-        self._returns = self._price_matrix.ffill().pct_change()
+        self._returns = self._price_matrix.ffill().pct_change().replace([np.inf, -np.inf], 0.0)
         logger.info(
             "VectorizedPBO: loaded %d stocks × %d days in %.1fs",
             len(self._price_matrix.columns),

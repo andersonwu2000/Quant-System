@@ -820,6 +820,8 @@ def _store_factor_returns(results: dict) -> None:
         daily_rets = vbt.run_variant(compute_factor, top_n=15, weight_mode="equal")
 
         if daily_rets is not None and len(daily_rets) > 20:
+            # Clean inf/nan before storing
+            daily_rets = daily_rets.replace([np.inf, -np.inf], 0.0).fillna(0.0)
             ts = time.strftime("%Y%m%d_%H%M%S")
             path = returns_dir / f"{ts}.parquet"
             daily_rets.to_frame("returns").to_parquet(path)
