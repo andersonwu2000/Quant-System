@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:
-    """Regime-conditional momentum: 6-1 return when above SMA200, else 0."""
+    """Drawdown proximity: 1 - drawdown from 252d peak (close to peak = good)."""
     results: dict[str, float] = {}
     for sym in symbols:
         try:
@@ -12,9 +12,9 @@ def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[
             if bars is None or bars.empty: continue
             b = bars.loc[:as_of]
             if len(b) < 252: continue
-            close = b["close"].values
-            sma200 = np.mean(close[-200:])
-            mom = close[-1] / close[-126] - 1
-            results[sym] = mom if close[-1] > sma200 else 0.0
+            close = b["close"].values[-252:]
+            peak = np.max(close)
+            if peak <= 0: continue
+            results[sym] = close[-1] / peak
         except Exception: continue
     return results
