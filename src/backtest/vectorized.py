@@ -85,7 +85,12 @@ class VectorizedPBOBacktest:
                     df = df[~df.index.duplicated(keep="first")]
                     df = df.loc[start:end]
                     if "close" in df.columns and len(df) > 100:
-                        prices[sym] = df["close"]
+                        close = df["close"]
+                        # Replace 0/negative prices with NaN (data corruption)
+                        close = close.where(close > 0)
+                        if close.isna().sum() / len(close) > 0.10:
+                            continue  # skip stocks with >10% bad prices
+                        prices[sym] = close
                         volumes[sym] = df.get("volume", pd.Series(0, index=df.index))
                 except Exception:
                     continue

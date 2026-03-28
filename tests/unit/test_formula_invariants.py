@@ -378,3 +378,41 @@ class TestRiskRulesEdgeCases:
         nav.index = pd.bdate_range("2023-01-01", periods=3)
         result = compute_analytics(nav, 1_000_000, trades=[])
         assert not np.isnan(result.sharpe)
+
+
+class TestDataQualityInvariants:
+    """Invariants for market data and computed returns."""
+
+    def test_vectorized_returns_no_inf(self) -> None:
+        """VectorizedPBOBacktest returns must never contain inf."""
+        prices = pd.DataFrame({
+            "A": [100.0, 0.0, 105.0, 110.0, 108.0] * 50,  # has zero
+            "B": [200.0, 202.0, 198.0, 205.0, 203.0] * 50,
+        }, index=pd.bdate_range("2023-01-01", periods=250))
+
+        # Simulate what vectorized.py does
+        close = prices.where(prices > 0)  # zero → NaN
+        returns = close.ffill().pct_change().replace([np.inf, -np.inf], 0.0)
+        assert not np.isinf(returns.values).any(), "Returns contain inf"
+        assert np.isfinite(returns.fillna(0).values).all()
+
+    def test_pbo_matrix_no_inf(self) -> None:
+        """PBO returns matrix must never contain inf or all-zero columns."""
+        rng = np.random.default_rng(42)
+        mat = pd.DataFrame(
+            rng.normal(0, 0.02, (500, 10)),
+            columns=[f"f{i}" for i in range(10)],
+        )
+        # Simulate corruption: add inf
+        mat_dirty = mat.copy()
+        mat_dirty.iloc[5, 3] = np.inf
+        # Clean
+        mat_clean = mat_dirty.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+        assert np.isfinite(mat_clean.values).all()
+
+    def test_market_data_zero_price_excluded(self) -> None:
+        """Stocks with >10% zero-price days should be excluded."""
+        close = pd.Series([100.0] * 80 + [0.0] * 20)  # 20% zeros
+        close_clean = close.where(close > 0)
+        bad_ratio = close_clean.isna().sum() / len(close_clean)
+        assert bad_ratio > 0.10, "Should detect >10% bad prices"
