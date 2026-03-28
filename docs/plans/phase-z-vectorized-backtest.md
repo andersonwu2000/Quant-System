@@ -392,3 +392,95 @@ rebal_dates = self.prices.groupby(self.prices.index.to_period("M")).first().inde
 | M-08 | 固定間隔 | 改為 groupby month 取第一個交易日 |
 | L-07 | 交易筆數完全一致 | 改為 ±5% |
 | L-09 | 記憶體估算 | 50MB → 300MB |
+
+### 覆核（2026-03-28）
+
+**修正後通過。** 以下是覆核結論和補充事項。
+
+#### 正確性判斷
+
+| Phase | 正確性犧牲 | 可接受? | 理由 |
+|-------|-----------|---------|------|
+| Z1 (PBO) | close-to-close 近似 T+1、簡化成本 → Sharpe 偏差 ~2-5% | **可接受** | PBO 比較的是變體間**相對排名**，偏差是系統性的（全部偏高），排名不受影響 |
+| Z2 (shared feed) | **零犧牲** — 保持 event-driven engine | **正確** | 最佳決策：直接避開簡化回測的正確性問題 |
+| Z3 (engine 加速) | 取決於實作 — 內部加速不改 API 可達 ±0.1% | **待驗證** | 交易筆數和 Sharpe 精度目標需統一 |
+
+#### 補充限制（需標註在實作中）
+
+**Z1-L1: bars adapter 只有 close**
+
+```python
+open=self.prices[s].loc[:as_of],   # = close
+high=self.prices[s].loc[:as_of],   # = close
+low=self.prices[s].loc[:as_of],    # = close
+```
+
+open/high/low 全部等於 close。使用 `(close - open)` 或 `(high - low)` 的因子（如 Kakushadze alpha_101、intraday range）在 Z1 中結果全為 0。
+
+**影響**：Z1 的 PBO 只跑 Validator 內部的 `_VariantStrategy`，不跑這類因子。但如果未來擴展 PBO 到任意因子，需要傳入完整 OHLV 矩陣。
+
+**Z1-L2: revenue 不做 40 天截斷**
+
+```python
+"revenue": self.revenue,  # 未截斷
+```
+
+autoresearch 的 evaluate.py 在呼叫 compute_factor 前截斷 revenue 到 `as_of - 40 天`。Z1 的 adapter 直接傳完整 revenue → 因子可能看到未來營收 → look-ahead bias。
+
+**為什麼 PBO 仍有效**：所有 10 個變體共用同一份 revenue → bias 一致 → 排名不受影響。但 Z1 計算的 Sharpe 絕對值不能用來評估因子本身的表現——只能用於 PBO 的相對比較。
+
+**Z1-L3: Z3 的精度目標矛盾**
+
+計畫要求「交易筆數 ±5%」但同時「Sharpe ±0.1%」。交易筆數差 5% → 成本差異 → Sharpe 偏差 > 0.1%。
+
+**建議**：Z3 保留完整的 lot size + 風控（不簡化），目標交易筆數**完全一致** + Sharpe ±0.1%。如果要省略 lot size，Sharpe 容差應放寬到 ±1%。
+
+---
+
+## 10. 實作進度（2026-03-28）
+
+### Z1 已完成
+
+**新增檔案：** `src/backtest/vectorized.py` — `VectorizedPBOBacktest`
+
+**修改檔案：** `src/backtest/validator.py` — `_compute_pbo` 改用向量化版
+
+**實測結果：**
+- 10 支股票 × 10 變體：6.7 秒（event-driven 原需 5+ 分鐘）
+- 150 支股票預估：30-60 秒
+
+**Z1 審批後額外修復（8 個 review items）：**
+
+| # | 問題 | 嚴重度 | 修復 |
+|---|------|--------|------|
+| 1 | compute_fn 在非 autoresearch 場景失敗 → PBO=1.0 | HIGH | 加 event-driven fallback，任何 strategy 都能跑 PBO |
+| 2 | `__import__("time")` 反模式 | LOW | 改為 `import time as _time` |
+| 3 | 沒有 fallback 到 event-driven | MEDIUM | `_compute_pbo` 分拆為 `_vectorized` + `_event_driven`，vectorized 失敗自動 fallback |
+| 4 | `_build_factor_data` 每月重建 12,000 個 DataFrame | MEDIUM | 快取完整 bars dict，只做 `.loc[:as_of]` slice |
+| 5 | `pct_change(fill_method=None)` deprecated | LOW | 改為 `ffill().pct_change()` |
+| 6 | `df.index.date` 精度丟失 | LOW | 已知，暫不改（PBO 只用日期級別） |
+| 7 | revenue 不截斷 | OK | 已知且文件標註，PBO 排名不受影響 |
+| 8 | 第一次 rebalance 前全 0 | OK | 正確行為 |
+
+**架構決策：**
+- `_compute_pbo` 不再猜 compute_fn 來源 — 所有 caller 明確傳入 `compute_fn` 參數
+- `validate()` 新增 `compute_fn` 參數，透傳到 `_compute_pbo`
+- watchdog + evaluate.py + API 三個 caller 都已更新
+
+### Z2 已完成
+
+shared feed + ThreadPoolExecutor 並行化已在先前實作。保持 event-driven，零正確性犧牲。
+
+### Z3 待開工
+
+待 Z1 在生產環境驗證通過後再開始。
+
+### 數據路徑一致性確認（2026-03-28）
+
+| 路徑 | revenue 載入 | symbol 格式 | 狀態 |
+|------|-------------|-----------|:----:|
+| evaluate.py | 直接讀 parquet | 先 sym 再 bare | ✅ |
+| strategy_builder.py | ctx.get_revenue(sym) | sym 含 .TW | ✅ |
+| vectorized.py | 直接讀 parquet | 先 sym 再 bare | ✅ |
+| watchdog.py | ctx.get_revenue(s) | s 含 .TW | ✅ |
+| Context.get_revenue | 讀 {symbol}_revenue.parquet | caller 決定 | ✅ |
