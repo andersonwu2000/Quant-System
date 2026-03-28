@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:
-    """6-1 momentum: 6-month return skipping most recent month."""
+    """Volatility-adjusted 6-1 momentum: momentum / realized vol."""
     results: dict[str, float] = {}
     for sym in symbols:
         try:
@@ -13,6 +13,10 @@ def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[
             b = bars.loc[:as_of]
             if len(b) < 126: continue
             close = b["close"].values
-            results[sym] = close[-21] / close[-126] - 1
+            mom = close[-21] / close[-126] - 1
+            rets = np.diff(np.log(close[-126:]))
+            vol = np.std(rets)
+            if vol > 0 and np.isfinite(mom):
+                results[sym] = mom / vol
         except Exception: continue
     return results
