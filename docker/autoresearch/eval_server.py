@@ -35,7 +35,7 @@ def learnings():
     try:
         lines = open(learnings_path, encoding="utf-8").readlines()
     except FileNotFoundError:
-        return jsonify({"successful_patterns": [], "failed_patterns": [], "forbidden": [], "stats": {}})
+        lines = []
 
     entries = []
     for line in lines:

@@ -82,7 +82,26 @@ DIVERSITY_WARN_THRESHOLD = 0.30      # diversity_ratio < this → warning
 DIVERSITY_BLOCK_THRESHOLD = 0.15     # diversity_ratio < this → block replacement
 
 # Dedup: known good factors' IC series (from legacy L3 check)
-DEDUP_FACTORS_FILE = PROJECT_ROOT / "data" / "research" / "baseline_ic_series.json"
+# Read: prefer watchdog_data (rw, updated by replacements), fallback to data/research (ro, seed)
+# Write: always to watchdog_data (evaluator rw, agent cannot access)
+DEDUP_FACTORS_RO = PROJECT_ROOT / "data" / "research" / "baseline_ic_series.json"
+
+
+def _dedup_read_path() -> Path:
+    """Writable copy in watchdog_data takes precedence over ro seed."""
+    wd = Path("/app/watchdog_data/baseline_ic_series.json")
+    if not wd.parent.exists():
+        wd = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "baseline_ic_series.json"
+    return wd if wd.exists() else DEDUP_FACTORS_RO
+
+
+def _dedup_write_path() -> Path:
+    """Always write to watchdog_data (rw)."""
+    wd = Path("/app/watchdog_data/baseline_ic_series.json")
+    if not wd.parent.exists():
+        wd = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "baseline_ic_series.json"
+    wd.parent.mkdir(parents=True, exist_ok=True)
+    return wd
 
 # Universe — core universe (200 large/mid-cap by ADV) from file
 # Replaces old hardcoded 50-stock list for better statistical robustness
@@ -292,9 +311,10 @@ def _load_dedup_ic_series() -> dict[str, list[float]]:
 
     Supports v1 (name → list) and v2 (name → {series, icir}) formats.
     """
-    if DEDUP_FACTORS_FILE.exists():
+    path = _dedup_read_path()
+    if path.exists():
         try:
-            with open(DEDUP_FACTORS_FILE, encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 raw = json.load(f)
             result = {}
             for name, val in raw.items():
@@ -310,9 +330,10 @@ def _load_dedup_ic_series() -> dict[str, list[float]]:
 
 def _load_factor_icirs() -> dict[str, float]:
     """Load known factors' ICIR from baseline_ic_series.json (v2 format)."""
-    if DEDUP_FACTORS_FILE.exists():
+    path = _dedup_read_path()
+    if path.exists():
         try:
-            with open(DEDUP_FACTORS_FILE, encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 raw = json.load(f)
             return {name: val.get("icir", 0.0) for name, val in raw.items()
                     if isinstance(val, dict)}
@@ -492,10 +513,11 @@ def _replace_factor(old_name: str, new_ic_series: list[float], new_icir: float) 
     """Replace old factor with new one in baseline_ic_series.json. Returns new name."""
     new_name = f"factor_{time.strftime('%Y%m%d_%H%M%S')}"
 
+    read_path = _dedup_read_path()
     raw = {}
-    if DEDUP_FACTORS_FILE.exists():
+    if read_path.exists():
         try:
-            raw = json.loads(DEDUP_FACTORS_FILE.read_text(encoding="utf-8"))
+            raw = json.loads(read_path.read_text(encoding="utf-8"))
         except Exception:
             pass
 
@@ -507,8 +529,8 @@ def _replace_factor(old_name: str, new_ic_series: list[float], new_icir: float) 
         "replaced": old_name,
     }
 
-    DEDUP_FACTORS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    DEDUP_FACTORS_FILE.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+    write_path = _dedup_write_path()
+    write_path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
 
     # Save library health snapshot for /learnings API
     try:
