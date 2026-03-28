@@ -495,7 +495,234 @@ services:
 
 Evaluator 和 watchdog 可合併（都需要 src/ + data/），但分開更清晰：evaluator 是同步 HTTP 服務，watchdog 是定時背景任務。
 
-## 10. 參考
+## 10. 第二輪審批意見（2026-03-29）
+
+### 整體：§9 回覆品質好，Eval-as-a-Service 方向正確。4 個問題需注意。
+
+### 問題 A（方法論）：eval_server.py 的 `tail -30` 仍然洩漏資訊
+
+```python
+safe_output = "\n".join(l for l in lines[-30:])  # 等同 tail -30
+```
+
+evaluate.py 的 stdout 包含大量中間結果：L1 score、L2 IC 值、L3 large-scale IC、L4 Validator 每項 check 的分數。`tail -30` 只是截尾，不是過濾。Agent 仍然可以看到：
+
+- `L2: IC = 0.042, ICIR = 0.31` → 知道因子的精確 IC
+- `L3: Large-scale IC median = 0.028` → 知道 universe 擴大後的衰減
+- `L4: DSR = 0.68 (FAIL), Bootstrap = 82% (PASS)` → 知道哪項差多少通過
+
+這違反了 LESSONS #7「agent 應該只看到 1 bit: pass/fail」。
+
+**建議修正：**
+
+```python
+@app.route("/evaluate", methods=["POST"])
+def evaluate():
+    result = subprocess.run(
+        ["python", "/app/evaluate.py"],
+        capture_output=True, text=True, timeout=300,
+        cwd="/app", env={**dict(__import__('os').environ), "PYTHONPATH": "/app/work:/app"}
+    )
+    # 只回傳 pass/fail + level，不回傳任何分數
+    passed = result.returncode == 0
+    # 從 results.tsv 最後一行讀 level（evaluate.py 會寫入）
+    level = "UNKNOWN"
+    try:
+        with open("/app/work/results.tsv") as f:
+            last = f.readlines()[-1].strip()
+            level = last.split("\t")[4] if "\t" in last else "UNKNOWN"
+    except Exception:
+        pass
+    return jsonify({
+        "passed": passed,
+        "level": level,        # e.g. "L3_FAIL" or "L4_PASS"
+        "message": "Factor met deployment criteria" if passed else "Factor did not meet criteria",
+    })
+```
+
+Agent 只看到 `{"passed": false, "level": "L3_FAIL", "message": "Factor did not meet criteria"}`。不知道 IC 是 0.04 還是 0.001，不知道哪項 check 差多少通過。
+
+### 問題 B（方法論）：shared volume work/ 是雙向資訊通道
+
+```
+agent container ←── shared volume: work/ ──→ evaluator container
+```
+
+evaluator 跑 evaluate.py 時，evaluate.py 會寫入：
+- `work/results.tsv`（agent 可讀 — 這是設計意圖，OK）
+- 但 evaluate.py 也可能寫 debug 檔案、log 檔案、或 `__pycache__/` 到 work/
+- 如果 evaluate.py 的 `_store_factor_returns()` 把 factor_returns 存到 work/ 下，agent 能讀到 OOS 期間的 factor returns
+
+**建議：**
+- evaluator 的 `_store_factor_returns()` 必須存到 evaluator 自己的 `watchdog_data/`（非 shared volume）
+- evaluator 寫入 work/ 的唯一檔案是 results.tsv（append 一行）
+- Dockerfile 中驗證：`evaluate.py` 不會在 work/ 下建立任何額外檔案
+
+### 問題 C（實作）：Flask dev server 不該用在生產
+
+```python
+app.run(host="0.0.0.0", port=5000)
+```
+
+Flask 的 built-in server 是單線程、不適合併發。如果 agent 快速連續發起兩次 evaluate（unlikely but possible），第二次會 hang 直到第一次完成。
+
+但更重要的是：**evaluate.py 本身就是 sequential 的**（跑回測需要 5-60 秒），所以這其實不是真問題。單線程 Flask 在這裡反而是正確的 — 它天然地序列化了評估請求。
+
+**判斷：可接受。** 不需要改 gunicorn。但建議加一行註解說明這是刻意的：
+
+```python
+# 單線程是刻意的 — 評估必須序列化，防止併發 evaluate 耗盡資源
+app.run(host="0.0.0.0", port=5000)
+```
+
+### 問題 D（實作）：agent 容器沒有 data/，但 factor.py 可能需要讀數據
+
+§9 架構圖顯示 agent 容器「無 data/」。但 factor.py（agent 的產出）通常包含：
+
+```python
+def compute_factor(symbols, as_of, data):
+    close = data["close"]  # data 由 evaluate.py 傳入 — OK
+```
+
+evaluate.py 呼叫 `compute_factor()` 時傳入 data，所以在 evaluator 容器內 factor.py 能存取 data。但 agent 在**開發 factor.py 時**無法讀數據來驗證自己的代碼。
+
+**兩個選項：**
+1. Agent 盲寫 factor.py → 提交 evaluate → 從 pass/fail 學習。完全隔離但 agent 效率低
+2. Agent 容器掛載 data/ (ro) → agent 可以 `python factor.py` 本地測試。效率高但 agent 能讀全部歷史數據
+
+**建議：選 2。** 理由：
+- factor.py 的輸入是 `(symbols, as_of, data)`，agent 需要理解 data 的 schema 才能寫出有效代碼
+- 市場數據本身不是秘密 — 秘密是評估標準和 OOS 結果
+- 如果選 1，agent 會需要 10x 更多的 evaluate 次數才能寫出能跑的代碼 → 消耗更多 holdout budget
+
+**修正架構圖：**
+```
+agent container:
+  + work/ (rw)
+  + program.md (ro)
+  + data/market/ (ro)      ← 加回，agent 需要理解數據格式
+  + data/fundamental/ (ro)  ← 加回
+  無 evaluate.py, 無 src/, 無 watchdog_data/
+```
+
+### 總結
+
+| 問題 | 嚴重度 | 行動 |
+|------|:------:|------|
+| A: tail -30 洩漏 IC/DSR/Bootstrap 分數 | **HIGH** | eval_server.py 改為只回傳 pass/fail + level |
+| B: shared volume 可能洩漏 factor_returns | **HIGH** | evaluator 不在 work/ 寫額外檔案 |
+| C: Flask dev server | **OK** | 加註解，不需改 |
+| D: agent 無 data/ 無法開發 | **MEDIUM** | 加回 data/ ro mount |
+
+問題 A 和 B 都是「看起來隔離了但資訊仍然洩漏」的模式 — 和我們在 host 上經歷的 5 個洩漏通道完全一樣（LESSONS #7）。遷移到 Docker 不會自動解決資訊洩漏問題，需要在 HTTP 層也做 information filtering。
+
+## 11. 第二輪審批回覆
+
+### A: eval_server.py 只回傳 pass/fail + level ✅ 接受
+
+完全正確。`tail -30` 是偷懶，不是過濾。修正 eval_server.py：
+
+```python
+@app.route("/evaluate", methods=["POST"])
+def evaluate():
+    result = subprocess.run(
+        ["python", "/app/evaluate.py"],
+        capture_output=True, text=True, timeout=300,
+        cwd="/app", env={**dict(__import__('os').environ), "PYTHONPATH": "/app/work:/app"}
+    )
+    # 從 stdout 解析 4 個安全欄位（evaluate.py 的 --- RESULTS --- 區塊）
+    stdout = result.stdout
+    level = _extract(stdout, "level:")
+    passed = _extract(stdout, "passed:") == "True"
+    composite = float(_extract(stdout, "composite_score:") or "0")
+    best_icir = float(_extract(stdout, "best_icir:") or "0")
+
+    return jsonify({
+        "passed": passed,
+        "level": level,
+        "composite_score": composite,
+        "best_icir": best_icir,
+    })
+
+def _extract(text, prefix):
+    for line in text.splitlines():
+        if line.strip().startswith(prefix):
+            return line.split(prefix, 1)[1].strip()
+    return ""
+```
+
+**回傳 composite_score 和 best_icir 但不回傳中間值（IC, DSR, Bootstrap 分數等）。** 這和現有 program.md 的 "extract ONLY these 4 values" 一致，只是從 prompt 限制升級為 HTTP 過濾。
+
+**不回傳 level 的理由用語如 "L3 dedup" 或 "L2 ICIR"** — level 本身是安全的（只告訴 agent 走到第幾關），但附帶原因就是洩漏。
+
+### B: evaluator 不在 work/ 寫額外檔案 ✅ 接受
+
+確認 evaluate.py 目前會寫入 work/ 的檔案：
+1. `work/results.tsv` — agent 可讀 ✅（設計意圖）
+2. `work/factor_returns/` — ❌ 已修為 `watchdog_data/`（不在 work/）
+3. `work/pending/` — ❌ 已修為 `watchdog_data/`
+4. `work/__pycache__/` — ❌ 需要禁止（設 `PYTHONDONTWRITEBYTECODE=1`）
+
+修正：Dockerfile 加 `ENV PYTHONDONTWRITEBYTECODE=1`，且 evaluator 的 work/ mount 改為只寫 results.tsv：
+
+```yaml
+evaluator:
+  volumes:
+    - shared-work:/app/work           # evaluator 只會 append results.tsv
+    - watchdog-data:/app/watchdog_data # factor_returns, pending, pbo
+  environment:
+    - PYTHONDONTWRITEBYTECODE=1
+```
+
+### C: Flask dev server ✅ 接受（可接受）
+
+單線程是刻意的。加註解。
+
+### D: agent 容器加回 data/ (ro) ✅ 接受
+
+市場數據不是秘密，OOS 邏輯和閾值才是。agent 需要理解 data schema 才能寫有效的 factor.py。
+
+修正後的最終架構：
+
+```
+agent container:
+  + work/factor.py, results.tsv  (rw)
+  + program.md                    (ro, COPY)
+  + data/market/                  (ro, mount)
+  + data/fundamental/             (ro, mount)
+  + data/research/universe.txt    (ro, mount)
+  無 evaluate.py, 無 src/, 無 watchdog_data/
+
+evaluator container:
+  + evaluate.py                   (COPY, agent 看不到)
+  + eval_server.py                (COPY)
+  + src/                          (ro, mount)
+  + data/                         (ro, mount)
+  + work/results.tsv              (append only)
+  + watchdog_data/                (rw, factor_returns + pending + pbo)
+  ENV PYTHONDONTWRITEBYTECODE=1
+
+watchdog container:（現有，不變）
+  + watchdog.py                   (COPY)
+  + src/                          (ro, mount)
+  + data/                         (ro, mount)
+  + watchdog_data/                (rw)
+```
+
+### 修正後的實施步驟（v3）
+
+| Step | 內容 | 改動 |
+|------|------|------|
+| 0 | Smoke test | 不變 |
+| 1 | Dockerfile.evaluator | 加 Flask + eval_server.py + PYTHONDONTWRITEBYTECODE |
+| 2 | eval_server.py | **改為只回傳 4 欄位**（不是 tail -30） |
+| 3 | Dockerfile.agent | 加 data/ ro mount |
+| 4 | docker-compose.yml | shared-work volume + watchdog-data volume 分開 |
+| 5 | program.md | curl evaluator API 替代 python evaluate.py |
+| 6 | work/ 獨立 git | 不變 |
+| 7 | 端到端測試 | 加驗證：evaluator 不在 work/ 寫 __pycache__ |
+
+## 12. 參考
 
 - [Docker Sandbox for Claude Code](https://docs.docker.com/ai/sandboxes/agents/claude-code/)
 - [Claude Code Sandboxing](https://code.claude.com/docs/en/sandboxing)
