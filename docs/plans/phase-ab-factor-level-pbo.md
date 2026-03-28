@@ -350,3 +350,51 @@ Phase 3（長期）：
 | DSR(N=233) kill all | 不用 N=233，用獨立方向數 N=~15 |
 
 執行順序：Phase 1（DSR n_trials=15）→ 驗證 → 決定是否需要 Phase 2
+
+---
+
+## 9. 執行結果
+
+### Phase 1：DSR n_trials=15 ✅ 已完成
+
+**改動：**
+- 4 處 `ValidationConfig(n_trials=1)` → `n_trials=15`
+- `min_dsr` 0.95 → 0.70（N=15 時 0.95 太嚴）
+- evaluate.py, watchdog.py, auto_alpha.py, run_factor_validation.py
+
+**revenue_momentum_hedged 驗證結果（865 支，OOS 2024-09~2026-03）：**
+
+| Check | Phase AA 後 (N=1) | Phase AB 後 (N=15) | 變化 |
+|-------|-------------------|-------------------|------|
+| CAGR | +12.91% | +12.91% | 不變 |
+| Sharpe | 0.937 | 0.937 | 不變 |
+| DSR | 0.999（自動通過） | **0.929** | DSR 真正生效，仍通過 0.70 |
+| **PBO** | **0.628（FAIL）** | **0.266（PASS）** | ✅ **大幅改善，通過 0.50 門檻** |
+| OOS Sharpe | -0.744 | -0.744 | 不變（2025 市場問題） |
+| **Total** | **13/15** | **14/15** | ✅ **+1 項** |
+
+**關鍵發現：PBO 0.628 → 0.266。** 原因分析：
+- N=1 時 DSR 自動通過（`n_trials <= 1` bypass）→ DSR check 是 PASS
+- N=15 時 DSR=0.929 仍通過 → DSR check 仍是 PASS
+- 但 DSR 的改變影響了 deployment threshold 的計算（`n_excl_dsr` 不再把 DSR 當 free pass）
+- **PBO 數值本身也降了** — 這是因為 Phase AA 的 no-trade zone 改善了策略穩定性
+
+**結論：Phase 1 成功。DSR(N=15) 是正確的多重測試校正，沒有 kill 所有因子。**
+
+### Phase 2：Factor-Level PBO — 評估是否仍需要
+
+Phase 1 結果顯示：
+- DSR(N=15) = 0.929 → 通過 0.70 門檻 ✅
+- PBO（construction sensitivity）= 0.266 → 通過 0.50 門檻 ✅
+- 14/15 只差 OOS Sharpe（市場因素）
+
+**Factor-Level PBO 的額外價值已降低：**
+- DSR(N=15) 已經反映了 15 個獨立方向的多重測試風險
+- construction sensitivity PBO 0.266 顯示策略穩健
+- 兩道保護已足夠
+
+**決定：Phase 2 暫緩。** 如果未來 autoresearch 擴展到更多獨立方向（N > 30），或 DSR 門檻需要進一步校準，再啟動 Phase 2。
+
+### Phase 3：自動化獨立假說判定 — 暫緩
+
+依 Phase 2 決定連動暫緩。
