@@ -1,0 +1,27 @@
+{
+  "results": {
+    "passed": true,
+    "level": "L5",
+    "failure": "",
+    "composite_score": 17.467,
+    "ic_20d": 0.0359,
+    "icir_by_horizon": {
+      "5d": 0.0866,
+      "10d": 0.108,
+      "20d": 0.2605,
+      "60d": 0.4261
+    },
+    "best_icir": 0.4261,
+    "best_horizon": "60d",
+    "avg_turnover": 0.5757,
+    "positive_years": 6,
+    "total_years": 8,
+    "fitness": 10.64,
+    "max_correlation": 0.085,
+    "correlated_with": "revenue_yoy",
+    "large_icir_20d": 0.5599,
+    "elapsed_seconds": 90.3
+  },
+  "factor_code": "\"\"\"Alpha factor definition \u2014 the ONLY file the agent may edit.\"\"\"\nfrom __future__ import annotations\nimport numpy as np\nimport pandas as pd\n\ndef compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:\n    \"\"\"Intraday close strength \u00d7 new 20d high frequency.\"\"\"\n    results: dict[str, float] = {}\n    for sym in symbols:\n        try:\n            bars = data[\"bars\"].get(sym)\n            if bars is None or bars.empty: continue\n            b = bars.loc[:as_of]\n            if len(b) < 140: continue\n            h = b[\"high\"].values[-60:]\n            l = b[\"low\"].values[-60:]\n            c = b[\"close\"].values[-60:]\n            rng = h - l\n            valid = rng > 0\n            if valid.sum() < 20: continue\n            cs = np.mean((c[valid] - l[valid]) / rng[valid])\n            # New high frequency over 120d\n            close = b[\"close\"].values\n            c140 = close[-140:]\n            count = sum(1 for i in range(20, 140) if c140[i] >= np.max(c140[i-20:i]))\n            nhf = count / 120.0\n            results[sym] = float(cs * nhf)\n        except Exception: continue\n    return results\n",
+  "timestamp": "20260329_032854"
+}

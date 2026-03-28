@@ -1,0 +1,27 @@
+{
+  "results": {
+    "passed": true,
+    "level": "L5",
+    "failure": "",
+    "composite_score": 13.0714,
+    "ic_20d": 0.0302,
+    "icir_by_horizon": {
+      "5d": 0.0789,
+      "10d": 0.0686,
+      "20d": 0.1888,
+      "60d": 0.3452
+    },
+    "best_icir": 0.3452,
+    "best_horizon": "60d",
+    "avg_turnover": 0.6055,
+    "positive_years": 6,
+    "total_years": 8,
+    "fitness": 7.71,
+    "max_correlation": 0.069,
+    "correlated_with": "revenue_yoy",
+    "large_icir_20d": 0.4081,
+    "elapsed_seconds": 87.4
+  },
+  "factor_code": "\"\"\"Alpha factor definition \u2014 the ONLY file the agent may edit.\"\"\"\nfrom __future__ import annotations\nimport numpy as np\nimport pandas as pd\n\ndef compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:\n    \"\"\"Rank-sum buying pressure 60d + new 20d high frequency 120d.\"\"\"\n    bp_s: dict[str, float] = {}\n    nh_s: dict[str, float] = {}\n    for sym in symbols:\n        try:\n            bars = data[\"bars\"].get(sym)\n            if bars is None or bars.empty: continue\n            b = bars.loc[:as_of]\n            if len(b) < 120: continue\n            close = b[\"close\"].values[-120:]\n            high = b[\"high\"].values[-60:]\n            low = b[\"low\"].values[-60:]\n            cl60 = close[-60:]\n            # Buying pressure\n            hl = high - low\n            mask = hl > 1e-8\n            if mask.sum() < 20: continue\n            bp_s[sym] = float(np.sum((cl60[mask] - low[mask])) / np.sum(hl[mask]))\n            # New 20d high frequency\n            rm = pd.Series(close).rolling(20).max().values\n            nh_s[sym] = float(np.nansum(close[19:] >= rm[19:]) / 101)\n        except Exception: continue\n    common = set(bp_s) & set(nh_s)\n    if len(common) < 10: return {}\n    syms = sorted(common)\n    def rank(d): a = np.array([d[s] for s in syms]); return a.argsort().argsort().astype(float)\n    combo = rank(bp_s) + rank(nh_s)\n    return {syms[i]: float(combo[i]) for i in range(len(syms))}\n",
+  "timestamp": "20260329_040910"
+}

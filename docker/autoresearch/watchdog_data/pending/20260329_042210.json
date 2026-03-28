@@ -1,0 +1,27 @@
+{
+  "results": {
+    "passed": true,
+    "level": "L5",
+    "failure": "",
+    "composite_score": 9.6471,
+    "ic_20d": 0.0239,
+    "icir_by_horizon": {
+      "5d": 0.0379,
+      "10d": 0.0729,
+      "20d": 0.1351,
+      "60d": 0.2693
+    },
+    "best_icir": 0.2693,
+    "best_horizon": "60d",
+    "avg_turnover": 0.5872,
+    "positive_years": 6,
+    "total_years": 8,
+    "fitness": 5.43,
+    "max_correlation": 0.107,
+    "correlated_with": "revenue_yoy",
+    "large_icir_20d": 0.381,
+    "elapsed_seconds": 77.1
+  },
+  "factor_code": "\"\"\"Alpha factor definition \u2014 the ONLY file the agent may edit.\"\"\"\nfrom __future__ import annotations\nimport numpy as np\nimport pandas as pd\n\ndef compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:\n    \"\"\"Neg upper shadow ratio 60d: -avg((high-close)/(high-low)), low = strong.\"\"\"\n    results: dict[str, float] = {}\n    for sym in symbols:\n        try:\n            bars = data[\"bars\"].get(sym)\n            if bars is None or bars.empty: continue\n            b = bars.loc[:as_of]\n            if len(b) < 60: continue\n            b60 = b.iloc[-60:]\n            h = b60[\"high\"].values\n            l = b60[\"low\"].values\n            c = b60[\"close\"].values\n            hl = h - l\n            mask = hl > 1e-8\n            if mask.sum() < 20: continue\n            upper = (h[mask] - c[mask]) / hl[mask]\n            results[sym] = float(-np.mean(upper))\n        except Exception: continue\n    return results\n",
+  "timestamp": "20260329_042210"
+}

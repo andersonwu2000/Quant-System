@@ -12,9 +12,15 @@ RUN npm install -g @anthropic-ai/claude-code
 RUN useradd -m -s /bin/bash researcher && \
     mkdir -p /app/work && chown researcher:researcher /app/work
 
+# Copy research protocol (read-only, agent cannot modify)
+COPY scripts/autoresearch/program.md /app/program.md
+
 WORKDIR /app/work
 USER researcher
 
 ENV HOME=/home/researcher
 ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 ENV CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+
+# Git safe directory (volume mount ownership mismatch)
+RUN git config --global --add safe.directory /app/work

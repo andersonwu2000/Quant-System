@@ -1,0 +1,27 @@
+{
+  "results": {
+    "passed": true,
+    "level": "L5",
+    "failure": "",
+    "composite_score": 8.6023,
+    "ic_20d": 0.0196,
+    "icir_by_horizon": {
+      "5d": 0.019,
+      "10d": 0.0275,
+      "20d": 0.1288,
+      "60d": 0.2689
+    },
+    "best_icir": 0.2689,
+    "best_horizon": "60d",
+    "avg_turnover": 0.6326,
+    "positive_years": 6,
+    "total_years": 8,
+    "fitness": 4.73,
+    "max_correlation": 0.103,
+    "correlated_with": "revenue_yoy",
+    "large_icir_20d": 0.175,
+    "elapsed_seconds": 65.7
+  },
+  "factor_code": "\"\"\"Alpha factor definition \u2014 the ONLY file the agent may edit.\"\"\"\nfrom __future__ import annotations\nimport numpy as np\nimport pandas as pd\n\ndef compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:\n    \"\"\"Volume-at-high: volume weighted by how close the close is to the high.\"\"\"\n    results: dict[str, float] = {}\n    for sym in symbols:\n        try:\n            bars = data[\"bars\"].get(sym)\n            if bars is None or bars.empty: continue\n            b = bars.loc[:as_of]\n            if len(b) < 60: continue\n            h = b[\"high\"].values[-60:]\n            l = b[\"low\"].values[-60:]\n            c = b[\"close\"].values[-60:]\n            v = b[\"volume\"].values[-60:]\n            rng = h - l\n            valid = rng > 0\n            if valid.sum() < 20: continue\n            # Close position in range, weighted by volume\n            pos = (c[valid] - l[valid]) / rng[valid]\n            vol = v[valid].astype(float)\n            total_vol = vol.sum()\n            if total_vol <= 0: continue\n            results[sym] = float(np.sum(pos * vol) / total_vol)\n        except Exception: continue\n    return results\n",
+  "timestamp": "20260329_033042"
+}

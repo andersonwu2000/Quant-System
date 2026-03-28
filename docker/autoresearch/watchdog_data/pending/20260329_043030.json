@@ -1,0 +1,27 @@
+{
+  "results": {
+    "passed": true,
+    "level": "L5",
+    "failure": "",
+    "composite_score": 7.9261,
+    "ic_20d": 0.0147,
+    "icir_by_horizon": {
+      "5d": -0.0125,
+      "10d": -0.0309,
+      "20d": 0.089,
+      "60d": 0.296
+    },
+    "best_icir": 0.296,
+    "best_horizon": "60d",
+    "avg_turnover": 0.7012,
+    "positive_years": 6,
+    "total_years": 8,
+    "fitness": 4.28,
+    "max_correlation": 0.022,
+    "correlated_with": "revenue_acceleration",
+    "large_icir_20d": -0.1017,
+    "elapsed_seconds": 73.0
+  },
+  "factor_code": "\"\"\"Alpha factor definition \u2014 the ONLY file the agent may edit.\"\"\"\nfrom __future__ import annotations\nimport numpy as np\nimport pandas as pd\n\ndef compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:\n    \"\"\"Multi-timeframe momentum consistency: sign agreement across 3 windows.\"\"\"\n    results: dict[str, float] = {}\n    for sym in symbols:\n        try:\n            bars = data[\"bars\"].get(sym)\n            if bars is None or bars.empty: continue\n            b = bars.loc[:as_of]\n            if len(b) < 252: continue\n            close = b[\"close\"].values\n            # 3 momentum windows: 20d, 60d, 120d\n            r20 = close[-1] / close[-21] - 1\n            r60 = close[-1] / close[-61] - 1\n            r120 = close[-1] / close[-121] - 1\n            # Consistency score: average + bonus for alignment\n            avg = (r20 + r60 + r120) / 3\n            signs = np.sign([r20, r60, r120])\n            alignment = abs(signs.sum()) / 3  # 1.0 if all same sign\n            results[sym] = float(avg * alignment)\n        except Exception: continue\n    return results\n",
+  "timestamp": "20260329_043030"
+}

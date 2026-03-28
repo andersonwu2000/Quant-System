@@ -41,8 +41,12 @@ def evaluate():
     except subprocess.TimeoutExpired:
         return jsonify({"passed": False, "level": "TIMEOUT", "composite_score": 0, "best_icir": 0})
 
+    if result.returncode != 0 and not result.stdout.strip():
+        # evaluate.py crashed before producing output
+        return jsonify({"passed": False, "level": "CRASH", "composite_score": 0, "best_icir": 0})
+
     stdout = result.stdout
-    level = _extract(stdout, "level:")
+    level = _extract(stdout, "level:") or "UNKNOWN"
     passed = _extract(stdout, "passed:") == "True"
     composite = 0.0
     best_icir = 0.0

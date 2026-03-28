@@ -1,0 +1,27 @@
+{
+  "results": {
+    "passed": true,
+    "level": "L5",
+    "failure": "",
+    "composite_score": 16.8822,
+    "ic_20d": 0.0334,
+    "icir_by_horizon": {
+      "5d": 0.0517,
+      "10d": 0.071,
+      "20d": 0.2154,
+      "60d": 0.4377
+    },
+    "best_icir": 0.4377,
+    "best_horizon": "60d",
+    "avg_turnover": 0.6086,
+    "positive_years": 6,
+    "total_years": 8,
+    "fitness": 10.25,
+    "max_correlation": 0.053,
+    "correlated_with": "revenue_yoy",
+    "large_icir_20d": 0.382,
+    "elapsed_seconds": 86.8
+  },
+  "factor_code": "\"\"\"Alpha factor definition \u2014 the ONLY file the agent may edit.\"\"\"\nfrom __future__ import annotations\nimport numpy as np\nimport pandas as pd\n\ndef compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:\n    \"\"\"3-factor rank-sum: trend R\u00b2 + new-high freq + drawdown proximity.\"\"\"\n    r2s: dict[str, float] = {}\n    nhs: dict[str, float] = {}\n    dds: dict[str, float] = {}\n    for sym in symbols:\n        try:\n            bars = data[\"bars\"].get(sym)\n            if bars is None or bars.empty: continue\n            b = bars.loc[:as_of]\n            if len(b) < 252: continue\n            close = b[\"close\"].values[-252:]\n            c120 = close[-120:]\n            # Trend R\u00b2 \u00d7 direction\n            x = np.arange(120, dtype=float)\n            lc = np.log(c120)\n            coef = np.polyfit(x, lc, 1)\n            resid = lc - np.polyval(coef, x)\n            ss_tot = np.sum((lc - lc.mean()) ** 2)\n            if ss_tot < 1e-12: continue\n            r2 = 1 - np.sum(resid ** 2) / ss_tot\n            r2s[sym] = r2 * (1.0 if coef[0] > 0 else -1.0)\n            # New 20d high frequency\n            rm = pd.Series(c120).rolling(20).max().values\n            nhs[sym] = float(np.nansum(c120[19:] >= rm[19:]) / 101)\n            # Drawdown proximity\n            dds[sym] = float(close[-1] / np.max(close))\n        except Exception: continue\n    common = set(r2s) & set(nhs) & set(dds)\n    if len(common) < 10: return {}\n    syms = sorted(common)\n    def rank(d): a = np.array([d[s] for s in syms]); return a.argsort().argsort().astype(float)\n    combo = rank(r2s) + rank(nhs) + rank(dds)\n    return {syms[i]: float(combo[i]) for i in range(len(syms))}\n",
+  "timestamp": "20260329_035918"
+}
