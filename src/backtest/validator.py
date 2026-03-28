@@ -488,28 +488,50 @@ class StrategyValidator:
     def _market_correlation(
         self, result: BacktestResult, universe: list[str], start: str, end: str,
     ) -> float:
-        """計算策略日報酬和市場（0050.TW）的相關性。"""
+        """計算策略日報酬和市場（0050.TW）的相關性。
+
+        優先讀本地 parquet，fallback Yahoo。取得失敗回傳 1.0（fail-closed）。
+        """
+        strat_rets = result.daily_returns
+        if strat_rets is None or len(strat_rets) < 20:
+            return 1.0  # cannot verify independence → assume correlated
+
+        bench = self._load_0050(start, end)
+        if bench is None or len(bench) < 20:
+            return 1.0
+
         try:
-            strat_rets = result.daily_returns
-            if strat_rets is None or len(strat_rets) < 20:
-                return 0.0
-
-            # Load 0050 benchmark
-            from src.data.sources.yahoo import YahooFeed
-            feed = YahooFeed()
-            bench = feed.get_bars("0050.TW", start=start, end=end)
-            if bench is None or len(bench) < 20:
-                return 0.0
             bench_rets = bench["close"].pct_change().dropna()
-
-            # Align dates
             common = strat_rets.index.intersection(bench_rets.index)
             if len(common) < 20:
-                return 0.0
+                return 1.0
             corr = float(strat_rets.loc[common].corr(bench_rets.loc[common]))
-            return corr if np.isfinite(corr) else 0.0
+            return corr if np.isfinite(corr) else 1.0
         except Exception:
-            return 0.0
+            return 1.0
+
+    def _load_0050(self, start: str, end: str) -> pd.DataFrame | None:
+        """Load 0050.TW bars: local parquet first, Yahoo fallback."""
+        from pathlib import Path
+
+        local_path = Path(__file__).resolve().parent.parent.parent / "data" / "market" / "0050.TW_1d.parquet"
+        if local_path.exists():
+            try:
+                df = pd.read_parquet(local_path)
+                if "date" in df.columns:
+                    df["date"] = pd.to_datetime(df["date"])
+                    df = df.set_index("date").sort_index()
+                sliced = df.loc[start:end]
+                if len(sliced) >= 20:
+                    return sliced
+            except Exception:
+                pass
+
+        try:
+            from src.data.sources.yahoo import YahooFeed
+            return YahooFeed().get_bars("0050.TW", start=start, end=end)
+        except Exception:
+            return None
 
     @staticmethod
     def _compute_cvar(result: BacktestResult, alpha: float = 0.05) -> float:
@@ -710,36 +732,11 @@ class StrategyValidator:
     ) -> float:
         """計算 vs 0050.TW buy-and-hold 的年化超額報酬。
 
-        優先讀本地 parquet，fallback 到 Yahoo 下載。
         取得失敗回傳 -999（確保不自動通過）。
         """
-        bars = None
-        from pathlib import Path
-
-        # 1. Try local parquet first (works in Docker without network)
-        local_path = Path(__file__).resolve().parent.parent.parent / "data" / "market" / "0050.TW_1d.parquet"
-        if local_path.exists():
-            try:
-                df = pd.read_parquet(local_path)
-                if "date" in df.columns:
-                    df["date"] = pd.to_datetime(df["date"])
-                    df = df.set_index("date").sort_index()
-                bars = df.loc[start:end]
-            except Exception:
-                pass
-
-        # 2. Fallback to Yahoo
-        if bars is None or bars.empty or len(bars) < 20:
-            try:
-                from src.data.sources.yahoo import YahooFeed
-                feed = YahooFeed()
-                bars = feed.get_bars("0050.TW", start=start, end=end)
-            except Exception as e:
-                logger.warning("Benchmark 0050.TW unavailable: %s", e)
-                return -999.0  # fail-closed: cannot verify, do not auto-pass
-
-        if bars is None or bars.empty or len(bars) < 20:
-            logger.warning("Benchmark 0050.TW has insufficient data")
+        bars = self._load_0050(start, end)
+        if bars is None or len(bars) < 20:
+            logger.warning("Benchmark 0050.TW unavailable for %s~%s", start, end)
             return -999.0
 
         try:
