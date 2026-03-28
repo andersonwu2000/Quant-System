@@ -36,9 +36,10 @@ services:
     tmpfs:
       - /tmp:size=512m
     volumes:
-      - ./work:/app/work                            # reads factor.py, appends results.tsv
+      - ./work:/app/work:ro                         # reads factor.py only (H-2: least privilege)
       - ./watchdog_data:/app/watchdog_data           # factor_returns, pending, pbo
       - ../../src:/app/src:ro                        # evaluate.py dependencies
+      - ../../strategies:/app/strategies:ro           # strategy registry (H-1 fix)
       - ../../data:/app/data:ro                      # market + fundamental + research
       - ../../docs/research/autoresearch:/app/reports
     healthcheck:

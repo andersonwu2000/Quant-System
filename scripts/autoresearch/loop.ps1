@@ -13,7 +13,6 @@ param(
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = "D:\Finance\scripts\autoresearch" }
 $ProjectDir = "D:\Finance"
-$Credentials = "C:\Users\ander\.claude\.credentials.json"
 
 # Docker mode prompt (paths inside container)
 $dockerPrompt = @"

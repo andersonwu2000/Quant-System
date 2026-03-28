@@ -16,7 +16,6 @@ RUN pip install --no-cache-dir \
 # Copy immutable evaluation harness
 COPY scripts/autoresearch/evaluate.py /app/evaluate.py
 COPY docker/autoresearch/eval_server.py /app/eval_server.py
-COPY docker/autoresearch/watchdog.py /app/watchdog.py
 
 WORKDIR /app
 
