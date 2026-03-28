@@ -78,7 +78,7 @@ class ValidationConfig:
     # 6. OOS holdout
     oos_start: str = "2025-01-01"
     oos_end: str = "2025-12-31"
-    oos_min_sharpe: float = 0.0       # OOS Sharpe > 0（比 return > 0 更嚴格）
+    oos_min_sharpe: float = 0.3       # OOS Sharpe > 0.3（合理的風險調整報酬）
 
     # 7. vs 1/N benchmark
     benchmark_strategy: str = "equal_weight"  # 1/N 等權
@@ -533,7 +533,7 @@ class StrategyValidator:
             return {"return": r.total_return, "sharpe": r.sharpe}
         except Exception as e:
             logger.warning("OOS backtest failed: %s", e)
-            return {"return": 0.0, "sharpe": 0.0, "error": str(e)}
+            return {"return": 0.0, "sharpe": -999.0, "error": str(e)}
 
     def _compute_pbo(
         self,
@@ -545,11 +545,11 @@ class StrategyValidator:
     ) -> float:
         """Bailey (2015) CSCV PBO using orthogonal strategy variants.
 
-        Creates genuinely different strategy variants along multiple dimensions
-        (rebalance frequency, portfolio size, weighting) to avoid the
-        high-correlation trap of top_n subsets.
+        Creates genuinely different strategy variants along 3 dimensions
+        (portfolio size, weighting, rebalance frequency) to reduce
+        inter-variant correlation.
 
-        Requires ~10 backtests. Falls back to 0.5 if insufficient data.
+        Falls back to 0.5 (inconclusive) if insufficient data.
         """
         if strategy is None or universe is None:
             logger.warning("PBO: no strategy/universe provided, returning inconclusive (0.5)")
@@ -559,78 +559,100 @@ class StrategyValidator:
             from src.strategy.base import Context, Strategy as StrategyBase
 
             class _VariantStrategy(StrategyBase):
-                """Strategy variant with different selection/weighting."""
-                def __init__(self, base: Strategy, top_n: int, weight_mode: str = "equal"):
+                """Strategy variant with different selection/weighting/rebalance."""
+                def __init__(self, base: Strategy, top_n: int,
+                             weight_mode: str = "equal", rebal_skip: int = 0):
                     self._base = base
                     self._top_n = top_n
                     self._weight_mode = weight_mode
-                    self.name = f"{base.name}_n{top_n}_{weight_mode}"
+                    self._rebal_skip = rebal_skip  # skip N bars between rebalances
+                    self._bar_count = 0
+                    self._cached_weights: dict[str, float] = {}
+                    self.name = f"{base.name}_n{top_n}_{weight_mode}_s{rebal_skip}"
 
                 def on_bar(self, ctx: Context) -> dict[str, float]:
+                    self._bar_count += 1
+                    # Rebalance frequency variation: skip N bars
+                    if self._rebal_skip > 0 and self._bar_count % (self._rebal_skip + 1) != 1:
+                        return dict(self._cached_weights) if self._cached_weights else {}
+
                     weights = self._base.on_bar(ctx)
                     if not weights:
-                        return {}
+                        return dict(self._cached_weights) if self._cached_weights else {}
+
                     sorted_syms = sorted(weights, key=lambda s: weights[s], reverse=True)
                     selected = sorted_syms[:self._top_n]
                     if not selected:
                         return {}
+
                     if self._weight_mode == "signal":
-                        # Weight proportional to signal strength
-                        vals = {s: max(weights[s], 1e-9) for s in selected}
+                        vals = {s: max(weights[s], 0.0) for s in selected}
                         total = sum(vals.values())
-                        return {s: v / total for s, v in vals.items()}
+                        if total <= 0:
+                            result = {s: 1.0 / len(selected) for s in selected}
+                        else:
+                            result = {s: v / total for s, v in vals.items()}
                     elif self._weight_mode == "inverse_rank":
-                        # Inverse rank weighting (1st gets most)
                         n = len(selected)
                         rank_weights = {s: (n - i) for i, s in enumerate(selected)}
                         total = sum(rank_weights.values())
-                        return {s: v / total for s, v in rank_weights.items()}
+                        result = {s: v / total for s, v in rank_weights.items()}
                     else:
-                        # Equal weight
                         w = 1.0 / len(selected)
-                        return {s: w for s in selected}
+                        result = {s: w for s in selected}
 
-            # Generate orthogonal variants across 2 dimensions:
-            # - Portfolio size: 8, 12, 15, 20 (different concentration)
-            # - Weighting: equal, signal, inverse_rank (different allocation)
-            variant_configs = [
-                (8,  "equal"),         (8,  "signal"),
-                (12, "equal"),         (12, "signal"),        (12, "inverse_rank"),
-                (15, "equal"),         (15, "signal"),        (15, "inverse_rank"),
-                (20, "equal"),         (20, "inverse_rank"),
+                    self._cached_weights = result
+                    return dict(result)
+
+            # 3 dimensions of variation:
+            #   portfolio size: 8, 12, 15, 20
+            #   weighting: equal, signal, inverse_rank
+            #   rebalance skip: 0 (every bar), 1 (every 2nd bar)
+            variant_configs: list[tuple[int, str, int]] = [
+                (8,  "equal",        0),
+                (8,  "signal",       0),
+                (12, "equal",        0),
+                (12, "inverse_rank", 0),
+                (15, "equal",        0),
+                (15, "signal",       0),
+                (15, "inverse_rank", 1),
+                (20, "equal",        0),
+                (20, "signal",       1),
+                (20, "inverse_rank", 0),
             ]
 
             daily_returns_dict: dict[str, pd.Series] = {}
+            bt_config = self._make_bt_config(universe, start, end)
 
-            for top_n, wmode in variant_configs:
-                variant = _VariantStrategy(strategy, top_n, wmode)
+            for top_n, wmode, skip in variant_configs:
+                variant = _VariantStrategy(strategy, top_n, wmode, skip)
                 try:
-                    bt_config = self._make_bt_config(universe, start, end)
                     engine = BacktestEngine()
                     result = engine.run(variant, bt_config)
                     if result.daily_returns is not None and len(result.daily_returns) > 20:
-                        daily_returns_dict[f"n{top_n}_{wmode}"] = result.daily_returns
+                        daily_returns_dict[f"n{top_n}_{wmode}_s{skip}"] = result.daily_returns
                 except Exception as e:
-                    logger.debug("PBO variant n%d_%s failed: %s", top_n, wmode, e)
+                    logger.debug("PBO variant n%d_%s_s%d failed: %s", top_n, wmode, skip, e)
                     continue
 
             if len(daily_returns_dict) < 4:
-                logger.warning("PBO: only %d variants produced returns (need ≥4), "
+                logger.warning("PBO: only %d variants produced returns (need >=4), "
                                "returning inconclusive (0.5)", len(daily_returns_dict))
                 return 0.5
 
-            # Align all series by date
-            returns_matrix = pd.DataFrame(daily_returns_dict).dropna()
+            # Align by date — ffill(limit=5) then drop remaining NaN rows
+            # (avoids dropna() discarding entire rows when one variant has a gap)
+            returns_matrix = pd.DataFrame(daily_returns_dict)
+            returns_matrix = returns_matrix.ffill(limit=5).dropna()
             if len(returns_matrix) < 120:
                 logger.warning("PBO: insufficient aligned data (%d days < 120), "
                                "returning pessimistic (1.0)", len(returns_matrix))
                 return 1.0
 
-            # Use 8-16 partitions (each ≥ 60 trading days for stable Sharpe)
+            # 8-16 partitions, each >= 60 trading days for stable Sharpe
             n_parts = min(16, max(8, len(returns_matrix) // 60))
             if n_parts % 2 != 0:
                 n_parts -= 1
-            n_parts = max(n_parts, 4)
 
             pbo_result = compute_pbo(returns_matrix, n_partitions=n_parts)
             logger.info("PBO CSCV: %.3f (%d combos, %d variants, %d days, %d partitions)",
