@@ -4,28 +4,23 @@ import numpy as np
 import pandas as pd
 
 def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:
-    """Trend quality × new highs: R²×sign(slope) × new 20d high frequency."""
+    """52-week high proximity × new 20d high frequency."""
     results: dict[str, float] = {}
     for sym in symbols:
         try:
             bars = data["bars"].get(sym)
             if bars is None or bars.empty: continue
             b = bars.loc[:as_of]
-            if len(b) < 140: continue
+            if len(b) < 252: continue
             close = b["close"].values
-            # R² × direction
-            c120 = close[-120:]
-            x = np.arange(120)
-            coeffs = np.polyfit(x, c120, 1)
-            fitted = np.polyval(coeffs, x)
-            ss_res = np.sum((c120 - fitted) ** 2)
-            ss_tot = np.sum((c120 - np.mean(c120)) ** 2)
-            if ss_tot == 0: continue
-            r2d = (1 - ss_res / ss_tot) * np.sign(coeffs[0])
-            # New high frequency
+            # 52-week high proximity
+            high_52w = np.max(close[-252:])
+            if high_52w <= 0: continue
+            proximity = close[-1] / high_52w
+            # New high frequency over 120d
             c140 = close[-140:]
             count = sum(1 for i in range(20, 140) if c140[i] >= np.max(c140[i-20:i]))
             nhf = count / 120.0
-            results[sym] = float(r2d * nhf)
+            results[sym] = float(proximity * nhf)
         except Exception: continue
     return results
