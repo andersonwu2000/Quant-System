@@ -148,7 +148,7 @@ def compute_pbo(
         logit = float(np.log(p / (1.0 - p)))
         logits.append(logit)
 
-    pbo = overfit_count / len(selected_combos) if selected_combos else 0.0
+    pbo = overfit_count / len(selected_combos) if selected_combos else 1.0  # fail-closed
 
     return PBOResult(
         pbo=pbo,

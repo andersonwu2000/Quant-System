@@ -81,7 +81,15 @@ class SafetyChecker:
         if baseline > 0:
             result.drawdown = (baseline - portfolio_nav) / baseline
         else:
-            result.drawdown = 0.0
+            # Fail-closed: no valid baseline → assume worst-case
+            result.drawdown = 1.0
+            result.should_pause = True
+            result.alerts.append(AlphaAlert(
+                timestamp=datetime.now(),
+                level="critical",
+                category="safety",
+                message="Baseline NAV is zero or negative — emergency pause",
+            ))
 
         # 2. Consecutive loss days from snapshots
         result.consecutive_losses = self._count_consecutive_losses()

@@ -413,6 +413,9 @@ async def run_now(
                 for f in os.listdir(cache_dir):
                     if f.endswith("_1d.parquet") and not f.startswith("TEST"):
                         sym = f.replace("_1d.parquet", "")
+                        # Strip finmind_ prefix to get clean symbol
+                        if sym.startswith("finmind_"):
+                            sym = sym[len("finmind_"):]
                         try:
                             df = pd.read_parquet(os.path.join(cache_dir, f))
                             if not isinstance(df.index, pd.DatetimeIndex):

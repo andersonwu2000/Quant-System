@@ -485,13 +485,14 @@ class StrategyValidator:
     def _bootstrap_sharpe(self, result: BacktestResult, n_bootstrap: int) -> float:
         """Bootstrap P(Sharpe > 0)。"""
         # 使用 daily_returns（與 DSR 一致）
+        # Fail-closed: insufficient data → 0.0 (cannot verify → assume not significant)
         ret_series = getattr(result, 'daily_returns', None)
         if ret_series is None:
-            return 1.0 if result.sharpe > 0 else 0.0
+            return 0.0
 
         returns = ret_series.dropna().values
         if len(returns) < 20:
-            return 1.0 if result.sharpe > 0 else 0.0
+            return 0.0
 
         rng = np.random.default_rng(42)
         positive_count = 0
@@ -612,8 +613,8 @@ class StrategyValidator:
         Falls back to 0.5 (inconclusive) if insufficient data.
         """
         if strategy is None or universe is None:
-            logger.warning("PBO: no strategy/universe provided, returning inconclusive (0.5)")
-            return 0.5
+            logger.warning("PBO: no strategy/universe provided, returning pessimistic (1.0)")
+            return 1.0
 
         try:
             from src.strategy.base import Context, Strategy as StrategyBase
@@ -710,8 +711,8 @@ class StrategyValidator:
 
             if len(daily_returns_dict) < 4:
                 logger.warning("PBO: only %d variants produced returns (need >=4), "
-                               "returning inconclusive (0.5)", len(daily_returns_dict))
-                return 0.5
+                               "returning pessimistic (1.0)", len(daily_returns_dict))
+                return 1.0
 
             # Align by date — ffill(limit=5) then drop remaining NaN rows
             # (avoids dropna() discarding entire rows when one variant has a gap)
@@ -734,8 +735,8 @@ class StrategyValidator:
             return pbo_result.pbo
 
         except Exception as e:
-            logger.warning("PBO computation failed: %s — returning inconclusive (0.5)", e)
-            return 0.5
+            logger.warning("PBO computation failed: %s — returning pessimistic (1.0)", e)
+            return 1.0
 
     def _check_regime_breakdown(
         self,
