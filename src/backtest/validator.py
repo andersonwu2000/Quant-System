@@ -543,26 +543,28 @@ class StrategyValidator:
         start: str = "",
         end: str = "",
     ) -> float:
-        """Bailey (2015) CSCV PBO using real strategy variants.
+        """Bailey (2015) CSCV PBO using orthogonal strategy variants.
 
-        Generates K strategy variants (different top_n selections) and runs
-        full backtests to obtain daily return series. Then applies proper
-        Combinatorially Symmetric Cross-Validation.
+        Creates genuinely different strategy variants along multiple dimensions
+        (rebalance frequency, portfolio size, weighting) to avoid the
+        high-correlation trap of top_n subsets.
+
+        Requires ~10 backtests. Falls back to 0.5 if insufficient data.
         """
         if strategy is None or universe is None:
-            # Fallback: insufficient info for real CSCV
             logger.warning("PBO: no strategy/universe provided, returning inconclusive (0.5)")
             return 0.5
 
         try:
-            # Generate strategy variants with different top_n
             from src.strategy.base import Context, Strategy as StrategyBase
 
             class _VariantStrategy(StrategyBase):
-                def __init__(self, base: Strategy, top_n: int):
+                """Strategy variant with different selection/weighting."""
+                def __init__(self, base: Strategy, top_n: int, weight_mode: str = "equal"):
                     self._base = base
                     self._top_n = top_n
-                    self.name = f"{base.name}_top{top_n}"
+                    self._weight_mode = weight_mode
+                    self.name = f"{base.name}_n{top_n}_{weight_mode}"
 
                 def on_bar(self, ctx: Context) -> dict[str, float]:
                     weights = self._base.on_bar(ctx)
@@ -570,44 +572,70 @@ class StrategyValidator:
                         return {}
                     sorted_syms = sorted(weights, key=lambda s: weights[s], reverse=True)
                     selected = sorted_syms[:self._top_n]
-                    w = 1.0 / len(selected) if selected else 0.0
-                    return {s: w for s in selected}
+                    if not selected:
+                        return {}
+                    if self._weight_mode == "signal":
+                        # Weight proportional to signal strength
+                        vals = {s: max(weights[s], 1e-9) for s in selected}
+                        total = sum(vals.values())
+                        return {s: v / total for s, v in vals.items()}
+                    elif self._weight_mode == "inverse_rank":
+                        # Inverse rank weighting (1st gets most)
+                        n = len(selected)
+                        rank_weights = {s: (n - i) for i, s in enumerate(selected)}
+                        total = sum(rank_weights.values())
+                        return {s: v / total for s, v in rank_weights.items()}
+                    else:
+                        # Equal weight
+                        w = 1.0 / len(selected)
+                        return {s: w for s in selected}
 
-            variants_top_n = [5, 10, 15, 20, 25]
+            # Generate orthogonal variants across 2 dimensions:
+            # - Portfolio size: 8, 12, 15, 20 (different concentration)
+            # - Weighting: equal, signal, inverse_rank (different allocation)
+            variant_configs = [
+                (8,  "equal"),         (8,  "signal"),
+                (12, "equal"),         (12, "signal"),        (12, "inverse_rank"),
+                (15, "equal"),         (15, "signal"),        (15, "inverse_rank"),
+                (20, "equal"),         (20, "inverse_rank"),
+            ]
+
             daily_returns_dict: dict[str, pd.Series] = {}
 
-            for top_n in variants_top_n:
-                variant = _VariantStrategy(strategy, top_n)
+            for top_n, wmode in variant_configs:
+                variant = _VariantStrategy(strategy, top_n, wmode)
                 try:
                     bt_config = self._make_bt_config(universe, start, end)
                     engine = BacktestEngine()
                     result = engine.run(variant, bt_config)
                     if result.daily_returns is not None and len(result.daily_returns) > 20:
-                        daily_returns_dict[f"top{top_n}"] = result.daily_returns
+                        daily_returns_dict[f"n{top_n}_{wmode}"] = result.daily_returns
                 except Exception as e:
-                    logger.debug("PBO variant top_%d failed: %s", top_n, e)
+                    logger.debug("PBO variant n%d_%s failed: %s", top_n, wmode, e)
                     continue
 
-            if len(daily_returns_dict) < 2:
-                logger.warning("PBO: only %d variants produced returns, returning inconclusive (0.5)",
-                               len(daily_returns_dict))
+            if len(daily_returns_dict) < 4:
+                logger.warning("PBO: only %d variants produced returns (need ≥4), "
+                               "returning inconclusive (0.5)", len(daily_returns_dict))
                 return 0.5
 
             # Align all series by date
             returns_matrix = pd.DataFrame(daily_returns_dict).dropna()
-            if len(returns_matrix) < 60:
-                logger.warning("PBO: insufficient aligned data (%d days), returning pessimistic (1.0)",
-                               len(returns_matrix))
+            if len(returns_matrix) < 120:
+                logger.warning("PBO: insufficient aligned data (%d days < 120), "
+                               "returning pessimistic (1.0)", len(returns_matrix))
                 return 1.0
 
-            n_parts = min(16, max(4, len(returns_matrix) // 60))
+            # Use 8-16 partitions (each ≥ 60 trading days for stable Sharpe)
+            n_parts = min(16, max(8, len(returns_matrix) // 60))
             if n_parts % 2 != 0:
                 n_parts -= 1
+            n_parts = max(n_parts, 4)
 
             pbo_result = compute_pbo(returns_matrix, n_partitions=n_parts)
-            logger.info("PBO CSCV: %.3f (%d combos, %d variants, %d days)",
+            logger.info("PBO CSCV: %.3f (%d combos, %d variants, %d days, %d partitions)",
                         pbo_result.pbo, pbo_result.n_combinations,
-                        len(daily_returns_dict), len(returns_matrix))
+                        len(daily_returns_dict), len(returns_matrix), n_parts)
             return pbo_result.pbo
 
         except Exception as e:
