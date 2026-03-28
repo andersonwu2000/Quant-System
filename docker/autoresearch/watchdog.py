@@ -273,8 +273,20 @@ def _run_background_validator(results: dict, factor_code: str) -> dict | None:
                 w = 1.0 / len(selected)
                 return {s: w for s in selected}
 
+        # Dynamic n_trials from Factor-Level PBO clustering
+        _n_trials = 15
+        _pbo_path = WATCHDOG_DATA / "factor_pbo.json"
+        if _pbo_path.exists():
+            try:
+                import json as _j3
+                _n_ind = _j3.loads(_pbo_path.read_text(encoding="utf-8")).get("n_independent", 15)
+                if isinstance(_n_ind, (int, float)) and _n_ind >= 2:
+                    _n_trials = int(_n_ind)
+            except Exception:
+                pass
+
         config = ValidationConfig(
-            n_trials=15,  # ~15 independent hypothesis directions (Phase AB)
+            n_trials=_n_trials,
             initial_cash=10_000_000, min_universe_size=50, wf_train_years=2,
         )
 

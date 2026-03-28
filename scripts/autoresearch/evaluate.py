@@ -905,8 +905,22 @@ def _run_validator(results: dict) -> dict | None:
 
         print("\n--- VALIDATOR (15 checks) ---")
 
+        # Read n_independent from watchdog's Factor-Level PBO (dynamic, not hardcoded)
+        _n_trials = 15  # default fallback
+        try:
+            _pbo_path = Path("/app/watchdog_data/factor_pbo.json")
+            if not _pbo_path.exists():
+                _pbo_path = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "factor_pbo.json"
+            if _pbo_path.exists():
+                _pbo_data = json.loads(_pbo_path.read_text(encoding="utf-8"))
+                _n_ind = _pbo_data.get("n_independent", 15)
+                if isinstance(_n_ind, (int, float)) and _n_ind >= 2:
+                    _n_trials = int(_n_ind)
+        except Exception:
+            pass
+
         config = ValidationConfig(
-            n_trials=15,  # ~15 independent hypothesis directions (Phase AB)
+            n_trials=_n_trials,
             initial_cash=10_000_000, min_universe_size=50,
             wf_train_years=2,
         )
