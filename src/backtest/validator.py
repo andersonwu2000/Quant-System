@@ -439,7 +439,8 @@ class StrategyValidator:
 
         # 16. Permutation test (Phase AC: is the signal real or random?)
         logger.info("[Validator] Running permutation test...")
-        perm_p = self._permutation_test(result, strategy, universe, start, end)
+        perm_p = self._permutation_test(
+            result=result, strategy=strategy, universe=universe, start=start, end=end)
         report.checks.append(CheckResult(
             name="permutation_p",
             passed=perm_p < 0.10,
@@ -628,7 +629,6 @@ class StrategyValidator:
         except Exception:
             return None
 
-    @staticmethod
     def _permutation_test(
         self, result: BacktestResult, strategy: Strategy,
         universe: list[str], start: str, end: str,
