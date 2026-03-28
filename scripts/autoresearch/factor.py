@@ -4,10 +4,11 @@ import numpy as np
 import pandas as pd
 
 def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:
-    """4-way rank: vol-adj-mom + close-str + new-high + monotonicity."""
+    """5-way rank: vol-adj-mom + close-str + new-high + monotonicity + trend-R²."""
     mom_s: dict[str, float] = {}
     cs_s: dict[str, float] = {}
     nh_s: dict[str, float] = {}
+    mn_s: dict[str, float] = {}
     r2_s: dict[str, float] = {}
     for sym in symbols:
         try:
@@ -30,15 +31,22 @@ def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[
             # New 20d high frequency
             rm = pd.Series(c120).rolling(20).max().values
             nh_s[sym] = float(np.nansum(c120[19:] >= rm[19:]) / 101)
-            # Monotonicity (Kendall tau proxy on sampled 120d)
-            s = c120[::5]  # ~24 points
+            # Monotonicity
+            s = c120[::5]
             n = len(s)
             conc = sum(1 if s[j] > s[i] else -1 for i in range(n) for j in range(i+1, n))
-            r2_s[sym] = float(conc / (n * (n - 1) / 2))
+            mn_s[sym] = float(conc / (n * (n - 1) / 2))
+            # Trend R²
+            x = np.arange(120, dtype=float); lc = np.log(c120)
+            coef = np.polyfit(x, lc, 1)
+            ss_tot = np.sum((lc - lc.mean()) ** 2)
+            if ss_tot < 1e-12: continue
+            r2 = 1 - np.sum((lc - np.polyval(coef, x)) ** 2) / ss_tot
+            r2_s[sym] = r2 * (1.0 if coef[0] > 0 else -1.0)
         except Exception: continue
-    common = set(mom_s) & set(cs_s) & set(nh_s) & set(r2_s)
+    common = set(mom_s) & set(cs_s) & set(nh_s) & set(mn_s) & set(r2_s)
     if len(common) < 10: return {}
     syms = sorted(common)
     def rank(d): a = np.array([d[s] for s in syms]); return a.argsort().argsort().astype(float)
-    combo = rank(mom_s) + rank(cs_s) + rank(nh_s) + rank(r2_s)
+    combo = rank(mom_s) + rank(cs_s) + rank(nh_s) + rank(mn_s) + rank(r2_s)
     return {syms[i]: float(combo[i]) for i in range(len(syms))}
