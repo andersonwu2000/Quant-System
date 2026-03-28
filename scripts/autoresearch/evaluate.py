@@ -715,17 +715,40 @@ def main() -> None:
 
     if results["passed"]:
         print("\nstatus: PASSED (L5+ OOS validated)")
-        # Run Validator 15-check locally (no API dependency)
-        validator_report = _run_validator(results)
-        # Write report only if Validator passes deployment threshold
-        if validator_report and validator_report.get("deployed"):
-            _write_report(results, validator_report)
+        # Write pending marker for background Validator (watchdog picks it up)
+        _write_pending_marker(results)
         # Also try auto-submit to API (for paper deploy, if running)
         _auto_submit(results)
     elif results["composite_score"] > 0:
         print(f"\nstatus: evaluated ({results['level']})")
     else:
         print("\nstatus: no_signal")
+
+
+def _write_pending_marker(results: dict) -> None:
+    """Write a pending validation marker for background Validator (watchdog)."""
+    try:
+        # Read factor code
+        factor_path = Path(__file__).parent / "factor.py"
+        if not factor_path.exists():
+            factor_path = Path(__file__).parent / "work" / "factor.py"
+        factor_code = factor_path.read_text(encoding="utf-8") if factor_path.exists() else ""
+
+        pending_dir = Path(__file__).parent / "work" / "pending"
+        if not pending_dir.exists():
+            pending_dir = Path(__file__).parent / "pending"
+        pending_dir.mkdir(parents=True, exist_ok=True)
+
+        marker = {
+            "results": results,
+            "factor_code": factor_code,
+            "timestamp": time.strftime("%Y%m%d_%H%M%S"),
+        }
+        marker_path = pending_dir / f"{marker['timestamp']}.json"
+        marker_path.write_text(json.dumps(marker, indent=2, default=str), encoding="utf-8")
+        print(f"pending_validation: {marker_path.name}")
+    except Exception as e:
+        print(f"[WARN] pending marker write failed: {e}")
 
 
 def _run_validator(results: dict) -> dict | None:
