@@ -343,7 +343,7 @@ class StrategyValidator:
 
         # 3. PBO (needs Walk-Forward period returns as strategy variants)
         logger.info("[Validator] Computing PBO...")
-        pbo_val = self._compute_pbo(wf_results)
+        pbo_val = self._compute_pbo(wf_results, strategy=strategy, universe=universe, start=start, end=end)
         report.checks.append(CheckResult(
             name="pbo",
             passed=pbo_val <= cfg.max_pbo,
@@ -535,36 +535,83 @@ class StrategyValidator:
             logger.warning("OOS backtest failed: %s", e)
             return {"return": 0.0, "sharpe": 0.0, "error": str(e)}
 
-    def _compute_pbo(self, wf_results: list[dict[str, Any]]) -> float:
-        """用 Walk-Forward 各年的 Sharpe 估算 PBO。
+    def _compute_pbo(
+        self,
+        wf_results: list[dict[str, Any]],
+        strategy: Strategy | None = None,
+        universe: list[str] | None = None,
+        start: str = "",
+        end: str = "",
+    ) -> float:
+        """Bailey (2015) CSCV PBO using real strategy variants.
 
-        V4/V5 fix: 當 WF 年度不足時回傳 0.5（inconclusive），不再回傳 0.0（no overfit）。
-        同時標記此方法是近似值（synthetic noise variants，非真正 CSCV）。
-
-        NOTE: 正確的 PBO (Bailey 2015 CSCV) 需要每日報酬矩陣 × 多策略配置。
-        此處用 WF Sharpe + noise 作為近似，結果僅供參考。
+        Generates K strategy variants (different top_n selections) and runs
+        full backtests to obtain daily return series. Then applies proper
+        Combinatorially Symmetric Cross-Validation.
         """
-        sharpes = [r.get("sharpe", 0) for r in wf_results if "error" not in r]
-        if len(sharpes) < 4:
-            # 數據不足 → 回傳 1.0 (worst case)，不讓不可計算的 PBO 自動通過
-            logger.warning("PBO: insufficient WF data (%d years < 4), returning pessimistic (1.0)", len(sharpes))
-            return 1.0
+        if strategy is None or universe is None:
+            # Fallback: insufficient info for real CSCV
+            logger.warning("PBO: no strategy/universe provided, returning inconclusive (0.5)")
+            return 0.5
 
         try:
-            rng = np.random.default_rng(42)
-            n_variants = max(len(sharpes), 5)
-            variants = {}
-            for i in range(n_variants):
-                noise = rng.normal(0, 0.1, len(sharpes))
-                variants[f"v{i}"] = [s + n for s, n in zip(sharpes, noise)]
-            variants["original"] = sharpes
+            # Generate strategy variants with different top_n
+            from src.strategy.base import Context, Strategy as StrategyBase
 
-            returns_matrix = pd.DataFrame(variants)
-            n_parts = min(len(sharpes), 6)
+            class _VariantStrategy(StrategyBase):
+                def __init__(self, base: Strategy, top_n: int):
+                    self._base = base
+                    self._top_n = top_n
+                    self.name = f"{base.name}_top{top_n}"
+
+                def on_bar(self, ctx: Context) -> dict[str, float]:
+                    weights = self._base.on_bar(ctx)
+                    if not weights:
+                        return {}
+                    sorted_syms = sorted(weights, key=lambda s: weights[s], reverse=True)
+                    selected = sorted_syms[:self._top_n]
+                    w = 1.0 / len(selected) if selected else 0.0
+                    return {s: w for s in selected}
+
+            variants_top_n = [5, 10, 15, 20, 25]
+            daily_returns_dict: dict[str, pd.Series] = {}
+
+            for top_n in variants_top_n:
+                variant = _VariantStrategy(strategy, top_n)
+                try:
+                    bt_config = self._make_bt_config(universe, start, end)
+                    engine = BacktestEngine()
+                    result = engine.run(variant, bt_config)
+                    if result.daily_returns is not None and len(result.daily_returns) > 20:
+                        daily_returns_dict[f"top{top_n}"] = result.daily_returns
+                except Exception as e:
+                    logger.debug("PBO variant top_%d failed: %s", top_n, e)
+                    continue
+
+            if len(daily_returns_dict) < 2:
+                logger.warning("PBO: only %d variants produced returns, returning inconclusive (0.5)",
+                               len(daily_returns_dict))
+                return 0.5
+
+            # Align all series by date
+            returns_matrix = pd.DataFrame(daily_returns_dict).dropna()
+            if len(returns_matrix) < 60:
+                logger.warning("PBO: insufficient aligned data (%d days), returning pessimistic (1.0)",
+                               len(returns_matrix))
+                return 1.0
+
+            n_parts = min(16, max(4, len(returns_matrix) // 60))
+            if n_parts % 2 != 0:
+                n_parts -= 1
+
             pbo_result = compute_pbo(returns_matrix, n_partitions=n_parts)
+            logger.info("PBO CSCV: %.3f (%d combos, %d variants, %d days)",
+                        pbo_result.pbo, pbo_result.n_combinations,
+                        len(daily_returns_dict), len(returns_matrix))
             return pbo_result.pbo
+
         except Exception as e:
-            logger.warning("PBO computation failed: %s — returning inconclusive", e)
+            logger.warning("PBO computation failed: %s — returning inconclusive (0.5)", e)
             return 0.5
 
     def _check_regime_breakdown(
