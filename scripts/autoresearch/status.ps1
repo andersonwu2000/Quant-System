@@ -51,8 +51,8 @@ $alerts = docker logs autoresearch-watchdog --tail 200 2>&1 |
 
 $gitLog = git -C $WorkDir log --oneline -10 2>$null
 
-$deployReports = @(Get-ChildItem "D:\Finance\docs\research\autoresearch\*.md" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -ne "status.md" }).Count
+# Count deployed reports (Docker work/reports/ via bind mount)
+$deployReports = @(Get-ChildItem "D:\Finance\docker\autoresearch\work\reports\*.md" -ErrorAction SilentlyContinue).Count
 
 # --- Build report lines ---
 $sb = [System.Text.StringBuilder]::new()
@@ -95,6 +95,20 @@ if ($kept.Count -gt 0) {
     [void]$sb.AppendLine("|------:|-----:|-------|-------------|")
     foreach ($k in $kept) {
         [void]$sb.AppendLine("| $($k.Score) | $($k.ICIR) | $($k.Level) | $($k.Desc) |")
+    }
+}
+
+# Deployed factors (from reports)
+$reportFiles = @(Get-ChildItem "D:\Finance\docker\autoresearch\work\reports\*.md" -ErrorAction SilentlyContinue)
+if ($reportFiles.Count -gt 0) {
+    [void]$sb.AppendLine("")
+    [void]$sb.AppendLine("## Deployed Factors (Validator Passed)")
+    [void]$sb.AppendLine("")
+    foreach ($rf in $reportFiles) {
+        $rfContent = Get-Content $rf.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+        $rfTitle = if ($rfContent -match '# Factor Report: (.+)') { $Matches[1] } else { $rf.BaseName }
+        $rfValidator = if ($rfContent -match 'Validator: (\d+/\d+)') { $Matches[1] } else { "?" }
+        [void]$sb.AppendLine("- **$rfTitle** ($rfValidator) - ``$($rf.Name)``")
     }
 }
 
