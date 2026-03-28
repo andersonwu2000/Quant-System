@@ -134,7 +134,7 @@ def compute_pbo(
 
     # PBO = fraction of combinations where logit <= 0
     # (best-IS strategy ranked at or below median OOS)
-    pbo = sum(1 for l in logits if l <= 0) / len(logits) if logits else 1.0
+    pbo = sum(1 for val in logits if val <= 0) / len(logits) if logits else 1.0
 
     return PBOResult(
         pbo=pbo,
