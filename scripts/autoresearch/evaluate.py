@@ -831,21 +831,34 @@ def _write_report(results: dict, validator_report: dict) -> None:
             factor_path = Path(__file__).parent / "work" / "factor.py"
         factor_code = factor_path.read_text(encoding="utf-8") if factor_path.exists() else "(not found)"
 
-        # Extract name from git
+        # Extract name from factor.py docstring (works in Docker without git)
+        import re as _re
         name = "unknown"
+        name_safe = "unknown"
         try:
-            import subprocess
-            log = subprocess.run(
-                ["git", "log", "--oneline", "-1", "--format=%s"],
-                capture_output=True, text=True, timeout=5,
-                cwd=str(Path(__file__).parent),
-            )
-            if log.returncode == 0 and log.stdout.strip():
-                import re as _re
-                name = log.stdout.strip().replace("experiment: ", "")[:60]
-                name_safe = _re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+            factor_lines = factor_code.splitlines()
+            for line in factor_lines:
+                stripped = line.strip().strip('"').strip("'")
+                if stripped and not stripped.startswith(("from ", "import ", "def ", "#", "\"\"\"", "'''")) \
+                        and len(stripped) > 5:
+                    # First meaningful docstring line
+                    name = stripped[:80]
+                    name_safe = _re.sub(r'[^a-zA-Z0-9_-]', '_', name)[:60]
+                    break
+            # Fallback: try git (works on host, not in Docker)
+            if name == "unknown":
+                import subprocess
+                for cwd in [str(Path(__file__).parent / "work"), str(Path(__file__).parent)]:
+                    log = subprocess.run(
+                        ["git", "log", "--oneline", "-1", "--format=%s"],
+                        capture_output=True, text=True, timeout=5, cwd=cwd,
+                    )
+                    if log.returncode == 0 and log.stdout.strip():
+                        name = log.stdout.strip().replace("experiment: ", "")[:60]
+                        name_safe = _re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+                        break
         except Exception:
-            name_safe = "unknown"
+            pass
 
         ts = time.strftime("%Y%m%d_%H%M%S")
         report_path = report_dir / f"{ts}_{name_safe}.md"
