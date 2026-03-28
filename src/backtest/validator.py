@@ -476,11 +476,18 @@ class StrategyValidator:
 
         shared_feed = getattr(self, '_shared_feed', None)
 
+        import copy as _copy
+
         def _run_year(year: int) -> dict[str, Any]:
             try:
+                # deepcopy strategy to avoid mutable state race conditions
+                try:
+                    strat = _copy.deepcopy(strategy)
+                except Exception:
+                    strat = strategy
                 bt_config = self._make_bt_config(universe, f"{year}-01-01", f"{year}-12-31")
                 engine = BacktestEngine()
-                r = engine.run(strategy, bt_config, feed_override=shared_feed)
+                r = engine.run(strat, bt_config, feed_override=shared_feed)
                 return {
                     "year": year,
                     "return": r.total_return,
@@ -765,23 +772,22 @@ class StrategyValidator:
 
         from concurrent.futures import ThreadPoolExecutor
 
-        def _run_variant(args: tuple[int, str, int]) -> tuple[str, pd.Series | None]:
-            top_n, wmode, skip = args
-            variant = _VariantStrategy(strategy, top_n, wmode, skip)
+        # Sequential: strategy may have mutable state (e.g. _last_month cache)
+        # that is not thread-safe. deepcopy per variant to avoid race conditions.
+        import copy
+        for top_n, wmode, skip in variant_configs:
+            try:
+                strategy_copy = copy.deepcopy(strategy)
+            except Exception:
+                strategy_copy = strategy  # fallback if deepcopy fails
+            variant = _VariantStrategy(strategy_copy, top_n, wmode, skip)
             try:
                 engine = BacktestEngine()
                 result = engine.run(variant, bt_config, feed_override=shared_feed)
                 if result.daily_returns is not None and len(result.daily_returns) > 20:
-                    return f"n{top_n}_{wmode}_s{skip}", result.daily_returns
+                    daily_returns_dict[f"n{top_n}_{wmode}_s{skip}"] = result.daily_returns
             except Exception as e:
                 logger.debug("PBO event-driven n%d_%s_s%d failed: %s", top_n, wmode, skip, e)
-            return f"n{top_n}_{wmode}_s{skip}", None
-
-        n_workers = min(len(variant_configs), 4)
-        with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            for label, rets in pool.map(_run_variant, variant_configs):
-                if rets is not None:
-                    daily_returns_dict[label] = rets
 
         if len(daily_returns_dict) < 4:
             logger.warning("PBO event-driven: only %d variants (need >=4), returning 1.0",
