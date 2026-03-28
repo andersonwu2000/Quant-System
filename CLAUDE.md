@@ -62,6 +62,14 @@ Keep updates minimal — only touch sections affected by the change.
 - 變數名暗示的含義和實際值是否一致
 - Comment 說的邏輯和代碼邏輯是否一致
 
+### 4. 端到端驗證（新功能必做）
+- 新函式/新路徑寫完後**立刻跑一次**，不是只做文件審計
+- Docker 相關修改必須 `docker compose build && docker exec ... python` 實際測試
+- 涉及多模組串接的功能（如 evaluate.py → Validator → report），必須跑完整流程確認每一步都通
+- 使用 base class 的 API 前**先讀 base class 定義**（不要猜 attribute 名稱）
+- 異常/失敗路徑也要測（傳 None、空 list、不存在的路徑）
+- 如果跑不通就**不要 commit**，先修到能跑再提交
+
 ### 關鍵檔案（修改前必須看 `.claude/hooks/pre-edit-check.md`）
 - `src/backtest/analytics.py` — Sharpe/Sortino/CAGR/MDD/DSR
 - `src/backtest/validator.py` — 15 項驗證閘門
