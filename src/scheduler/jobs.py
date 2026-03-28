@@ -223,10 +223,10 @@ async def execute_rebalance(config: TradingConfig) -> None:
             # 透過 ExecutionService 下單
             trades = exec_svc.submit_orders(approved_orders, state.portfolio)
 
-            # 更新 Portfolio
+            # 更新 Portfolio — trade log BEFORE apply (crash recovery #40)
             if trades:
+                _save_trade_log(trades, active_strategy_name)
                 apply_trades(state.portfolio, trades)
-                _save_trade_log(trades, active_strategy_name)  # R10.5
                 logger.info("Rebalance completed: %d trades executed", len(trades))
 
         # 發送通知
@@ -390,8 +390,8 @@ async def monthly_revenue_rebalance(config: TradingConfig) -> None:
             # 下單
             trades = exec_svc.submit_orders(approved, state.portfolio)
             if trades:
+                _save_trade_log(trades, "revenue_momentum_hedged")  # crash recovery #40
                 apply_trades(state.portfolio, trades)
-                _save_trade_log(trades, "revenue_momentum_hedged")  # R10.5
                 logger.info("Monthly rebalance: %d trades, NAV=%s", len(trades), state.portfolio.nav)
 
         # 通知
