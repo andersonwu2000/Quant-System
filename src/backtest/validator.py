@@ -660,8 +660,9 @@ class StrategyValidator:
                 fund_dir=str(project_root / "data" / "fundamental"),
             )
 
-            # Permutation: run real factor once, then shuffle its cross-sectional rankings
-            # This preserves turnover structure (same stocks re-ranked, not random new stocks)
+            # Permutation: shuffle the stock-to-factor-value mapping with a FIXED
+            # permutation per trial. Same shuffle applied to ALL dates → preserves
+            # the turnover structure of the real factor (same stocks stay together).
             compute_fn = getattr(strategy, '_compute_fn', None)
             if compute_fn is None:
                 try:
@@ -676,19 +677,20 @@ class StrategyValidator:
                 return 0.5
             real_sharpe = float(real_rets.mean() / real_rets.std() * np.sqrt(252)) if real_rets.std() > 0 else 0
 
-            rng = np.random.default_rng(42)
             random_sharpes = []
             for i in range(n_permutations):
-                seed_i = 1000 + i
-                def shuffled_factor(symbols, as_of, data, _seed=seed_i):
-                    # Run real factor, then shuffle the rankings
+                # Fixed permutation: pre-generate a shuffle index, apply to ALL dates
+                perm_seed = 1000 + i
+                def shuffled_factor(symbols, as_of, data, _seed=perm_seed):
                     values = compute_fn(symbols, as_of, data)
                     if not values:
                         return {}
-                    syms = list(values.keys())
-                    vals = list(values.values())
-                    np.random.default_rng(_seed + hash(str(as_of)) % 10000).shuffle(vals)
-                    return dict(zip(syms, vals))
+                    syms = sorted(values.keys())  # deterministic order
+                    vals = [values[s] for s in syms]
+                    # Same shuffle for every date: seed depends only on permutation index
+                    idx = list(range(len(syms)))
+                    np.random.default_rng(_seed).shuffle(idx)
+                    return {syms[j]: vals[idx[j]] for j in range(len(syms))}
                 try:
                     rets = vbt.run_variant(shuffled_factor, top_n=15, weight_mode="equal")
                     if rets is not None and len(rets) > 60:
