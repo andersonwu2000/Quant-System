@@ -52,6 +52,19 @@ if (-not $Host) {
         Pop-Location
         Start-Sleep 5
     }
+    # Ensure work/ has git repo (volume mount overwrites image content)
+    $workDir = "$ProjectDir\docker\autoresearch\work"
+    if (-not (Test-Path "$workDir\.git")) {
+        Write-Host "  Initializing work/ git repo..." -ForegroundColor Gray
+        git -C $workDir init --quiet
+        git -C $workDir config user.email "agent@autoresearch"
+        git -C $workDir config user.name "autoresearch-agent"
+        if (Test-Path "$workDir\factor.py") {
+            git -C $workDir add factor.py .gitignore 2>$null
+            git -C $workDir commit -m "init: baseline" --quiet 2>$null
+        }
+    }
+
     # Verify evaluator health
     $health = docker exec autoresearch-agent bash -c "curl -s http://evaluator:5000/health" 2>$null
     if ($health -match "ok") {
