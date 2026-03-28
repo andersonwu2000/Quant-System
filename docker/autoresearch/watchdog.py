@@ -230,7 +230,7 @@ def _run_background_validator(results: dict, factor_code: str) -> dict | None:
         # Load universe
         universe_path = Path("/app/data/research/universe.txt")
         if universe_path.exists():
-            universe = [l.strip() for l in universe_path.read_text().splitlines() if l.strip()]
+            universe = [l.strip() for l in universe_path.read_text().splitlines() if l.strip()][:150]
         else:
             universe = []
             market_dir = Path("/app/data/market")

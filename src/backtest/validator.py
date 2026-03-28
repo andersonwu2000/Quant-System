@@ -224,12 +224,21 @@ class StrategyValidator:
             threshold=f">= {cfg.min_universe_size}",
         ))
 
+        # Pre-load shared feed (avoid re-reading parquets for each sub-backtest)
+        logger.info("[Validator] Pre-loading data feed...")
+        bt_config = self._make_bt_config(universe, start, end)
+        _pre_engine = BacktestEngine()
+        try:
+            self._shared_feed, _, self._shared_fundamentals = _pre_engine._load_data(bt_config)
+        except Exception:
+            self._shared_feed = None
+            self._shared_fundamentals = None
+
         # 1. Full backtest
         logger.info("[Validator] Running full backtest...")
         try:
-            bt_config = self._make_bt_config(universe, start, end)
             engine = BacktestEngine()
-            result = engine.run(strategy, bt_config)
+            result = engine.run(strategy, bt_config, feed_override=self._shared_feed)
             report.backtest_result = result
 
             report.checks.append(CheckResult(
@@ -458,11 +467,13 @@ class StrategyValidator:
         end_year = int(end[:4])
         test_years = list(range(start_year + cfg.wf_train_years, end_year + 1))
 
+        shared_feed = getattr(self, '_shared_feed', None)
+
         def _run_year(year: int) -> dict[str, Any]:
             try:
                 bt_config = self._make_bt_config(universe, f"{year}-01-01", f"{year}-12-31")
                 engine = BacktestEngine()
-                r = engine.run(strategy, bt_config)
+                r = engine.run(strategy, bt_config, feed_override=shared_feed)
                 return {
                     "year": year,
                     "return": r.total_return,
@@ -584,7 +595,7 @@ class StrategyValidator:
         try:
             bt_config = self._make_bt_config(universe, start, end)
             engine = BacktestEngine()
-            r = engine.run(strategy, bt_config)
+            r = engine.run(strategy, bt_config, feed_override=getattr(self, '_shared_feed', None))
             if r.nav_series is not None and len(r.nav_series) < 5:
                 return {"return": 0.0, "sharpe": 0.0,
                         "error": f"OOS {start}~{end}: only {len(r.nav_series)} days — data likely missing"}
@@ -687,13 +698,14 @@ class StrategyValidator:
 
             daily_returns_dict: dict[str, pd.Series] = {}
             bt_config = self._make_bt_config(universe, start, end)
+            pbo_feed = getattr(self, '_shared_feed', None)
 
             def _run_variant(args: tuple[int, str, int]) -> tuple[str, pd.Series | None]:
                 top_n, wmode, skip = args
                 variant = _VariantStrategy(strategy, top_n, wmode, skip)
                 try:
                     engine = BacktestEngine()
-                    result = engine.run(variant, bt_config)
+                    result = engine.run(variant, bt_config, feed_override=pbo_feed)
                     if result.daily_returns is not None and len(result.daily_returns) > 20:
                         return f"n{top_n}_{wmode}_s{skip}", result.daily_returns
                 except Exception as e:
@@ -815,7 +827,7 @@ class StrategyValidator:
             recent_start = (pd.Timestamp(end) - pd.Timedelta(days=calendar_days)).strftime("%Y-%m-%d")
             bt_config = self._make_bt_config(universe, recent_start, end)
             engine = BacktestEngine()
-            r = engine.run(strategy, bt_config)
+            r = engine.run(strategy, bt_config, feed_override=getattr(self, '_shared_feed', None))
             if r.nav_series is not None and len(r.nav_series) < 5:
                 return {"sharpe": 0.0, "start": recent_start, "end": end,
                         "error": f"Only {len(r.nav_series)} trading days — data likely missing"}
