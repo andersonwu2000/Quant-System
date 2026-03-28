@@ -452,32 +452,35 @@ class StrategyValidator:
         start: str,
         end: str,
     ) -> list[dict[str, Any]]:
-        """滾動 Walk-Forward。"""
+        """滾動 Walk-Forward（並行化各年份）。"""
         cfg = self.config
         start_year = int(start[:4])
         end_year = int(end[:4])
-        results: list[dict[str, Any]] = []
+        test_years = list(range(start_year + cfg.wf_train_years, end_year + 1))
 
-        # Generate windows
-        for test_year in range(start_year + cfg.wf_train_years, end_year + 1):
-            test_start = f"{test_year}-01-01"
-            test_end = f"{test_year}-12-31"
+        def _run_year(year: int) -> dict[str, Any]:
             try:
-                bt_config = self._make_bt_config(universe, test_start, test_end)
+                bt_config = self._make_bt_config(universe, f"{year}-01-01", f"{year}-12-31")
                 engine = BacktestEngine()
                 r = engine.run(strategy, bt_config)
-                results.append({
-                    "year": test_year,
+                return {
+                    "year": year,
                     "return": r.total_return,
                     "cagr": r.annual_return,
                     "sharpe": r.sharpe,
                     "max_drawdown": r.max_drawdown,
                     "trades": r.total_trades,
-                })
+                }
             except Exception as e:
-                results.append({"year": test_year, "sharpe": 0.0, "error": str(e)})
+                return {"year": year, "sharpe": 0.0, "error": str(e)}
 
-        return results
+        from concurrent.futures import ThreadPoolExecutor
+        import os as _os2
+        n_workers = min(len(test_years), int(_os2.environ.get("WF_WORKERS", 4)))
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            results = list(pool.map(_run_year, test_years))
+
+        return sorted(results, key=lambda r: r["year"])
 
     def _bootstrap_sharpe(self, result: BacktestResult, n_bootstrap: int) -> float:
         """Bootstrap P(Sharpe > 0)。"""
@@ -684,16 +687,26 @@ class StrategyValidator:
             daily_returns_dict: dict[str, pd.Series] = {}
             bt_config = self._make_bt_config(universe, start, end)
 
-            for top_n, wmode, skip in variant_configs:
+            def _run_variant(args: tuple) -> tuple[str, pd.Series | None]:
+                top_n, wmode, skip = args
                 variant = _VariantStrategy(strategy, top_n, wmode, skip)
                 try:
                     engine = BacktestEngine()
                     result = engine.run(variant, bt_config)
                     if result.daily_returns is not None and len(result.daily_returns) > 20:
-                        daily_returns_dict[f"n{top_n}_{wmode}_s{skip}"] = result.daily_returns
+                        return f"n{top_n}_{wmode}_s{skip}", result.daily_returns
                 except Exception as e:
                     logger.debug("PBO variant n%d_%s_s%d failed: %s", top_n, wmode, skip, e)
-                    continue
+                return f"n{top_n}_{wmode}_s{skip}", None
+
+            # Run variants in parallel (threads — avoids pickle issues with nested classes)
+            from concurrent.futures import ThreadPoolExecutor
+            import os as _os2
+            n_workers = min(len(variant_configs), int(_os2.environ.get("PBO_WORKERS", 4)))
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                for label, rets in pool.map(_run_variant, variant_configs):
+                    if rets is not None:
+                        daily_returns_dict[label] = rets
 
             if len(daily_returns_dict) < 4:
                 logger.warning("PBO: only %d variants produced returns (need >=4), "

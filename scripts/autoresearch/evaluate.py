@@ -756,15 +756,18 @@ def _run_validator(results: dict) -> dict | None:
                 symbols = ctx.universe()
                 as_of = pd.Timestamp(ctx.now())
                 if _is_3arg:
+                    # Build data dict using Context's public API
+                    revenue = {}
+                    for s in symbols:
+                        rev = ctx.get_revenue(s, lookback_months=36)
+                        if rev is not None and not rev.empty:
+                            revenue[s] = rev
                     data = {
-                        "bars": {s: ctx.bars(s) for s in symbols},
-                        "revenue": {},
+                        "bars": {s: ctx.bars(s, lookback=500) for s in symbols},
+                        "revenue": revenue,
                         "institutional": {},
                         "pe": {}, "pb": {}, "roe": {},
                     }
-                    if hasattr(ctx, "_fundamentals") and ctx._fundamentals:
-                        data["revenue"] = getattr(ctx._fundamentals, "revenue", {})
-                        data["institutional"] = getattr(ctx._fundamentals, "institutional", {})
                     values = compute_factor(symbols, as_of, data)
                 else:
                     values = compute_factor(symbols, as_of)
