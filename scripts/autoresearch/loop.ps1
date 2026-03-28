@@ -2,6 +2,9 @@
 # Usage: powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1
 # Stop: Ctrl+C
 
+# Enable hooks enforcement (PreToolUse hooks check this)
+$env:AUTORESEARCH = "1"
+
 $prompt = @"
 Read scripts/autoresearch/program.md for the full research protocol, then begin the experiment loop.
 Start now. Your first action should be reading program.md.
@@ -12,6 +15,7 @@ while ($true) {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "  Autoresearch session starting...      " -ForegroundColor Cyan
     Write-Host "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
+    Write-Host "  Hooks: AUTORESEARCH=$env:AUTORESEARCH" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 
