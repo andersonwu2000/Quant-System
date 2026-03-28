@@ -101,7 +101,7 @@ class ValidationConfig:
     min_recent_sharpe: float = 0.0    # 最近 1 年 Sharpe > 0
 
     # 14. Market correlation
-    max_market_corr: float = 0.90     # |corr with market| < 0.90（需有獨立 alpha）
+    max_market_corr: float = 0.80     # |corr with market| < 0.80（實測好策略 corr 0.3-0.6）
 
     # 15. CVaR / tail risk
     max_cvar_95: float = -0.05        # Daily CVaR(95%) > -5%（允許最差 5% 日均損 < 5%）
@@ -307,7 +307,7 @@ class StrategyValidator:
             err_years = [str(r.get("year", "?")) for r in error_wf]
             wf_detail += f" (excluded {len(error_wf)} folds: {','.join(err_years)})"
         report.checks.append(CheckResult(
-            name="walkforward_positive_ratio",
+            name="temporal_consistency",
             passed=positive_ratio >= cfg.wf_min_positive_ratio,
             value=f"{positive_ratio:.0%}",
             threshold=f">= {cfg.wf_min_positive_ratio:.0%}",
@@ -366,14 +366,15 @@ class StrategyValidator:
             detail=oos_detail,
         ))
 
-        # 7. vs 0050.TW benchmark
-        logger.info("[Validator] Running 0050.TW benchmark comparison...")
-        excess = self._vs_benchmark(result, universe, start, end)
+        # 7. vs equal-weight universe benchmark (Phase AC: replaces 0050)
+        logger.info("[Validator] Running equal-weight benchmark comparison...")
+        excess = self._vs_ew_benchmark(result, universe, start, end)
         report.checks.append(CheckResult(
-            name="vs_0050_excess",
+            name="vs_ew_universe",
             passed=excess >= cfg.min_excess_return,
             value=f"{excess:+.2%}",
             threshold=f">= {cfg.min_excess_return:+.2%}",
+            detail="vs equal-weight universe average (measures selection alpha, not size premium)",
         ))
 
         # 3. PBO (needs Walk-Forward period returns as strategy variants)
@@ -858,6 +859,73 @@ class StrategyValidator:
             threshold=f">= {max_worst_loss:+.0%}",
             detail=f"Worst year: {worst_year}",
         )
+
+    def _vs_ew_benchmark(
+        self,
+        result: BacktestResult,
+        universe: list[str],
+        start: str,
+        end: str,
+    ) -> float:
+        """計算 vs 等權 universe average 的年化超額報酬。
+
+        等權 universe = 全 universe 等權持有的報酬。
+        和策略的唯一差別是選股 → 測量純 selection alpha。
+        """
+        from pathlib import Path
+        import os as _os
+
+        try:
+            project_root = Path(_os.environ.get("PROJECT_ROOT",
+                                str(Path(__file__).resolve().parent.parent.parent)))
+            market_dir = project_root / "data" / "market"
+
+            # Load daily returns for all universe stocks
+            all_returns: list[pd.Series] = []
+            for sym in universe:
+                bare = sym.replace(".TW", "").replace(".TWO", "")
+                for pattern in [f"{sym}_1d.parquet", f"{sym}.parquet", f"finmind_{bare}.parquet"]:
+                    path = market_dir / pattern
+                    if not path.exists():
+                        continue
+                    try:
+                        df = pd.read_parquet(path)
+                        if "date" in df.columns:
+                            df["date"] = pd.to_datetime(df["date"])
+                            df = df.set_index("date").sort_index()
+                        if "close" in df.columns:
+                            sliced = df.loc[start:end]["close"]
+                            if len(sliced) > 20:
+                                all_returns.append(sliced.pct_change().dropna())
+                    except Exception:
+                        pass
+                    break
+
+            if len(all_returns) < 20:
+                logger.warning("EW benchmark: only %d stocks loaded", len(all_returns))
+                return -999.0
+
+            # Equal-weight daily return = mean of all stock daily returns
+            ew_matrix = pd.DataFrame({f"s{i}": r for i, r in enumerate(all_returns)})
+            ew_daily = ew_matrix.mean(axis=1).dropna()
+            if len(ew_daily) < 60:
+                return -999.0
+
+            ew_clean = ew_daily.replace([np.inf, -np.inf], np.nan).dropna()
+            ew_clean = ew_clean.clip(lower=-0.5)  # cap extreme daily losses
+            if len(ew_clean) < 60:
+                return -999.0
+            ew_total = float((1 + ew_clean).prod() - 1)
+            if ew_total <= -1:
+                return -999.0
+            n_years = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
+                else max(len(ew_clean) / 252, 0.5)
+            ew_annual = (1 + ew_total) ** (1 / n_years) - 1
+            return float(result.annual_return - ew_annual)
+
+        except Exception as e:
+            logger.warning("EW benchmark failed: %s", e)
+            return -999.0
 
     def _vs_benchmark(
         self,
