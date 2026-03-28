@@ -271,7 +271,16 @@ class RevenueMomentumStrategy(Strategy):
         if self.weight_method == "signal":
             weights = signal_weight(signals, constraints)
         elif self.weight_method == "risk_parity":
-            weights = risk_parity(signals, {}, constraints)
+            # B-4 fix: compute 20d volatilities for risk_parity (was passing empty {})
+            vols = {}
+            for sym in signals:
+                bars = ctx.bars(sym, lookback=25)
+                if bars is not None and len(bars) >= 20:
+                    rets = bars["close"].pct_change().dropna()
+                    vols[sym] = float(rets.std()) if len(rets) > 1 else 0.20
+                else:
+                    vols[sym] = 0.20  # default vol
+            weights = risk_parity(signals, vols, constraints)
         else:
             weights = equal_weight(signals, constraints)
 

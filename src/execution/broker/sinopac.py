@@ -456,11 +456,12 @@ class SinopacBroker(BrokerAdapter):
                 filled_qty = Decimal(str(msg.get("quantity", 0)))
                 filled_price = Decimal(str(msg.get("price", 0)))
 
-                # 加權平均成交價（而非直接覆蓋）
-                prev_notional = order.filled_avg_price * order.filled_qty
-                order.filled_qty += filled_qty
-                new_notional = prev_notional + filled_price * filled_qty
-                order.filled_avg_price = new_notional / order.filled_qty if order.filled_qty > 0 else filled_price
+                # B-10 fix: write filled_qty/avg_price inside lock
+                with self._lock:
+                    prev_notional = order.filled_avg_price * order.filled_qty
+                    order.filled_qty += filled_qty
+                    new_notional = prev_notional + filled_price * filled_qty
+                    order.filled_avg_price = new_notional / order.filled_qty if order.filled_qty > 0 else filled_price
 
                 if order.filled_qty >= order.quantity:
                     order.status = OrderStatus.FILLED

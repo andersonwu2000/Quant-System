@@ -319,15 +319,11 @@ def create_app() -> FastAPI:
                         continue
 
                     if state.risk_engine.kill_switch(state.portfolio):
-                        state.kill_switch_fired = True  # D2: prevent re-trigger
-                        try:
-                            from src.metrics import KILL_SWITCH_TRIGGERS
-                            KILL_SWITCH_TRIGGERS.labels(path="poll").inc()
-                        except Exception:
-                            pass
-
-                        # Acquire mutation lock for portfolio changes
+                        # B-7 fix: set flag and re-check inside lock to prevent double liquidation
                         async with state.mutation_lock:
+                            if state.kill_switch_fired:
+                                continue  # another path already handled it
+                            state.kill_switch_fired = True
                             for name in list(state.strategies):
                                 state.strategies[name]["status"] = "stopped"
                             state.oms.cancel_all()
