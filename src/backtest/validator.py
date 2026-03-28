@@ -657,7 +657,9 @@ class StrategyValidator:
         from pathlib import Path
         import time as _time
 
-        project_root = Path(__file__).resolve().parent.parent
+        import os as _os
+        project_root = Path(_os.environ.get("PROJECT_ROOT",
+                            str(Path(__file__).resolve().parent.parent.parent)))
         data_dir = project_root / "data" / "market"
         fund_dir = project_root / "data" / "fundamental"
 
