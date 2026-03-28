@@ -21,6 +21,7 @@ services:
     volumes:
       - ../../data:/app/data:ro
       - ../../src:/app/src:ro
+      - ../../docs/research/autoresearch:/app/reports
       - ./work:/app/work
 
   watchdog:

@@ -52,7 +52,7 @@ $alerts = docker logs autoresearch-watchdog --tail 200 2>&1 |
 $gitLog = git -C $WorkDir log --oneline -10 2>$null
 
 # Count deployed reports (Docker work/reports/ via bind mount)
-$deployReports = @(Get-ChildItem "D:\Finance\docker\autoresearch\work\reports\*.md" -ErrorAction SilentlyContinue).Count
+$deployReports = @(Get-ChildItem "D:\Finance\docs\research\autoresearch\*.md" -ErrorAction SilentlyContinue).Count
 
 # --- Build report lines ---
 $sb = [System.Text.StringBuilder]::new()
@@ -99,7 +99,7 @@ if ($kept.Count -gt 0) {
 }
 
 # Deployed factors (from reports)
-$reportFiles = @(Get-ChildItem "D:\Finance\docker\autoresearch\work\reports\*.md" -ErrorAction SilentlyContinue)
+$reportFiles = @(Get-ChildItem "D:\Finance\docs\research\autoresearch\*.md" -ErrorAction SilentlyContinue)
 if ($reportFiles.Count -gt 0) {
     [void]$sb.AppendLine("")
     [void]$sb.AppendLine("## Deployed Factors (Validator Passed)")

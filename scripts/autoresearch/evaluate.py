@@ -819,17 +819,11 @@ def _run_validator(results: dict) -> dict | None:
 def _write_report(results: dict, validator_report: dict) -> None:
     """Write a factor report only when Validator passes deployment threshold."""
     try:
-        # Try project docs first, fallback to work/ (Docker read-only root)
-        report_dir = PROJECT_ROOT / "docs" / "research" / "autoresearch"
-        try:
-            report_dir.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            # Docker: /app/docs is read-only, write to work/ instead
-            work_dir = Path(__file__).parent / "work"
-            if not work_dir.exists():
-                work_dir = Path(__file__).parent
-            report_dir = work_dir / "reports"
-            report_dir.mkdir(parents=True, exist_ok=True)
+        # Docker: /app/reports is bind-mounted to docs/research/autoresearch/
+        # Local: PROJECT_ROOT/docs/research/autoresearch/
+        report_dir = Path("/app/reports") if Path("/app/reports").exists() \
+            else PROJECT_ROOT / "docs" / "research" / "autoresearch"
+        report_dir.mkdir(parents=True, exist_ok=True)
 
         # Read factor code
         factor_path = Path(__file__).parent / "factor.py"
