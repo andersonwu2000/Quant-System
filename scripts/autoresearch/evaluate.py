@@ -511,7 +511,8 @@ def _library_health_metrics(known_ics: dict[str, list[float]]) -> dict:
 
 def _replace_factor(old_name: str, new_ic_series: list[float], new_icir: float) -> str:
     """Replace old factor with new one in baseline_ic_series.json. Returns new name."""
-    new_name = f"factor_{time.strftime('%Y%m%d_%H%M%S')}"
+    from datetime import datetime as _dtnow
+    new_name = f"factor_{_dtnow.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
     read_path = _dedup_read_path()
     raw = {}
@@ -1122,27 +1123,45 @@ def _write_learning(results: dict) -> None:
         learnings_dir.mkdir(parents=True, exist_ok=True)
         learnings_path = learnings_dir / "learnings.jsonl"
 
-        # Extract direction from factor.py docstring
+        # AF-M1 fix: extract direction from compute_factor docstring (first triple-quoted line)
         direction = "unknown"
         try:
             factor_path = Path(__file__).parent / "factor.py"
             if not factor_path.exists():
                 factor_path = Path(__file__).parent / "work" / "factor.py"
             if factor_path.exists():
-                for line in factor_path.read_text(encoding="utf-8").splitlines():
-                    stripped = line.strip().strip('"').strip("'")
-                    if stripped and not stripped.startswith(("from ", "import ", "def ", "#", '"""', "'''")):
-                        direction = stripped[:80]
-                        break
+                src = factor_path.read_text(encoding="utf-8")
+                # Find docstring inside compute_factor
+                in_func = False
+                for line in src.splitlines():
+                    if "def compute_factor" in line:
+                        in_func = True
+                        continue
+                    if in_func:
+                        stripped = line.strip().strip('"').strip("'")
+                        if stripped and not stripped.startswith(("#",)):
+                            direction = stripped[:80]
+                            break
         except Exception:
             pass
+
+        # AF-H1 fix: bucket ICIR (same as /evaluate) to prevent leaking precise values
+        raw_icir = abs(results.get("best_icir", 0))
+        if raw_icir >= 0.40:
+            icir_bucket = "strong"
+        elif raw_icir >= 0.20:
+            icir_bucket = "moderate"
+        elif raw_icir >= 0.10:
+            icir_bucket = "weak"
+        else:
+            icir_bucket = "none"
 
         entry = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "direction": direction,
             "level": results.get("level", ""),
             "passed": results.get("passed", False),
-            "best_icir": round(results.get("best_icir", 0), 4),
+            "icir": icir_bucket,
             "failure": results.get("failure", ""),
             "max_correlation": round(results.get("max_correlation", 0), 3),
             "correlated_with": results.get("correlated_with", ""),

@@ -13,6 +13,13 @@ app = Flask(__name__)
 # 單線程是刻意的 — 評估必須序列化，防止併發 evaluate 耗盡資源
 # evaluate.py 需要 5-60 秒，不需要 gunicorn
 
+# Bucket boundaries (AF-M3: centralized)
+ICIR_THRESHOLDS = (0.40, 0.20, 0.10)        # strong / moderate / weak / none
+SCORE_THRESHOLDS = (15, 5, 0)                # high / medium / low / none
+SATURATION_HIGH = 10
+SATURATION_MEDIUM = 5
+MAX_REPLACEMENTS_PER_CYCLE = 10
+
 
 def _extract(text: str, prefix: str) -> str:
     """Extract value after prefix from evaluate.py stdout."""
@@ -33,7 +40,8 @@ def learnings():
     """Return filtered experience summary — direction descriptions only, no precise ICIR."""
     learnings_path = "/app/watchdog_data/learnings.jsonl"
     try:
-        lines = open(learnings_path, encoding="utf-8").readlines()
+        with open(learnings_path, encoding="utf-8") as f:
+            lines = f.readlines()
     except FileNotFoundError:
         lines = []
 
@@ -60,7 +68,7 @@ def learnings():
             direction_stats[d]["l3_corr_fail"] += 1
 
     successful = [{"direction": d, "variants_tried": s["tried"],
-                    "saturation": "HIGH" if s["tried"] >= 10 else "MEDIUM" if s["tried"] >= 5 else "LOW"}
+                    "saturation": "HIGH" if s["tried"] >= SATURATION_HIGH else "MEDIUM" if s["tried"] >= SATURATION_MEDIUM else "LOW"}
                    for d, s in direction_stats.items() if s["passed"] > 0]
     failed = [d for d, s in direction_stats.items() if s["passed"] == 0 and s["tried"] >= 2]
     forbidden = [d for d, s in direction_stats.items() if s["l3_corr_fail"] >= 3]
@@ -69,7 +77,8 @@ def learnings():
     library_health = {}
     try:
         health_path = "/app/watchdog_data/library_health.json"
-        health_data = json.loads(open(health_path, encoding="utf-8").read())
+        with open(health_path, encoding="utf-8") as f:
+            health_data = json.loads(f.read())
         library_health = {
             "avg_corr": health_data.get("avg_pairwise_corr", 0),
             "effective_n": health_data.get("effective_n", 0),
@@ -80,12 +89,13 @@ def learnings():
         pass
 
     # Replacement budget remaining
-    replacement_budget = 10
+    replacement_budget = MAX_REPLACEMENTS_PER_CYCLE
     try:
         counter_path = "/app/watchdog_data/l5_query_count.json"
-        counter_data = json.loads(open(counter_path, encoding="utf-8").read())
+        with open(counter_path, encoding="utf-8") as f:
+            counter_data = json.loads(f.read())
         used = counter_data.get("replacement_count", 0)
-        replacement_budget = max(0, 10 - used)
+        replacement_budget = max(0, MAX_REPLACEMENTS_PER_CYCLE - used)
     except Exception:
         pass
 
@@ -131,11 +141,11 @@ def evaluate():
         best_icir = float(_extract(stdout, "best_icir:"))
     except (ValueError, TypeError):
         pass
-    if best_icir >= 0.40:
+    if best_icir >= ICIR_THRESHOLDS[0]:
         icir_bucket = "strong"
-    elif best_icir >= 0.20:
+    elif best_icir >= ICIR_THRESHOLDS[1]:
         icir_bucket = "moderate"
-    elif best_icir >= 0.10:
+    elif best_icir >= ICIR_THRESHOLDS[2]:
         icir_bucket = "weak"
     else:
         icir_bucket = "none"
@@ -146,11 +156,11 @@ def evaluate():
         composite = float(_extract(stdout, "composite_score:"))
     except (ValueError, TypeError):
         pass
-    if composite >= 15:
+    if composite >= SCORE_THRESHOLDS[0]:
         score_bucket = "high"
-    elif composite >= 5:
+    elif composite >= SCORE_THRESHOLDS[1]:
         score_bucket = "medium"
-    elif composite > 0:
+    elif composite > SCORE_THRESHOLDS[2]:
         score_bucket = "low"
     else:
         score_bucket = "none"
