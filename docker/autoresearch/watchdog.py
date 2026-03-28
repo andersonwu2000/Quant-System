@@ -194,6 +194,7 @@ def _run_background_validator(results: dict, factor_code: str) -> dict | None:
                        if p.default is inspect.Parameter.empty]) >= 3
 
         class _FactorStrategy(Strategy):
+            _compute_fn = compute_factor  # expose for PBO vectorized access
             def name(self) -> str:
                 return "autoresearch_candidate"
             def on_bar(self, ctx: Context) -> dict[str, float]:

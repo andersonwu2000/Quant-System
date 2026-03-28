@@ -617,11 +617,16 @@ class StrategyValidator:
         universe: list[str] | None = None,
         start: str = "",
         end: str = "",
+        compute_fn: Any = None,
     ) -> float:
         """Bailey (2015) CSCV PBO using vectorized backtest (Phase Z1).
 
         Uses VectorizedPBOBacktest for ~100x speedup over event-driven.
         10 orthogonal variants (3 dimensions: size × weight × rebal).
+
+        Args:
+            compute_fn: Optional compute_factor function. If not provided,
+                        tries to extract from strategy or import from factor module.
         """
         if strategy is None or universe is None:
             logger.warning("PBO: no strategy/universe provided, returning pessimistic (1.0)")
@@ -629,16 +634,16 @@ class StrategyValidator:
 
         try:
             from src.backtest.vectorized import VectorizedPBOBacktest
-            import inspect
 
-            # Get compute_factor from strategy's on_bar
-            # Strategy wraps compute_factor — extract it
-            compute_fn = None
-            if hasattr(strategy, '_base'):
-                # _VariantStrategy or similar wrapper
-                compute_fn = getattr(strategy._base, '_compute_fn', None)
+            # Resolve compute_factor function
             if compute_fn is None:
-                # Try to import from factor module directly
+                # Try strategy attributes
+                if hasattr(strategy, '_compute_fn'):
+                    compute_fn = strategy._compute_fn
+                elif hasattr(strategy, '_base') and hasattr(strategy._base, '_compute_fn'):
+                    compute_fn = strategy._base._compute_fn
+            if compute_fn is None:
+                # Try import from factor module
                 try:
                     from factor import compute_factor as _cf  # type: ignore[import-not-found]
                     compute_fn = _cf
