@@ -22,8 +22,8 @@ Repeat until the human interrupts you:
 7. **Keep or discard:**
    - If `level=L5` and `passed=True` → `status=keep`, tag: `git tag factor-<name>`
    - If `level=L4` (promising but not yet OOS-validated) → `status=keep`
-   - If crash → `status=crash`, `git reset --hard HEAD~1`, log error
-   - Otherwise → `status=discard`, `git reset --hard HEAD~1`
+   - If crash → `status=crash`, restore factor.py: `git checkout HEAD~1 -- factor.py && git reset --soft HEAD~1`, log error
+   - Otherwise → `status=discard`, restore factor.py: `git checkout HEAD~1 -- factor.py && git reset --soft HEAD~1`
    - **Diversity matters:** A factor reaching L3+ in a NEW dimension (e.g. institutional flows when you've only tried revenue) is more valuable than squeezing +0.01 from an already-explored dimension.
 8. **Go to step 1**
 
@@ -51,7 +51,7 @@ Repeat until the human interrupts you:
 **Git commands are limited to:**
 - `git add factor.py`
 - `git commit -m "experiment: ..."`
-- `git reset --hard HEAD~1` (only to undo YOUR most recent commit)
+- `git checkout HEAD~1 -- factor.py && git reset --soft HEAD~1` (to undo YOUR most recent commit — NEVER use `git reset --hard`)
 - `git tag factor-<name>`
 - `git log --oneline -5`
 
