@@ -660,15 +660,37 @@ class StrategyValidator:
                 fund_dir=str(project_root / "data" / "fundamental"),
             )
 
-            # Random factor: shuffle stock returns cross-sectionally each month
+            # Permutation: run real factor once, then shuffle its cross-sectional rankings
+            # This preserves turnover structure (same stocks re-ranked, not random new stocks)
+            compute_fn = getattr(strategy, '_compute_fn', None)
+            if compute_fn is None:
+                try:
+                    from factor import compute_factor as _cf  # type: ignore[import-not-found]
+                    compute_fn = _cf
+                except ImportError:
+                    return 0.5  # inconclusive
+
+            # Get real factor's Sharpe via vectorized backtest
+            real_rets = vbt.run_variant(compute_fn, top_n=15, weight_mode="equal")
+            if real_rets is None or len(real_rets) < 60:
+                return 0.5
+            real_sharpe = float(real_rets.mean() / real_rets.std() * np.sqrt(252)) if real_rets.std() > 0 else 0
+
             rng = np.random.default_rng(42)
             random_sharpes = []
-            for _ in range(n_permutations):
-                def random_factor(symbols, as_of, data):
-                    # Random ranking — no signal, just noise
-                    return {s: rng.random() for s in symbols}
+            for i in range(n_permutations):
+                seed_i = 1000 + i
+                def shuffled_factor(symbols, as_of, data, _seed=seed_i):
+                    # Run real factor, then shuffle the rankings
+                    values = compute_fn(symbols, as_of, data)
+                    if not values:
+                        return {}
+                    syms = list(values.keys())
+                    vals = list(values.values())
+                    np.random.default_rng(_seed + hash(str(as_of)) % 10000).shuffle(vals)
+                    return dict(zip(syms, vals))
                 try:
-                    rets = vbt.run_variant(random_factor, top_n=15, weight_mode="equal")
+                    rets = vbt.run_variant(shuffled_factor, top_n=15, weight_mode="equal")
                     if rets is not None and len(rets) > 60:
                         sr = float(rets.mean() / rets.std() * np.sqrt(252)) if rets.std() > 0 else 0
                         random_sharpes.append(sr)
@@ -678,7 +700,7 @@ class StrategyValidator:
             if len(random_sharpes) < 50:
                 return 0.5  # inconclusive
 
-            p_value = sum(1 for s in random_sharpes if s >= result.sharpe) / len(random_sharpes)
+            p_value = sum(1 for s in random_sharpes if s >= real_sharpe) / len(random_sharpes)
             return p_value
 
         except Exception as e:
