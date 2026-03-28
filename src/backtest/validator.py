@@ -257,8 +257,9 @@ class StrategyValidator:
 
         # 8. Turnover + cost（兩邊都年化比較）
         # V2 fix: 用 gross alpha（net + cost）作為分母，而非 net return
-        # n_years uses calendar days / 365.25 (correct for annualization)
-        n_years = max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
+        # Use trading days / 252 (consistent with analytics.py CAGR calculation)
+        n_years = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
+            else max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
         annual_cost_rate = result.total_commission / cfg.initial_cash / n_years
         gross_alpha = result.annual_return + annual_cost_rate  # gross ≈ net + cost
         cost_ratio = annual_cost_rate / abs(gross_alpha) if gross_alpha > 0 else 1.0
@@ -274,7 +275,7 @@ class StrategyValidator:
         logger.info("[Validator] Running Walk-Forward...")
         wf_results = self._run_walkforward(strategy, universe, start, end)
         report.walkforward_results = wf_results
-        oos_sharpes = [r["sharpe"] for r in wf_results if "sharpe" in r]
+        oos_sharpes = [r["sharpe"] for r in wf_results if "sharpe" in r and "error" not in r]
         positive_ratio = sum(1 for s in oos_sharpes if s > 0) / max(len(oos_sharpes), 1)
         report.checks.append(CheckResult(
             name="walkforward_positive_ratio",
@@ -477,7 +478,7 @@ class StrategyValidator:
         for _ in range(n_bootstrap):
             sample = rng.choice(returns, size=len(returns), replace=True)
             mean_r = sample.mean()
-            std_r = sample.std()
+            std_r = sample.std(ddof=1)
             if std_r > 0:
                 sr = mean_r / std_r * np.sqrt(252)
                 if sr > 0:
@@ -533,7 +534,7 @@ class StrategyValidator:
             return {"return": r.total_return, "sharpe": r.sharpe}
         except Exception as e:
             logger.warning("OOS backtest failed: %s", e)
-            return {"return": 0.0, "sharpe": -999.0, "error": str(e)}
+            return {"return": 0.0, "sharpe": 0.0, "error": str(e)}
 
     def _compute_pbo(
         self,
