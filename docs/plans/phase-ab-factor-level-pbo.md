@@ -109,41 +109,46 @@ def compute_factor_level_pbo(returns_dir, min_factors=20):
 
 直接複用 `src/backtest/overfitting.py` 的 `compute_pbo()`，只是輸入從 10 個 portfolio 變體改成 N 個因子。
 
-## 3. 實作步驟
+## 3. 實作步驟（依審批意見修正）
 
-### Step 1：evaluate.py 存 daily returns（改動小）
+### Phase 1（立即）：DSR n_trials 修正
 
-在 L5 評估完成後（不管 pass/fail），用已有的 `_mask_data` + `_compute_forward_returns` 計算因子的 daily returns 並存檔。
+**一行改動，立即反映多重測試風險。**
 
-**關鍵：所有因子都存，包含 L1/L2 就失敗的。** Bailey 要求 N 包含失敗的試驗。但 L0（複雜度失敗）不存（沒有因子值可算）。
+```python
+# evaluate.py 和 watchdog.py 的 ValidationConfig
+# 從 n_trials=1 改成獨立假說方向數
+config = ValidationConfig(n_trials=15, ...)  # ~15 個獨立方向
+```
 
-實際上 L1 失敗的因子 IC < 0.02，其 daily returns 接近 0。存下來對 PBO 有意義（它們是 null hypothesis 的樣本）。
+獨立方向定義：revenue / technical-momentum / OBV / MA-fraction / ER / liquidity / combo 等，
+大約 10-15 個不同的因子族群。精確數可從 results.tsv 的去重後方向數推算。
 
-**效能考量：** 計算 daily returns 需要跑一次向量化回測（~5-10 秒），加在每次 evaluate.py 後面。目前每個實驗 ~2 分鐘，多 5-10 秒可接受。
+### Phase 2（如 Phase 1 不足）：Factor-Level PBO
 
-### Step 2：watchdog 偵測 + 計算 PBO（改動中）
+#### Step 2a：evaluate.py 存 daily returns
 
-watchdog 每 60 秒檢查 `work/factor_returns/`。當累積 >= 20 個因子後開始算 Factor-Level PBO。
+只存**獨立方向的代表因子**（每族群 1 個 best），不存 233 個全部。
+用 IC series correlation < 0.50 判定是否為不同方向。
 
-**累積計算 vs 全量計算：**
-- 前 20 個：全量計算
-- 之後每新增 5 個：重新計算（含所有歷史因子）
-- 避免每次都重算（N=200 時 CSCV 可能慢）
+#### Step 2b：watchdog 計算 Factor-Level PBO
 
-### Step 3：報告整合
+N = 獨立方向數（~10-15），不是總因子數（233）。
+先跑 pilot 驗證：隨機因子 PBO → ~1.0，好因子 PBO < 0.50。
 
-Factor-Level PBO 寫入：
-- `docs/research/status.md`（自動更新）
-- 每個部署報告（watchdog 的 `_write_background_report`）
+#### Step 2c：報告整合
 
-### Step 4：保留現有 PBO 作為 construction_sensitivity
+Factor-Level PBO 寫入 status.md + 部署報告。
 
-現有的 10 variant PBO **不刪**，改名為 `construction_sensitivity`。兩個指標並存：
+### Phase 3（長期）：自動化獨立假說判定
 
-| 指標 | 含義 | 門檻 |
-|------|------|------|
-| `factor_pbo` | 因子選擇的過擬合（Bailey 原意） | <= 0.50 |
-| `construction_sensitivity` | portfolio 構建的參數敏感度 | 參考，不硬擋 |
+- IC series correlation 自動聚類
+- 每個 cluster 取 best 做 PBO
+- 自動更新 N
+
+### 保留現有 PBO
+
+現有的 10 variant PBO **不刪**，改名 `construction_sensitivity`。不硬擋，作為穩健性參考。
 
 ## 4. 對現有系統的影響
 
@@ -167,13 +172,25 @@ Factor-Level PBO 寫入：
 
 ## 5. 部署門檻調整
 
+### Phase 1：DSR n_trials 修正（立即）
+
 | 現在 | 改後 |
 |------|------|
-| `pbo <= 0.70`（construction sensitivity） | `factor_pbo <= 0.50`（Bailey 原意） |
+| `n_trials=1` | `n_trials=~15`（獨立假說方向數） |
 
-0.50 是 Bailey 原論文的標準門檻：> 0.50 代表超過一半的 IS/OOS 分割中最佳因子在 OOS 表現低於中位數。
+N=233（全部因子）太嚴（DSR=0.31，所有因子 fail）。
+N=1（現在）太鬆（沒有多重測試校正）。
+N=~15（獨立方向數：revenue / technical / OBV / MA / combo 等）最合理。
 
-**但前 20 個因子期間無法算 factor_pbo** — 用 `construction_sensitivity` 作為過渡，門檻維持 0.70。
+### Phase 2：Factor-Level PBO（如 Phase 1 不足）
+
+| 指標 | 門檻 | 含義 |
+|------|------|------|
+| `factor_pbo` | <= 0.50 | Bailey 原意：因子選擇過擬合 |
+| `construction_sensitivity` | 參考 | 改名自現有 PBO |
+
+N 應該是**獨立方向數**（~10-15），不是總因子數（233）。
+判定獨立方向：IC series correlation < 0.50 = 不同假說。
 
 ## 6. 驗證
 
@@ -196,9 +213,140 @@ Factor-Level PBO 寫入：
 
 | Step | 工作量 | 依賴 |
 |------|--------|------|
-| Step 1: evaluate.py 存 daily returns | 1 小時 | 無 |
-| Step 2: watchdog factor-level PBO | 1 小時 | Step 1 |
-| Step 3: 報告整合 + 門檻調整 | 30 分鐘 | Step 2 |
-| Step 4: 現有 PBO 改名 | 15 分鐘 | Step 2 |
-| 驗證 + 測試 | 1 小時 | Step 1-4 |
-| **總計** | **~4 小時** | |
+| Phase 1: DSR n_trials 修正 | 15 分鐘 | 無 |
+| Phase 1: 驗證 + 跑 Validator | 30 分鐘 | Phase 1 |
+| Phase 2a: evaluate.py 存 daily returns | 1 小時 | Phase 1 驗證後決定 |
+| Phase 2b: watchdog factor-level PBO | 1 小時 | Phase 2a |
+| Phase 2c: 報告整合 | 30 分鐘 | Phase 2b |
+| 現有 PBO 改名 | 15 分鐘 | Phase 2b |
+| **Phase 1 總計** | **~45 分鐘** | |
+| **Phase 1+2 總計** | **~4 小時** | |
+
+---
+
+## 8. 審批意見（2026-03-28）
+
+**審批結果：核心洞察正確，但建議簡化實作路徑。**
+
+### 學術正確性驗證
+
+經查閱 Bailey et al. (2014) 原論文、R `pbo` 套件、pypbo、及多篇複製研究：
+
+| 問題 | 結論 |
+|------|------|
+| N = 所有測試過的因子？ | **正確** — 原文定義 N = "all model configurations tried by the researcher, including failed ones" |
+| 現有 10-variant PBO 不是 Bailey 原意？ | **正確** — 那是 construction sensitivity，不是 selection overfitting |
+| 包含失敗因子？ | **正確** — 原文明確要求 "disregarding failed trials will only underestimate the probability of overfitting" |
+| PBO ≤ 0.50 門檻？ | **正確** — Bailey 標準門檻 |
+| factor_pbo + construction_sensitivity 並存？ | **合理** — 但 construction_sensitivity 不應叫 PBO |
+
+**Phase AB 的核心洞察（「現有 PBO 測的是錯的東西」）是正確的。**
+
+### 風險與注意事項
+
+#### R-01: 沒有直接文獻先例
+
+所有找到的 PBO 實作（R pbo、pypbo、MQL5、OpenSourceQuant）都是用在**同一策略框架的參數調優**上，不是跨因子比較。Phase AB 是 novel application。不代表不正確，但沒有前人驗證過。
+
+#### R-02: 不同因子的 daily returns 可比性存疑
+
+Bailey 原論文的例子都是同一策略框架的參數變體，回報序列特性相近（波動率、持倉結構）。200 個不同因子公式的回報序列在分佈上可能差異巨大（OBV slope vs revenue z-score）。直接組成 T×N 矩陣做 CSCV 是否合理，需要實證確認。
+
+#### R-03: DSR 可能是更直接的替代方案
+
+對於「從 200 個因子中選最好的」這個問題，DSR 直接用 N=200 調整 Sharpe ratio 更簡單：
+- DSR 只需要最終選定因子的 SR + N，不需要保存所有因子的 daily returns
+- 系統已有 DSR 實作（`deflated_sharpe()`），只需正確傳入 `n_trials=實際測試因子數`
+- Bailey 的框架中 DSR 和 PBO 是互補的，不需要兩個都做 factor-level
+
+目前 Validator 的 DSR 用 `n_trials=1`，如果改成 `n_trials=200+`（autoresearch 實際測試數），DSR 會大幅下降 — 這本身就是 multiple testing 的正確反映。
+
+#### R-04: 按 family 分 N 可能低估過擬合
+
+計畫提到「同 family 內測試過的因子數」。但 Bailey 的 N 應該是整個研究過程中所有測試過的配置，不分 family。如果 revenue family 測了 50 個、technical 測了 100 個、combination 測了 50 個，N 應該是 200，不是分別 50/100/50。
+
+### 建議
+
+#### 優先做（低成本高收益）
+
+**直接把 DSR 的 n_trials 改成實際測試因子數。** 一行代碼的改動，立即反映 multiple testing 風險：
+
+```python
+# 現在
+config = ValidationConfig(n_trials=1, ...)
+
+# 改後
+config = ValidationConfig(n_trials=len(results_tsv_rows), ...)
+```
+
+這比建整套 factor_returns 存儲 + CSCV 計算管線簡單 100 倍，而且在 Bailey 框架中是等價的防護。
+
+#### 長期做（Phase AB 原計畫）
+
+如果 DSR(N=200+) 的結果太嚴格（可能所有因子都通不過），再考慮 Factor-Level PBO。PBO 的優勢是非參數化 — 不像 DSR 假設 SR 的分佈，PBO 直接看排名。
+
+但此時需要先回答 R-02（可比性）的問題：用真實資料跑一次，確認不同因子的 daily returns 組成的 M 矩陣做 CSCV 的結果是否 sensible。
+
+### DSR(N=233) 的實際影響
+
+以 revenue_momentum_hedged（Sharpe 0.879, T=1764 天）為例：
+
+| N | DSR | 通過 0.95? | 通過 0.70? |
+|--:|:---:|:----------:|:----------:|
+| 1 | 0.990 | ✅ | ✅ |
+| 5 | 0.871 | ❌ | ✅ |
+| 10 | 0.773 | ❌ | ✅ |
+| 50 | 0.519 | ❌ | ❌ |
+| 100 | 0.418 | ❌ | ❌ |
+| 233 | 0.311 | ❌ | ❌ |
+
+**N=233 時 DSR=0.311 — Sharpe 0.879 在 233 次測試後不具統計顯著性。**
+
+這意味著：
+- 如果把 `n_trials` 直接改成 233，**所有因子都會 fail DSR**（即使 Sharpe > 1.0 也只有 ~0.4）
+- DSR 門檻 0.95 在 N > 5 時就很難通過（除非 Sharpe > 2.0）
+- 門檻 0.70 在 N > 20 時就過不了
+
+### 這代表什麼
+
+**不是 DSR 太嚴格 — 是 233 次測試後真的沒有統計顯著的 alpha。** 這是 multiple testing 的數學事實：測試越多，需要越高的 Sharpe 才能排除偶然。Harvey (2016) 的 t > 3.0 門檻（相當於年化 Sharpe > 0.45 × √(N/252)）在 N=233 時要求 Sharpe > 1.4。
+
+**但這也暴露了一個問題：N=233 是整個 autoresearch 的因子搜索數，但 Validator 是對單一因子做驗證。** 如果我們把 N=233 應用到每個因子的 DSR，等於假設每個因子都是從 233 個候選中選出的最好的。但實際上 autoresearch 的 233 個因子中大部分是同一方向的微小變體（RevAccel 的 3M/9M vs 4M/8M vs 3M/6M），不是 233 個獨立假說。
+
+### 更新的建議
+
+1. **不要直接用 N=233 做 DSR** — 會 kill 所有因子，且不反映實際的獨立假說數
+2. **用「有效獨立假說數」** — 233 個因子中真正不同的方向（revenue vs technical vs OBV vs MA fraction 等）可能只有 ~10-15 個。用 N=15 做 DSR → 0.773，更合理
+3. **Factor-Level PBO 的價值在這裡** — PBO 不像 DSR 那樣對 N 做全域懲罰，而是直接比較 IS/OOS 排名。如果 15 個獨立方向中最好的在 OOS 仍排名前 50%，PBO < 0.50，這比 DSR(N=15)=0.773 提供更直接的過擬合判斷
+4. **Phase AB 仍值得做，但 N 應該是獨立方向數（~10-15），不是總因子數（233）**
+
+### 修正後的執行順序
+
+```
+Phase 1（立即）：
+  - Validator DSR 的 n_trials 從 1 改成 ~15（獨立假說方向數）
+  - 記錄結果：DSR(N=15) 對現有因子的影響
+
+Phase 2（Phase AB，如果 Phase 1 不足）：
+  - 只用 ~15 個獨立方向的因子做 Factor-Level PBO
+  - 不用 233 個全部因子（大部分是微小變體，膨脹 N）
+  - 先跑 pilot：確認隨機因子 PBO → 1.0，好因子 PBO < 0.5
+
+Phase 3（長期）：
+  - 定義「獨立假說」的自動化判定（IC series correlation < 0.50 = 不同假說）
+  - 每次 autoresearch 完成後自動計算有效 N 和 factor-level PBO
+```
+
+### 回覆（2026-03-28）
+
+審批意見全部接受。計畫已修正：
+
+| 審批項 | 修正 |
+|--------|------|
+| R-01 沒有直接文獻先例 | 接受風險，Phase 2 先跑 pilot 驗證 |
+| R-02 不同因子 returns 可比性 | 只用獨立方向的代表因子（N=~15），不用 233 個全部 |
+| R-03 DSR 是更直接的替代 | **Phase 1 改為先修 DSR n_trials**，一行改動立即生效 |
+| R-04 按 family 分 N 低估 | 改為用獨立方向數（~15），不分 family |
+| DSR(N=233) kill all | 不用 N=233，用獨立方向數 N=~15 |
+
+執行順序：Phase 1（DSR n_trials=15）→ 驗證 → 決定是否需要 Phase 2
