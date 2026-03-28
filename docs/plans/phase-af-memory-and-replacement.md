@@ -395,7 +395,82 @@ FinLab 的 3x 效率**主要來自 (a)**（避免重複探索死路），不是 
 - `diversity_ratio < 0.30` → **WARN**（記錄到 learnings）
 - `diversity_ratio < 0.15` → **BLOCK**（嚴重退化，15% 方差獨立 = 因子庫幾乎全部冗餘）
 
-## 8. 參考
+## 8. 最終審批（2026-03-29）
+
+### 判定：✅ 核准執行。附 3 個條件。
+
+兩輪審批（§5, §7）提出 6 個問題，§6 和 §8 的回覆都合理。分歧已在折衷方案中解決。以下是最終判定：
+
+### 已解決的分歧（不再追蹤）
+
+| 分歧 | 折衷方案 | 判定 |
+|------|---------|------|
+| baseline 保留 historical vs 只用 active | 只用 active + PBO 捕捉整體風險 | ✅ 接受作者方案。如果 clone 復活 → 再加 historical |
+| 替換是否跑 L5 | 跑 L5 但上限 10 次/週期 | ✅ 合理折衷。30+10=40 次仍在 Thresholdout budget 內 |
+| diversity_ratio 門檻 | 0.30 WARN / 0.15 BLOCK | ✅ 雙門檻比單門檻好。0.15 BLOCK 有安全底線 |
+| 記憶 vs multiple testing | forbidden zones 為主 + saturation 標記 | ✅ 正確區分了兩種記憶功能 |
+
+### 核准條件（必須在實作時滿足）
+
+**條件 1：replacement_count 必須記錄到 learnings.jsonl 和 l5_query_count.json**
+
+§8 回覆說「最多 10 次替換嘗試」，但沒有說這個 counter 存在哪裡、怎麼重置。
+
+要求：
+- `replacement_count` 和 `l5_query_count` 一起存在 `watchdog_data/l5_query_count.json`
+- 每輪研究重置（和 L5 budget 生命週期一致）
+- `/learnings` API 回傳 `replacement_budget_remaining`
+
+**條件 2：saturation 必須在 evaluator 強制，不是 prompt 建議**
+
+§8 寫了 `"guidance": "Explore LOW saturation directions first"`。但 LESSONS #1 說「agent 的安全靠隔離不靠指令」。
+
+**獨立驗證修正：** 原審批建議「docstring 方向名 + L0 阻擋」不可靠 — agent 控制 docstring，改一個詞就繞過。且 L0 沒有 IC series 數據。
+
+修正為：**L3 correlation-based saturation**。如果新因子和某個 active 因子 corr > 0.50，且該 active 因子已被匹配 >= 10 次 → L3 fail（除非符合 1.3× 替換條件）。用實際數據判定，agent 無法繞過。
+
+```python
+# 在 L3 dedup check 中：
+if max_corr > 0.50:
+    match_count = get_match_count(most_correlated_factor)  # 從 learnings 讀
+    if match_count >= 10 and not meets_replacement_criteria(new_icir, correlated_icir):
+        return L3_FAIL("direction saturated: {match_count} variants tried for {most_correlated}")
+```
+
+**條件 3：第一次替換前必須手動確認因子庫狀態**
+
+替換機制是不可逆的（被替換的因子從 active 移除）。在自動化之前：
+- 確認 `baseline_ic_series.json` 的 active 因子數量和內容
+- 確認 `library_health_metrics` 的 baseline 值
+- 手動跑一次替換流程（用已知因子對）驗證邏輯正確
+
+### 最終實施步驟（v3）
+
+| Step | 內容 | 來源 |
+|------|------|------|
+| 1 | learnings.jsonl 寫入 | §2.1 |
+| 2 | `/learnings` API（方向描述 + saturation + forbidden） | §6 #2 |
+| 3 | program.md 加 learnings 讀取指引 | §3 |
+| 4 | 因子替換邏輯（L3，一對一，1.3× ICIR，跑 L5） | §2.2 + §8 A |
+| 5 | replacement_count + l5_query_count 合併追蹤 | 條件 1 |
+| 6 | library_health_metrics（avg_corr, effective_n, diversity_ratio） | §6 #1 |
+| 7 | diversity 雙門檻（0.30 WARN / 0.15 BLOCK） | §8 C |
+| 8 | direction saturation 強制限制（variants >= 10 → L0） | 條件 2 |
+| 9 | 手動驗證替換流程 | 條件 3 |
+| **預估** | **~2.5 小時** | |
+
+### 風險追蹤清單
+
+以下項目在實作後觀察，每月覆核：
+
+| 項目 | 觀察指標 | 行動觸發條件 |
+|------|---------|-------------|
+| 1.3× ICIR 門檻是否合適 | 替換次數 / 替換成功率 | 成功率 < 30% → 降到 1.2×；> 80% → 升到 1.5× |
+| clone 復活問題 | 替換後 L3 通過率是否異常升高 | L3 pass rate 突增 > 50% → 加回 historical dedup |
+| 記憶導致方向集中 | learnings 中 directions_explored 的增長速度 | 連續 20 個實驗只有 ≤ 2 個方向 → 檢查 saturation 機制 |
+| L5 query budget | l5_query_count.json | 單週期超過 50 → 暫停研究 |
+
+## 9. 參考
 
 - Wang et al. (2026). FactorMiner. arXiv:2602.14670 — 替換條件 Eq.11, 1.3x ICIR, 一對一限制
 - WorldQuant BRAIN IQC — PNL corr < 0.7, Sharpe 10% 提升
