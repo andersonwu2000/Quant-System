@@ -30,3 +30,5 @@ apps/android/release-key.jks
 docs/dev/LOGIN_CREDENTIALS.md
 .cache/
 data/fundamental/
+scripts/autoresearch/work/
+docker/autoresearch/work/
