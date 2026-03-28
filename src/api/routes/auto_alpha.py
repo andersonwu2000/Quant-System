@@ -788,7 +788,7 @@ async def submit_factor(
         )
 
         validator = StrategyValidator(config)
-        report = validator.validate(strategy, good_universe, "2018-01-01", "2025-12-31")
+        report = validator.validate(strategy.strategy, good_universe, "2018-01-01", "2025-12-31")
 
         n_passed = report.n_passed
         n_total = report.n_total
@@ -845,7 +845,7 @@ async def submit_factor(
     )
 
 
-def _write_auto_report(req: "SubmitFactorRequest", results: dict, report: Any, checks: list) -> None:
+def _write_auto_report(req: "SubmitFactorRequest", results: dict[str, Any], report: Any, checks: list[Any]) -> None:
     """Write a deployment report to docs/research/autoresearch/ for deployed factors."""
     from pathlib import Path
 

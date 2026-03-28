@@ -551,7 +551,7 @@ class StrategyValidator:
                 if "date" in df.columns:
                     df["date"] = pd.to_datetime(df["date"])
                     df = df.set_index("date").sort_index()
-                sliced = df.loc[start:end]
+                sliced = df.loc[start:end]  # type: ignore[misc]
                 if len(sliced) >= 20:
                     return sliced
             except Exception:
@@ -688,7 +688,7 @@ class StrategyValidator:
             daily_returns_dict: dict[str, pd.Series] = {}
             bt_config = self._make_bt_config(universe, start, end)
 
-            def _run_variant(args: tuple) -> tuple[str, pd.Series | None]:
+            def _run_variant(args: tuple[int, str, int]) -> tuple[str, pd.Series | None]:
                 top_n, wmode, skip = args
                 variant = _VariantStrategy(strategy, top_n, wmode, skip)
                 try:

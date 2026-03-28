@@ -65,6 +65,7 @@ def build_from_research_factor(
     compute_fn = getattr(mod, f"compute_{factor_name}", None) or getattr(mod, "compute_factor", None)
     if compute_fn is None:
         raise AttributeError(f"No compute_{factor_name}() or compute_factor() in {factor_path}")
+    assert callable(compute_fn)  # help mypy narrow type
 
     # 偵測函式簽名：2-arg（舊式）或 3-arg（autoresearch）
     import inspect
