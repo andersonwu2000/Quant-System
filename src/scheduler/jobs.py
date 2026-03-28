@@ -189,11 +189,14 @@ async def execute_rebalance(config: TradingConfig) -> None:
         )
 
         # 產生訂單
+        # C-08 fix: include held positions for SELL orders
+        _all_syms = set(target_weights) | set(state.portfolio.positions.keys())
         orders = weights_to_orders(
             target_weights=target_weights,
             portfolio=state.portfolio,
             prices={
-                s: feed.get_latest_price(s) for s in target_weights
+                s: feed.get_latest_price(s) for s in _all_syms
+                if feed.get_latest_price(s) is not None
             },
         )
 
@@ -353,11 +356,14 @@ async def monthly_revenue_rebalance(config: TradingConfig) -> None:
         # 記錄選股結果
         _save_selection_log(target_weights)
 
-        # 產生訂單
+        # C-09 fix: include held positions for SELL orders
+        _all_syms = set(target_weights) | set(state.portfolio.positions.keys())
         prices = {}
-        for s in target_weights:
+        for s in _all_syms:
             try:
-                prices[s] = feed.get_latest_price(s)
+                p = feed.get_latest_price(s)
+                if p is not None:
+                    prices[s] = p
             except Exception:
                 pass
 
