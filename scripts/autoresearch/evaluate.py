@@ -73,6 +73,14 @@ THRESHOLDOUT_NOISE_SCALE = 0.05   # Laplace scale for noisy L5 comparisons
 L5_QUERY_BUDGET = 200             # warn after this many L5 queries
 OOS_MIN_POSITIVE_RATIO = 0.50 # OOS months with positive IC >= 50%
 
+# Phase AF: Factor replacement & library health (FactorMiner Wang et al. 2026)
+REPLACEMENT_ICIR_MULTIPLIER = 1.3   # New must have >= 1.3x ICIR of replaced (Eq.11)
+REPLACEMENT_MIN_ICIR = 0.20          # Minimum absolute ICIR for replacement candidate
+MAX_REPLACEMENTS_PER_CYCLE = 10      # Max replacements per research cycle
+SATURATION_MATCH_LIMIT = 10          # Direction saturated after 10 correlated variants
+DIVERSITY_WARN_THRESHOLD = 0.30      # diversity_ratio < this → warning
+DIVERSITY_BLOCK_THRESHOLD = 0.15     # diversity_ratio < this → block replacement
+
 # Dedup: known good factors' IC series (from legacy L3 check)
 DEDUP_FACTORS_FILE = PROJECT_ROOT / "data" / "research" / "baseline_ic_series.json"
 
@@ -108,9 +116,51 @@ def _increment_l5_query_count() -> int:
         counter_path = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "l5_query_count.json"
     counter_path.parent.mkdir(parents=True, exist_ok=True)
     count = _get_l5_query_count() + 1
-    counter_path.write_text(json.dumps({"count": count, "updated": time.strftime("%Y-%m-%d %H:%M:%S")}),
-                           encoding="utf-8")
+    data = {"count": count, "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
+    # Preserve replacement_count if it exists
+    if counter_path.exists():
+        try:
+            existing = json.loads(counter_path.read_text(encoding="utf-8"))
+            if "replacement_count" in existing:
+                data["replacement_count"] = existing["replacement_count"]
+        except Exception:
+            pass
+    counter_path.write_text(json.dumps(data), encoding="utf-8")
     return count
+
+
+def _counter_path() -> Path:
+    """Get path to l5_query_count.json (shared with replacement counter)."""
+    p = Path("/app/watchdog_data/l5_query_count.json")
+    if not p.parent.exists():
+        p = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "l5_query_count.json"
+    return p
+
+
+def _get_replacement_count() -> int:
+    """Read replacement count from l5_query_count.json."""
+    p = _counter_path()
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8")).get("replacement_count", 0)
+        except Exception:
+            pass
+    return 0
+
+
+def _increment_replacement_count() -> None:
+    """Increment replacement count in l5_query_count.json."""
+    p = _counter_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    data["replacement_count"] = data.get("replacement_count", 0) + 1
+    data["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    p.write_text(json.dumps(data), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -238,11 +288,34 @@ def _load_all_data(universe: list[str]) -> dict:
 
 
 def _load_dedup_ic_series() -> dict[str, list[float]]:
-    """Load known factors' IC series for dedup (L3 correlation check)."""
+    """Load known factors' IC series for dedup (L3 correlation check).
+
+    Supports v1 (name → list) and v2 (name → {series, icir}) formats.
+    """
     if DEDUP_FACTORS_FILE.exists():
         try:
             with open(DEDUP_FACTORS_FILE, encoding="utf-8") as f:
-                return json.load(f)
+                raw = json.load(f)
+            result = {}
+            for name, val in raw.items():
+                if isinstance(val, list):
+                    result[name] = val
+                elif isinstance(val, dict) and "series" in val:
+                    result[name] = val["series"]
+            return result
+        except Exception:
+            pass
+    return {}
+
+
+def _load_factor_icirs() -> dict[str, float]:
+    """Load known factors' ICIR from baseline_ic_series.json (v2 format)."""
+    if DEDUP_FACTORS_FILE.exists():
+        try:
+            with open(DEDUP_FACTORS_FILE, encoding="utf-8") as f:
+                raw = json.load(f)
+            return {name: val.get("icir", 0.0) for name, val in raw.items()
+                    if isinstance(val, dict)}
         except Exception:
             pass
     return {}
@@ -334,26 +407,122 @@ def _compute_ic(
 # Dedup: IC-series correlation check (from legacy L3)
 # ---------------------------------------------------------------------------
 
-def _check_dedup(ic_series_20d: list[float], known: dict[str, list[float]]) -> tuple[float, str]:
+def _check_dedup(ic_series_20d: list[float], known: dict[str, list[float]]) -> tuple[float, str, int]:
     """Check max correlation between this factor's IC series and known factors.
 
-    Returns (max_correlation, correlated_with_name).
+    Returns (max_correlation, correlated_with_name, n_high_corr).
+    n_high_corr = number of known factors with |corr| > MAX_CORRELATION (for one-to-one check).
     """
     if not known or len(ic_series_20d) < 10:
-        return 0.0, ""
+        return 0.0, "", 0
 
     new = pd.Series(ic_series_20d)
     max_corr = 0.0
     max_name = ""
+    n_high = 0
     for name, existing_ics in known.items():
         min_len = min(len(new), len(existing_ics))
         if min_len < 10:
             continue
         corr = float(new.iloc[:min_len].corr(pd.Series(existing_ics[:min_len])))
+        if abs(corr) > MAX_CORRELATION:
+            n_high += 1
         if abs(corr) > abs(max_corr):
             max_corr = corr
             max_name = name
-    return max_corr, max_name
+    return max_corr, max_name, n_high
+
+
+def _get_match_count(factor_name: str) -> int:
+    """Count experiments that correlated with factor_name (from learnings.jsonl)."""
+    learnings_path = Path("/app/watchdog_data/learnings.jsonl")
+    if not learnings_path.exists():
+        learnings_path = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "learnings.jsonl"
+    if not learnings_path.exists():
+        return 0
+    count = 0
+    try:
+        for line in learnings_path.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line.strip())
+                if entry.get("correlated_with") == factor_name:
+                    count += 1
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return count
+
+
+def _library_health_metrics(known_ics: dict[str, list[float]]) -> dict:
+    """Compute factor library health: avg_pairwise_corr, effective_n, diversity_ratio."""
+    names = list(known_ics.keys())
+    n = len(names)
+    if n < 2:
+        return {"avg_pairwise_corr": 0.0, "effective_n": float(n),
+                "diversity_ratio": 1.0, "n_factors": n}
+
+    min_len = min(len(v) for v in known_ics.values())
+    if min_len < 10:
+        return {"avg_pairwise_corr": 0.0, "effective_n": float(n),
+                "diversity_ratio": 1.0, "n_factors": n}
+
+    mat = np.array([known_ics[name][:min_len] for name in names])
+    corr_matrix = np.corrcoef(mat)
+
+    # avg pairwise |corr| (upper triangle)
+    triu_idx = np.triu_indices(n, k=1)
+    avg_corr = float(np.mean(np.abs(corr_matrix[triu_idx])))
+
+    # effective_n via eigenvalue decomposition
+    eigenvalues = np.maximum(np.linalg.eigvalsh(corr_matrix), 0)
+    sum_eig = float(np.sum(eigenvalues))
+    sum_eig2 = float(np.sum(eigenvalues ** 2))
+    effective_n = sum_eig ** 2 / sum_eig2 if sum_eig2 > 0 else float(n)
+
+    return {
+        "avg_pairwise_corr": round(avg_corr, 4),
+        "effective_n": round(effective_n, 2),
+        "diversity_ratio": round(effective_n / n, 4) if n > 0 else 1.0,
+        "n_factors": n,
+    }
+
+
+def _replace_factor(old_name: str, new_ic_series: list[float], new_icir: float) -> str:
+    """Replace old factor with new one in baseline_ic_series.json. Returns new name."""
+    new_name = f"factor_{time.strftime('%Y%m%d_%H%M%S')}"
+
+    raw = {}
+    if DEDUP_FACTORS_FILE.exists():
+        try:
+            raw = json.loads(DEDUP_FACTORS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    raw.pop(old_name, None)
+    raw[new_name] = {
+        "series": [round(v, 6) for v in new_ic_series],
+        "icir": round(new_icir, 4),
+        "added": time.strftime("%Y-%m-%d"),
+        "replaced": old_name,
+    }
+
+    DEDUP_FACTORS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DEDUP_FACTORS_FILE.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+
+    # Save library health snapshot for /learnings API
+    try:
+        updated_ics = _load_dedup_ic_series()
+        health = _library_health_metrics(updated_ics)
+        health_path = Path("/app/watchdog_data/library_health.json")
+        if not health_path.parent.exists():
+            health_path = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "library_health.json"
+        health_path.parent.mkdir(parents=True, exist_ok=True)
+        health_path.write_text(json.dumps(health, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    return new_name
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +686,11 @@ def evaluate() -> dict:
     fitness = math.sqrt(returns_proxy / effective_turnover) * abs(best_icir) if returns_proxy > 0 else 0.0
 
     # L3: Dedup check
-    max_corr, corr_with = _check_dedup(ic_series_20d, known_ics)
+    max_corr, corr_with, n_high_corr = _check_dedup(ic_series_20d, known_ics)
+
+    # Phase AF: replacement candidate tracking
+    is_replacement_candidate = False
+    replacement_target = ""
 
     # ── Gate checks (L2-L4) ──
     if abs(best_icir) < MIN_ICIR_L2:
@@ -529,13 +702,40 @@ def evaluate() -> dict:
         )
 
     if abs(max_corr) > MAX_CORRELATION:
-        return _make_result(
-            level="L3", failure=f"corr={max_corr:.3f} with {corr_with} > {MAX_CORRELATION}",
-            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
-            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
-            max_correlation=max_corr, correlated_with=corr_with,
-            elapsed=elapsed,
+        # Phase AF: check replacement eligibility before rejecting
+        match_count = _get_match_count(corr_with)
+        factor_icirs = _load_factor_icirs()
+        correlated_icir = abs(factor_icirs.get(corr_with, 0.0))
+        replacement_count = _get_replacement_count()
+
+        can_replace = (
+            n_high_corr == 1  # one-to-one only
+            and correlated_icir > 0  # can't replace unknown-ICIR factors
+            and abs(best_icir) >= REPLACEMENT_ICIR_MULTIPLIER * correlated_icir
+            and abs(best_icir) >= REPLACEMENT_MIN_ICIR
+            and replacement_count < MAX_REPLACEMENTS_PER_CYCLE
         )
+
+        if can_replace:
+            is_replacement_candidate = True
+            replacement_target = corr_with
+            print(f"  L3: replacement candidate (ICIR {abs(best_icir):.4f} >= {REPLACEMENT_ICIR_MULTIPLIER}x {correlated_icir:.4f})")
+        elif match_count >= SATURATION_MATCH_LIMIT:
+            return _make_result(
+                level="L3", failure=f"direction saturated: {match_count} variants for {corr_with}",
+                ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+                icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+                max_correlation=max_corr, correlated_with=corr_with,
+                elapsed=elapsed,
+            )
+        else:
+            return _make_result(
+                level="L3", failure=f"corr={max_corr:.3f} with {corr_with} > {MAX_CORRELATION}",
+                ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+                icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+                max_correlation=max_corr, correlated_with=corr_with,
+                elapsed=elapsed,
+            )
 
     if positive_years < MIN_POSITIVE_YEARS and total_years >= MIN_POSITIVE_YEARS:
         return _make_result(
@@ -680,7 +880,26 @@ def evaluate() -> dict:
 
     elapsed = time.time() - t0
 
-    return _make_result(
+    # Phase AF: execute replacement if candidate passed all gates
+    replaced_name = ""
+    if is_replacement_candidate and replacement_target:
+        test_ics = dict(known_ics)
+        test_ics.pop(replacement_target, None)
+        test_ics["__candidate__"] = ic_series_20d
+        health = _library_health_metrics(test_ics)
+
+        if health["diversity_ratio"] < DIVERSITY_BLOCK_THRESHOLD:
+            print(f"  Replacement BLOCKED: diversity_ratio={health['diversity_ratio']:.4f} < {DIVERSITY_BLOCK_THRESHOLD}")
+        else:
+            if health["diversity_ratio"] < DIVERSITY_WARN_THRESHOLD:
+                print(f"  [WARN] Low diversity after replacement: {health['diversity_ratio']:.4f}")
+            replaced_name = _replace_factor(replacement_target, ic_series_20d, best_icir)
+            _increment_replacement_count()
+            print(f"  REPLACED: {replacement_target} -> {replaced_name} "
+                  f"(health: corr={health['avg_pairwise_corr']:.3f}, "
+                  f"eff_n={health['effective_n']:.1f}, div={health['diversity_ratio']:.3f})")
+
+    result = _make_result(
         level="L5", passed=True,
         ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
         icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
@@ -691,6 +910,10 @@ def evaluate() -> dict:
         oos_total_months=oos_total_months,
         elapsed=elapsed,
     )
+    if replaced_name:
+        result["replaced"] = replacement_target
+        result["replaced_by"] = replaced_name
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -902,6 +1125,9 @@ def _write_learning(results: dict) -> None:
             "max_correlation": round(results.get("max_correlation", 0), 3),
             "correlated_with": results.get("correlated_with", ""),
         }
+        if results.get("replaced"):
+            entry["replaced"] = results["replaced"]
+            entry["replaced_by"] = results.get("replaced_by", "")
         with open(learnings_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as e:

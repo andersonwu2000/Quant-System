@@ -446,18 +446,18 @@ if max_corr > 0.50:
 
 ### 最終實施步驟（v3）
 
-| Step | 內容 | 來源 |
-|------|------|------|
-| 1 | learnings.jsonl 寫入 | §2.1 |
-| 2 | `/learnings` API（方向描述 + saturation + forbidden） | §6 #2 |
-| 3 | program.md 加 learnings 讀取指引 | §3 |
-| 4 | 因子替換邏輯（L3，一對一，1.3× ICIR，跑 L5） | §2.2 + §8 A |
-| 5 | replacement_count + l5_query_count 合併追蹤 | 條件 1 |
-| 6 | library_health_metrics（avg_corr, effective_n, diversity_ratio） | §6 #1 |
-| 7 | diversity 雙門檻（0.30 WARN / 0.15 BLOCK） | §8 C |
-| 8 | direction saturation 強制限制（variants >= 10 → L0） | 條件 2 |
-| 9 | 手動驗證替換流程 | 條件 3 |
-| **預估** | **~2.5 小時** | |
+| Step | 內容 | 來源 | 狀態 |
+|------|------|------|:----:|
+| 1 | learnings.jsonl 寫入 | §2.1 | ✅ |
+| 2 | `/learnings` API（方向描述 + saturation + forbidden） | §6 #2 | ✅ |
+| 3 | program.md 加 learnings 讀取指引 | §3 | ✅ |
+| 4 | 因子替換邏輯（L3，一對一，1.3× ICIR，跑 L5） | §2.2 + §8 A | ✅ |
+| 5 | replacement_count + l5_query_count 合併追蹤 | 條件 1 | ✅ |
+| 6 | library_health_metrics（avg_corr, effective_n, diversity_ratio） | §6 #1 | ✅ |
+| 7 | diversity 雙門檻（0.30 WARN / 0.15 BLOCK） | §8 C | ✅ |
+| 8 | direction saturation 強制限制（L3 correlation-based, match >= 10） | 條件 2 | ✅ |
+| 9 | eval_server.py 加 library_health + replacement_budget | 條件 1 | ✅ |
+| 10 | 手動驗證替換流程 | 條件 3 | ⏳ Docker rebuild 後 |
 
 ### 風險追蹤清單
 

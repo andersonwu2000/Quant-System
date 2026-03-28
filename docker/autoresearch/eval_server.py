@@ -65,6 +65,30 @@ def learnings():
     failed = [d for d, s in direction_stats.items() if s["passed"] == 0 and s["tried"] >= 2]
     forbidden = [d for d, s in direction_stats.items() if s["l3_corr_fail"] >= 3]
 
+    # Library health (written by evaluate.py after replacements)
+    library_health = {}
+    try:
+        health_path = "/app/watchdog_data/library_health.json"
+        health_data = json.loads(open(health_path, encoding="utf-8").read())
+        library_health = {
+            "avg_corr": health_data.get("avg_pairwise_corr", 0),
+            "effective_n": health_data.get("effective_n", 0),
+            "diversity": health_data.get("diversity_ratio", 1.0),
+            "n_factors": health_data.get("n_factors", 0),
+        }
+    except Exception:
+        pass
+
+    # Replacement budget remaining
+    replacement_budget = 10
+    try:
+        counter_path = "/app/watchdog_data/l5_query_count.json"
+        counter_data = json.loads(open(counter_path, encoding="utf-8").read())
+        used = counter_data.get("replacement_count", 0)
+        replacement_budget = max(0, 10 - used)
+    except Exception:
+        pass
+
     return jsonify({
         "successful_patterns": successful,
         "failed_patterns": failed,
@@ -74,6 +98,8 @@ def learnings():
             "directions_explored": len(direction_stats),
             "l5_pass_count": sum(1 for e in entries if e.get("passed")),
         },
+        "library_health": library_health,
+        "replacement_budget_remaining": replacement_budget,
     })
 
 
