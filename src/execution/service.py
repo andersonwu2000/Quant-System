@@ -23,7 +23,7 @@ from src.execution.market_hours import (
     is_tradable,
 )
 from src.execution.oms import OrderManager
-from src.execution.broker.simulated import SimBroker
+from src.execution.broker.simulated import SimBroker, SimConfig
 from src.execution.smart_order import TWAPConfig, TWAPSplitter
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,12 @@ class ExecutionService:
         mode = self._config.mode
 
         if mode == "backtest":
-            self._sim_broker = SimBroker()
+            sim_config = SimConfig(
+                commission_rate=self._config.commission_rate,
+                tax_rate=self._config.tax_rate,
+                slippage_bps=self._config.default_slippage_bps,
+            )
+            self._sim_broker = SimBroker(sim_config)
             self._initialized = True
             logger.info("ExecutionService initialized: backtest mode (SimBroker)")
             return True

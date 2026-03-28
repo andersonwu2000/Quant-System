@@ -901,6 +901,14 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
         summary = result.summary()
         logger.info("Daily reconcile completed:\n%s", summary)
 
+        status = "clean" if result.is_clean else "discrepancy"
+        try:
+            from src.metrics import RECONCILE_RUNS, RECONCILE_MISMATCHES
+            RECONCILE_RUNS.labels(status=status).inc()
+            RECONCILE_MISMATCHES.set(len(result.mismatched))
+        except Exception:
+            pass
+
         if not result.is_clean and notifier.is_configured():
             await notifier.send(
                 "Reconciliation Discrepancy",
@@ -911,17 +919,28 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
             )
 
         return {
-            "status": "clean" if result.is_clean else "discrepancy",
+            "status": status,
             "matched": len(result.matched),
             "mismatched": len(result.mismatched),
             "system_only": len(result.system_only),
             "broker_only": len(result.broker_only),
         }
-    except Exception:
+    except Exception as exc:
         logger.exception("Daily reconcile failed")
+        try:
+            from src.metrics import RECONCILE_RUNS
+            RECONCILE_RUNS.labels(status="error").inc()
+        except Exception:
+            pass
         if notifier.is_configured():
             try:
-                await notifier.send("Reconcile Error", "Daily reconciliation failed — check logs")
+                await notifier.send(
+                    "Reconcile Error",
+                    f"Daily reconciliation failed.\n"
+                    f"Error: {type(exc).__name__}: {exc}\n"
+                    f"Mode: {config.mode}\n"
+                    f"Positions: {len(state.portfolio.positions)}",
+                )
             except Exception:
                 pass
         return {"status": "error"}

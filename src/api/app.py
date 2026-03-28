@@ -320,6 +320,11 @@ def create_app() -> FastAPI:
 
                     if state.risk_engine.kill_switch(state.portfolio):
                         state.kill_switch_fired = True  # D2: prevent re-trigger
+                        try:
+                            from src.metrics import KILL_SWITCH_TRIGGERS
+                            KILL_SWITCH_TRIGGERS.labels(path="poll").inc()
+                        except Exception:
+                            pass
 
                         # Acquire mutation lock for portfolio changes
                         async with state.mutation_lock:
@@ -348,9 +353,21 @@ def create_app() -> FastAPI:
                                             len(trades), state.portfolio.nav,
                                         )
 
+                        _dd_pct = float(state.portfolio.daily_drawdown) * 100
+                        _pos_list = ", ".join(
+                            f"{s}({float(p.quantity):.0f})"
+                            for s, p in list(state.portfolio.positions.items())[:5]
+                        )
+                        _ks_detail = (
+                            f"Trigger: daily drawdown {_dd_pct:.1f}% > 5%\n"
+                            f"NAV: {float(state.portfolio.nav):,.0f} "
+                            f"(SOD: {float(state.portfolio.nav_sod):,.0f})\n"
+                            f"Positions: {_pos_list or 'none'}"
+                        )
+
                         await ws_manager.broadcast("alerts", {
                             "type": "kill_switch",
-                            "message": "Kill switch triggered — all strategies stopped, positions liquidated",
+                            "message": f"Kill switch triggered — {_ks_detail}",
                         })
                         # Notify via Discord/LINE/Telegram
                         try:
@@ -359,9 +376,8 @@ def create_app() -> FastAPI:
                             if _notifier.is_configured():
                                 await _notifier.send(
                                     "KILL SWITCH",
-                                    "Kill switch triggered — all strategies stopped, "
-                                    "positions liquidated.\n"
-                                    f"NAV: {float(state.portfolio.nav):,.0f}",
+                                    "All strategies stopped, positions liquidated.\n\n"
+                                    + _ks_detail,
                                 )
                         except Exception:
                             logger.debug("Kill switch notification failed", exc_info=True)

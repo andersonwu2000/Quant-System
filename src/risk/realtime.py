@@ -88,6 +88,14 @@ class RealtimeRiskMonitor:
         # Kill switch and alerts use current_nav snapshot taken inside lock — safe
         intraday_dd = (current_nav - self._nav_high) / self._nav_high
 
+        # Update Prometheus gauges (best-effort)
+        try:
+            from src.metrics import INTRADAY_DRAWDOWN, NAV_CURRENT
+            INTRADAY_DRAWDOWN.set(intraday_dd)
+            NAV_CURRENT.set(current_nav)
+        except Exception:
+            pass
+
         # 3. Tiered alerts (outside lock to avoid blocking)
         if intraday_dd < -0.02 and "dd_2pct" not in self._alerts_sent:
             self._broadcast_alert(
@@ -134,6 +142,11 @@ class RealtimeRiskMonitor:
                                     )
                                     return
                                 state.kill_switch_fired = True
+                                try:
+                                    from src.metrics import KILL_SWITCH_TRIGGERS
+                                    KILL_SWITCH_TRIGGERS.labels(path="tick").inc()
+                                except Exception:
+                                    pass
                                 trades = svc.submit_orders(orders, pf)
                                 if trades:
                                     from src.execution.oms import apply_trades
@@ -148,11 +161,18 @@ class RealtimeRiskMonitor:
                                     from src.notifications.factory import create_notifier
                                     _notifier = create_notifier(get_config())
                                     if _notifier.is_configured():
+                                        _nav_high = float(pf.nav_sod) if pf.nav_sod > 0 else 0
+                                        _pos_list = ", ".join(
+                                            f"{s}({float(p.quantity):.0f})"
+                                            for s, p in list(pf.positions.items())[:5]
+                                        )
                                         await _notifier.send(
                                             "KILL SWITCH (Tick)",
-                                            f"Kill switch triggered via tick monitoring.\n"
-                                            f"Liquidated {len(trades) if trades else 0} positions, "
-                                            f"NAV: {float(pf.nav):,.0f}",
+                                            f"Trigger: intraday drawdown > 5%\n"
+                                            f"Liquidated {len(trades) if trades else 0} positions\n"
+                                            f"NAV: {float(pf.nav):,.0f} "
+                                            f"(SOD: {_nav_high:,.0f})\n"
+                                            f"Positions: {_pos_list or 'none'}",
                                         )
                                 except Exception:
                                     logger.debug("Kill switch notification failed", exc_info=True)
@@ -227,6 +247,11 @@ class RealtimeRiskMonitor:
     def _broadcast_alert(self, level: str, message: str) -> None:
         """Fire-and-forget WS broadcast to the alerts channel."""
         self._alerts_count += 1
+        try:
+            from src.metrics import RISK_ALERTS
+            RISK_ALERTS.labels(severity=level).inc()
+        except Exception:
+            pass
         payload: dict[str, Any] = {
             "type": "realtime_risk",
             "level": level,

@@ -82,13 +82,15 @@ Kill Switch 現在有**兩條獨立的清倉路徑**，不互相協調：
 完成 Kill Switch debug 後，依序處理：
 
 ### 4.1 實盤驗證
-- [ ] 確認 `SinopacConfig.simulation` ���前值（`.env` 是否有設 `QUANT_SIMULATION=false`）
+- [x] 確認 `SinopacConfig.simulation` 當前值 → **預設 True（安全），由 `QUANT_MODE=paper|live` 控制**
 - [x] 確認 `reconcile.py` 是否真的被排程呼叫 → **原本只有 API 手動觸發，已加入排程**
   - 新增 `execute_daily_reconcile()` job，每日 14:30（台股收盤後）自動對帳
   - 差異自動透過通知系統告警
   - 可透過 `QUANT_RECONCILE_CRON` 調整 cron
-- [ ] 確�� PaperBroker 費率與 config 一致（BUG #34, #35��
-- [ ] paper trade log vs 券商後台比對
+- [x] 確認 PaperBroker/SimBroker 費率與 config 一致（BUG #34, #35）
+  - PaperBroker 用 `CostModel.from_config()` → ✅ 已同步
+  - SimBroker 在 `ExecutionService.initialize()` 用硬編碼預設 → **已修復**，改用 `SimConfig(commission_rate=config.commission_rate, ...)`
+- [ ] paper trade log vs 券商後台比對（需要實際券商帳戶）
 
 ### 4.2 監控告警
 - [x] Kill Switch 通知 → **已加入 Discord/LINE/Telegram 通知**
@@ -99,8 +101,17 @@ Kill Switch 現在有**兩條獨立的清倉路徑**，不互相協調：
   - `test_discrepancy_sends_notification` — 對帳差異觸發通知
   - `test_path_b_sends_notification` — kill switch 觸發通知
   - `test_path_b_notification_failure_does_not_block` — 通知失敗不影響清倉
-- [ ] Prometheus metrics export 覆蓋率（哪些路徑有 metric，哪些沒有）
-- [ ] 告警內容是否包含足夠診斷資訊
+- [x] Prometheus metrics export 覆蓋率 → **新增 `src/metrics.py` 集中模組**
+  - `kill_switch_triggers_total` — Counter（path=poll/tick）
+  - `risk_alerts_total` — Counter（severity=warning/critical/emergency）
+  - `intraday_drawdown_pct` / `nav_current` — Gauge（每 tick 更新）
+  - `reconcile_runs_total` / `reconcile_mismatches` — Counter/Gauge
+  - `pipeline_runs_total` / `pipeline_trades_total` / `pipeline_duration_seconds`
+  - `orders_submitted_total` / `orders_rejected_total`
+- [x] 告警內容改善 → **所有 kill switch 告警加入 drawdown %、NAV、SOD、持倉明細**
+  - 路徑 A：包含 `daily_drawdown %`、NAV vs SOD、top 5 持倉
+  - 路徑 B：包含 `intraday drawdown`、清倉數量、NAV vs SOD、top 5 持倉
+  - Reconcile Error：包含錯誤類型、mode、持倉數量
 
 ### 4.3 災難恢復
 - [x] Crash recovery 模擬 → **4 個測試覆蓋**
