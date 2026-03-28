@@ -148,53 +148,25 @@ class VectorizedPBOBacktest:
 - 對比現有 event-driven PBO 和向量化版本的結果
 - 允許 ±5% 的 PBO 差異（成本/滑點影響）
 
-### Phase Z2：Validator 簡化回測（中價值、中風險）
+### Phase Z2：Validator 加速（shared feed + 並行化，不犧牲正確性）
 
-**範圍：** 為 WF、OOS、recent 提供快速回測路徑
+**範圍：** WF、OOS、recent 保持 event-driven BacktestEngine，只加速數據載入和並行化
 
-**原理：** 這些 check 需要 Sharpe/CAGR/MDD，但不需要完整的風控模擬。用向量化回測 + 簡化成本模型。
+**原理：** WF/OOS/recent 決定 Validator 的 pass/fail 判定。簡化回測會犧牲正確性
+（風控拒絕、lot size、滑點、除權息），導致 Sharpe 偏高 10-20%，足以改變 pass/fail。
+不可接受。
 
-**實作：**
+**已實作的加速（保持完整引擎）：**
+- shared feed（讀一次 parquet，所有子回測共用）→ ~3x
+- ThreadPoolExecutor 並行 WF 各年份 → ~2x
+- Validator universe 200 → 150 → ~1.3x
+- 總計：~5x（已從 20 min 降到 ~5-10 min）
 
-```python
-class VectorizedBacktest:
-    """Fast vectorized backtest with simplified cost model."""
+**可進一步加速的方向：**
+- BacktestEngine 內部 per-bar 的 `ctx.bars()` 加快取（Phase Z3）
+- 但不能省略風控、成本、lot size
 
-    def run(self, weight_matrix, price_matrix, config):
-        returns = price_matrix.pct_change()
-
-        # M-06 fix: 稅只在賣出時收取
-        weight_diff = weight_matrix.diff().fillna(0)
-        sells = weight_diff.clip(upper=0).abs()
-        buys = weight_diff.clip(lower=0)
-        cost_per_bar = (buys * config.commission_rate
-                       + sells * (config.commission_rate + config.tax_rate)).sum(axis=1)
-
-        # Portfolio returns (after costs)
-        gross_returns = (weight_matrix.shift(1) * returns).sum(axis=1)
-        net_returns = gross_returns - cost_per_bar
-
-        # NAV series
-        nav = (1 + net_returns).cumprod() * config.initial_cash
-
-        # Compute metrics
-        return BacktestResult(
-            nav_series=nav,
-            daily_returns=net_returns,
-            total_return=float(nav.iloc[-1] / nav.iloc[0] - 1),
-            ...
-        )
-```
-
-**預估：**
-- WF 6 年：從 1-2 分鐘 → 10-20 秒
-- 包含簡化成本（佣金 + 稅 + 固定滑點）
-- 不含風控規則（Validator 用寬鬆風控，影響小）
-
-**驗證：**
-- Sharpe/CAGR/MDD 與 event-driven 版本對比
-- 允許 ±10% 差異（成本模型簡化）
-- 如果差異太大，加入更精確的成本模型
+**驗證：** 不需要 — 使用原始 BacktestEngine，結果完全一致
 
 ### Phase Z3：BacktestEngine 矩陣加速（高價值、高風險）
 
@@ -224,11 +196,11 @@ class VectorizedBacktest:
 ## 3. 實作順序與依賴
 
 ```
-Phase Z1 (PBO 向量化)        ← 獨立，不動現有代碼
+Phase Z1 (PBO 向量化)           ← 獨立，不動現有代碼
     ↓
-Phase Z2 (Validator 簡化回測) ← 依賴 Z1 的矩陣建構
+Phase Z2 (shared feed + 並行)   ← 已實作，保持 event-driven 正確性
     ↓
-Phase Z3 (BacktestEngine 加速) ← 依賴 Z2 驗證方法論
+Phase Z3 (BacktestEngine 加速)  ← 內部最佳化，不改 API
 ```
 
 ## 4. 檔案規劃
@@ -256,14 +228,9 @@ pbo_vector = _compute_pbo_vectorized(...)      # 新版
 assert abs(pbo_event - pbo_vector) < 0.10      # 允許 10% 差異（成本模型不同）
 ```
 
-### Z2 驗證（WF/OOS）
+### Z2 驗證
 
-```python
-# 對同一個策略，比較 Sharpe
-sharpe_event = run_event_driven(strategy, config)
-sharpe_vector = run_vectorized(strategy, config)
-assert abs(sharpe_event - sharpe_vector) / max(abs(sharpe_event), 0.01) < 0.15
-```
+不需要 — Z2 保持 event-driven BacktestEngine，結果完全一致。
 
 ### Z3 驗證（全引擎）
 
@@ -289,7 +256,7 @@ pytest tests/ -v --timeout=120
 | Phase | 工作量 | 前置 |
 |-------|--------|------|
 | Z1: PBO 向量化 | 2-3 小時 | 無 |
-| Z2: Validator 簡化回測 | 3-4 小時 | Z1 完成 |
+| Z2: shared feed + 並行 | 已完成 | — |
 | Z3: BacktestEngine 加速 | 8-12 小時 | Z2 驗證通過 |
 
 ## 8. 成功標準
@@ -297,12 +264,12 @@ pytest tests/ -v --timeout=120
 | 指標 | Z1 完成 | Z2 完成 | Z3 完成 |
 |------|---------|---------|---------|
 | PBO 計算時間 | 5 min → 10 sec | — | — |
-| WF 計算時間 | — | 2 min → 20 sec | — |
+| WF 計算時間 | — | 已加速（shared feed） | — |
 | Full backtest 時間 | — | — | 2 min → 30 sec |
-| Validator 總時間 | 10 min → 6 min | 6 min → 2 min | 2 min → 1 min |
-| 測試通過 | 1700+ | 1700+ | 1700+ |
-| PBO 精度 | ±10% | ±10% | ±10% |
-| Sharpe 精度 | — | ±5% | ±0.1% |
+| Validator 總時間 | 10 min → 5 min | 5 min（已達成） | 5 min → 2 min |
+| 測試通過 | 1700+ | 1700+（不變） | 1700+ |
+| PBO 精度 | ±10% | — | — |
+| Sharpe 精度 | — | 完全一致（event-driven） | ±0.1% |
 
 ---
 
