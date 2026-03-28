@@ -393,7 +393,8 @@ class StrategyValidator:
 
         # 9. Regime breakdown (bull/bear/sideways)
         logger.info("[Validator] Regime breakdown...")
-        regime_check = self._check_regime_breakdown(wf_results, cfg.max_worst_regime_loss)
+        regime_check = self._check_regime_breakdown(
+            wf_results, cfg.max_worst_regime_loss, result=result, start=start, end=end)
         report.checks.append(regime_check)
 
         # 11. Factor decay (recent period)
@@ -434,6 +435,17 @@ class StrategyValidator:
             value=f"{cvar95:.2%}",
             threshold=f">= {cfg.max_cvar_95:.2%}",
             detail="Daily CVaR(95%): expected shortfall in worst 5% of days",
+        ))
+
+        # 16. Permutation test (Phase AC: is the signal real or random?)
+        logger.info("[Validator] Running permutation test...")
+        perm_p = self._permutation_test(result, strategy, universe, start, end)
+        report.checks.append(CheckResult(
+            name="permutation_p",
+            passed=perm_p < 0.10,
+            value=f"{perm_p:.3f}",
+            threshold="< 0.10",
+            detail="p-value: fraction of random shuffles with Sharpe >= strategy",
         ))
 
         return report
@@ -520,21 +532,37 @@ class StrategyValidator:
         return sorted(results, key=lambda r: r["year"])
 
     def _bootstrap_sharpe(self, result: BacktestResult, n_bootstrap: int) -> float:
-        """Bootstrap P(Sharpe > 0)。"""
-        # 使用 daily_returns（與 DSR 一致）
-        # Fail-closed: insufficient data → 0.0 (cannot verify → assume not significant)
+        """Stationary Bootstrap P(Sharpe > 0) — Politis & Romano (1994).
+
+        Block resampling with geometric block length to preserve
+        autocorrelation structure (volatility clustering) in daily returns.
+        IID bootstrap would underestimate Sharpe standard error by ~20%.
+        """
         ret_series = getattr(result, 'daily_returns', None)
         if ret_series is None:
             return 0.0
 
         returns = ret_series.dropna().values
-        if len(returns) < 20:
+        n = len(returns)
+        if n < 20:
             return 0.0
 
+        avg_block = 20  # ~1 month, matches monthly rebalance frequency
+        p = 1.0 / avg_block  # geometric distribution parameter
         rng = np.random.default_rng(42)
         positive_count = 0
+
         for _ in range(n_bootstrap):
-            sample = rng.choice(returns, size=len(returns), replace=True)
+            sample = np.empty(n)
+            i = 0
+            pos = rng.integers(0, n)
+            while i < n:
+                sample[i] = returns[pos % n]
+                i += 1
+                pos += 1
+                if rng.random() < p:  # with prob p, jump to new random position
+                    pos = rng.integers(0, n)
+
             mean_r = sample.mean()
             std_r = sample.std(ddof=1)
             if std_r > 0:
@@ -599,6 +627,63 @@ class StrategyValidator:
             return YahooFeed().get_bars("0050.TW", start=start, end=end)
         except Exception:
             return None
+
+    @staticmethod
+    def _permutation_test(
+        self, result: BacktestResult, strategy: Strategy,
+        universe: list[str], start: str, end: str,
+        n_permutations: int = 100,
+    ) -> float:
+        """Permutation test: shuffle factor signal cross-sectionally, compare Sharpe.
+
+        Tests whether the factor's stock SELECTION has predictive power,
+        or if the Sharpe could be achieved by random stock picking.
+        Uses VectorizedPBOBacktest for speed (~1-2 sec per permutation).
+
+        Returns p-value: fraction of random shuffles with Sharpe >= strategy Sharpe.
+        p < 0.10 = signal is real.
+        """
+        if result.sharpe <= 0:
+            return 1.0  # negative Sharpe → any random shuffle is better
+
+        try:
+            from src.backtest.vectorized import VectorizedPBOBacktest
+            import os as _os
+            from pathlib import Path
+
+            project_root = Path(_os.environ.get("PROJECT_ROOT",
+                                str(Path(__file__).resolve().parent.parent.parent)))
+
+            vbt = VectorizedPBOBacktest(
+                universe=universe[:150], start=start, end=end,
+                data_dir=str(project_root / "data" / "market"),
+                fund_dir=str(project_root / "data" / "fundamental"),
+            )
+
+            # Random factor: shuffle stock returns cross-sectionally each month
+            rng = np.random.default_rng(42)
+            random_sharpes = []
+            for _ in range(n_permutations):
+                def random_factor(symbols, as_of, data):
+                    # Random ranking — no signal, just noise
+                    return {s: rng.random() for s in symbols}
+                try:
+                    rets = vbt.run_variant(random_factor, top_n=15, weight_mode="equal")
+                    if rets is not None and len(rets) > 60:
+                        sr = float(rets.mean() / rets.std() * np.sqrt(252)) if rets.std() > 0 else 0
+                        random_sharpes.append(sr)
+                except Exception:
+                    continue
+
+            if len(random_sharpes) < 50:
+                return 0.5  # inconclusive
+
+            p_value = sum(1 for s in random_sharpes if s >= result.sharpe) / len(random_sharpes)
+            return p_value
+
+        except Exception as e:
+            logger.warning("Permutation test failed: %s", e)
+            return 0.5  # inconclusive
 
     @staticmethod
     def _compute_cvar(result: BacktestResult, alpha: float = 0.05) -> float:
@@ -827,13 +912,44 @@ class StrategyValidator:
         self,
         wf_results: list[dict[str, Any]],
         max_worst_loss: float,
+        result: BacktestResult | None = None,
+        start: str = "",
+        end: str = "",
     ) -> CheckResult:
-        """檢查最差年份的表現。
+        """Drawdown-based regime: 策略在市場危機期間（0050 drawdown > 15%）的表現。
 
-        用 WF 年度結果中最差的 CAGR 作為 worst regime proxy。
-        嚴格來說應該分 bull/bear/sideways，但這需要市場 regime 分類。
-        這裡用最差年度作為近似。
+        Phase AC: 替換年度切割。市場危機不按日曆年發生。
         """
+        # Try drawdown-based first
+        if result is not None and result.daily_returns is not None:
+            try:
+                bench = self._load_0050(start, end)
+                if bench is not None and len(bench) >= 60:
+                    bench_close = bench["close"]
+                    bench_cummax = bench_close.cummax()
+                    bench_dd = (bench_close - bench_cummax) / bench_cummax
+                    # Crisis = market drawdown > 15%
+                    crisis_mask = bench_dd < -0.15
+                    crisis_dates = bench_dd.index[crisis_mask]
+
+                    if len(crisis_dates) > 10:
+                        # Strategy returns during crisis
+                        strat_rets = result.daily_returns
+                        common = strat_rets.index.intersection(crisis_dates)
+                        if len(common) > 5:
+                            crisis_return = float(strat_rets.loc[common].sum())
+                            n_crisis_days = len(common)
+                            return CheckResult(
+                                name="worst_regime",
+                                passed=crisis_return >= max_worst_loss,
+                                value=f"{crisis_return:+.2%}",
+                                threshold=f">= {max_worst_loss:+.0%}",
+                                detail=f"Cumulative return during {n_crisis_days} market crisis days (0050 DD > 15%)",
+                            )
+            except Exception:
+                pass
+
+        # Fallback: worst year from WF results
         cagrs = [r.get("cagr", r.get("return", 0)) for r in wf_results if "error" not in r]
         if not cagrs:
             return CheckResult(
@@ -841,7 +957,7 @@ class StrategyValidator:
                 passed=False,
                 value="N/A",
                 threshold=f">= {max_worst_loss:+.0%}",
-                detail="No WF results available — fail-closed",
+                detail="No data available — fail-closed",
             )
 
         worst = min(cagrs)
