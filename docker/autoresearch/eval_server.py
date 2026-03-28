@@ -28,6 +28,55 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.route("/learnings", methods=["GET"])
+def learnings():
+    """Return filtered experience summary — direction descriptions only, no precise ICIR."""
+    learnings_path = "/app/watchdog_data/learnings.jsonl"
+    try:
+        lines = open(learnings_path, encoding="utf-8").readlines()
+    except FileNotFoundError:
+        return jsonify({"successful_patterns": [], "failed_patterns": [], "forbidden": [], "stats": {}})
+
+    entries = []
+    for line in lines:
+        try:
+            entries.append(json.loads(line.strip()))
+        except Exception:
+            continue
+
+    # Recent 100 entries only (TTL)
+    recent = entries[-100:]
+
+    # Aggregate by direction
+    direction_stats: dict[str, dict] = {}
+    for e in recent:
+        d = e.get("direction", "unknown")
+        if d not in direction_stats:
+            direction_stats[d] = {"tried": 0, "passed": 0, "l3_corr_fail": 0}
+        direction_stats[d]["tried"] += 1
+        if e.get("passed"):
+            direction_stats[d]["passed"] += 1
+        if "corr" in e.get("failure", "").lower() or e.get("level") == "L3":
+            direction_stats[d]["l3_corr_fail"] += 1
+
+    successful = [{"direction": d, "variants_tried": s["tried"],
+                    "saturation": "HIGH" if s["tried"] >= 10 else "MEDIUM" if s["tried"] >= 5 else "LOW"}
+                   for d, s in direction_stats.items() if s["passed"] > 0]
+    failed = [d for d, s in direction_stats.items() if s["passed"] == 0 and s["tried"] >= 2]
+    forbidden = [d for d, s in direction_stats.items() if s["l3_corr_fail"] >= 3]
+
+    return jsonify({
+        "successful_patterns": successful,
+        "failed_patterns": failed,
+        "forbidden": forbidden,
+        "stats": {
+            "total_experiments": len(entries),
+            "directions_explored": len(direction_stats),
+            "l5_pass_count": sum(1 for e in entries if e.get("passed")),
+        },
+    })
+
+
 @app.route("/evaluate", methods=["POST"])
 def evaluate():
     """Run evaluate.py and return only safe fields."""

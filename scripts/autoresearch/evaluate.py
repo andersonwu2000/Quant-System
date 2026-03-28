@@ -798,6 +798,9 @@ def main() -> None:
     if results.get("level") not in ("L0",):  # L0 = complexity fail, no factor values
         _store_factor_returns(results)
 
+    # Phase AF: append to learnings.jsonl
+    _write_learning(results)
+
     if results["passed"]:
         print("\nstatus: PASSED (L5+ OOS validated)")
         # Write pending marker for background Validator (watchdog picks it up)
@@ -863,6 +866,46 @@ def _store_factor_returns(results: dict) -> None:
             print(f"factor_returns: {path.name} ({len(daily_rets)} days)")
     except Exception as e:
         print(f"[WARN] factor_returns store failed: {e}")
+
+
+def _write_learning(results: dict) -> None:
+    """Append structured experience to learnings.jsonl (Phase AF)."""
+    try:
+        learnings_dir = Path("/app/watchdog_data")
+        if not learnings_dir.exists():
+            learnings_dir = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data"
+        learnings_dir.mkdir(parents=True, exist_ok=True)
+        learnings_path = learnings_dir / "learnings.jsonl"
+
+        # Extract direction from factor.py docstring
+        direction = "unknown"
+        try:
+            factor_path = Path(__file__).parent / "factor.py"
+            if not factor_path.exists():
+                factor_path = Path(__file__).parent / "work" / "factor.py"
+            if factor_path.exists():
+                for line in factor_path.read_text(encoding="utf-8").splitlines():
+                    stripped = line.strip().strip('"').strip("'")
+                    if stripped and not stripped.startswith(("from ", "import ", "def ", "#", '"""', "'''")):
+                        direction = stripped[:80]
+                        break
+        except Exception:
+            pass
+
+        entry = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "direction": direction,
+            "level": results.get("level", ""),
+            "passed": results.get("passed", False),
+            "best_icir": round(results.get("best_icir", 0), 4),
+            "failure": results.get("failure", ""),
+            "max_correlation": round(results.get("max_correlation", 0), 3),
+            "correlated_with": results.get("correlated_with", ""),
+        }
+        with open(learnings_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[WARN] learnings write failed: {e}")
 
 
 def _write_pending_marker(results: dict) -> None:

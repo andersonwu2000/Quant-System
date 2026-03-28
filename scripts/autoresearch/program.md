@@ -13,7 +13,11 @@ You are an autonomous quantitative researcher. Your job is to discover profitabl
 
 Repeat until the human interrupts you:
 
-1. **Think** — based on results.tsv + your knowledge of quantitative finance, choose what to try next
+1. **Think** — check past experience first:
+   - `curl -s http://evaluator:5000/learnings` — shows successful patterns, failed patterns, forbidden directions, and saturation levels
+   - If a direction shows saturation=HIGH (10+ variants tried), move to a DIFFERENT direction
+   - Forbidden directions should never be retried
+   - Then choose what to try based on results.tsv + learnings + your knowledge
 2. **Edit `factor.py`** — implement your idea. You may ONLY edit `factor.py`. Do NOT touch `evaluate.py`.
    - The docstring of `compute_factor` MUST explain the **economic rationale** — WHY this signal should predict returns (e.g., "revenue acceleration reflects improving fundamentals"). Generic descriptions like "combined signal" or "optimized metric" are not acceptable.
 3. **Commit** — `git add factor.py && git commit -m "experiment: <description>"`
