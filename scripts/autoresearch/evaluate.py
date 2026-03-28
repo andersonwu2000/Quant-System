@@ -756,6 +756,23 @@ def main() -> None:
         print("status: crash")
         sys.exit(1)
 
+    # Canary metric: random factor IC should be ≈ 0. If not, evaluation pipeline is biased.
+    try:
+        _canary_rng = np.random.default_rng(int(time.time()))
+        _canary_vals = {s: float(_canary_rng.standard_normal()) for s in _load_universe(large=False)[:50]}
+        _canary_bars = _load_all_data(_load_universe(large=False))["bars"]
+        _canary_dates = sorted(d for d in list(_canary_bars.values())[0].index if d <= pd.Timestamp(IS_END))[-5:]
+        _canary_ics = []
+        for _cd in _canary_dates:
+            _cfwd = _compute_forward_returns(_canary_bars, _cd, 20)
+            _cic = _compute_ic(_canary_vals, _cfwd)
+            if _cic is not None:
+                _canary_ics.append(_cic)
+        if _canary_ics and abs(np.mean(_canary_ics)) > 0.10:
+            print(f"[CANARY ALERT] Random factor IC = {np.mean(_canary_ics):.4f} (expected ~0). Pipeline may be biased!", file=sys.stderr)
+    except Exception:
+        pass  # canary failure should not block evaluation
+
     print("\n--- RESULTS ---")
     print(f"composite_score:  {results['composite_score']:.4f}")
     print(f"ic_20d:           {results['ic_20d']:.4f}")

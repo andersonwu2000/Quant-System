@@ -15,6 +15,7 @@ Repeat until the human interrupts you:
 
 1. **Think** — based on results.tsv + your knowledge of quantitative finance, choose what to try next
 2. **Edit `factor.py`** — implement your idea. You may ONLY edit `factor.py`. Do NOT touch `evaluate.py`.
+   - The docstring of `compute_factor` MUST explain the **economic rationale** — WHY this signal should predict returns (e.g., "revenue acceleration reflects improving fundamentals"). Generic descriptions like "combined signal" or "optimized metric" are not acceptable.
 3. **Commit** — `git add factor.py && git commit -m "experiment: <description>"`
 4. **Run** — `python evaluate.py 2>&1 | tail -30`
 5. **Parse** — extract ONLY these 4 values: `composite_score`, `best_icir`, `level`, `passed`. Do NOT try to extract or reason about OOS values, intermediate IC values, or any other metrics from the output.
