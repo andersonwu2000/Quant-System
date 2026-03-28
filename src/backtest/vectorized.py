@@ -52,7 +52,7 @@ class VectorizedPBOBacktest:
             universe, start, end, Path(data_dir)
         )
         self._revenue = self._load_revenue(universe, Path(fund_dir))
-        self._returns = self._price_matrix.pct_change(fill_method=None)
+        self._returns = self._price_matrix.ffill().pct_change()
         logger.info(
             "VectorizedPBO: loaded %d stocks × %d days in %.1fs",
             len(self._price_matrix.columns),
@@ -194,24 +194,34 @@ class VectorizedPBOBacktest:
         return gross_returns - cost_per_bar
 
     def _build_factor_data(self, symbols: list[str], as_of: pd.Timestamp) -> dict:
-        """Build data dict matching compute_factor(symbols, as_of, data) interface."""
-        prices = self._price_matrix
-        volumes = self._volume_matrix
+        """Build data dict matching compute_factor(symbols, as_of, data) interface.
 
+        #4 fix: pre-build full bars DataFrames once, then slice by as_of.
+        Avoids rebuilding 12,000 DataFrames per run.
+        """
+        # Lazy init: build full bars dict once
+        if not hasattr(self, '_bars_cache'):
+            prices = self._price_matrix
+            volumes = self._volume_matrix
+            self._bars_cache: dict[str, pd.DataFrame] = {}
+            for s in symbols:
+                if s not in prices.columns:
+                    continue
+                p = prices[s].dropna()
+                v = volumes[s].dropna() if s in volumes.columns else pd.Series(0.0, index=p.index)
+                if len(p) < 10:
+                    continue
+                self._bars_cache[s] = pd.DataFrame({
+                    "open": p, "high": p, "low": p, "close": p,
+                    "volume": v.reindex(p.index, fill_value=0),
+                })
+
+        # Slice by as_of (cheap .loc slice, no DataFrame construction)
         bars: dict[str, pd.DataFrame] = {}
-        for s in symbols:
-            if s not in prices.columns:
-                continue
-            mask = prices.index <= as_of
-            p = prices.loc[mask, s].dropna()
-            v = volumes.loc[mask, s].dropna() if s in volumes.columns else pd.Series(dtype=float)
-            if len(p) < 10:
-                continue
-            df = pd.DataFrame({
-                "open": p, "high": p, "low": p, "close": p,
-                "volume": v.reindex(p.index, fill_value=0),
-            })
-            bars[s] = df
+        for s, full_df in self._bars_cache.items():
+            sliced = full_df.loc[:as_of]
+            if len(sliced) >= 10:
+                bars[s] = sliced
 
         return {
             "bars": bars,
