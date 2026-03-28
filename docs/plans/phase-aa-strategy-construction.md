@@ -130,7 +130,7 @@ SimBroker.execute(orders)                      [成交模擬]
 | Acadian (2024) | 極端集中（<25 支）是災難配方 |
 | Factor investing 標準 | top decile（前 10%），150 支 universe → 15 支 |
 
-**建議**：15 支在台股偏少（個股波動大）。**25-30 支**更穩健，降低 stock-specific risk。
+**學術建議 25-30 支**，但在因子 ICIR 0.4-0.5 的台股場景下，增加持股會稀釋 alpha 集中度。**先保持 15 支，用 inverse-vol 改善權重分配降低風險**，待驗證後再決定是否擴大。
 
 ### 3.4 台股特殊考量
 
@@ -153,9 +153,14 @@ SimBroker.execute(orders)                      [成交模擬]
 ```python
 def vol_adjusted_weight(signals, volatilities, constraints):
     """rank(signal) / volatility，結合信號排名和風險感知。"""
-    ranked = {s: rank for rank, s in enumerate(sorted(signals, key=signals.get))}
+    n = len(signals)
+    # rank: 最大信號 → rank=n（最高權重），最小 → rank=1
+    sorted_syms = sorted(signals, key=lambda s: signals[s])
+    ranked = {s: i + 1 for i, s in enumerate(sorted_syms)}
     raw = {s: ranked[s] / max(volatilities.get(s, 0.20), 0.05) for s in signals}
     total = sum(raw.values())
+    if total <= 0:
+        return {}
     weights = {s: (v / total) * constraints.max_total_weight for s, v in raw.items()}
     return {s: min(w, constraints.max_weight) for s, w in weights.items() if w >= constraints.min_weight}
 ```
@@ -168,12 +173,13 @@ def vol_adjusted_weight(signals, volatilities, constraints):
 def on_bar(self, ctx):
     target = self._compute_target_weights(ctx)
     current = self._get_current_weights(ctx)
-    # 只調整偏離 > 2% 的持倉
+    # 只調整偏離超過門檻的持倉（門檻 = 可配置，預設約 round-trip cost 水準）
+    NO_TRADE_THRESHOLD = 0.015  # 1.5%，略高於 round-trip 0.585%
     adjusted = {}
     for sym in set(target) | set(current):
         t = target.get(sym, 0)
         c = current.get(sym, 0)
-        if abs(t - c) > 0.02:
+        if abs(t - c) > NO_TRADE_THRESHOLD:
             adjusted[sym] = t
         else:
             adjusted[sym] = c  # 保持不動
@@ -260,7 +266,7 @@ sell_cost = 0.001425 + 0.003  # = 0.004425
 | 非對稱成本 | — | -10~15% 不必要賣出 | 低（5 行） |
 | Lot size 感知 | +0.02-0.05 | — | 中（40 行） |
 
-**保守估計**：Phase 1 的三項改進可以讓 net Sharpe 提升 0.10-0.25，成本降低 30-50%，工作量 1-2 天。
+**預期改善方向**：Phase 1 的三項改進預期降低組合波動率（inverse-vol）、降低換手成本（no-trade zone）、減少不必要賣出（非對稱成本）。具體幅度需要回測驗證，不預設數字。工作量 1-2 天。
 
 ---
 
@@ -335,7 +341,51 @@ Phase 2（Phase 1 驗證後）：
 
 ### 注意事項
 
-1. **4.2 no-trade zone 需要 ctx 提供當前持倉** — 目前 `Strategy.on_bar(ctx)` 可以透過 `ctx.portfolio()` 取得，但要確認 BacktestEngine 是否在每次 on_bar 前更新 portfolio
-2. **4.1 inverse-vol 的 vol 計算** — 用 20 天 close-to-close std × sqrt(252)，和 Validator 的 Sharpe 分母一致
-3. **改動必須逐一上線** — 不要同時改 3 個東西，無法歸因。先 4.1 → 跑 Validator → 再 4.2 → 跑 Validator → 再 4.6
-4. **autoresearch 的因子也受益** — strategy_builder 改了，所有 autoresearch 因子的 Validator 結果都會變。之前的 PBO 數值不再可比
+1. **改動前先跑 baseline** — 用當前版本跑一次 revenue_momentum_hedged Validator 記錄 Sharpe/turnover/PBO，作為對比基準。改動後跑同樣條件比較。沒有 baseline 就無法歸因
+2. **4.2 no-trade zone 需要 ctx 提供當前持倉** — 目前 `Strategy.on_bar(ctx)` 可以透過 `ctx.portfolio()` 取得，但要確認 BacktestEngine 是否在每次 on_bar 前更新 portfolio
+3. **4.1 inverse-vol 的 vol 計算** — 用 20 天 close-to-close std × sqrt(252)，和 Validator 的 Sharpe 分母一致
+4. **改動必須逐一上線** — 不要同時改 3 個東西，無法歸因。先 4.1 → 跑 Validator → 再 4.2 → 跑 Validator → 再 4.6
+5. **autoresearch 的因子也受益** — strategy_builder 改了，所有 autoresearch 因子的 Validator 結果都會變。之前的 PBO 數值不再可比
+
+### 覆核意見（2026-03-28）
+
+**通過，已修正以下問題：**
+
+| 問題 | 修正 |
+|------|------|
+| 4.1 rank 邏輯反了（最小信號 rank=0 → 權重=0） | rank 從 1 開始，最大信號 = n |
+| 4.2 no-trade 門檻 2% 硬編碼 | 改為 1.5%（可配置），附校準說明 |
+| 3.3 持股建議和審批矛盾 | 統一為「先保持 15，inverse-vol 改善權重」|
+| Section 5 預期效果過於樂觀 | 改為「預期改善方向」不預設數字 |
+| 缺少改動前 baseline | 新增注意事項 #1：改動前先跑 baseline |
+| 4.4 cost_bps=44.25 是賣出單邊不是 round-trip | 註解已標明「台股 sell 側 0.4425%」，使用正確 |
+
+### 執行結果（2026-03-28）
+
+#### 4.1 Inverse-vol: ❌ 不採用
+
+| Check | Baseline | 4.1 | 判斷 |
+|-------|----------|-----|------|
+| CAGR | +11.60% | +9.09% | ❌ -2.5% |
+| Sharpe | 0.909 | 0.823 | ❌ -0.09 |
+| MDD | -27.27% | -22.88% | ✅ 改善 |
+| OOS Sharpe | -0.732 | -0.272 | ✅ 改善 |
+| PBO | 0.702 | 0.910 | ❌ 大幅惡化 |
+
+**學術研究確認回滾正確：**
+- DeMiguel (2009)：15 檔投組中等權幾乎永遠優於任何估計加權
+- ICIR 0.5-0.9 是極強信號，反波動率丟棄信號排序資訊 = 浪費 alpha
+- 20 天波動率估計 × 15 檔 → 噪音太大，有效持股降到 8-10
+- 如需風險管理，應在投組層級做 vol-targeting，不是個股層級改權重
+
+#### 4.2+4.6 No-trade zone + 非對稱成本: ✅ 已採用
+
+| Check | Baseline | 4.2+4.6 | 判斷 |
+|-------|----------|---------|------|
+| CAGR | +11.60% | +12.91% | ✅ +1.3% |
+| Sharpe | 0.909 | 0.937 | ✅ +0.03 |
+| MDD | -27.27% | -29.88% | ⚠️ 略差 |
+| vs 0050 | +2.92% | +4.22% | ✅ +1.3% |
+| PBO | 0.702 | 0.628 | ✅ 改善 |
+
+買入門檻 1.5%、賣出門檻 3%（反映賣出成本是買入 3 倍）。
