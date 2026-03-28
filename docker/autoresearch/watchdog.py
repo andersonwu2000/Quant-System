@@ -381,6 +381,39 @@ def _compute_factor_level_pbo():
         if len(returns_matrix) < 120:
             return
 
+        # Phase AB Phase 3: Independent hypothesis clustering
+        # Factors with returns correlation > 0.50 are the same "direction"
+        # Keep only the best factor per cluster (highest mean return)
+        corr_matrix = returns_matrix.corr()
+        used = set()
+        clusters: list[list[str]] = []
+        for col in corr_matrix.columns:
+            if col in used:
+                continue
+            cluster = [col]
+            used.add(col)
+            for other in corr_matrix.columns:
+                if other in used:
+                    continue
+                if abs(corr_matrix.loc[col, other]) > 0.50:
+                    cluster.append(other)
+                    used.add(other)
+            clusters.append(cluster)
+
+        # Pick best per cluster (highest mean daily return)
+        independent_factors: list[str] = []
+        for cluster in clusters:
+            best = max(cluster, key=lambda c: returns_matrix[c].mean())
+            independent_factors.append(best)
+
+        n_raw = len(daily_returns_dict)
+        n_independent = len(independent_factors)
+        returns_matrix = returns_matrix[independent_factors]
+
+        if len(returns_matrix.columns) < 4:
+            log(f"Factor-Level PBO: only {n_independent} independent directions (need >=4)")
+            return
+
         # Run CSCV
         import sys
         sys.path.insert(0, "/app")
@@ -394,17 +427,20 @@ def _compute_factor_level_pbo():
         _last_factor_pbo_count = n_factors
 
         log(f"Factor-Level PBO: {result.pbo:.3f} "
-            f"(N={len(daily_returns_dict)} factors, {len(returns_matrix)} days, "
-            f"{result.n_combinations} combos)")
+            f"(N={n_independent} independent / {n_raw} total, "
+            f"{len(returns_matrix)} days, {result.n_combinations} combos)")
 
         # Write to a file for status.ps1 to pick up
         pbo_path = WORK_DIR / "factor_pbo.json"
         import json
         pbo_path.write_text(json.dumps({
             "factor_pbo": round(result.pbo, 4),
-            "n_factors": len(daily_returns_dict),
+            "n_independent": n_independent,
+            "n_total_factors": n_raw,
+            "n_clusters": len(clusters),
             "n_days": len(returns_matrix),
             "n_combinations": result.n_combinations,
+            "correlation_threshold": 0.50,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         }, indent=2), encoding="utf-8")
 
