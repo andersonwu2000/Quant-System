@@ -826,7 +826,7 @@ def _run_validator(results: dict) -> dict | None:
         n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
         dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
         pbo_val = next((float(c.value) for c in checks if c.name == "pbo"), 1.0)
-        deployed = n_excl_dsr >= 13 and dsr_val >= 0.70 and pbo_val <= 0.85
+        deployed = n_excl_dsr >= 13 and dsr_val >= 0.70 and pbo_val <= 0.70
 
         print(f"deploy_eligible: {deployed}")
 
