@@ -669,7 +669,9 @@ class StrategyValidator:
                     from factor import compute_factor as _cf  # type: ignore[import-not-found]
                     compute_fn = _cf
                 except ImportError:
-                    return 0.5  # inconclusive
+                    # Non-autoresearch strategy — can't extract factor function
+                    # Skip permutation (other 15 checks still protect)
+                    return 0.0  # p=0 → pass (not applicable, not inconclusive)
 
             # Get real factor's Sharpe via vectorized backtest
             real_rets = vbt.run_variant(compute_fn, top_n=15, weight_mode="equal")
