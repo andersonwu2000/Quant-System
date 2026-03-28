@@ -1,29 +1,54 @@
 services:
-  autoresearch:
+  # Agent: Claude Code CLI — only has work/ and data/ (no evaluate.py, no src/)
+  agent:
     build:
       context: ../..
-      dockerfile: docker/autoresearch/Dockerfile
+      dockerfile: docker/autoresearch/Dockerfile.agent
     container_name: autoresearch-agent
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - autoresearch-net
-    environment:
-      - API_URL=http://host.docker.internal:8000
-    mem_limit: 4g
-    cpus: 2
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
+    mem_limit: 8g
+    cpus: 4
     tmpfs:
       - /tmp:size=512m
     volumes:
-      - ../../data:/app/data:ro
-      - ../../src:/app/src:ro
-      - ../../docs/research/autoresearch:/app/reports
-      - ./work:/app/work
+      - ./work:/app/work                            # factor.py + results.tsv (rw)
+      - ../../data/market:/app/data/market:ro        # market data (agent needs schema)
+      - ../../data/fundamental:/app/data/fundamental:ro
+      - ../../data/research:/app/data/research:ro    # universe.txt, baseline_ic
+    environment:
+      - EVAL_URL=http://evaluator:5000/evaluate
+    # Credentials mounted at runtime by loop.ps1 (not in compose)
+    # -v "C:/Users/ander/.claude/.credentials.json:/home/researcher/.claude/.credentials.json:ro"
+    entrypoint: ["sleep", "infinity"]  # loop.ps1 uses docker exec
 
+  # Evaluator: Flask HTTP service wrapping evaluate.py (agent CANNOT see this)
+  evaluator:
+    build:
+      context: ../..
+      dockerfile: docker/autoresearch/Dockerfile.evaluator
+    container_name: autoresearch-evaluator
+    restart: unless-stopped
+    networks:
+      - autoresearch-net
+    mem_limit: 8g
+    cpus: 4
+    tmpfs:
+      - /tmp:size=512m
+    volumes:
+      - ./work:/app/work                            # reads factor.py, appends results.tsv
+      - ./watchdog_data:/app/watchdog_data           # factor_returns, pending, pbo
+      - ../../src:/app/src:ro                        # evaluate.py dependencies
+      - ../../data:/app/data:ro                      # market + fundamental + research
+      - ../../docs/research/autoresearch:/app/reports
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  # Watchdog: background Validator + Factor-Level PBO
   watchdog:
     build:
       context: ../..
@@ -33,7 +58,6 @@ services:
     network_mode: none
     mem_limit: 8g
     cpus: 4
-    read_only: true
     tmpfs:
       - /tmp:size=512m
     volumes:
@@ -46,5 +70,5 @@ services:
 
 networks:
   autoresearch-net:
-    internal: true
-
+    # Not internal — agent needs outbound for Anthropic API
+    driver: bridge
