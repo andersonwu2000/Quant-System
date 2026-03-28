@@ -243,7 +243,8 @@ def _run_background_validator(results: dict, factor_code: str) -> dict | None:
 
         strategy = _FactorStrategy()
         validator = StrategyValidator(config)
-        report = validator.validate(strategy, universe, "2017-01-01", "2024-12-31")
+        report = validator.validate(strategy, universe, "2017-01-01", "2024-12-31",
+                                    compute_fn=compute_factor)
 
         n_passed = report.n_passed
         n_total = report.n_total

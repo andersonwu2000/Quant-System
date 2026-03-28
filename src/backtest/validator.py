@@ -203,6 +203,7 @@ class StrategyValidator:
         universe: list[str],
         start: str,
         end: str,
+        compute_fn: Any = None,
     ) -> ValidationReport:
         """執行全部驗證檢查。"""
         cfg = self.config
@@ -366,7 +367,10 @@ class StrategyValidator:
 
         # 3. PBO (needs Walk-Forward period returns as strategy variants)
         logger.info("[Validator] Computing PBO...")
-        pbo_val = self._compute_pbo(wf_results, strategy=strategy, universe=universe, start=start, end=end)
+        # Pass compute_fn explicitly — avoid guessing in _compute_pbo
+        _cfn = compute_fn or getattr(strategy, '_compute_fn', None)
+        pbo_val = self._compute_pbo(wf_results, strategy=strategy, universe=universe,
+                                     start=start, end=end, compute_fn=_cfn)
         report.checks.append(CheckResult(
             name="pbo",
             passed=pbo_val <= cfg.max_pbo,

@@ -806,7 +806,8 @@ def _run_validator(results: dict) -> dict | None:
         universe = _load_universe(large=False)
 
         validator = StrategyValidator(config)
-        report = validator.validate(strategy, universe, EVAL_START, EVAL_END)
+        report = validator.validate(strategy, universe, EVAL_START, EVAL_END,
+                                    compute_fn=compute_factor)
 
         if report.error:
             print(f"  [ERROR] {report.error}")
