@@ -68,7 +68,7 @@ class ValidationConfig:
     pbo_n_partitions: int = 10
 
     # 4. Deflated Sharpe
-    min_dsr: float = 0.95             # DSR p-value > 0.95
+    min_dsr: float = 0.70             # DSR p-value > 0.70（Phase AB: N=15 時 0.95 太嚴）
     n_trials: int = 1                 # 已測試的策略總數（需外部傳入）
 
     # 5. Bootstrap

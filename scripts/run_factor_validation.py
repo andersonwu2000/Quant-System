@@ -105,7 +105,7 @@ def run_validation(factor_name: str, factor_code: str) -> dict:
         # Run validator
         config = ValidationConfig(
             min_cagr=0.08, min_sharpe=0.7, max_drawdown=0.40,
-            n_trials=1, oos_start="2024-07-01", oos_end="2024-12-31",
+            n_trials=15,  # ~15 independent hypothesis directions (Phase AB)
             initial_cash=10_000_000, min_universe_size=50,
             wf_train_years=2,
         )

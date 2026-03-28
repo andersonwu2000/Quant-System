@@ -782,7 +782,7 @@ async def submit_factor(
 
         config = ValidationConfig(
             min_cagr=0.08, min_sharpe=0.7, max_drawdown=0.40,
-            n_trials=1, oos_start="2025-01-01", oos_end="2025-12-31",
+            n_trials=15,  # ~15 independent hypothesis directions (Phase AB)
             initial_cash=10_000_000, min_universe_size=50,
             wf_train_years=2,
         )
