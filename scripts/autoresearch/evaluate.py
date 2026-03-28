@@ -753,20 +753,21 @@ def _run_validator(results: dict) -> dict | None:
             def name(self) -> str:
                 return "autoresearch_candidate"
             def on_bar(self, ctx: Context) -> dict[str, float]:
-                symbols = list(ctx.current_prices.keys())
+                symbols = ctx.universe()
+                as_of = pd.Timestamp(ctx.now())
                 if _is_3arg:
                     data = {
-                        "bars": {s: ctx.feed.get_bars(s) for s in symbols},
+                        "bars": {s: ctx.bars(s) for s in symbols},
                         "revenue": {},
                         "institutional": {},
                         "pe": {}, "pb": {}, "roe": {},
                     }
-                    if hasattr(ctx, "fundamentals") and ctx.fundamentals:
-                        data["revenue"] = getattr(ctx.fundamentals, "revenue", {})
-                        data["institutional"] = getattr(ctx.fundamentals, "institutional", {})
-                    values = compute_factor(symbols, ctx.current_time, data)
+                    if hasattr(ctx, "_fundamentals") and ctx._fundamentals:
+                        data["revenue"] = getattr(ctx._fundamentals, "revenue", {})
+                        data["institutional"] = getattr(ctx._fundamentals, "institutional", {})
+                    values = compute_factor(symbols, as_of, data)
                 else:
-                    values = compute_factor(symbols, ctx.current_time)
+                    values = compute_factor(symbols, as_of)
                 if not values:
                     return {}
                 sorted_syms = sorted(values, key=lambda s: values[s], reverse=True)
@@ -780,6 +781,9 @@ def _run_validator(results: dict) -> dict | None:
 
         validator = StrategyValidator(config)
         report = validator.validate(strategy, universe, EVAL_START, EVAL_END)
+
+        if report.error:
+            print(f"  [ERROR] {report.error}")
 
         n_passed = report.n_passed
         n_total = report.n_total
