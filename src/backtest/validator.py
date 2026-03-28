@@ -609,7 +609,8 @@ class StrategyValidator:
         try:
             bt_config = self._make_bt_config(universe, start, end)
             engine = BacktestEngine()
-            r = engine.run(strategy, bt_config, feed_override=getattr(self, '_shared_feed', None))
+            # OOS: don't use shared feed (HistoricalFeed state may be stale from IS backtest)
+            r = engine.run(strategy, bt_config)
             if r.nav_series is not None and len(r.nav_series) < 5:
                 return {"return": 0.0, "sharpe": 0.0,
                         "error": f"OOS {start}~{end}: only {len(r.nav_series)} days — data likely missing"}
@@ -887,7 +888,8 @@ class StrategyValidator:
             recent_start = (pd.Timestamp(end) - pd.Timedelta(days=calendar_days)).strftime("%Y-%m-%d")
             bt_config = self._make_bt_config(universe, recent_start, end)
             engine = BacktestEngine()
-            r = engine.run(strategy, bt_config, feed_override=getattr(self, '_shared_feed', None))
+            # Recent: don't use shared feed (date range differs from IS)
+            r = engine.run(strategy, bt_config)
             if r.nav_series is not None and len(r.nav_series) < 5:
                 return {"sharpe": 0.0, "start": recent_start, "end": end,
                         "error": f"Only {len(r.nav_series)} trading days — data likely missing"}
