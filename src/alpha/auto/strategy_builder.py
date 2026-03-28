@@ -90,8 +90,9 @@ def build_from_research_factor(
                 return self._cached
 
             as_of = pd.Timestamp(current_date)
-            candidates: list[tuple[str, float]] = []
 
+            # Phase 1: 流動性篩選
+            eligible: list[str] = []
             for sym in ctx.universe():
                 try:
                     bars = ctx.bars(sym, lookback=60)
@@ -100,31 +101,50 @@ def build_from_research_factor(
                     vol = float(bars["volume"].iloc[-20:].mean())
                     if vol < min_volume_lots * 1000:
                         continue
+                    eligible.append(sym)
                 except Exception:
                     continue
 
-                try:
-                    if _needs_data:
-                        # autoresearch 3-arg: build data dict from ctx
-                        _bars = ctx.bars(sym, lookback=252)
-                        _rev = ctx.get_revenue(sym, lookback_months=36)
-                        _data = {
-                            "bars": {sym: _bars},
-                            "revenue": {sym: _rev} if not _rev.empty else {},
-                            "institutional": {},
-                            "pe": {}, "pb": {}, "roe": {},
-                        }
-                        values = compute_fn([sym], as_of, _data)
-                    else:
-                        values = compute_fn([sym], as_of)
-                    val = values.get(sym)
-                    if val is None:
-                        continue
-                    # 不過濾 val 的正負（計數型因子 val=0 也是有效信號）
-                    # 用 direction 決定排序方向（direction=1 → 越大越好）
-                    candidates.append((sym, val * direction))
-                except Exception:
+            if not eligible:
+                self._last_month = month
+                self._cached = {}
+                return {}
+
+            # Phase 2: batch 計算因子值（一次傳全 universe）
+            try:
+                if _needs_data:
+                    _all_bars: dict[str, pd.DataFrame] = {}
+                    _all_rev: dict[str, pd.DataFrame] = {}
+                    for sym in eligible:
+                        try:
+                            _all_bars[sym] = ctx.bars(sym, lookback=252)
+                        except Exception:
+                            pass
+                        try:
+                            bare = sym.replace(".TW", "").replace(".TWO", "")
+                            rev = ctx.get_revenue(bare, lookback_months=36)
+                            if not rev.empty:
+                                _all_rev[sym] = rev
+                        except Exception:
+                            pass
+                    _data = {
+                        "bars": _all_bars,
+                        "revenue": _all_rev,
+                        "institutional": {},
+                        "pe": {}, "pb": {}, "roe": {},
+                    }
+                    all_values = compute_fn(eligible, as_of, _data)
+                else:
+                    all_values = compute_fn(eligible, as_of)
+            except Exception:
+                all_values = {}
+
+            # Phase 3: 排序選股
+            candidates: list[tuple[str, float]] = []
+            for sym, val in all_values.items():
+                if val is None:
                     continue
+                candidates.append((sym, val * direction))
 
             self._last_month = month
             if not candidates:
@@ -133,7 +153,9 @@ def build_from_research_factor(
 
             candidates.sort(key=lambda x: x[1], reverse=True)
             selected = candidates[:top_n]
-            signals = {s: v for s, v in selected}
+            # direction 調整後 top 應為正值；若 direction=-1 且全部為負，
+            # 取絕對值作為信號強度以避免 long_only 過濾
+            signals = {s: abs(v) for s, v in selected}
             weights = signal_weight(signals, OptConstraints(max_weight=max_weight, max_total_weight=0.95))
             self._cached = weights
             return weights

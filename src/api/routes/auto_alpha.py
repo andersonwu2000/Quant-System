@@ -691,12 +691,12 @@ async def submit_factor(
     from pathlib import Path
     import importlib.util
 
+    import re as _re
+
     factor_dir = Path(__file__).resolve().parent.parent.parent.parent / "src" / "strategy" / "factors" / "research"
     factor_dir.mkdir(parents=True, exist_ok=True)
-    factor_path = factor_dir / f"{req.name}.py"
 
     # 0. 安全檢查 — 拒絕明顯惡意代碼
-    import re as _re
     FORBIDDEN_PATTERNS = [
         r"\bimport\s+os\b", r"\bimport\s+subprocess\b", r"\bimport\s+shutil\b",
         r"\b__import__\b", r"\bexec\s*\(", r"\beval\s*\(",
@@ -709,7 +709,7 @@ async def submit_factor(
                 message=f"Code contains forbidden pattern: {pat}",
             )
 
-    # 1. Name sanitization
+    # 1. Name sanitization — all downstream uses clean_name
     clean_name = _re.sub(r'[^a-zA-Z0-9_]', '', req.name)
     if not clean_name:
         return SubmitFactorResponse(status="rejected", message="Invalid factor name")
@@ -719,14 +719,14 @@ async def submit_factor(
     factor_path.write_text(req.code, encoding="utf-8")
     logger.info("Factor submitted: %s (score=%.2f)", clean_name, req.composite_score)
 
-    # 2. 驗證可載入
+    # 3. 驗證可載入
     try:
-        spec = importlib.util.spec_from_file_location(f"research_{req.name}", factor_path)
+        spec = importlib.util.spec_from_file_location(f"research_{clean_name}", factor_path)
         if spec is None or spec.loader is None:
             return SubmitFactorResponse(status="error", message="Cannot load factor module")
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        compute_fn = getattr(mod, f"compute_{req.name}", None) or getattr(mod, "compute_factor", None)
+        compute_fn = getattr(mod, f"compute_{clean_name}", None) or getattr(mod, "compute_factor", None)
         if compute_fn is None:
             return SubmitFactorResponse(status="error", message="No compute function found")
     except Exception as e:
@@ -737,23 +737,45 @@ async def submit_factor(
         from src.alpha.auto.strategy_builder import build_from_research_factor
         from src.backtest.validator import StrategyValidator, ValidationConfig
 
-        strategy = build_from_research_factor(factor_name=req.name, top_n=15)
+        strategy = build_from_research_factor(factor_name=clean_name, top_n=15)
         market_dir = Path("data/market")
-        universe = sorted([
-            p.stem.replace("_1d", "")
-            for p in market_dir.glob("*.TW_1d.parquet")
-            if not p.stem.startswith("00")
-        ])
-        # 過濾太短的
+
+        # Scan universe — support multiple parquet naming conventions
         import pandas as pd
+        universe_set: set[str] = set()
+        if market_dir.exists():
+            for p in market_dir.glob("*.parquet"):
+                stem = p.stem
+                # finmind_{code}.parquet → {code}.TW
+                if stem.startswith("finmind_"):
+                    code = stem.replace("finmind_", "")
+                    if code.isdigit() and not code.startswith("00"):
+                        universe_set.add(f"{code}.TW")
+                # {sym}_1d.parquet → {sym}
+                elif stem.endswith("_1d") and ".TW" in stem:
+                    sym = stem.replace("_1d", "")
+                    if not sym.startswith("00"):
+                        universe_set.add(sym)
+                # {sym}.TW.parquet → {sym}.TW
+                elif ".TW" in stem and not stem.startswith("00"):
+                    universe_set.add(stem)
+        universe = sorted(universe_set)
+
+        # 過濾太短的
         good_universe = []
         for sym in universe[:200]:  # cap for speed
-            try:
-                df = pd.read_parquet(market_dir / f"{sym}_1d.parquet")
-                if len(df) >= 500:
-                    good_universe.append(sym)
-            except Exception:
-                continue
+            bare = sym.replace(".TW", "").replace(".TWO", "")
+            # Try multiple naming patterns
+            for pattern in [f"{sym}.parquet", f"{sym}_1d.parquet", f"finmind_{bare}.parquet"]:
+                path = market_dir / pattern
+                if path.exists():
+                    try:
+                        df = pd.read_parquet(path)
+                        if len(df) >= 500:
+                            good_universe.append(sym)
+                    except Exception:
+                        pass
+                    break
 
         config = ValidationConfig(
             min_cagr=0.08, min_sharpe=0.7, max_drawdown=0.40,
@@ -781,7 +803,12 @@ async def submit_factor(
     # excl DSR ≥ 14
     checks = report.checks
     n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
-    dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
+    def _safe_float(s: str, default: float = 0.0) -> float:
+        try:
+            return float(s)
+        except (ValueError, TypeError):
+            return default
+    dsr_val = next((_safe_float(c.value) for c in checks if c.name == "deflated_sharpe"), 0.0)
 
     if n_excl_dsr >= 13 and dsr_val >= 0.70:
         try:
@@ -790,8 +817,8 @@ async def submit_factor(
             can, reason = deployer.can_deploy()
             if can:
                 deployer.deploy(
-                    name=f"auto_{req.name}",
-                    factor_name=req.name,
+                    name=f"auto_{clean_name}",
+                    factor_name=clean_name,
                     total_nav=10_000_000,
                 )
                 deployed = True
