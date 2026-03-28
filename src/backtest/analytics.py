@@ -54,18 +54,6 @@ def deflated_sharpe(
     # Convert annualized SR to per-observation SR for internal calculations
     sr = observed_sharpe / np.sqrt(252)
 
-    # Expected maximum per-observation SR under the null (all strategies SR=0)
-    # E[max SR] ≈ (1 - γ) × Φ⁻¹(1 - 1/N) + γ × Φ⁻¹(1 - 1/(N·e))
-    # This gives the expected max of N i.i.d. standard normal draws,
-    # scaled by SE of SR estimator (1/√T).
-    if N == 1:
-        e_max_sr = 0.0
-    else:
-        e_max_sr = float(
-            (1.0 - _EULER_MASCHERONI) * norm.ppf(1.0 - 1.0 / N)
-            + _EULER_MASCHERONI * norm.ppf(1.0 - 1.0 / (N * np.e))
-        ) * (1.0 / np.sqrt(T))
-
     # Standard error of SR (accounting for non-normality)
     # Lo (2002): Var(SR) ≈ (1 + 0.5·SR² - skew·SR + (kurt-3)/4·SR²) / (T-1)
     se = float(np.sqrt(
@@ -75,6 +63,17 @@ def deflated_sharpe(
 
     if se <= 0:
         return 0.0
+
+    # Expected maximum per-observation SR under the null (all strategies SR=0)
+    # E[max SR] ≈ √V(SR) × [(1 - γ) × Φ⁻¹(1 - 1/N) + γ × Φ⁻¹(1 - 1/(N·e))]
+    # Bailey (2014): uses SE (not 1/√T) for consistency with the z-score denominator
+    if N == 1:
+        e_max_sr = 0.0
+    else:
+        e_max_sr = float(
+            (1.0 - _EULER_MASCHERONI) * norm.ppf(1.0 - 1.0 / N)
+            + _EULER_MASCHERONI * norm.ppf(1.0 - 1.0 / (N * np.e))
+        ) * se
 
     # DSR = Φ((observed_SR - E[max SR]) / SE)
     z = (sr - e_max_sr) / se
