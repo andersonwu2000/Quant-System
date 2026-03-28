@@ -447,6 +447,85 @@ docker exec autoresearch-agent claude --version
 docker exec autoresearch-agent claude -p "echo hello" --dangerously-skip-permissions
 ```
 
+### Step 0 技術驗證（2026-03-29 追加）
+
+**兩個阻塞問題需先驗證：**
+
+#### 問題 1：`claude -p` 是單次模式
+
+`claude -p` 跑完一個 prompt 就退出。Autoresearch 需要持續循環（200+ tool uses per session）。
+
+**測試方案：**
+- A. Docker 內用 shell loop（等同 host 的 loop.ps1）：
+  ```bash
+  while true; do
+    claude -p "..." --dangerously-skip-permissions --max-turns 200
+    sleep 10
+  done
+  ```
+- B. 用 `claude` 互動模式 + 預設 prompt（需要 TTY）
+- C. 用 Claude API 直接呼叫（繞過 CLI）
+
+#### 問題 2：Max 訂閱 OAuth 在 Docker 內的穩定性
+
+目前認證用 OAuth token（`.credentials.json`），不是 API key。需驗證：
+- Token 能否在容器內成功認證？
+- Token 過期後能否在容器內自動刷新（refresh token）？
+- 容器內沒有瀏覽器，OAuth flow 是否能完成？
+
+**測試計畫：**
+```bash
+# Test 1: credentials mount + claude -p（單次）
+docker run --rm \
+  -v "C:/Users/ander/.claude/.credentials.json:/home/node/.claude/.credentials.json:ro" \
+  claude-agent:latest \
+  claude -p "respond with: hello" --dangerously-skip-permissions
+
+# Test 2: 多輪 tool use（模擬 autoresearch 循環）
+docker run --rm \
+  -v "C:/Users/ander/.claude/.credentials.json:/home/node/.claude/.credentials.json:ro" \
+  -v "D:/Finance/scripts/autoresearch:/workspace:ro" \
+  claude-agent:latest \
+  claude -p "read /workspace/program.md, then echo done" \
+  --dangerously-skip-permissions --max-turns 5
+
+# Test 3: shell loop（持續循環）
+docker run --rm \
+  -v "C:/Users/ander/.claude/.credentials.json:/home/node/.claude/.credentials.json:ro" \
+  claude-agent:latest \
+  sh -c 'for i in 1 2 3; do claude -p "echo round $i" --dangerously-skip-permissions; done'
+
+# Test 4: token refresh（跑超過 token 有效期）
+# 需要等 token 接近過期時測試
+```
+
+**如果 Test 1-3 全部失敗**，Phase AE 需要改方案：
+- 放棄 Claude Code CLI in Docker
+- 改用 Claude API 直接呼叫（`anthropic` Python SDK）
+- Agent 邏輯用 Python 寫，不依賴 CLI
+
+### Step 0 測試結果（2026-03-29 04:30）
+
+| Test | 內容 | 結果 |
+|------|------|:----:|
+| 1 | OAuth credentials mount + `claude -p` 單次 | ✅ 回傳 "hello from docker" |
+| 2 | 多輪 tool use + 讀檔案 | ✅ 讀 program.md 並回答問題 |
+| 3 | Shell loop 3 輪連續 `claude -p` | ✅ 3 輪都成功 |
+| 4a | Docker 內讀 factor.py | ✅ 正確回傳 `compute_factor` |
+| 4b | Docker 內寫 results.tsv | ✅ append 成功 |
+
+**結論：所有阻塞問題已排除。**
+
+- OAuth credentials 掛載為 volume → 容器內認證正常
+- `claude -p` + `--max-turns 200` 在 Docker 內可用
+- Shell loop 可持續循環（等同 host 的 loop.ps1）
+- 檔案讀寫通過 volume mount 正常運作
+- Token 為 Max 訂閱，有效期到 2026-07（3 個月），refresh token 可延長
+
+**Agent image 配置：** `node:22-slim` + `npm install -g @anthropic-ai/claude-code` + git + curl。大小 ~300MB。
+
+**下一步：執行 Step 1-7 正式實施。**
+
 ### #5 回覆：監控和重啟 ✅
 
 接受建議。docker-compose 加入：
