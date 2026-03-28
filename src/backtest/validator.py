@@ -76,11 +76,12 @@ class ValidationConfig:
     min_prob_sharpe_positive: float = 0.80  # P(SR > 0) > 80%
 
     # 6. OOS holdout
-    # Rolling OOS: aligned with evaluate.py (most recent 1.5 years minus 3-month buffer)
+    # Rolling OOS: most recent 1.5 years up to yesterday
+    # (Validator runs full backtest, no forward-return buffer needed)
     from datetime import datetime as _dt, timedelta as _td
     _today = _dt.now()
-    oos_end: str = (_today - _td(days=90)).strftime("%Y-%m-%d")
-    oos_start: str = (_today - _td(days=90 + 548)).strftime("%Y-%m-%d")
+    oos_end: str = (_today - _td(days=1)).strftime("%Y-%m-%d")
+    oos_start: str = (_today - _td(days=1 + 548)).strftime("%Y-%m-%d")
     oos_min_sharpe: float = 0.3       # OOS Sharpe > 0.3（合理的風險調整報酬）
 
     # 7. vs 0050.TW benchmark
