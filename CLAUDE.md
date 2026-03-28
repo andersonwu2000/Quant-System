@@ -148,7 +148,12 @@ Keep updates minimal — only touch sections affected by the change.
 7. **crash recovery 需要原子性** — trade log 必須在 apply_trades 之前存，portfolio 必須存完整狀態（含 pending_settlements）
 8. **時區必須統一** — 台股用 UTC+8 做日期判斷，混用 UTC 會導致 08:00 提前 reset
 9. **deepcopy + threading.Lock 不相容** — Portfolio 加了 lock 後 check_orders 的 deepcopy 會 crash，需要自定義 __deepcopy__
-10. **PBO 方法學問題** — noise perturbation 不是 Bailey (2015) CSCV，結果本質上無意義，已標記 inconclusive
+10. **PBO 方法學問題** — noise perturbation 不是 Bailey (2015) CSCV，已改用正交策略變體（size × weight × rebal）的真正 CSCV
+11. **兩套數據路徑不同步是 bug 溫床** — evaluate.py 和 strategy_builder.py 各自載入數據，symbol 格式不一致（`bare` vs `.TW`）導致 revenue 全部找不到。修改一處必須 grep 所有數據載入點
+12. **異常時必須 fail-closed** — Validator 的 OOS/benchmark/correlation 異常回傳 0.0 會自動通過門檻。所有驗證函式異常時應回傳最差值（-999 / 1.0）確保不自動通過
+13. **base class API 要用 public method** — `Strategy.name()` 是 abstractmethod，不能用 `name = "str"` 覆蓋。`Context.now()` 不是 `ctx.current_time`。改之前先讀 base class 定義
+14. **Docker 容器依賴要一次裝齊** — 一個一個追 ModuleNotFoundError 浪費時間。直接從 pyproject.toml 的 dependencies 安裝，或用 `pip freeze` 鎖定
+15. **自主 agent 的安全靠隔離不靠指令** — prompt 說「不要改」agent 還是會改。OS 唯讀被 git reset 繞過。只有 Docker volume mount 是真正的硬保護
 
 ## Project Overview
 
