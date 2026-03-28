@@ -117,12 +117,11 @@ def build_from_research_factor(
                     _all_rev: dict[str, pd.DataFrame] = {}
                     for sym in eligible:
                         try:
-                            _all_bars[sym] = ctx.bars(sym, lookback=252)
+                            _all_bars[sym] = ctx.bars(sym, lookback=500)
                         except Exception:
                             pass
                         try:
-                            bare = sym.replace(".TW", "").replace(".TWO", "")
-                            rev = ctx.get_revenue(bare, lookback_months=36)
+                            rev = ctx.get_revenue(sym, lookback_months=36)
                             if not rev.empty:
                                 _all_rev[sym] = rev
                         except Exception:
