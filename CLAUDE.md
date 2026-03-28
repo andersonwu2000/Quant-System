@@ -16,6 +16,7 @@ CLAUDE.md 只保留**行為規範和開發規則**。技術細節分拆到 `docs
 | `docs/research/` | 實驗報告 + 研究總結 | 因子分析、策略驗證時 |
 | `docs/guides/autoresearch-guide-zh.md` | Autoresearch 操作指南 | 啟動/停止/監控自動研究時 |
 | `docs/claude/CHECKLISTS.md` | 研究啟動 / 代碼修改 / 事故處理 checklist | **每次操作前必讀** |
+| `docs/claude/LESSONS_FOR_AUTONOMOUS_AGENTS.md` | 自主 agent 開發的 20 條經驗教訓 | 設計 agent 系統、跨項目傳承時 |
 
 ### 文件維護規則
 
@@ -45,6 +46,8 @@ After completing any feature addition, bug fix, refactoring, architecture change
 Keep updates minimal — only touch sections affected by the change.
 
 ## Mandatory Code Review（強制覆核）
+
+**每次修改代碼前，先查 `docs/claude/CHECKLISTS.md` 底部的 Quick Reference 找到對應的變更類型 checklist。**
 
 **每次修改代碼後，必須做三層檢查才能 commit：**
 

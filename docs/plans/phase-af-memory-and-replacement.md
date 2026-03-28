@@ -457,7 +457,7 @@ if max_corr > 0.50:
 | 7 | diversity 雙門檻（0.30 WARN / 0.15 BLOCK） | §8 C | ✅ |
 | 8 | direction saturation 強制限制（L3 correlation-based, match >= 10） | 條件 2 | ✅ |
 | 9 | eval_server.py 加 library_health + replacement_budget | 條件 1 | ✅ |
-| 10 | 手動驗證替換流程 | 條件 3 | ⏳ Docker rebuild 後 |
+| 10 | 手動驗證替換流程 | 條件 3 | ✅ 端到端測試通過 + baseline 讀寫分離修正 |
 
 ### 風險追蹤清單
 
@@ -470,7 +470,70 @@ if max_corr > 0.50:
 | 記憶導致方向集中 | learnings 中 directions_explored 的增長速度 | 連續 20 個實驗只有 ≤ 2 個方向 → 檢查 saturation 機制 |
 | L5 query budget | l5_query_count.json | 單週期超過 50 → 暫停研究 |
 
-## 9. 參考
+## 9. Code Review（2026-03-29）
+
+### 範圍：evaluate.py（258 行新增）、eval_server.py（26 行新增）、program.md（6 行變更）
+
+### CRITICAL（0 個）
+
+無。
+
+### HIGH（1 個）
+
+**AF-H1：`_write_learning` 洩漏 `best_icir` 精確值到 learnings.jsonl**
+
+`evaluate.py:1123` 寫入 `"best_icir": round(results.get("best_icir", 0), 4)`。eval_server.py 的 `/evaluate` 已改為 bucket（strong/moderate/weak/none），但 learnings.jsonl 仍存精確值。
+
+- Docker 模式：✅ 安全（agent 看不到 watchdog_data/）
+- Host 模式（fallback）：⚠️ agent 可直接讀 learnings.jsonl
+
+**建議：** learnings.jsonl 也改為 bucket。目前不阻塞（Docker 是主要模式）。
+
+### MEDIUM（3 個）
+
+**AF-M1：direction 提取邏輯脆弱**（evaluate.py:1110-1114）
+
+從 factor.py 第一個「非 import/def/comment」行提取方向名。多行 docstring 可能取到第二行。不會 crash，但 direction 可能不準確。影響小。
+
+**AF-M2：`_replace_factor` 用 timestamp 命名**（evaluate.py:513）
+
+`f"factor_{time.strftime('%Y%m%d_%H%M%S')}"` — 同秒替換兩次會 name 衝突。實際風險極低（evaluate 是 sequential）。
+
+**AF-M3：bucket 邊界分散在 eval_server.py 各處**
+
+`/evaluate` 的 ICIR bucket（0.10/0.20/0.40）和 `/learnings` 的 saturation（5/10）定義在不同位置。建議抽成 eval_server.py 頂部常量。
+
+### LOW（1 個）
+
+**AF-L1：eval_server.py 的 `open()` 未用 `with`**（line 36, 72）
+
+File handle 依賴 GC 關閉。影響極小。
+
+### 端到端測試修正（2026-03-29）
+
+測試發現 baseline_ic_series.json 在 Docker 的 `data/research/` 是 ro mount，替換寫入會失敗。
+
+修正：讀寫路徑分離 — `_dedup_read_path()`（優先 watchdog_data/ rw，fallback data/research/ ro）、`_dedup_write_path()`（永遠寫 watchdog_data/）。
+
+### 審批條件驗證
+
+| 條件 | 狀態 |
+|------|:----:|
+| 1. replacement_count 在 l5_query_count.json + `/learnings` 回傳 budget | ✅ 已實作 |
+| 2. saturation 在 evaluator 強制（L3 match_count >= 10 → fail） | ✅ 已實作 |
+| 3. 首次替換前手動驗證 | ✅ 端到端測試已通過 |
+
+### 總結
+
+| 嚴重度 | 數量 | 行動 |
+|:------:|:----:|------|
+| HIGH | 1 | AF-H1：host 模式限定，Docker 安全。建議後續改為 bucket |
+| MEDIUM | 3 | 不阻塞，後續改善 |
+| LOW | 1 | 清理即可 |
+
+**整體品質：好。** 核心邏輯（替換、多樣性、saturation、learnings）正確。3 個審批條件全部滿足。`/evaluate` 主動改為 bucket 模式超出計畫要求。baseline_ic_series 讀寫分離是端到端測試的正確修正。
+
+## 10. 參考
 
 - Wang et al. (2026). FactorMiner. arXiv:2602.14670 — 替換條件 Eq.11, 1.3x ICIR, 一對一限制
 - WorldQuant BRAIN IQC — PNL corr < 0.7, Sharpe 10% 提升

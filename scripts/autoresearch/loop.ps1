@@ -7,7 +7,7 @@
 
 param(
     [int]$StatusInterval = 600,
-    [switch]$Host
+    [switch]$HostMode
 )
 
 $ScriptDir = $PSScriptRoot
@@ -41,7 +41,7 @@ $statusJob = Start-Job -ScriptBlock {
 Write-Host "  Status reporter running (Job $($statusJob.Id))" -ForegroundColor Green
 
 # --- Ensure Docker containers are up ---
-if (-not $Host) {
+if (-not $HostMode) {
     Write-Host "Checking Docker containers..." -ForegroundColor Yellow
     $evalUp = docker ps --filter "name=autoresearch-evaluator" --format "{{.Status}}" 2>$null
     if (-not $evalUp) {
@@ -70,11 +70,11 @@ if (-not $Host) {
         Write-Host "  Evaluator healthy." -ForegroundColor Green
     } else {
         Write-Host "  WARNING: Evaluator not responding. Falling back to host mode." -ForegroundColor Red
-        $Host = $true
+        $HostMode = $true
     }
 }
 
-if ($Host) {
+if ($HostMode) {
     $env:AUTORESEARCH = "1"
     Write-Host "  Mode: HOST (hooks enforced)" -ForegroundColor Yellow
 } else {
@@ -88,13 +88,13 @@ try {
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "  Autoresearch session starting...      " -ForegroundColor Cyan
         Write-Host "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
-        Write-Host "  Mode: $(if ($Host) { 'HOST' } else { 'DOCKER' })" -ForegroundColor Gray
+        Write-Host "  Mode: $(if ($HostMode) { 'HOST' } else { 'DOCKER' })" -ForegroundColor Gray
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host ""
 
         powershell -ExecutionPolicy Bypass -File "$ScriptDir\status.ps1" 2>$null
 
-        if ($Host) {
+        if ($HostMode) {
             claude -p $hostPrompt --dangerously-skip-permissions --max-turns 200
         } else {
             docker exec `

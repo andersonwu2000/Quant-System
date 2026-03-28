@@ -159,25 +159,24 @@
 
 這些是 CODE_REVIEW_20260329 中的項目，確認存在但尚未修復：
 
-| # | Bug | 來源 | 嚴重度 | 狀態 |
+| # | Bug | 來源 | 嚴重度 | 狀態（代碼驗證 2026-03-29） |
 |---|-----|------|:------:|------|
-| B-1 | sinopac 零股分流 sub-order 丟失 | C-01 | CRITICAL | ✅ 已修 (commit a93ef49) |
-| B-2 | sinopac _trades 從未寫入 | H-01 | HIGH | ✅ 已修 (commit a93ef49) |
-| B-3 | sinopac 模擬模式 overfill | C-02 | CRITICAL | ✅ 已修 (commit a93ef49) |
-| B-3b | sinopac 整股張數 vs 股數 | C-03 | CRITICAL | ✅ 已修 (commit a93ef49) |
-| B-4 | risk_parity 傳空 volatilities | C-07 | CRITICAL | ❌ **未修** — `risk_parity(signals, {})` 仍在 revenue_momentum:274 |
-| B-5 | apply_trades mutate Trade | H-04 | HIGH | ✅ 已修 (commit a93ef49, effective_qty) |
-| B-6 | Context.get_revenue 無 fallback | C-06 | CRITICAL | ✅ 已修 (commit 59d16a3, .TW suffix) |
-| B-7 | Kill switch path A 不 double-check | H-02 | HIGH | ❌ **未修** |
-| B-8 | generate_liquidation_orders lock 外讀 | H-03 | HIGH | ❌ **未修** |
-| B-9 | 手動 kill switch 不設 flag | M-06 | MEDIUM | ✅ 已修 (commit 59d16a3) |
-| B-10 | sinopac callback lock 外寫 | M-01 | MEDIUM | ❌ 未修 |
-| B-11 | auto_alpha name sanitization | M-02 | MEDIUM | ❌ 未修 |
-| B-12 | auto_alpha importlib 繞過安全檢查 | M-03 | MEDIUM | ❌ 未修 |
-| B-13 | service.py sinopac_simulation 屬性 | M-05 | MEDIUM | ❌ 未修 |
-| B-3c | execute_rebalance 無法平倉 | C-08/C-09 | CRITICAL | ✅ 已修 (commit 59d16a3) |
+| B-1~B-3 | sinopac 零股 3 bug | C-01~C-03 | CRITICAL | ✅ 已修 — sinopac.py 有 `submitted_shares`, `lot_size`, `C-01`/`C-02`/`C-03` 標記 |
+| B-4 | risk_parity 傳空 volatilities | C-07 | CRITICAL | ✅ 已修 — revenue_momentum.py:274 已計算 vols（`B-4 fix` 標記） |
+| B-5 | apply_trades mutate Trade | H-04 | HIGH | ✅ 已修 — oms.py 用 `effective_qty`（`H-04` 標記） |
+| B-6 | Context.get_revenue 無 fallback | C-06 | CRITICAL | ✅ 已修 — base.py:123 有 `.TW` fallback（`C-06` 標記） |
+| B-7 | Kill switch path A 不 double-check | H-02 | HIGH | ✅ 已修（圖片確認：剛修） |
+| B-8 | generate_liquidation_orders lock 外讀 | H-03 | HIGH | ✅ 已修（圖片確認：同 B-7） |
+| B-9 | 手動 kill switch 不設 flag | M-06 | MEDIUM | ✅ 已修 |
+| B-10 | sinopac callback lock 外寫 | M-01 | MEDIUM | ✅ 已修（圖片確認：剛修） |
+| B-11 | auto_alpha name sanitization | M-02 | MEDIUM | ✅ 已修 — strip leading digits + `.isidentifier()` check |
+| B-12 | auto_alpha importlib 繞過安全檢查 | M-03 | MEDIUM | ✅ 已修 — FORBIDDEN_PATTERNS 加入 `importlib`, `open(`, `sys`, `socket` 等 |
+| B-13 | service.py sinopac_simulation 屬性 | M-05 | MEDIUM | ✅ 已修（圖片確認：已存在） |
+| B-3c | execute_rebalance 無法平倉 | C-08/C-09 | CRITICAL | ✅ 已修 — jobs.py:193 和 360 都有 `_all_syms = set(target_weights) \| set(positions)` |
 
-**B-4 (risk_parity 空 volatilities) 之前判斷「已 rejected 不用修」但代碼仍在。如果有人啟用 risk_parity 模式會 crash。**
+### 驗證修正（2026-03-29 最終確認）
+
+初次 grep 被 `target_weights` 關鍵字誤導，實際 line 193 和 360 已有 `_all_syms` 修復。三條管線（execute_pipeline:664, execute_rebalance:193, monthly_revenue_rebalance:360）全部一致。
 
 ---
 

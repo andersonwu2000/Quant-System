@@ -700,10 +700,17 @@ async def submit_factor(
     factor_dir.mkdir(parents=True, exist_ok=True)
 
     # 0. 安全檢查 — 拒絕明顯惡意代碼
+    # B-12 fix: 加入 importlib 繞過、open()、pathlib、sys、socket 等
     FORBIDDEN_PATTERNS = [
         r"\bimport\s+os\b", r"\bimport\s+subprocess\b", r"\bimport\s+shutil\b",
+        r"\bimport\s+sys\b", r"\bimport\s+socket\b", r"\bimport\s+http\b",
+        r"\bimport\s+pathlib\b",
         r"\b__import__\b", r"\bexec\s*\(", r"\beval\s*\(",
         r"\bos\.system\b", r"\bos\.popen\b", r"\bsubprocess\.\w+\(",
+        r"\bimportlib\b",  # B-12: blocks importlib.import_module('os')
+        r"\bopen\s*\(",    # blocks file I/O (factor should use data dict, not read files)
+        r"\bglobals\s*\(", r"\blocals\s*\(",
+        r"\bgetattr\s*\(\s*__builtins__",
     ]
     for pat in FORBIDDEN_PATTERNS:
         if _re.search(pat, req.code):
@@ -713,9 +720,11 @@ async def submit_factor(
             )
 
     # 1. Name sanitization — all downstream uses clean_name
+    # B-11 fix: strip leading digits to ensure valid Python identifier
     clean_name = _re.sub(r'[^a-zA-Z0-9_]', '', req.name)
-    if not clean_name:
-        return SubmitFactorResponse(status="rejected", message="Invalid factor name")
+    clean_name = _re.sub(r'^[0-9]+', '', clean_name)  # remove leading digits
+    if not clean_name or not clean_name.isidentifier():
+        return SubmitFactorResponse(status="rejected", message="Invalid factor name (must be valid Python identifier)")
     factor_path = factor_dir / f"{clean_name}.py"
 
     # 2. 保存因子代碼

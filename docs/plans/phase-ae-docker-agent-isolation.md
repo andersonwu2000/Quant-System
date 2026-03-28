@@ -3,6 +3,8 @@
 > 3 容器 Eval-as-a-Service 架構已部署並通過端到端測試。
 > Agent 物理上無法讀 evaluate.py、src/、watchdog_data/。
 > loop.ps1 支援 `-Docker`（預設）和 `-Host`（fallback）兩種模式。
+>
+> **第三輪覆核（2026-03-29）**：實作大致符合計畫，1 個遺漏 + 2 個設計注意事項（見 §13）。
 
 ---
 
@@ -802,7 +804,166 @@ watchdog container:（現有，不變）
 | 6 | work/ 獨立 git | 不變 |
 | 7 | 端到端測試 | 加驗證：evaluator 不在 work/ 寫 __pycache__ |
 
-## 12. 參考
+## 13. 第三輪覆核（2026-03-29）
+
+**方法：** 逐一比對計畫中所有審批意見 vs 實際檔案內容。
+
+### 覆核結果：9/10 項已正確落實
+
+| 審批項 | 狀態 | 驗證位置 |
+|--------|:----:|---------|
+| #1+#3 Eval-as-a-Service | ✅ | eval_server.py 只回傳 4 欄位 |
+| #4 CLI smoke test | ✅ | §9 Step 0 測試結果全部通過 |
+| #5 restart + healthcheck | ✅ | docker-compose.yml services |
+| A: 不洩漏 IC 分數 | ✅ | eval_server.py `_extract()` |
+| B: PYTHONDONTWRITEBYTECODE | ✅ | Dockerfile.evaluator:25 |
+| B: watchdog_data 獨立 volume | ✅ | docker-compose.yml:40-41 |
+| C: Flask 單線程註解 | ✅ | eval_server.py:13-14 |
+| D: agent 有 data/ ro | ✅ | docker-compose.yml:17-19 |
+| **#2 work/ 獨立 git init** | **⚠️** | **Dockerfile.agent 只有 `safe.directory` 沒有 `git init`** |
+
+### 遺漏 1：work/ 的 git init
+
+**計畫 §9 #2 寫的：**
+```dockerfile
+RUN mkdir -p /app/work && cd /app/work && git init && \
+    git config user.email "agent@autoresearch" && \
+    git config user.name "autoresearch-agent"
+```
+
+**實際 Dockerfile.agent：**
+```dockerfile
+RUN git config --global --add safe.directory /app/work
+```
+
+只有 `safe.directory`（讓 git 不報 ownership 警告），沒有 `git init`。如果 work/ volume 從 host mount 進來且 host 的 work/ 沒有 .git，agent 的 `git commit` 會失敗。
+
+**影響：MEDIUM。** Agent 如果在 Docker 模式下嘗試 git 操作會失敗。兩個修法：
+1. Dockerfile.agent 加 `git init`（但 volume mount 會覆蓋 image 的 /app/work）
+2. loop.ps1 啟動前確認 work/ 有 .git（在 host 端 init）
+
+**建議：** 方案 2 — 在 loop.ps1 的 Docker 啟動段加：
+```powershell
+if (-not (Test-Path "$ProjectDir\docker\autoresearch\work\.git")) {
+    git -C "$ProjectDir\docker\autoresearch\work" init
+    git -C "$ProjectDir\docker\autoresearch\work" config user.email "agent@autoresearch"
+    git -C "$ProjectDir\docker\autoresearch\work" config user.name "autoresearch-agent"
+}
+```
+
+### 注意事項 1：eval_server.py 回傳 composite_score 和 best_icir
+
+§10 審批意見 A 建議「只回傳 pass/fail + level」。§11 回覆改為回傳 4 欄位（加了 composite_score 和 best_icir）。
+
+**這是刻意的折衷**（§11 解釋：和 program.md 的 "extract ONLY these 4 values" 一致），但 composite_score 和 best_icir 仍然是定量資訊，agent 可以從中學到「這次因子的 ICIR 是 0.51 vs 上次的 0.31」。
+
+**建議：** 可接受，但如果未來發現 agent 利用這些數值做 adaptive optimization（例如刻意逼近 ICIR 門檻），應收緊為只回傳 pass/fail + level。
+
+### 注意事項 2：evaluator 的 src/ mount 可能引入版本不一致
+
+docker-compose.yml:41 把 host 的 `../../src` mount 到 evaluator 容器。如果 host 上有人修改 src/ 但沒有重啟 evaluator 容器，Python 可能使用舊的 bytecode cache（已被 PYTHONDONTWRITEBYTECODE=1 緩解），但 import 仍會讀到新代碼。
+
+**影響：LOW。** evaluator 用 `restart: unless-stopped`，且 volume mount 是即時同步的（不是 COPY）。但如果有人修改了 validator.py 的閾值，evaluator 會立刻用新閾值，可能和 agent 的預期不一致。
+
+**建議：** 如果 src/ 有重要修改，重啟 evaluator：`docker compose restart evaluator`。
+
+## 14. Code Review（2026-03-29）
+
+### 範圍：5 個實作檔案
+
+| 檔案 | 行數 |
+|------|:----:|
+| eval_server.py | 72 |
+| Dockerfile.agent | 27 |
+| Dockerfile.evaluator | 36 |
+| docker-compose.yml | 74 |
+| loop.ps1 | 118 |
+
+### CRITICAL（0 個）
+
+無。
+
+### HIGH（2 個）
+
+**H-1: evaluator 缺 `strategies/` mount**
+
+evaluate.py → `src.backtest.validator` → `src.strategy.registry` → `strategies/*.py`。docker-compose.yml evaluator 只 mount 了 `src/`，沒有 `strategies/`。如果 StrategyValidator 的 import chain 觸及 strategy registry，會 ModuleNotFoundError。
+
+```yaml
+# docker-compose.yml evaluator volumes — 缺這行：
+- ../../strategies:/app/strategies:ro
+```
+
+**H-2: evaluator 的 work/ mount 應改為 ro**
+
+docker-compose.yml:39 `./work:/app/work` 是 rw。但確認 evaluate.py 不寫 work/（results.tsv 由 agent 寫，pending/factor_returns 寫到 watchdog_data/）。rw 是多餘的權限，違反最小權限原則。
+
+```yaml
+# 改為：
+- ./work:/app/work:ro
+```
+
+### MEDIUM（3 個）
+
+**M-1: eval_server.py 的 factor.py race condition**
+
+Agent 在 evaluator 跑的過程中可以修改 factor.py（shared volume 即時同步）。evaluator 用 `from factor import compute_factor`，Python 只 import 一次（cached in sys.modules）。但 evaluate.py 用 subprocess 跑（每次新 process），所以每次都重新 import — **partial write 時可能 import 到不完整的 factor.py**。
+
+機率低（agent 通常 commit 後才 curl evaluate），但不是零。
+
+**建議：** eval_server.py 的 `/evaluate` endpoint 在跑 subprocess 前先 snapshot factor.py：
+```python
+import shutil, tempfile
+snap = Path(tempfile.mktemp(suffix=".py", dir="/tmp"))
+shutil.copy2("/app/work/factor.py", snap)
+# 把 snap 路徑傳給 evaluate.py
+```
+或在 evaluate.py 開頭用 file lock。
+
+**M-2: Dockerfile.agent 沒裝 pandas/numpy**
+
+Agent 容器只有 python3，沒有數據科學庫。如果 agent 想本地測試 factor.py（`python factor.py`），會 ImportError。program.md 的 fallback `python evaluate.py` 也跑不了（缺依賴）。
+
+如果設計意圖是 agent 只透過 HTTP evaluate → 不需要。但 program.md step 4 寫了 fallback：`If evaluator is not available: fallback to python evaluate.py 2>&1 | tail -30` — 在 agent 容器內跑不動。
+
+**建議：** 移除 program.md 的 fallback 指引（agent 容器內不該跑 evaluate.py），或加裝 pandas/numpy。
+
+**M-3: `_extract` 和 evaluate.py 的 stdout 格式有隱含耦合**
+
+eval_server.py 的 `_extract(stdout, "level:")` 假設 evaluate.py 輸出包含 `level: XXX` 格式的行。如果 evaluate.py 的輸出格式變了，_extract 靜默回傳空字串 → passed 永遠 False。
+
+Fail-closed 所以不危險，但無法區分「因子差」和「解析壞了」。
+
+**建議：** evaluate.py 輸出一個明確的 JSON 區塊（如 `--- EVAL_RESULT ---\n{"level":"L3","passed":false}\n--- END ---`），eval_server.py 解析 JSON。
+
+### LOW（3 個）
+
+**L-1: loop.ps1 的 $Credentials 變數宣告了但沒使用**
+
+line 16: `$Credentials = "C:\Users\ander\.claude\.credentials.json"` — 未使用。docker-compose.yml:20 用了 `${CLAUDE_CREDENTIALS:-C:/Users/ander/.claude/.credentials.json}`，直接讀 env var。
+
+**L-2: loop.ps1 的 host fallback 沒設 $env:AUTORESEARCH**
+
+line 73-74: evaluator 不響應時 fallback 到 Host 模式，但 `$Host = $true` 發生在 `if ($Host)` 判斷之後（line 78）。所以 fallback 時 `$env:AUTORESEARCH` 不會被設定。
+
+等等 — 重看代碼：line 74 設 `$Host = $true`，然後 line 78 檢查 `if ($Host)` — 是 OK 的，因為 line 74 在 line 78 之前。✅ 這個沒問題。
+
+**L-3: Dockerfile.evaluator 裝了 watchdog.py 但不跑它**
+
+line 19: `COPY docker/autoresearch/watchdog.py /app/watchdog.py`，但 CMD 是 `python /app/eval_server.py`。watchdog.py 不在 evaluator 容器內使用（watchdog 有自己的容器）。多餘的 COPY 不影響功能但增加 image 大小。
+
+### 總結
+
+| 嚴重度 | 數量 | 行動 |
+|:------:|:----:|------|
+| CRITICAL | 0 | — |
+| HIGH | 2 | H-1 加 strategies/ mount；H-2 work/ 改 ro |
+| MEDIUM | 3 | M-1 factor.py snapshot；M-2 移除 fallback 或加依賴；M-3 JSON 輸出 |
+| LOW | 3 | 清理即可 |
+
+**整體評價：** 實作品質不錯，架構清晰，3 容器的職責分明。2 個 HIGH 需要修（特別是 H-1 會導致 evaluator 啟動失敗），3 個 MEDIUM 是 robustness 改善。
+
+## 15. 參考
 
 - [Docker Sandbox for Claude Code](https://docs.docker.com/ai/sandboxes/agents/claude-code/)
 - [Claude Code Sandboxing](https://code.claude.com/docs/en/sandboxing)
