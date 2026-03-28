@@ -383,11 +383,11 @@ class StrategyValidator:
         pbo_val = self._compute_pbo(wf_results, strategy=strategy, universe=universe,
                                      start=start, end=end, compute_fn=_cfn)
         report.checks.append(CheckResult(
-            name="pbo",
+            name="construction_sensitivity",
             passed=pbo_val <= cfg.max_pbo,
             value=f"{pbo_val:.3f}",
             threshold=f"<= {cfg.max_pbo:.3f}",
-            detail="Bailey 2015 CSCV on WF periods",
+            detail="Portfolio construction variant stability (not Bailey factor-level PBO)",
         ))
 
         # 9. Regime breakdown (bull/bear/sideways)

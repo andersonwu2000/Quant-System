@@ -719,6 +719,10 @@ def main() -> None:
     for h, icir in results["icir_by_horizon"].items():
         print(f"icir_{h}:          {icir:.4f}")
 
+    # Phase AB: store daily returns for Factor-Level PBO (all factors, not just L5 pass)
+    if results.get("level") not in ("L0",):  # L0 = complexity fail, no factor values
+        _store_factor_returns(results)
+
     if results["passed"]:
         print("\nstatus: PASSED (L5+ OOS validated)")
         # Write pending marker for background Validator (watchdog picks it up)
@@ -729,6 +733,56 @@ def main() -> None:
         print(f"\nstatus: evaluated ({results['level']})")
     else:
         print("\nstatus: no_signal")
+
+
+def _store_factor_returns(results: dict) -> None:
+    """Store equal-weight top-15 daily returns for Factor-Level PBO (Phase AB).
+
+    Stores for ALL factors (including failures) — Bailey requires N to include
+    failed trials. Uses VectorizedPBOBacktest for fast computation (~5-10s).
+    """
+    try:
+        from src.backtest.vectorized import VectorizedPBOBacktest
+        from factor import compute_factor
+
+        returns_dir = Path(__file__).parent / "work" / "factor_returns"
+        if not returns_dir.exists():
+            returns_dir = Path(__file__).parent / "factor_returns"
+        returns_dir.mkdir(parents=True, exist_ok=True)
+
+        # Use same universe and dates as evaluation
+        universe = _load_universe(large=False)
+
+        vbt = VectorizedPBOBacktest(
+            universe=universe, start=EVAL_START, end=EVAL_END,
+            data_dir=str(PROJECT_ROOT / "data" / "market"),
+            fund_dir=str(PROJECT_ROOT / "data" / "fundamental"),
+        )
+
+        daily_rets = vbt.run_variant(compute_factor, top_n=15, weight_mode="equal")
+
+        if daily_rets is not None and len(daily_rets) > 20:
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            path = returns_dir / f"{ts}.parquet"
+            daily_rets.to_frame("returns").to_parquet(path)
+
+            # Update metadata
+            meta_path = returns_dir / "metadata.json"
+            meta = {}
+            if meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            meta[ts] = {
+                "composite_score": results.get("composite_score", 0),
+                "level": results.get("level", "?"),
+                "best_icir": results.get("best_icir", 0),
+            }
+            meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+            print(f"factor_returns: {path.name} ({len(daily_rets)} days)")
+    except Exception as e:
+        print(f"[WARN] factor_returns store failed: {e}")
 
 
 def _write_pending_marker(results: dict) -> None:
@@ -831,7 +885,7 @@ def _run_validator(results: dict) -> dict | None:
         # Deployment threshold: >= 13/14 non-DSR checks + DSR >= 0.70 + PBO <= 0.85
         n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
         dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
-        pbo_val = next((float(c.value) for c in checks if c.name == "pbo"), 1.0)
+        pbo_val = next((float(c.value) for c in checks if c.name == "construction_sensitivity"), 1.0)
         deployed = n_excl_dsr >= 13 and dsr_val >= 0.70 and pbo_val <= 0.70
 
         print(f"deploy_eligible: {deployed}")

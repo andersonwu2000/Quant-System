@@ -123,6 +123,9 @@ def main():
         # 8. Background Validator: process pending markers
         _process_pending()
 
+        # 9. Factor-Level PBO (Phase AB): compute when enough factors accumulated
+        _compute_factor_level_pbo()
+
 
 def _process_pending():
     """Pick up pending validation markers, run Validator, write reports."""
@@ -270,7 +273,7 @@ def _run_background_validator(results: dict, factor_code: str) -> dict | None:
 
         n_excl_dsr = sum(1 for c in checks if c.passed and c.name != "deflated_sharpe")
         dsr_val = next((float(c.value) for c in checks if c.name == "deflated_sharpe"), 0)
-        pbo_val = next((float(c.value) for c in checks if c.name == "pbo"), 1.0)
+        pbo_val = next((float(c.value) for c in checks if c.name == "construction_sensitivity"), 1.0)
         deployed = n_excl_dsr >= 13 and dsr_val >= 0.70 and pbo_val <= 0.70
 
         return {
@@ -333,6 +336,80 @@ def _write_background_report(results: dict, validator_report: dict, factor_code:
 
     report_path.write_text(content, encoding="utf-8")
     log(f"Report written: {report_path.name}")
+
+
+_last_factor_pbo_count = 0  # track when to recompute
+
+
+def _compute_factor_level_pbo():
+    """Compute Factor-Level PBO from accumulated factor daily returns.
+
+    Bailey (2014) CSCV with N = all tested factors (not portfolio variants).
+    Only runs when >= 20 factors accumulated and new factors added since last run.
+    """
+    global _last_factor_pbo_count
+
+    returns_dir = WORK_DIR / "factor_returns"
+    if not returns_dir.exists():
+        return
+
+    parquets = sorted(returns_dir.glob("*.parquet"))
+    n_factors = len(parquets)
+
+    # Need >= 20 factors, and only recompute every 5 new factors
+    if n_factors < 20 or n_factors - _last_factor_pbo_count < 5:
+        return
+
+    import pandas as pd
+    import numpy as np
+
+    try:
+        # Build T×N returns matrix
+        daily_returns_dict = {}
+        for p in parquets:
+            try:
+                df = pd.read_parquet(p)
+                if "returns" in df.columns and len(df) > 20:
+                    daily_returns_dict[p.stem] = df["returns"]
+            except Exception:
+                continue
+
+        if len(daily_returns_dict) < 20:
+            return
+
+        returns_matrix = pd.DataFrame(daily_returns_dict).ffill(limit=5).dropna()
+        if len(returns_matrix) < 120:
+            return
+
+        # Run CSCV
+        import sys
+        sys.path.insert(0, "/app")
+        from src.backtest.overfitting import compute_pbo
+
+        n_parts = min(16, max(8, len(returns_matrix) // 60))
+        if n_parts % 2 != 0:
+            n_parts -= 1
+
+        result = compute_pbo(returns_matrix, n_partitions=n_parts)
+        _last_factor_pbo_count = n_factors
+
+        log(f"Factor-Level PBO: {result.pbo:.3f} "
+            f"(N={len(daily_returns_dict)} factors, {len(returns_matrix)} days, "
+            f"{result.n_combinations} combos)")
+
+        # Write to a file for status.ps1 to pick up
+        pbo_path = WORK_DIR / "factor_pbo.json"
+        import json
+        pbo_path.write_text(json.dumps({
+            "factor_pbo": round(result.pbo, 4),
+            "n_factors": len(daily_returns_dict),
+            "n_days": len(returns_matrix),
+            "n_combinations": result.n_combinations,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }, indent=2), encoding="utf-8")
+
+    except Exception as e:
+        log(f"Factor-Level PBO failed: {e}")
 
 
 if __name__ == "__main__":

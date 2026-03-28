@@ -812,7 +812,7 @@ async def submit_factor(
         except (ValueError, TypeError):
             return default
     dsr_val = next((_safe_float(c.value) for c in checks if c.name == "deflated_sharpe"), 0.0)
-    pbo_val = next((_safe_float(c.value) for c in checks if c.name == "pbo"), 1.0)
+    pbo_val = next((_safe_float(c.value) for c in checks if c.name == "construction_sensitivity"), 1.0)
 
     if n_excl_dsr >= 13 and dsr_val >= 0.70 and pbo_val <= 0.70:
         try:
