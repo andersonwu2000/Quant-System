@@ -82,6 +82,7 @@ async def kill_switch(api_key: str = Depends(verify_api_key), _role: dict[str, A
         for name in state.strategies:
             state.strategies[name]["status"] = "stopped"
         cancelled = state.oms.cancel_all()
+        state.kill_switch_fired = True  # M-06: prevent auto re-trigger
 
     return KillSwitchResponse(
         message="Kill switch activated",

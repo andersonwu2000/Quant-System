@@ -196,6 +196,7 @@ class SinopacBroker(BrokerAdapter):
             return ""
 
         broker_ids: list[str] = []
+        submitted_shares = Decimal("0")  # C-02: track actually submitted shares
         for quantity, is_odd_lot in lot_parts:
             # 零股交易時段檢查（非模擬模式）
             if is_odd_lot and not self._config.simulation:
@@ -227,6 +228,10 @@ class SinopacBroker(BrokerAdapter):
                     trade = self._api.place_order(contract, sj_order)
                 bid = trade.order.id if hasattr(trade, "order") else str(id(trade))
                 broker_ids.append(bid)
+                with self._lock:
+                    self._trades[bid] = trade  # H-01: store for cancel/update
+                lot_size = order.instrument.lot_size or 1000  # C-03: lots→shares
+                submitted_shares += Decimal(str(quantity * lot_size if not is_odd_lot else quantity))
             except Exception as e:
                 logger.error("Place order failed for %s (%s): %s",
                              order.instrument.symbol, "odd" if is_odd_lot else "regular", e)
@@ -239,7 +244,8 @@ class SinopacBroker(BrokerAdapter):
         broker_id = broker_ids[0]  # primary ID for tracking
 
         with self._lock:
-            self._order_map[broker_id] = order
+            for bid in broker_ids:  # C-01: map ALL sub-order IDs
+                self._order_map[bid] = order
 
         order.client_order_id = broker_id
 
@@ -257,7 +263,7 @@ class SinopacBroker(BrokerAdapter):
                 fill_price = max(price - slippage, Decimal("0.01"))
 
             order.status = OrderStatus.FILLED
-            order.filled_qty = order.quantity
+            order.filled_qty = submitted_shares if submitted_shares > 0 else order.quantity  # C-02
             order.filled_avg_price = fill_price
             notional = order.quantity * fill_price
             commission = notional * Decimal(str(self._config.sim_commission_rate))

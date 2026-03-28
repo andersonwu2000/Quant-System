@@ -119,6 +119,8 @@ class Context:
         from pathlib import Path
         fund_dir = Path("data/fundamental")
         rev_path = fund_dir / f"{symbol}_revenue.parquet"
+        if not rev_path.exists() and not symbol.endswith(".TW"):
+            rev_path = fund_dir / f"{symbol}.TW_revenue.parquet"  # C-06: bare symbol fallback
         if not rev_path.exists():
             return pd.DataFrame()
         try:

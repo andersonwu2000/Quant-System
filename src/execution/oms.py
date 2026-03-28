@@ -68,7 +68,8 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
         for trade in trades:
             symbol = trade.symbol
 
-            # SELL 溢出防護：先 cap 數量再計算現金
+            # H-04: SELL cap without mutating original trade
+            effective_qty = trade.quantity
             if trade.side == Side.SELL and symbol in portfolio.positions:
                 pos_qty = portfolio.positions[symbol].quantity
                 if trade.quantity > pos_qty:
@@ -76,10 +77,10 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
                         "SELL qty %s > position %s for %s — capping",
                         trade.quantity, pos_qty, symbol,
                     )
-                    trade.quantity = pos_qty
+                    effective_qty = pos_qty
 
-            # 更新現金（用 capped 後的數量）
-            notional = trade.quantity * trade.price
+            # 更新現金
+            notional = effective_qty * trade.price
             if trade.side == Side.BUY:
                 portfolio.cash -= notional + trade.commission
             else:
@@ -89,12 +90,12 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
             if symbol in portfolio.positions:
                 pos = portfolio.positions[symbol]
                 if trade.side == Side.BUY:
-                    total_cost = pos.avg_cost * pos.quantity + trade.price * trade.quantity
-                    new_qty = pos.quantity + trade.quantity
+                    total_cost = pos.avg_cost * pos.quantity + trade.price * effective_qty
+                    new_qty = pos.quantity + effective_qty
                     pos.avg_cost = total_cost / new_qty if new_qty > 0 else Decimal("0")
                     pos.quantity = new_qty
                 else:
-                    pos.quantity -= trade.quantity
+                    pos.quantity -= effective_qty
 
                 pos.market_price = trade.price
 
