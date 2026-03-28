@@ -1,0 +1,3 @@
+# watchdog_data is runtime state, not tracked
+*
+!.gitignore

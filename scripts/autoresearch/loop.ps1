@@ -1,18 +1,28 @@
-# Autoresearch loop — research + status report
+# Autoresearch loop — Docker isolated agent + status report
 # Usage: powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1
+# Modes:
+#   -Docker   : run agent inside Docker container (true isolation, default)
+#   -Host     : run agent on host (legacy, needs hooks)
 # Stop: Ctrl+C
 
 param(
-    [int]$StatusInterval = 600  # seconds between status reports (default 10 min)
+    [int]$StatusInterval = 600,
+    [switch]$Host
 )
-
-# Enable hooks enforcement
-$env:AUTORESEARCH = "1"
 
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = "D:\Finance\scripts\autoresearch" }
+$ProjectDir = "D:\Finance"
+$Credentials = "C:\Users\ander\.claude\.credentials.json"
 
-$prompt = @"
+# Docker mode prompt (paths inside container)
+$dockerPrompt = @"
+Read /app/program.md for the full research protocol, then begin the experiment loop.
+Start now. Your first action should be reading program.md.
+"@
+
+# Host mode prompt (paths on host)
+$hostPrompt = @"
 Read scripts/autoresearch/program.md for the full research protocol, then begin the experiment loop.
 Start now. Your first action should be reading program.md.
 "@
@@ -29,23 +39,57 @@ $statusJob = Start-Job -ScriptBlock {
     }
 } -ArgumentList $StatusInterval, "$ScriptDir\status.ps1"
 
-Write-Host "  Status reporter running (Job $($statusJob.Id)), reports at docs\research\status.md" -ForegroundColor Green
+Write-Host "  Status reporter running (Job $($statusJob.Id))" -ForegroundColor Green
 
-# --- Research loop (foreground) ---
+# --- Ensure Docker containers are up ---
+if (-not $Host) {
+    Write-Host "Checking Docker containers..." -ForegroundColor Yellow
+    $evalUp = docker ps --filter "name=autoresearch-evaluator" --format "{{.Status}}" 2>$null
+    if (-not $evalUp) {
+        Write-Host "  Starting containers..." -ForegroundColor Gray
+        Push-Location "$ProjectDir\docker\autoresearch"
+        docker compose up -d 2>$null
+        Pop-Location
+        Start-Sleep 5
+    }
+    # Verify evaluator health
+    $health = docker exec autoresearch-agent bash -c "curl -s http://evaluator:5000/health" 2>$null
+    if ($health -match "ok") {
+        Write-Host "  Evaluator healthy." -ForegroundColor Green
+    } else {
+        Write-Host "  WARNING: Evaluator not responding. Falling back to host mode." -ForegroundColor Red
+        $Host = $true
+    }
+}
+
+if ($Host) {
+    $env:AUTORESEARCH = "1"
+    Write-Host "  Mode: HOST (hooks enforced)" -ForegroundColor Yellow
+} else {
+    Write-Host "  Mode: DOCKER (true isolation)" -ForegroundColor Green
+}
+
+# --- Research loop ---
 try {
     while ($true) {
         Write-Host ""
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "  Autoresearch session starting...      " -ForegroundColor Cyan
         Write-Host "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
-        Write-Host "  Hooks: AUTORESEARCH=$env:AUTORESEARCH" -ForegroundColor Gray
+        Write-Host "  Mode: $(if ($Host) { 'HOST' } else { 'DOCKER' })" -ForegroundColor Gray
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host ""
 
-        # Status report before each session
         powershell -ExecutionPolicy Bypass -File "$ScriptDir\status.ps1" 2>$null
 
-        claude -p $prompt --dangerously-skip-permissions --max-turns 200
+        if ($Host) {
+            claude -p $hostPrompt --dangerously-skip-permissions --max-turns 200
+        } else {
+            docker exec `
+                -e "HOME=/home/researcher" `
+                autoresearch-agent `
+                claude -p $dockerPrompt --dangerously-skip-permissions --max-turns 200
+        }
 
         Write-Host ""
         Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Session ended. Restarting in 10s..." -ForegroundColor Yellow

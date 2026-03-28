@@ -1,7 +1,8 @@
-# Phase AE：Agent 真隔離 — Docker Container 內跑 Claude Code
+# Phase AE：Agent 真隔離 — Docker Container 內跑 Claude Code ✅ 已完成（2026-03-29）
 
-> 問題：Agent（Claude Code）在 host 跑，有完整文件系統權限。Hooks 可被繞過（`bash -c "cat evaluate.py"`）。Docker 容器只跑 `sleep infinity`，沒有隔離任何東西。
-> 教訓：CLAUDE.md #15「自主 agent 的安全靠隔離不靠指令」。prompt 限制和 hooks 被繞過 3 次以上。
+> 3 容器 Eval-as-a-Service 架構已部署並通過端到端測試。
+> Agent 物理上無法讀 evaluate.py、src/、watchdog_data/。
+> loop.ps1 支援 `-Docker`（預設）和 `-Host`（fallback）兩種模式。
 
 ---
 
