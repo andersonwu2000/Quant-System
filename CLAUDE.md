@@ -52,6 +52,7 @@ Keep updates minimal — only touch sections affected by the change.
 - 除法是否有 zero guard
 - NaN/inf 是否會傳播
 - ddof=0 vs ddof=1 是否和其他模組一致
+- **實作學術方法時：是否讀過原論文？每個參數的定義是否對齊原文？**（PBO 教訓：N 的定義錯了三次）
 
 ### 2. 流程連通性
 - 新函式是否真的被呼叫（grep 確認有 caller）
@@ -96,7 +97,7 @@ Keep updates minimal — only touch sections affected by the change.
 7. **crash recovery 需要原子性** — trade log 必須在 apply_trades 之前存，portfolio 必須存完整狀態（含 pending_settlements）
 8. **時區必須統一** — 台股用 UTC+8 做日期判斷，混用 UTC 會導致 08:00 提前 reset
 9. **deepcopy + threading.Lock 不相容** — Portfolio 加了 lock 後 check_orders 的 deepcopy 會 crash，需要自定義 __deepcopy__
-10. **PBO 方法學問題** — noise perturbation 不是 Bailey (2015) CSCV，已改用正交策略變體（size × weight × rebal）的真正 CSCV
+10. **PBO 方法學：三次實作三次錯** — v1 noise perturbation（假策略）→ v2 event-driven 10 variants（測 portfolio sensitivity 不是 factor selection）→ v3 vectorized（加速了錯誤的計算）。根因：沒讀 Bailey 原論文就實作，代碼審計只查算法正確性不查方法論定義。**教訓：實作學術方法前必須讀原論文，確認每個參數的定義（尤其是 N 代表什麼），不能只靠二手資料或直覺**
 11. **兩套數據路徑不同步是 bug 溫床** — evaluate.py 和 strategy_builder.py 各自載入數據，symbol 格式不一致（`bare` vs `.TW`）導致 revenue 全部找不到。修改一處必須 grep 所有數據載入點
 12. **異常時必須 fail-closed** — Validator 的 OOS/benchmark/correlation 異常回傳 0.0 會自動通過門檻。所有驗證函式異常時應回傳最差值（-999 / 1.0）確保不自動通過
 13. **base class API 要用 public method** — `Strategy.name()` 是 abstractmethod，不能用 `name = "str"` 覆蓋。`Context.now()` 不是 `ctx.current_time`。改之前先讀 base class 定義

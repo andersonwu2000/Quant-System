@@ -65,3 +65,8 @@
 50. cross_section 日期錯位（cross_section.py）
 51. engine _col_index 跨矩陣快取碰撞（engine.py）
 52. apply_trades sell overflow 可能產生負持倉（oms.py）
+
+## 方法論錯誤（3 個）— 代碼審計無法發現
+53. PBO v1: noise perturbation 不是 CSCV — 假策略（加噪音）不等於真策略變體（validator.py）
+54. PBO v2: N 定義錯誤 — 用 10 個 portfolio construction 變體做 N，但 Bailey 定義 N = 所有測試過的因子。測的是 portfolio sensitivity 不是 factor selection overfitting（validator.py）
+55. PBO v3: 加速了錯誤的計算 — 向量化讓 v2 更快但沒修正 N 的定義。三次實作三次錯，根因是沒讀原論文就實作（vectorized.py, validator.py）
