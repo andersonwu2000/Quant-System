@@ -389,3 +389,25 @@ Phase 2（Phase 1 驗證後）：
 | PBO | 0.702 | 0.628 | ✅ 改善 |
 
 買入門檻 1.5%、賣出門檻 3%（反映賣出成本是買入 3 倍）。
+
+#### PBO 變體設計研究結論（2026-03-28）
+
+**原本計畫改 PBO 變體（固定等權只變 top_n），但研究發現更根本的問題：**
+
+目前的 PBO 測的是「portfolio construction 參數敏感度」（10 個 top_n × weighting 變體），
+不是 Bailey (2014) 原意的「策略選擇過擬合」。
+
+Bailey 的 CSCV 原意：N = 研究者實際測試過的所有配置。我們的 autoresearch 測了 200+
+個因子公式，但 PBO 只拿 10 個 portfolio 變體 — 完全沒在測因子選擇的過擬合風險。
+
+**正確做法（長期）：** Factor-Level PBO
+- 每個因子用固定 equal-weight top-15 跑 daily returns
+- 累積 20+ 個因子後，用所有因子的 returns 做 CSCV
+- PBO = 「從 N 個因子選了 IS 最好的，它在 OOS 差的機率」
+
+**現階段不改的理由：**
+- 架構改動大（需存每個因子 daily returns）
+- DSR + L5 OOS holdout 已提供多重測試保護
+- 現有 PBO 作為 `construction_sensitivity` 仍有參考價值
+
+**記錄為 Phase 3 長期改進。**
