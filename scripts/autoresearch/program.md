@@ -79,17 +79,17 @@ L0: factor.py <= 60 lines       — complexity gate (reject overly complex facto
 L1: |IC_20d| >= 0.02            — tested on first 30 IS dates only (early exit)
 L2: |ICIR| >= 0.15              — full IS evaluation, all horizons (5/10/20/60d)
 L3: dedup corr <= 0.50          — IC-series correlation with known factors
-    positive_years >= 4/6.5     — yearly stability (IS period: 2017 to mid-2023)
+    positive_years >= 4          — yearly stability (IS period, rolling)
 L4: fitness >= 3.0              — WorldQuant BRAIN formula
-L5: OOS holdout validation      — 2023-07 to 2024-12 (agent never sees this data)
+L5: OOS holdout validation      — rolling 1.5 years (auto-computed, agent never sees this data)
     IC sign consistency         — OOS IC must have same sign as IS IC
     ICIR decay <= 60%           — OOS |ICIR| >= IS |ICIR| * 0.40
     positive months >= 50%      — at least half the OOS months are positive
 Stage 2: large_icir_20d (reference) — 865+ symbols, recorded but not hard-gated
 ```
 
-**L1-L4 use IN-SAMPLE data only (2017 to mid-2023). L5 validates on a HOLDOUT period
-(mid-2023 to end-2024) that your factor never sees during development. This prevents
+**L1-L4 use IN-SAMPLE data only. L5 validates on a rolling HOLDOUT period
+(most recent 1.5 years) that your factor never sees during development. This prevents
 overfitting from running many experiments — no matter how many trials you run, L5 is
 an independent check on unseen data.**
 

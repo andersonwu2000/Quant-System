@@ -38,9 +38,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 REVENUE_DELAY_DAYS = 40        # Taiwan monthly revenue publication delay
 MIN_SYMBOLS = 50               # Minimum symbols per date for valid IC (200-stock universe)
 EVAL_START = "2017-01-01"      # Evaluation period start
-IS_END = "2023-06-30"          # In-sample period end (L1-L4)
-OOS_START = "2023-07-01"       # Out-of-sample period start (L5)
-EVAL_END = "2024-12-31"        # Evaluation period end
+
+# Rolling OOS: auto-computed from today's date
+# OOS = most recent 1.5 years (before forward-return buffer)
+# Forward returns need ~60 trading days ≈ 3 months after EVAL_END
+from datetime import datetime as _dt, timedelta as _td
+_today = _dt.now()
+EVAL_END = (_today - _td(days=90)).strftime("%Y-%m-%d")         # 3 months before today
+OOS_START = (_today - _td(days=90 + 548)).strftime("%Y-%m-%d")  # 1.5 years before EVAL_END
+IS_END = (_today - _td(days=91 + 548)).strftime("%Y-%m-%d")     # day before OOS_START
 SAMPLE_FREQ_DAYS = 20          # Sample IC every 20 trading days
 FORWARD_HORIZONS = [5, 10, 20, 60]  # Forward return horizons (trading days)
 
