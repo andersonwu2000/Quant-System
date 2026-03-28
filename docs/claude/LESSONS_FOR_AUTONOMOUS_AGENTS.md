@@ -17,6 +17,16 @@
 - OS 權限 = 防寫不防讀
 - Docker volume mount = 唯一的硬隔離（未掛載的就不存在）
 
+**防護力排名（從最有效到最無效）：**
+```
+1. 物理隔離（Docker volume 未掛載 → 不存在）      — 100% 有效
+2. OS 權限（chmod -w → 不可寫）                    — 防寫有效，不防讀
+3. 加密/混淆（評估結果加噪音）                      — 降低洩漏但不消除
+4. Hooks（PreToolUse 攔截）                         — 可被 Bash 繞過
+5. Prompt 指令（「不要改這個檔案」）                 — 隨時可被無視
+6. 程式碼註釋（# READ ONLY）                        — 零防護力
+```
+
 **建議架構：**
 ```
 Container（agent 跑在這裡）
@@ -140,20 +150,29 @@ Container（agent 跑在這裡）
 
 ---
 
-## 10. 防禦性設計的優先級
+## 10. Evaluation-as-a-Service — agent 和 evaluator 不該在同一個 trust domain
 
-從這個專案學到的防禦性設計優先級，從最有效到最無效：
+**背景：** 即使 evaluate.py COPY 進 agent 的容器（不可改），agent 仍可 `cat` 讀源碼學閾值。COPY 防寫不防讀。
+
+**最佳架構：** evaluator 跑在**獨立容器/服務**，agent 透過 HTTP API 提交評估請求，只拿回最少結果。
 
 ```
-1. 物理隔離（Docker volume 未掛載 → 不存在）      — 100% 有效
-2. OS 權限（chmod -w → 不可寫）                    — 防寫有效，不防讀
-3. 加密/混淆（評估結果加噪音）                      — 降低洩漏但不消除
-4. Hooks（PreToolUse 攔截）                         — 可被 Bash 繞過
-5. Prompt 指令（「不要改這個檔案」）                 — 隨時可被無視
-6. 程式碼註釋（# READ ONLY）                        — 零防護力
+Agent Container                    Evaluator Container
+├── factor.py (rw)                 ├── evaluate.py (agent 完全看不到)
+├── results.tsv (rw)               ├── src/ (agent 完全看不到)
+└── 無 evaluate.py                 ├── data/ (ro)
+                                   └── HTTP API: POST /evaluate
+    ─── {"code": "...", "commit": "abc"} ───→
+    ←── {"passed": false, "level": "L3", "score": 4.2} ───
 ```
 
-**通則：** 每上一層，防護力降 50%。如果某個安全要求很重要，用第 1-2 層，不要只靠 4-6 層。
+**為什麼比 COPY 好：**
+- Agent 物理上無法讀 evaluator 源碼（不在同一個容器）
+- Evaluator 的依賴（src/, data/）也不暴露
+- 回傳的 JSON 是唯一的 interface — 精確控制洩漏多少資訊
+- Evaluator 可以獨立更新（不需要重建 agent container）
+
+**來源：** SWE-agent (Princeton) 的 ACI 模式 — 介面本身就是 guardrail。OpenAI Codex 的 container-per-task 模式。Phase AE 審批意見 #3。
 
 ---
 
@@ -193,6 +212,46 @@ def test_no_zero_close():
 ```
 
 在 CI 跑，每次 commit 驗證。比修完 bug 後才發現便宜 100 倍。
+
+### Agent-Computer Interface (ACI)
+
+來自 SWE-agent (Princeton NLP)。核心洞察：**給 agent 一組設計過的工具，而非 raw shell access。介面本身就是 guardrail。**
+
+```python
+# Bad: agent 有 raw Bash access → 能跑任何命令
+agent.run("bash -c 'cat /app/evaluate.py'")  # 繞過所有限制
+
+# Good: agent 只能用預定義的 actions
+agent.actions = {
+    "edit_factor": edit_factor_py,       # 只能改 factor.py
+    "run_evaluation": call_evaluator_api, # 只能觸發評估（看不到內部）
+    "record_result": append_to_tsv,       # 只能追加 results.tsv
+    "discard": git_soft_reset,            # 安全的回滾（不是 --hard）
+}
+```
+
+### Explain-or-Reject Gate
+
+Agent 提交的每個改動必須附帶**為什麼這樣做**的解釋。沒有解釋或解釋是 generic（「improved performance」）→ 自動拒絕。
+
+這是最有效的 anti-gaming 機制：agent 可以 game 指標，但很難 game 邏輯解釋。
+
+```python
+# factor.py 頂部的 docstring 就是 rationale
+"""Revenue acceleration × institutional confirmation:
+買入營收加速 AND 投信連續買超的股票。
+經濟理由：營收加速反映基本面改善，投信買超確認市場認同。"""
+```
+
+### Canary Metric（金絲雀指標）
+
+加入一個**已知不該改善**的指標。如果它也「改善」了，說明你的測量有問題，不是 agent 真的做對了。
+
+```python
+# 例：隨機因子的 IC 應該 ≈ 0。如果不是 0，說明評估管線有 bias
+canary_ic = evaluate(random_factor)
+assert abs(canary_ic) < 0.01, f"Canary metric {canary_ic} ≠ 0 — evaluation pipeline is biased"
+```
 
 ---
 
@@ -496,25 +555,20 @@ Phase AA: 發現 equal-weight 更好 → inverse-vol 廢棄
 
 ---
 
-## 25. The beautiful backtest is almost always a lie
+## 25. Historical metrics improve ≠ real improvement — distrust beautiful numbers
 
-**事故：** Revenue momentum 策略：
-- In-sample（2020-2024）：+30.5% CAGR, Sharpe 1.51, Validator 13/15 通過 ✅
-- Out-of-sample（2025 H1）：-7.4%, Sharpe -0.732 ❌
-
-4 年的「驗證」不夠。策略恰好在牛市表現好，遇到市場轉向就崩潰。
-
-**更深的問題：** 233 次 adaptive query 已經把 holdout 降解到統計失效（Thresholdout budget 超出 62 倍）。即使 OOS 通過也不代表什麼。
+**事故：** 策略在 4 年歷史數據上表現優異（+30% CAGR），但在未見過的新數據上表現 -7%。233 次 adaptive query 把 holdout 降解到統計失效。
 
 **原則：**
-- 回測只能排除明顯差的策略，不能證明策略有效
-- 唯一的真實驗證是 forward testing（paper trading / live）
-- **越好看的回測越要懷疑** — E[max Sharpe] from N=15 noise trials ≈ 1.4，我們觀測的 0.94 甚至低於噪音期望值
+- 歷史指標只能排除明顯差的方案，不能證明方案有效
+- **越好看的指標越要懷疑** — 可能只是對測試集的 overfit
+- 唯一的真實驗證是在未見過的新數據上測試
 
 **給自動化項目的建議：**
 - 如果 agent 宣稱「改善了 X%」，問：在什麼數據上？那個數據被查詢過多少次了？
-- 歷史績效的改善 ≠ 未來績效的改善
-- 建立 canary test（一個已知不該改善的指標）— 如果 canary 也「改善」了，說明測量有問題
+- 建立 canary metric — 一個已知不該改善的指標。如果它也「改善」了，說明測量有問題
+- 追蹤 test set 被查詢的次數。超過 budget 後，指標不再可信
+- 歷史改善 + 新數據驗證 = 可信。歷史改善 alone = 可疑
 
 ---
 
@@ -580,23 +634,35 @@ Phase AA: 發現 equal-weight 更好 → inverse-vol 廢棄
 
 # Summary: Principles for Autonomous Iteration Projects
 
-| # | 原則 | 一句話 |
-|---|------|--------|
-| 1 | Constrain, don't instruct | 不安全的動作要物理上不可能，不是提示不建議 |
-| 2 | Separate evaluation from execution | 評估標準和 agent 必須在不同 trust domain |
-| 3 | Fail closed | 未知 = 拒絕、異常 = 最壞值、空值 = 停止 |
-| 4 | Tests are contracts | 每個 fix 附帶 test，test 是修復能存活的唯一保證 |
-| 5 | Track everything | Budget、查詢次數、實驗記錄、決策 — append-only log |
-| 6 | Keep it simple | 基礎設施 < 500 行。複雜度屬於 agent 的輸出，不是 scaffolding |
-| 7 | Multiple independent checks | 單一指標會被 game。至少 3 個獨立維度 |
-| 8 | Ripple check after every fix | 修一處 → grep 相同 pattern → 確認所有平行路徑 |
-| 9 | Human checkpoints | 每日摘要 + 異常告警 + 硬 budget 限制 |
-| 10 | Incremental, not clean restart | 狀態存檔案、append-only、crash = resume |
-| 11 | Research before infrastructure | 先驗證假說再建系統。否則你會高效地產出垃圾 |
-| 12 | "Done" ≠ "Works" | 代碼完成是必要條件，價值驗證才是充分條件 |
-| 13 | Delay infra until direction stable | 方向不確定 → 寫實驗。確認後 → 才寫模組 |
-| 14 | Single source of truth | 邏輯只定義一處。複製 = 不一致 = bug |
-| 15 | Distrust beautiful results | 越好看的指標越要懷疑。建 canary test |
-| 16 | Respect academic consensus | 標準方法 > bespoke 方法，除非有強 evidence |
-| 17 | Feature freeze is a feature | 定期停下來驗證，不要被進展感掩蓋底層問題 |
-| 18 | Archive failures explicitly | 失敗記錄和成功記錄一樣重要。防止重蹈覆轍 |
+| Category | # | Principle | One-liner |
+|----------|---|-----------|-----------|
+| **Isolation** | 1 | Constrain, don't instruct | 不安全的動作要物理上不可能，不是提示不建議 |
+| | 2 | Separate eval from execution | 評估和 agent 在不同 trust domain（Eval-as-a-Service） |
+| | 10 | Eval-as-a-Service | Agent → HTTP → Evaluator → JSON。介面就是 guardrail |
+| **Correctness** | 3 | Fail closed | 未知 = 拒絕、異常 = 最壞值、空值 = 停止 |
+| | 4 | Data quality gates everywhere | 每個載入點都加 guard。症狀像方法論錯誤，先查數據 |
+| | 6 | Read the paper | 實作學術方法前讀原論文。代碼審計不查方法論定義 |
+| | 26 | Respect academic consensus | 標準方法 > bespoke 方法，除非有強 evidence |
+| **Agent Safety** | 7 | Holdout degrades with queries | 追蹤查詢次數。Thresholdout 加噪音降低洩漏 |
+| | 19 | Agent optimizes metric, not intent | 單一指標會被 game。至少 3 個獨立維度 |
+| | 11.ACI | Agent-Computer Interface | 設計過的工具 > raw shell。介面本身就是 guardrail |
+| | 11.EoR | Explain-or-Reject | Agent 必須解釋 WHY。不能只交代碼 |
+| | 11.Canary | Canary metric | 加不該改善的指標。它改善了 = 測量有問題 |
+| **Multi-Agent** | 12 | Tests are contracts | 每個 fix 附帶 test。Test 是修復能存活的唯一保證 |
+| | 13 | Same file = race condition | 檔案級鎖。git pull before edit。commit immediately |
+| | 14 | Same bug in parallel paths | 修一處 → grep → 確認所有平行路徑 |
+| | 15 | Silent failures are the default | 空值穿透 pipeline 不報錯。加非空斷言 |
+| **Operations** | 5 | Checklist, not memory | 每次啟動前逐項勾。每次出事加一條 |
+| | 3(git) | Agent's git destroys your work | 分開 repo 或 commit immediately |
+| | 9 | Docker image is a snapshot | COPY 的檔案改後必須 rebuild |
+| | 17 | Log everything | Append-only JSONL。決策、budget、error — 全記 |
+| | 18 | Human checkpoints | 每日摘要 + 異常告警 + 硬 budget |
+| **Project Mgmt** | 21 | Research before infrastructure | 先驗證假說再建系統 |
+| | 22 | "Done" ≠ "Works" | 代碼完成是必要條件，價值驗證才是充分條件 |
+| | 23 | Delay infra until stable | 方向不確定 → 實驗。確認後 → 模組 |
+| | 24 | Single source of truth | 邏輯只定義一處。複製 = 不一致 |
+| | 25 | Distrust beautiful numbers | 歷史指標 ≠ 未來表現。追蹤 test set 查詢次數 |
+| | 27 | Feature freeze is a feature | 定期停下來驗證 |
+| | 28 | Archive failures | 失敗記錄和成功記錄一樣重要 |
+| **Simplicity** | 16 | Complexity kills auditability | Scaffolding < 500 行 |
+| | 20 | Incremental restart | 狀態存檔案、append-only、crash = resume |
