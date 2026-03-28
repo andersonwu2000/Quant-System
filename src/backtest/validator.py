@@ -77,11 +77,10 @@ class ValidationConfig:
 
     # 6. OOS holdout
     # Rolling OOS: most recent 1.5 years up to yesterday
-    # (Validator runs full backtest, no forward-return buffer needed)
-    from datetime import datetime as _dt, timedelta as _td
-    _today = _dt.now()
-    oos_end: str = (_today - _td(days=1)).strftime("%Y-%m-%d")
-    oos_start: str = (_today - _td(days=1 + 548)).strftime("%Y-%m-%d")
+    # Computed at instance creation time via __post_init__, not at class definition time.
+    # (Fixes bug: datetime.now() at import time would freeze the date for long-running processes)
+    oos_end: str = ""
+    oos_start: str = ""
     oos_min_sharpe: float = 0.3       # OOS Sharpe > 0.3（合理的風險調整報酬）
 
     # 7. vs 0050.TW benchmark
@@ -112,6 +111,14 @@ class ValidationConfig:
     commission_rate: float = 0.001425
     tax_rate: float = 0.003
     rebalance_freq: str = "monthly"
+
+    def __post_init__(self) -> None:
+        """Compute rolling OOS dates at instance creation time (not import time)."""
+        if not self.oos_start or not self.oos_end:
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            self.oos_end = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+            self.oos_start = (today - timedelta(days=1 + 548)).strftime("%Y-%m-%d")
 
 
 # ── 單項檢查結果 ───────────────────────────────────────────────────
