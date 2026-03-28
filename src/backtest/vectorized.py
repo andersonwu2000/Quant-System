@@ -184,6 +184,28 @@ class VectorizedPBOBacktest:
         for col in weight_matrix.columns:
             weight_matrix[col] = weight_matrix[col].where(is_rebal).ffill().fillna(0)
 
+        # Lot size rounding: weight → shares → round to lot → back to weight
+        # Taiwan: 1000 shares = 1 lot. Affects small positions significantly.
+        nav = 10_000_000  # assume fixed NAV for lot size calc
+        lot_size = 1000
+        for date in rebal_dates:
+            if date not in prices.index:
+                continue
+            for col in symbols:
+                w = weight_matrix.loc[date, col]
+                if w <= 0 or col not in prices.columns:
+                    continue
+                price = prices.loc[date, col]
+                if pd.isna(price) or price <= 0:
+                    continue
+                shares = w * nav / price
+                shares = (shares // lot_size) * lot_size
+                weight_matrix.loc[date, col] = shares * price / nav if shares > 0 else 0.0
+            # Re-normalize weights to sum to ~1
+            row_sum = weight_matrix.loc[date].sum()
+            if row_sum > 0:
+                weight_matrix.loc[date] /= row_sum
+
         # Compute portfolio returns with simplified costs (M-03, M-06 fix)
         weight_diff = weight_matrix.diff().fillna(0)
         sells = weight_diff.clip(upper=0).abs()
