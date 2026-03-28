@@ -274,14 +274,20 @@ class StrategyValidator:
         logger.info("[Validator] Running Walk-Forward...")
         wf_results = self._run_walkforward(strategy, universe, start, end)
         report.walkforward_results = wf_results
-        oos_sharpes = [r["sharpe"] for r in wf_results if "sharpe" in r and "error" not in r]
+        valid_wf = [r for r in wf_results if "error" not in r and r.get("trades", 0) > 0]
+        error_wf = [r for r in wf_results if "error" in r or r.get("trades", 0) == 0]
+        oos_sharpes = [r["sharpe"] for r in valid_wf]
         positive_ratio = sum(1 for s in oos_sharpes if s > 0) / max(len(oos_sharpes), 1)
+        wf_detail = f"OOS Sharpes: {[f'{s:.2f}' for s in oos_sharpes]}"
+        if error_wf:
+            err_years = [str(r.get("year", "?")) for r in error_wf]
+            wf_detail += f" (excluded {len(error_wf)} folds: {','.join(err_years)})"
         report.checks.append(CheckResult(
             name="walkforward_positive_ratio",
             passed=positive_ratio >= cfg.wf_min_positive_ratio,
             value=f"{positive_ratio:.0%}",
             threshold=f">= {cfg.wf_min_positive_ratio:.0%}",
-            detail=f"OOS Sharpes: {[f'{s:.2f}' for s in oos_sharpes]}",
+            detail=wf_detail,
         ))
 
         # 4. Deflated Sharpe
@@ -319,16 +325,21 @@ class StrategyValidator:
             threshold=f">= {cfg.min_prob_sharpe_positive:.0%}",
         ))
 
-        # 6. OOS holdout（改為 Sharpe > 0 而非 return > 0）
+        # 6. OOS holdout
         logger.info("[Validator] Running OOS holdout...")
         oos_result = self._run_oos(strategy, universe, cfg.oos_start, cfg.oos_end)
-        oos_sharpe = oos_result.get("sharpe", 0)
+        oos_sharpe = oos_result.get("sharpe", 0.0)
+        oos_error = oos_result.get("error", "")
+        if oos_error:
+            oos_detail = f"OOS {cfg.oos_start}~{cfg.oos_end}: ERROR — {oos_error}"
+        else:
+            oos_detail = f"OOS {cfg.oos_start}~{cfg.oos_end}, return={oos_result.get('return', 0):+.2%}"
         report.checks.append(CheckResult(
             name="oos_sharpe",
-            passed=oos_sharpe >= cfg.oos_min_sharpe,
-            value=f"{oos_sharpe:.3f}",
+            passed=oos_sharpe >= cfg.oos_min_sharpe and not oos_error,
+            value=f"{oos_sharpe:.3f}" if not oos_error else "N/A (error)",
             threshold=f">= {cfg.oos_min_sharpe:.3f}",
-            detail=f"OOS {cfg.oos_start}~{cfg.oos_end}, return={oos_result.get('return', 0):+.2%}",
+            detail=oos_detail,
         ))
 
         # 7. vs 0050.TW benchmark
@@ -359,13 +370,20 @@ class StrategyValidator:
 
         # 11. Factor decay (recent period)
         logger.info("[Validator] Checking factor decay...")
-        recent_sharpe = self._check_recent_performance(strategy, universe, end, cfg.decay_lookback_days)
+        recent_result = self._check_recent_performance(strategy, universe, end, cfg.decay_lookback_days)
+        recent_sharpe = recent_result["sharpe"]
+        recent_error = recent_result.get("error", "")
+        recent_range = f"{recent_result.get('start', '?')}~{recent_result.get('end', '?')}"
+        if recent_error:
+            recent_detail = f"{recent_range}: ERROR — {recent_error}"
+        else:
+            recent_detail = f"{recent_range} ({cfg.decay_lookback_days} trading days)"
         report.checks.append(CheckResult(
             name="recent_period_sharpe",
-            passed=recent_sharpe >= cfg.min_recent_sharpe,
-            value=f"{recent_sharpe:.3f}",
+            passed=recent_sharpe >= cfg.min_recent_sharpe and not recent_error,
+            value=f"{recent_sharpe:.3f}" if not recent_error else "N/A (error)",
             threshold=f">= {cfg.min_recent_sharpe:.3f}",
-            detail=f"Last {cfg.decay_lookback_days} days",
+            detail=recent_detail,
         ))
 
         # 14. 因子相關性（和市場的相關性 — 是否有獨立 alpha）
@@ -514,8 +532,16 @@ class StrategyValidator:
         """Load 0050.TW bars: local parquet first, Yahoo fallback."""
         from pathlib import Path
 
-        local_path = Path(__file__).resolve().parent.parent.parent / "data" / "market" / "0050.TW_1d.parquet"
-        if local_path.exists():
+        market_dir = Path(__file__).resolve().parent.parent.parent / "data" / "market"
+        # Try multiple naming conventions
+        candidates = [
+            market_dir / "0050.TW_1d.parquet",
+            market_dir / "0050.TW.parquet",
+            market_dir / "finmind_0050.parquet",
+        ]
+        for local_path in candidates:
+            if not local_path.exists():
+                continue
             try:
                 df = pd.read_parquet(local_path)
                 if "date" in df.columns:
@@ -525,7 +551,7 @@ class StrategyValidator:
                 if len(sliced) >= 20:
                     return sliced
             except Exception:
-                pass
+                continue
 
         try:
             from src.data.sources.yahoo import YahooFeed
@@ -535,16 +561,19 @@ class StrategyValidator:
 
     @staticmethod
     def _compute_cvar(result: BacktestResult, alpha: float = 0.05) -> float:
-        """CVaR(95%) = 最差 5% 日均報酬的平均值。"""
+        """CVaR(95%) = 最差 5% 日均報酬的平均值。
+
+        Returns negative value (worst-case loss). Returns -1.0 on error (fail-closed).
+        """
         try:
             rets = result.daily_returns
             if rets is None or len(rets) < 20:
-                return 0.0
+                return -1.0  # fail-closed: insufficient data
             sorted_rets = sorted(rets.dropna().values)
             n_tail = max(int(len(sorted_rets) * alpha), 1)
             return float(np.mean(sorted_rets[:n_tail]))
         except Exception:
-            return 0.0
+            return -1.0  # fail-closed
 
     def _run_oos(self, strategy: Strategy, universe: list[str], start: str, end: str) -> dict[str, Any]:
         """OOS holdout 回測。"""
@@ -552,6 +581,12 @@ class StrategyValidator:
             bt_config = self._make_bt_config(universe, start, end)
             engine = BacktestEngine()
             r = engine.run(strategy, bt_config)
+            if r.nav_series is not None and len(r.nav_series) < 5:
+                return {"return": 0.0, "sharpe": 0.0,
+                        "error": f"OOS {start}~{end}: only {len(r.nav_series)} days — data likely missing"}
+            if r.total_trades == 0:
+                return {"return": 0.0, "sharpe": 0.0,
+                        "error": f"OOS {start}~{end}: 0 trades — check data availability"}
             return {"return": r.total_return, "sharpe": r.sharpe}
         except Exception as e:
             logger.warning("OOS backtest failed: %s", e)
@@ -590,7 +625,10 @@ class StrategyValidator:
                     self._rebal_skip = rebal_skip  # skip N bars between rebalances
                     self._bar_count = 0
                     self._cached_weights: dict[str, float] = {}
-                    self.name = f"{base.name}_n{top_n}_{weight_mode}_s{rebal_skip}"
+                    self._name = f"{base.name()}_n{top_n}_{weight_mode}_s{rebal_skip}"
+
+                def name(self) -> str:
+                    return self._name
 
                 def on_bar(self, ctx: Context) -> dict[str, float]:
                     self._bar_count += 1
@@ -701,10 +739,10 @@ class StrategyValidator:
         if not cagrs:
             return CheckResult(
                 name="worst_regime",
-                passed=True,
+                passed=False,
                 value="N/A",
                 threshold=f">= {max_worst_loss:+.0%}",
-                detail="No WF results available",
+                detail="No WF results available — fail-closed",
             )
 
         worst = min(cagrs)
@@ -756,16 +794,21 @@ class StrategyValidator:
         universe: list[str],
         end: str,
         lookback_days: int,
-    ) -> float:
-        """檢查最近 N 交易日的 Sharpe。"""
+    ) -> dict[str, Any]:
+        """檢查最近 N 交易日的 Sharpe。回傳 dict 含 sharpe + 元資料。"""
         try:
-            # lookback_days 是交易日，轉為日曆日（×365/252）
-            calendar_days = int(lookback_days * 365 / 252) + 30  # +30 buffer
+            calendar_days = int(lookback_days * 365 / 252) + 30
             recent_start = (pd.Timestamp(end) - pd.Timedelta(days=calendar_days)).strftime("%Y-%m-%d")
             bt_config = self._make_bt_config(universe, recent_start, end)
             engine = BacktestEngine()
             r = engine.run(strategy, bt_config)
-            return r.sharpe
+            if r.nav_series is not None and len(r.nav_series) < 5:
+                return {"sharpe": 0.0, "start": recent_start, "end": end,
+                        "error": f"Only {len(r.nav_series)} trading days — data likely missing"}
+            if r.total_trades == 0:
+                return {"sharpe": 0.0, "start": recent_start, "end": end,
+                        "error": "0 trades in recent period"}
+            return {"sharpe": r.sharpe, "start": recent_start, "end": end}
         except Exception as e:
             logger.warning("Recent performance check failed: %s", e)
-            return 0.0
+            return {"sharpe": 0.0, "start": "", "end": end, "error": str(e)}

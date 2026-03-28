@@ -750,7 +750,8 @@ def _run_validator(results: dict) -> dict | None:
                         if p.default is inspect.Parameter.empty]) >= 3
 
         class _FactorStrategy(StrategyBase):
-            name = "autoresearch_candidate"
+            def name(self) -> str:
+                return "autoresearch_candidate"
             def on_bar(self, ctx: Context) -> dict[str, float]:
                 symbols = list(ctx.current_prices.keys())
                 if _is_3arg:
