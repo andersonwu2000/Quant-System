@@ -184,39 +184,51 @@ CPCV 和 PBO 的 CSCV 類似，但：
 
 ---
 
-## 5. 實施計畫
+## 5. 實施計畫（覆核後修訂）
 
-### Phase 1：P0 修正（1-2 天）
+### 立即執行
 
-| Step | 改動 | 工作量 |
-|------|------|--------|
-| 2.1 | DSR n_trials | ✅ 已完成 |
-| 2.2 | Bootstrap IID → Stationary | 1 小時（30 行代碼 + 驗證） |
-| 2.3 | WF 重命名 temporal_consistency | 15 分鐘 |
+| Step | 改動 | 工作量 | 狀態 |
+|------|------|--------|:----:|
+| 2.1 | DSR n_trials=15, min_dsr 0.95→0.70 | 5 個檔案各改 1 行 | ✅ 已完成（Phase AB） |
+| 2.3 | WF 改名 `temporal_consistency` | 改名 | 待執行 |
+| 3.1 | Market corr 0.90 → 0.80 | 改 1 個參數 | 待執行（覆核新增） |
+| 3.2 | Benchmark 改等權 universe average | 30 分鐘 | 待執行 |
+| — | Rolling OOS `datetime.now()` bug | `__post_init__` 修正 | ✅ 已完成 |
 
-### Phase 2：P1 修正（1-2 天）
+### 延後（Phase 2）
 
-| Step | 改動 | 工作量 |
-|------|------|--------|
-| 3.1 | Market corr 0.90 → 0.80 | 改 1 個參數 |
-| 3.2 | Benchmark 改等權 average | 30 分鐘 |
-| 3.3 | OOS 使用次數計數 | 1 小時 |
-| 3.4 | Regime 改 drawdown-based | 1 小時 |
+| Step | 改動 | 條件 |
+|------|------|------|
+| 2.2 | Bootstrap IID → Stationary | DSR 已覆蓋，列技術債 |
+| 3.4 | Regime 改 drawdown-based | 年度切割實務夠用 |
+| 4.1 | Permutation test | 覆核從「不做」升為 P2 — 提供 DSR 不能給的獨立資訊 |
 
-### Phase 3：P2 新增（3-5 天）
+### 覆核回覆（2026-03-28）
 
-| Step | 改動 | 工作量 |
-|------|------|--------|
-| 4.1 | Permutation test | 2 小時 |
-| 4.2 | CPCV | 3 小時 |
+**全部接受。** 逐項確認：
+
+| 覆核變更 | 確認 |
+|---------|------|
+| 3.1 corr 0.80 從 NO → YES | ✅ 實測 corr 0.51-0.53，0.80 有充足 buffer |
+| 4.1 Permutation 從 NO → P2 | ✅ DSR 測顯著性，Permutation 測信號內容，不等價 |
+| 其餘同意 | ✅ |
+
+執行順序：2.3 改名 → 3.2 等權 benchmark → 3.1 corr 0.80 → 逐項跑 Validator 比較
+
+### 不做
+
+| Step | 原因 |
+|------|------|
+| 4.2 CPCV | PBO + DSR 已覆蓋 |
 
 ### 驗證
 
-每個修正後重跑 revenue_momentum_hedged，對比前後差異。
+改完 2.3 + 3.1 + 3.2 後重跑 revenue_momentum_hedged，對比 vs_benchmark 和 market_corr 變化。
 
 ---
 
-## 6. 修正後的 Validator 15+2 項
+## 6. 修正後的 Validator 15 項（覆核後）
 
 | # | Check | 測量什麼 | 門檻 | 改動 |
 |---|-------|---------|------|------|
@@ -225,18 +237,18 @@ CPCV 和 PBO 的 CSCV 類似，但：
 | 3 | sharpe | 風險調整報酬 | >= 0.7 | 不變 |
 | 4 | max_drawdown | 最大回撤 | <= 40% | 不變 |
 | 5 | annual_cost_ratio | 成本侵蝕 | < 50% | 不變 |
-| 6 | ~~walkforward~~ **temporal_consistency** | 年度一致性 | >= 60% 正 + CV < 2.0 | **重命名 + 加 CV** |
-| 7 | deflated_sharpe | 多重測試修正 | >= 0.70 | **n_trials=15 已修** |
-| 8 | bootstrap_p | P(Sharpe > 0) | >= 80% | **IID → Stationary** |
-| 9 | oos_sharpe | 樣本外表現 | >= 0.3 | Rolling 1.5 年（已改） |
-| 10 | vs_benchmark | 超額報酬 | >= 0% | **0050 → 等權 universe** |
-| 11 | pbo | 過擬合機率 | <= 0.50 | 不變（Phase AB 後續） |
-| 12 | worst_regime | 危機表現 | >= -30% | **年度 → drawdown-based** |
+| 6 | **temporal_consistency** | 年度一致性 | >= 60% 正 | **改名**（原 walkforward） |
+| 7 | deflated_sharpe | 多重測試修正 | >= 0.70 | ✅ **n_trials=15, min_dsr 0.70** |
+| 8 | bootstrap_p | P(Sharpe > 0) | >= 80% | 不變（Stationary 延後為技術債） |
+| 9 | oos_sharpe | 樣本外表現 | >= 0.3 | ✅ Rolling 1.5 年 + __post_init__ 修正 |
+| 10 | **vs_ew_universe** | 超額報酬 | >= 0% | **0050 → 等權 universe average** |
+| 11 | pbo | 過擬合機率 | <= 0.50 | 不變 |
+| 12 | worst_regime | 危機表現 | >= -30% | 不變（drawdown-based 延後） |
 | 13 | recent_sharpe | 因子衰退 | >= 0 | 不變 |
-| 14 | market_correlation | 獨立 alpha | \|corr\| <= **0.80** | **收緊** |
+| 14 | market_correlation | 獨立 alpha | \|corr\| <= **0.80** | **覆核收緊**（實測所有好策略 corr < 0.6） |
 | 15 | cvar_95 | 尾部風險 | >= -5% | 不變 |
-| **16** | **permutation_p** | **信號是否隨機** | **< 0.10** | **新增** |
-| **17** | **cpcv_oos_sharpe** | **CPCV OOS Sharpe 分佈** | **median > 0** | **新增** |
+
+**維持 15 項不增不減。** Permutation test 列 P2 延後（Phase Z1 就緒後再評估）。
 
 ---
 
@@ -244,11 +256,10 @@ CPCV 和 PBO 的 CSCV 類似，但：
 
 | 風險 | 緩解 |
 |------|------|
-| Stationary Bootstrap 的 avg_block 選擇影響結果 | 用多個 block size（10/20/40）取中位數 |
-| 門檻收緊後現有策略全部 fail | 逐項改、逐項跑，不一次改完 |
-| Permutation test 計算量大（100 次 backtest） | 用向量化回測（Phase Z1），~10 秒/次 |
-| CPCV 和 PBO 結果矛盾 | CPCV 看單一策略、PBO 看多策略選擇，兩者回答不同問題 |
 | 等權 benchmark 可能讓所有策略 fail（台股等權近年很強） | 先計算等權 benchmark 的 CAGR/Sharpe，確認門檻合理 |
+| 改名 temporal_consistency 後外部 caller 壞掉 | grep 所有引用 walkforward_positive_ratio 的地方 |
+| DSR(N=15) + 等權 benchmark + corr 0.80 三重收緊 | 逐項改、逐項跑，不一次改完 |
+| Market corr 0.80 在未來策略可能太嚴 | 目前所有好策略 corr < 0.6，buffer 充足。如果新策略 corr 0.7-0.8 再評估 |
 
 ---
 
@@ -274,42 +285,53 @@ CPCV 和 PBO 的 CSCV 類似，但：
 
 **審批結果：部分通過。7 項中 2 項立即執行，2 項延後，3 項不做。**
 
-### 逐項審批
+### 逐項審批（含獨立覆核修正）
 
-| # | 提案 | 決定 | 理由 |
-|---|------|:----:|------|
-| 2.2 | Bootstrap IID → Stationary | **延後** | 偏差真實但 ~20%，已有 DSR+OOS+WF 冗餘覆蓋。非 P0，降為 P1 |
-| 2.3 | WF 改名 temporal_consistency | **✅ 立即** | 語義修正，零成本 |
-| 3.1 | Market corr 0.90→0.80 | **❌ 不做** | 0.80 對等權台股因子太嚴（典型 corr 0.85-0.93），會誤殺合法策略 |
-| 3.2 | Benchmark 改等權 universe | **✅ 立即** | **最有價值的改動** — vs 0050 對等權策略自帶 size premium，幾乎無效 |
-| 3.4 | Regime 改 drawdown-based | **延後** | 理論更好但現有年度切割實務已夠用，列 P2 |
-| 4.1 | Permutation test | **❌ 不做** | 被 DSR(N=15) 覆蓋，冗餘 |
-| 4.2 | CPCV | **❌ 不做** | 為 ML 策略設計（大量超參數），無參數因子策略收益為零 |
+| # | 提案 | 原審批 | 覆核後 | 理由 |
+|---|------|:------:|:------:|------|
+| 2.2 | Bootstrap IID → Stationary | 延後 | **延後（同意）** | DSR(N=15) 是 Bootstrap 的嚴格強化版，已覆蓋。IID 偏差列為技術債 |
+| 2.3 | WF 改名 temporal_consistency | ✅ 立即 | **✅ 立即（同意）** | 零成本語義修正 |
+| 3.1 | Market corr 0.90→0.80 | ❌ 不做 | **✅ 應該做** | 原審批說「典型 corr 0.85-0.93」是被動策略數字。**實際數據：所有好策略 corr 0.3-0.6，0.80 不會誤殺任何因子策略** |
+| 3.2 | Benchmark 改等權 universe | ✅ 立即 | **✅ 立即（同意）** | 最有價值的改動 |
+| 3.4 | Regime 改 drawdown-based | 延後 | **延後（同意）** | 年度切割實務夠用 |
+| 4.1 | Permutation test | ❌ 不做 | **⏸ 延後（P2）** | DSR 和 Permutation 測不同東西：DSR=多重測試顯著性，Permutation=信號是否有內容。策略可通過 DSR 但 fail Permutation（信號只是大盤動量）。Phase Z1 讓 100 次 permutation 只需 ~100 秒 |
+| 4.2 | CPCV | ❌ 不做 | **❌ 不做（同意）** | PBO + DSR 已覆蓋因子選擇的過擬合風險 |
 
 ### 立即執行
 
 ```
-1. walkforward_positive_ratio → temporal_consistency（改名，15 分鐘）
-2. vs_0050 → vs equal-weight universe average（實質改動，30 分鐘）
+1. walkforward_positive_ratio → temporal_consistency（改名）
+2. vs_0050 → vs equal-weight universe average（實質改動）
+3. market_correlation 門檻 0.90 → 0.80（覆核新增）
 ```
 
 ### 延後（Phase 2）
 
 ```
-3. Stationary Bootstrap（有價值但非急迫，已有冗餘保護）
-4. Drawdown-based regime（理論更好但改動大）
+4. Stationary Bootstrap（偏差 ~20%，已有 DSR 冗餘覆蓋，列技術債）
+5. Drawdown-based regime（理論更好但改動大）
+6. Permutation test（覆核從「不做」改為 P2 — 提供 DSR 不能給的獨立資訊）
 ```
 
 ### 不做
 
 ```
-5. Market corr 0.80（太嚴）
-6. Permutation test（被 DSR 覆蓋）
-7. CPCV（無參數策略不需要）
+7. CPCV（PBO + DSR 已覆蓋）
 ```
 
-### 補充說明
+### 覆核修正說明
 
-**等權 benchmark 是本計畫最重要的改動。** 目前 `vs_0050_excess >= 0` 幾乎是免費通過（等權天然 size premium ~2-4%/年）。改成等權 universe average 後，這個 check 才真正測選股能力。
+**3.1 Market corr 修正理由**：原審批的「典型 corr 0.85-0.93 會誤殺」基於被動策略經驗。查看實際 Validator 結果：
 
-**Validator 修改後為 15 項（不增不減）：** 不新增 permutation/CPCV，只修正現有 check 的方法論。符合「最小改動最大收益」原則。
+| 策略 | Market corr | 被 0.80 擋？ |
+|------|:-----------:|:------------:|
+| revenue_momentum_hedged | 0.529 | 否 |
+| vwap_position_63d | 0.373 | 否 |
+| 52wk_high | 0.394 | 否 |
+| efficiency_ratio_126d | 0.326 | 否 |
+
+所有 12+ 項的策略 corr 都在 0.3-0.6。0.80 距離最高值仍有 0.2 的 buffer。收緊到 0.80 擋的是「corr > 0.80 的純 beta 搬運」，不影響任何合法因子策略。
+
+**4.1 Permutation 修正理由**：DSR 回答「N 次測試後 Sharpe 是否顯著」（參數化），Permutation 回答「隨機打亂信號後報酬是否下降」（非參數化）。一個策略可以通過 DSR 但 fail Permutation — 如果信號只是市場動量的代理（有 Sharpe 但沒有選股 alpha）。這是獨立的資訊維度，不是冗餘。
+
+**等權 benchmark 仍是最重要的改動。** vs 0050 對等權策略自帶 size premium ~2-4%/年，幾乎無效。
