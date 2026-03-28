@@ -677,20 +677,40 @@ class StrategyValidator:
                 return 0.5
             real_sharpe = float(real_rets.mean() / real_rets.std() * np.sqrt(252)) if real_rets.std() > 0 else 0
 
+            # Pre-compute factor values for all rebalance dates (run compute_fn once)
+            prices = vbt._price_matrix
+            monthly_groups = prices.groupby(prices.index.to_period("M"))
+            monthly_first = monthly_groups.apply(lambda g: g.index[0])
+            rebal_dates = list(monthly_first.values)
+
+            factor_cache: dict[str, dict[str, float]] = {}  # {date_str: {sym: val}}
+            symbols = prices.columns.tolist()
+            for date in rebal_dates:
+                as_of = pd.Timestamp(date)
+                data = vbt._build_factor_data(symbols, as_of)
+                try:
+                    vals = compute_fn(symbols, as_of, data)
+                    if vals:
+                        factor_cache[str(date)] = vals
+                except Exception:
+                    pass
+
+            if len(factor_cache) < 10:
+                return 0.5  # not enough dates
+
             random_sharpes = []
             for i in range(n_permutations):
-                # Fixed permutation: pre-generate a shuffle index, apply to ALL dates
                 perm_seed = 1000 + i
-                def shuffled_factor(symbols, as_of, data, _seed=perm_seed):
-                    values = compute_fn(symbols, as_of, data)
-                    if not values:
+                def shuffled_factor(symbols, as_of, data, _seed=perm_seed, _cache=factor_cache):
+                    # Look up pre-computed values, shuffle mapping
+                    vals = _cache.get(str(as_of), {})
+                    if not vals:
                         return {}
-                    syms = sorted(values.keys())  # deterministic order
-                    vals = [values[s] for s in syms]
-                    # Same shuffle for every date: seed depends only on permutation index
+                    syms = sorted(vals.keys())
+                    values = [vals[s] for s in syms]
                     idx = list(range(len(syms)))
                     np.random.default_rng(_seed).shuffle(idx)
-                    return {syms[j]: vals[idx[j]] for j in range(len(syms))}
+                    return {syms[j]: values[idx[j]] for j in range(len(syms))}
                 try:
                     rets = vbt.run_variant(shuffled_factor, top_n=15, weight_mode="equal")
                     if rets is not None and len(rets) > 60:
