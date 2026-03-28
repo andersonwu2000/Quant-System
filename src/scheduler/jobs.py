@@ -417,11 +417,16 @@ def _get_tw_universe_fallback() -> list[str]:
     if not market_dir.exists():
         logger.error("data/market/ directory not found")
         return []
-    universe = sorted(
-        p.stem.replace("_1d", "")
-        for p in market_dir.glob("*.TW_1d.parquet")
-        if not p.stem.startswith("00")
-    )
+    def _clean_sym(stem: str) -> str:
+        s = stem.replace("_1d", "")
+        if s.startswith("finmind_"):
+            s = s[len("finmind_"):]
+        return s
+    universe = sorted({
+        _clean_sym(p.stem)
+        for p in market_dir.glob("*_1d.parquet")
+        if ".TW" in p.stem and not p.stem.replace("finmind_", "").startswith("00")
+    })
     return universe
 
 

@@ -114,6 +114,7 @@ class WalkForwardAnalyzer:
         all_test_sharpes: list[float] = []
         all_test_max_dds: list[float] = []
         all_best_params: list[dict[str, Any] | None] = []
+        all_oos_daily: list[pd.Series] = []
 
         for i, (train_start, train_end, test_start, test_end) in enumerate(folds_dates):
             # 合作式取消：每個 fold 開始前檢查
@@ -182,13 +183,21 @@ class WalkForwardAnalyzer:
             all_test_sharpes.append(test_result.sharpe)
             all_test_max_dds.append(test_result.max_drawdown)
             all_best_params.append(best_params)
+            if test_result.daily_returns is not None and len(test_result.daily_returns) > 0:
+                all_oos_daily.append(test_result.daily_returns)
 
         # Aggregate OOS metrics
         # Compound total return across folds
         oos_total_return = float(
             np.prod([1 + r for r in all_test_returns]) - 1
         )
-        oos_sharpe = float(np.mean(all_test_sharpes)) if all_test_sharpes else 0.0
+        # Concatenated OOS Sharpe (more accurate than per-fold mean)
+        if all_oos_daily:
+            concat_oos = pd.concat(all_oos_daily).dropna()
+            oos_std = float(concat_oos.std()) if len(concat_oos) > 1 else 0.0
+            oos_sharpe = float(concat_oos.mean() / oos_std * np.sqrt(252)) if oos_std > 0 else 0.0
+        else:
+            oos_sharpe = float(np.mean(all_test_sharpes)) if all_test_sharpes else 0.0
         oos_max_drawdown = float(max(all_test_max_dds)) if all_test_max_dds else 0.0
 
         # Parameter stability: track how params change across folds

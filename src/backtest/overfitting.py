@@ -101,54 +101,40 @@ def compute_pbo(
         selected_combos = all_combos
 
     logits: list[float] = []
-    overfit_count = 0
-
     strategies = returns_matrix.columns.tolist()
+    n_strats = len(strategies)
 
     for is_indices in selected_combos:
         oos_indices = tuple(i for i in range(n_partitions) if i not in is_indices)
 
-        # Concatenate IS and OOS partitions
         is_data = pd.concat([partitions[i] for i in is_indices])
         oos_data = pd.concat([partitions[i] for i in oos_indices])
 
-        # Compute Sharpe for each strategy on IS and OOS
         is_sharpes: dict[str, float] = {}
         oos_sharpes: dict[str, float] = {}
 
         for col in strategies:
-            is_ret = is_data[col].dropna()
-            oos_ret = oos_data[col].dropna()
+            is_sharpes[col] = _sharpe(is_data[col].dropna())
+            oos_sharpes[col] = _sharpe(oos_data[col].dropna())
 
-            is_sharpes[col] = _sharpe(is_ret)
-            oos_sharpes[col] = _sharpe(oos_ret)
-
-        # Find the best IS strategy
         best_is_strategy = max(is_sharpes, key=lambda k: is_sharpes[k])
-
-        # Check its OOS rank
         oos_sharpe_best = oos_sharpes[best_is_strategy]
-        oos_median = float(np.median(list(oos_sharpes.values())))
 
-        # Logit: negative means the best-IS underperformed OOS median
-        if oos_sharpe_best <= oos_median:
-            overfit_count += 1
-
-        # Compute logit value
-        # rank_oos: fraction of strategies that the best-IS beats OOS
-        n_strats = len(strategies)
+        # OOS rank ratio: fraction of OTHER strategies that best-IS beats
         rank_below = sum(
-            1 for s in strategies if oos_sharpes[s] < oos_sharpe_best
+            1 for s in strategies
+            if s != best_is_strategy and oos_sharpes[s] < oos_sharpe_best
         )
         rank_ratio = rank_below / max(n_strats - 1, 1)
 
-        # Logit: log(p / (1-p)), where p is rank ratio
-        # Clamp to avoid log(0) or log(inf)
+        # Logit: log(p / (1-p)), clamped to avoid log(0)/log(inf)
         p = max(0.01, min(0.99, rank_ratio))
         logit = float(np.log(p / (1.0 - p)))
         logits.append(logit)
 
-    pbo = overfit_count / len(selected_combos) if selected_combos else 1.0  # fail-closed
+    # PBO = fraction of combinations where logit <= 0
+    # (best-IS strategy ranked at or below median OOS)
+    pbo = sum(1 for l in logits if l <= 0) / len(logits) if logits else 1.0
 
     return PBOResult(
         pbo=pbo,

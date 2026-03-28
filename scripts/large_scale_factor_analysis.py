@@ -51,6 +51,9 @@ def load_all_parquet(market_dir: str = "data/market", min_bars: int = 500) -> di
     skipped = 0
     for f in files:
         symbol = f.stem.replace("_1d", "")
+        # Strip finmind_ prefix to get clean symbol
+        if symbol.startswith("finmind_"):
+            symbol = symbol[len("finmind_"):]
         # 跳過 ETF 指數（0050, 0056 等）以避免污染因子分析
         try:
             df = pd.read_parquet(f)

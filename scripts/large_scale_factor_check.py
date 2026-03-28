@@ -23,9 +23,11 @@ FUND_DIR = Path("data/fundamental")
 
 def load_data():
     data = {}
-    for p in sorted(MARKET_DIR.glob("*.TW_1d.parquet")):
+    for p in sorted(MARKET_DIR.glob("*_1d.parquet")):
         sym = p.stem.replace("_1d", "")
-        if sym.startswith("00"):
+        if sym.startswith("finmind_"):
+            sym = sym[len("finmind_"):]
+        if sym.startswith("00") or ".TW" not in sym:
             continue
         try:
             df = pd.read_parquet(p)

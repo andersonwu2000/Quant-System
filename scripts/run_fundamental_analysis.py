@@ -28,9 +28,11 @@ OUT_CSV = "docs/dev/test/fundamental_factor_analysis.csv"
 def load_price_panel() -> pd.DataFrame:
     """讀取所有本地 parquet 價格數據，構建 close 面板。"""
     symbols = []
-    for p in MARKET_DIR.glob("*.TW_1d.parquet"):
+    for p in MARKET_DIR.glob("*_1d.parquet"):
         sym = p.stem.replace("_1d", "")
         if sym.startswith("finmind_"):
+            sym = sym[len("finmind_"):]
+        if ".TW" not in sym:
             continue
         if sym in ("0050.TW", "0056.TW"):
             continue
@@ -292,9 +294,11 @@ def build_trust_cumulative_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
 def _load_volume_panel() -> pd.DataFrame | None:
     """讀取成交量面板。"""
     all_vol = {}
-    for p in MARKET_DIR.glob("*.TW_1d.parquet"):
+    for p in MARKET_DIR.glob("*_1d.parquet"):
         sym = p.stem.replace("_1d", "")
-        if sym.startswith("finmind_") or sym in ("0050.TW", "0056.TW"):
+        if sym.startswith("finmind_"):
+            sym = sym[len("finmind_"):]
+        if ".TW" not in sym or sym in ("0050.TW", "0056.TW"):
             continue
         try:
             df = pd.read_parquet(p)

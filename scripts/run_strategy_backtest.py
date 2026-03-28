@@ -39,9 +39,11 @@ def discover_universe(require_fundamentals: bool = True) -> list[str]:
     """
     market_symbols = set()
     if MARKET_DIR.exists():
-        for f in sorted(MARKET_DIR.glob("*.TW_1d.parquet")):
+        for f in sorted(MARKET_DIR.glob("*_1d.parquet")):
             sym = f.stem.replace("_1d", "")
-            if not sym.startswith("finmind_"):
+            if sym.startswith("finmind_"):
+                sym = sym[len("finmind_"):]
+            if ".TW" in sym:
                 market_symbols.add(sym)
 
     if not market_symbols:
