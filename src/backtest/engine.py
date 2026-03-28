@@ -672,6 +672,10 @@ class BacktestEngine:
                 if not qr.ok:
                     logger.warning("Quality issues for %s: %s", symbol, qr.issues)
 
+                # Replace zero/negative close with NaN (data corruption guard)
+                if "close" in df.columns:
+                    df["close"] = df["close"].where(df["close"] > 0)
+                    df["close"] = df["close"].ffill()  # fill gaps from zeroed days
                 feed.load(symbol, df)
                 logger.info("Loaded %d bars for %s (warmup from %s)", len(df), symbol, warmup_start)
             else:

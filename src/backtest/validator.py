@@ -1066,8 +1066,11 @@ class StrategyValidator:
                             df = df.set_index("date").sort_index()
                         if "close" in df.columns:
                             sliced = df.loc[start:end]["close"]
-                            if len(sliced) > 20:
-                                all_returns.append(sliced.pct_change().dropna())
+                            sliced = sliced.where(sliced > 0)  # zero close → NaN
+                            if len(sliced.dropna()) > 20:
+                                rets = sliced.ffill().pct_change().dropna()
+                                rets = rets.replace([np.inf, -np.inf], 0.0)
+                                all_returns.append(rets)
                     except Exception:
                         pass
                     break

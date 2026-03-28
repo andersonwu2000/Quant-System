@@ -179,7 +179,10 @@ def _load_all_data(universe: list[str]) -> dict:
                 df.index = pd.to_datetime(df.index.date)  # normalize to date-only
                 df = df[~df.index.duplicated(keep="first")]
                 if not df.empty and "close" in df.columns:
-                    bars[sym] = df
+                    # Replace zero/negative close with NaN, skip if >10% bad
+                    df["close"] = df["close"].where(df["close"] > 0)
+                    if df["close"].isna().sum() / len(df) <= 0.10:
+                        bars[sym] = df
                 break
 
         # Revenue (try sym first, then bare)
@@ -300,7 +303,7 @@ def _compute_forward_returns(
         try:
             p0 = float(df.loc[as_of, "close"])
             p1 = float(df.loc[future[horizon - 1], "close"])
-            if p0 > 0:
+            if p0 > 0 and p1 > 0:
                 returns[sym] = p1 / p0 - 1
         except Exception:
             continue
