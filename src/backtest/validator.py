@@ -225,8 +225,10 @@ class StrategyValidator:
         ))
 
         # Pre-load shared feed (avoid re-reading parquets for each sub-backtest)
+        # Use extended range to cover OOS (2025) and recent period
         logger.info("[Validator] Pre-loading data feed...")
-        bt_config = self._make_bt_config(universe, start, end)
+        feed_end = max(end, cfg.oos_end, "2026-12-31")
+        bt_config = self._make_bt_config(universe, start, feed_end)
         _pre_engine = BacktestEngine()
         try:
             self._shared_feed, _, self._shared_fundamentals = _pre_engine._load_data(bt_config)
@@ -234,11 +236,12 @@ class StrategyValidator:
             self._shared_feed = None
             self._shared_fundamentals = None
 
-        # 1. Full backtest
+        # 1. Full backtest (use original start/end, not extended feed range)
         logger.info("[Validator] Running full backtest...")
         try:
+            full_bt_config = self._make_bt_config(universe, start, end)
             engine = BacktestEngine()
-            result = engine.run(strategy, bt_config, feed_override=self._shared_feed)
+            result = engine.run(strategy, full_bt_config, feed_override=self._shared_feed)
             report.backtest_result = result
 
             report.checks.append(CheckResult(
