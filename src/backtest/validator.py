@@ -80,8 +80,7 @@ class ValidationConfig:
     oos_end: str = "2025-12-31"
     oos_min_sharpe: float = 0.3       # OOS Sharpe > 0.3（合理的風險調整報酬）
 
-    # 7. vs 1/N benchmark
-    benchmark_strategy: str = "equal_weight"  # 1/N 等權
+    # 7. vs 0050.TW benchmark
     min_excess_return: float = 0.0    # 超額 > 0
 
     # 8. Turnover + cost
@@ -332,11 +331,11 @@ class StrategyValidator:
             detail=f"OOS {cfg.oos_start}~{cfg.oos_end}, return={oos_result.get('return', 0):+.2%}",
         ))
 
-        # 7. vs 1/N benchmark
-        logger.info("[Validator] Running 1/N benchmark comparison...")
+        # 7. vs 0050.TW benchmark
+        logger.info("[Validator] Running 0050.TW benchmark comparison...")
         excess = self._vs_benchmark(result, universe, start, end)
         report.checks.append(CheckResult(
-            name="vs_1n_excess",
+            name="vs_0050_excess",
             passed=excess >= cfg.min_excess_return,
             value=f"{excess:+.2%}",
             threshold=f">= {cfg.min_excess_return:+.2%}",
@@ -709,26 +708,50 @@ class StrategyValidator:
         start: str,
         end: str,
     ) -> float:
-        """計算 vs 買入持有基準的年化超額報酬。
+        """計算 vs 0050.TW buy-and-hold 的年化超額報酬。
 
-        用大盤 ETF (0050.TW) 的 buy-and-hold 報酬作為基準。
-        如果無法取得基準，fallback 假設基準 = 0。
+        優先讀本地 parquet，fallback 到 Yahoo 下載。
+        取得失敗回傳 -999（確保不自動通過）。
         """
-        try:
-            from src.data.sources.yahoo import YahooFeed
-            feed = YahooFeed()
-            bars = feed.get_bars("0050.TW", start=start, end=end)
-            if bars.empty or len(bars) < 20:
-                return result.annual_return  # 無基準，假設 0%
+        bars = None
+        from pathlib import Path
 
+        # 1. Try local parquet first (works in Docker without network)
+        local_path = Path(__file__).resolve().parent.parent.parent / "data" / "market" / "0050.TW_1d.parquet"
+        if local_path.exists():
+            try:
+                df = pd.read_parquet(local_path)
+                if "date" in df.columns:
+                    df["date"] = pd.to_datetime(df["date"])
+                    df = df.set_index("date").sort_index()
+                bars = df.loc[start:end]
+            except Exception:
+                pass
+
+        # 2. Fallback to Yahoo
+        if bars is None or bars.empty or len(bars) < 20:
+            try:
+                from src.data.sources.yahoo import YahooFeed
+                feed = YahooFeed()
+                bars = feed.get_bars("0050.TW", start=start, end=end)
+            except Exception as e:
+                logger.warning("Benchmark 0050.TW unavailable: %s", e)
+                return -999.0  # fail-closed: cannot verify, do not auto-pass
+
+        if bars is None or bars.empty or len(bars) < 20:
+            logger.warning("Benchmark 0050.TW has insufficient data")
+            return -999.0
+
+        try:
             close = bars["close"]
             bench_total = float(close.iloc[-1] / close.iloc[0] - 1)
-            n_years = max(len(bars) / 252, 0.5)
+            n_years = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
+                else max(len(bars) / 252, 0.5)
             bench_annual = (1 + bench_total) ** (1 / n_years) - 1
             return float(result.annual_return - bench_annual)
         except Exception as e:
-            logger.warning("Benchmark comparison failed: %s", e)
-            return 0.0
+            logger.warning("Benchmark calculation failed: %s", e)
+            return -999.0
 
     def _check_recent_performance(
         self,
