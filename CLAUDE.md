@@ -15,6 +15,7 @@ CLAUDE.md 只保留**行為規範和開發規則**。技術細節分拆到 `docs
 | `docs/plans/` | 各 Phase 獨立計畫書（A~Z） | 規劃新工作時 |
 | `docs/research/` | 實驗報告 + 研究總結 | 因子分析、策略驗證時 |
 | `docs/guides/autoresearch-guide-zh.md` | Autoresearch 操作指南 | 啟動/停止/監控自動研究時 |
+| `docs/claude/CHECKLISTS.md` | 研究啟動 / 代碼修改 / 事故處理 checklist | **每次操作前必讀** |
 
 ### 文件維護規則
 
