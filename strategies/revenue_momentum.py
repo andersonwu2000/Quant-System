@@ -284,6 +284,29 @@ class RevenueMomentumStrategy(Strategy):
             elif regime == "sideways":
                 weights = {k: v * self.sideways_position_scale for k, v in weights.items()}
 
+        # Phase AA 4.2: no-trade zone — 偏離 < 1.5% 不調整（降低換手成本）
+        # 4.6: 非對稱成本 — 賣出門檻更高（賣出成本是買入的 3 倍）
+        NO_TRADE_BUY = 0.015   # 買入/加碼門檻 1.5%
+        NO_TRADE_SELL = 0.030  # 賣出門檻 3%（賣出成本 0.4425% 是買入 0.1425% 的 3 倍）
+        portfolio = ctx.portfolio()
+        if portfolio is not None and portfolio.nav > 0:
+            current_w: dict[str, float] = {}
+            for sym in set(list(weights.keys()) + [p for p in portfolio.positions]):
+                current_w[sym] = float(portfolio.get_position_weight(sym))
+            adjusted: dict[str, float] = {}
+            for sym in set(list(weights.keys()) + list(current_w.keys())):
+                target = weights.get(sym, 0.0)
+                current = current_w.get(sym, 0.0)
+                diff = target - current
+                if diff > NO_TRADE_BUY:       # 買入/加碼：偏離 > 1.5%
+                    adjusted[sym] = target
+                elif diff < -NO_TRADE_SELL:    # 賣出：偏離 > 3%
+                    adjusted[sym] = target
+                elif current > 0.001:          # 在 zone 內：保持不動
+                    adjusted[sym] = current
+                # else: 不持有且不買 → 不加入
+            weights = adjusted
+
         self._last_month = current_month
         self._cached_weights = weights
         return weights

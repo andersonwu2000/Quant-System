@@ -153,10 +153,38 @@ def build_from_research_factor(
 
             candidates.sort(key=lambda x: x[1], reverse=True)
             selected = candidates[:top_n]
-            # direction 調整後 top 應為正值；若 direction=-1 且全部為負，
-            # 取絕對值作為信號強度以避免 long_only 過濾
-            signals = {s: abs(v) for s, v in selected}
-            weights = signal_weight(signals, OptConstraints(max_weight=max_weight, max_total_weight=0.95))
+
+            # Phase AA 4.1: inverse-vol weighting
+            # rank(signal) / volatility — 高信號低波動股拿更多權重
+            import numpy as _np
+            n_sel = len(selected)
+            raw_weights: dict[str, float] = {}
+            for rank_i, (sym, val) in enumerate(selected):
+                # rank: 最高信號 = n_sel, 最低 = 1
+                rank_score = n_sel - rank_i
+                # 20 天年化波動率，下限 5%
+                try:
+                    b = _all_bars.get(sym) if _needs_data else ctx.bars(sym, lookback=30)
+                    if b is not None and len(b) >= 10:
+                        daily_rets = b["close"].pct_change().dropna().values[-20:]
+                        vol = max(float(_np.std(daily_rets) * _np.sqrt(252)), 0.05)
+                    else:
+                        vol = 0.20  # fallback
+                except Exception:
+                    vol = 0.20
+                raw_weights[sym] = rank_score / vol
+
+            # normalize to sum = 0.95, cap at max_weight
+            total_raw = sum(raw_weights.values())
+            if total_raw > 0:
+                weights = {}
+                for sym, rw in raw_weights.items():
+                    w = min((rw / total_raw) * 0.95, max_weight)
+                    if w >= 0.01:
+                        weights[sym] = w
+            else:
+                weights = {}
+
             self._cached = weights
             return weights
 
