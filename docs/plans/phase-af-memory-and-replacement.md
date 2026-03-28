@@ -107,22 +107,11 @@ if max_corr > 0.50:
 
 ### 問題 1（HIGH）：替換機制缺少對因子庫整體多樣性的保護
 
-替換邏輯只看「新因子 ICIR ≥ 1.3× 舊因子」。但如果 agent 持續用同一個方向（如 revenue 變體）替換，因子庫最終會全部是 revenue 的高度相關變體。
+**獨立驗證：** 方向正確，但當前因子庫只有 2 個 active 因子（revenue_acceleration, revenue_yoy）。多樣性退化在 15+ 因子時才成為真實問題。avg_corr 監控值得加但不阻塞。
 
-FactorMiner 有 **Stage 3 批次去重**（批次內相關性 > 0.70 → 剔除），我們沒有。
+另外注意：1.3× 門檻來自 FactorMiner 的 **IC**（非 ICIR）。我們用 ICIR（更嚴格，要求穩定性），但 1.3× 這個數字沒有直接的 ICIR 校準依據。作為起點可接受，後續用數據校準。
 
-FactorMiner 的最終因子庫的平均跨因子絕對相關性 |ρ| = 0.203。我們沒有追蹤這個指標。
-
-**建議加一個 post-replace check：**
-```python
-# 替換後檢查因子庫的平均相關性
-avg_corr = compute_avg_pairwise_corr(updated_baseline)
-if avg_corr > 0.40:  # 因子庫多樣性退化
-    log_warning("Factor library diversity declining: avg |ρ| = {avg_corr}")
-    # 不阻擋替換，但在 learnings 中記錄警告
-```
-
-工作量：~10 行。
+接受建議：加 avg_corr 監控。
 
 ### 問題 2（MEDIUM）：learnings 的 `/learnings` API 回傳太多資訊
 
@@ -147,27 +136,18 @@ GET /learnings → {"successful_directions": [...], "failed_directions": [...], 
 
 ### 問題 3（MEDIUM）：替換後 baseline_ic_series.json 的更新可能破壞 L3 dedup
 
-替換邏輯：
-```python
-replace_factor(correlated_factor, new_factor)
-# → 更新 baseline_ic_series.json
-```
+**獨立驗證：部分不同意。**
 
-baseline_ic_series.json 用於 L3 去重。如果替換時直接刪除舊因子的 IC series 再加入新因子的，那舊因子的所有「近親」（和舊因子相關 > 0.50 但和新因子可能相關 < 0.50 的因子）會突然變得「可通過 L3」。
+審批說「被替換因子的近親復活是壞事」。但反例：
+- B = revenue_yoy，D = revenue_acceleration（替換 B）
+- E = revenue_growth_3m，和 B 高相關但和 D 可能不相關
+- E 復活是合理的 — E 和 D 捕捉不同的信號面向
 
-**這會導致已被 reject 的因子在替換後重新通過 L3。**
+**保留 historical 做 dedup 是過度保守** — 它阻止了合法的新因子進入。
 
-**建議：** 替換時保留舊因子的 IC series 作為 historical record（用 `replaced_by: new_factor_hash` 標記）。L3 dedup 同時檢查 active 和 historical IC series。這樣已 reject 的因子不會復活。
+**修正方案：** 只用 active 做 dedup（不保留 historical）。替換後在 learnings 記錄 freed_directions，讓 agent 知道哪些方向重新開放。Factor-Level PBO 會在因子庫層面捕捉整體過擬合風險。
 
-```python
-# baseline_ic_series.json 結構改為：
-{
-  "active": {"factor_hash": [ic_series], ...},
-  "historical": {"old_factor_hash": {"series": [...], "replaced_by": "new_hash"}, ...}
-}
-```
-
-工作量：~15 行。
+如果未來發現復活的因子確實都是 clone → 再加回 historical dedup。
 
 ### 缺漏 1：沒有 learnings 的 TTL/清理機制
 
