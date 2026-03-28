@@ -618,75 +618,51 @@ class StrategyValidator:
         start: str = "",
         end: str = "",
     ) -> float:
-        """Bailey (2015) CSCV PBO using orthogonal strategy variants.
+        """Bailey (2015) CSCV PBO using vectorized backtest (Phase Z1).
 
-        Creates genuinely different strategy variants along 3 dimensions
-        (portfolio size, weighting, rebalance frequency) to reduce
-        inter-variant correlation.
-
-        Falls back to 0.5 (inconclusive) if insufficient data.
+        Uses VectorizedPBOBacktest for ~100x speedup over event-driven.
+        10 orthogonal variants (3 dimensions: size × weight × rebal).
         """
         if strategy is None or universe is None:
             logger.warning("PBO: no strategy/universe provided, returning pessimistic (1.0)")
             return 1.0
 
         try:
-            from src.strategy.base import Context, Strategy as StrategyBase
+            from src.backtest.vectorized import VectorizedPBOBacktest
+            import inspect
 
-            class _VariantStrategy(StrategyBase):
-                """Strategy variant with different selection/weighting/rebalance."""
-                def __init__(self, base: Strategy, top_n: int,
-                             weight_mode: str = "equal", rebal_skip: int = 0):
-                    self._base = base
-                    self._top_n = top_n
-                    self._weight_mode = weight_mode
-                    self._rebal_skip = rebal_skip  # skip N bars between rebalances
-                    self._bar_count = 0
-                    self._cached_weights: dict[str, float] = {}
-                    self._name = f"{base.name()}_n{top_n}_{weight_mode}_s{rebal_skip}"
+            # Get compute_factor from strategy's on_bar
+            # Strategy wraps compute_factor — extract it
+            compute_fn = None
+            if hasattr(strategy, '_base'):
+                # _VariantStrategy or similar wrapper
+                compute_fn = getattr(strategy._base, '_compute_fn', None)
+            if compute_fn is None:
+                # Try to import from factor module directly
+                try:
+                    from factor import compute_factor as _cf  # type: ignore[import-not-found]
+                    compute_fn = _cf
+                except ImportError:
+                    pass
+            if compute_fn is None:
+                logger.warning("PBO: cannot extract compute_factor, returning pessimistic (1.0)")
+                return 1.0
 
-                def name(self) -> str:
-                    return self._name
+            # Resolve data directories
+            from pathlib import Path
+            project_root = Path(__file__).resolve().parent.parent
+            data_dir = project_root / "data" / "market"
+            fund_dir = project_root / "data" / "fundamental"
 
-                def on_bar(self, ctx: Context) -> dict[str, float]:
-                    self._bar_count += 1
-                    # Rebalance frequency variation: skip N bars
-                    if self._rebal_skip > 0 and self._bar_count % (self._rebal_skip + 1) != 1:
-                        return dict(self._cached_weights) if self._cached_weights else {}
+            # Build vectorized backtest (loads data once)
+            t0 = __import__("time").time()
+            vbt = VectorizedPBOBacktest(
+                universe=universe, start=start, end=end,
+                data_dir=str(data_dir), fund_dir=str(fund_dir),
+            )
 
-                    weights = self._base.on_bar(ctx)
-                    if not weights:
-                        return dict(self._cached_weights) if self._cached_weights else {}
-
-                    sorted_syms = sorted(weights, key=lambda s: weights[s], reverse=True)
-                    selected = sorted_syms[:self._top_n]
-                    if not selected:
-                        return {}
-
-                    if self._weight_mode == "signal":
-                        vals = {s: max(weights[s], 0.0) for s in selected}
-                        total = sum(vals.values())
-                        if total <= 0:
-                            result = {s: 1.0 / len(selected) for s in selected}
-                        else:
-                            result = {s: v / total for s, v in vals.items()}
-                    elif self._weight_mode == "inverse_rank":
-                        n = len(selected)
-                        rank_weights = {s: (n - i) for i, s in enumerate(selected)}
-                        total = sum(rank_weights.values())
-                        result = {s: v / total for s, v in rank_weights.items()}
-                    else:
-                        w = 1.0 / len(selected)
-                        result = {s: w for s in selected}
-
-                    self._cached_weights = result
-                    return dict(result)
-
-            # 3 dimensions of variation:
-            #   portfolio size: 8, 12, 15, 20
-            #   weighting: equal, signal, inverse_rank
-            #   rebalance skip: 0 (every bar), 1 (every 2nd bar)
-            variant_configs: list[tuple[int, str, int]] = [
+            # 10 orthogonal variants
+            variant_configs = [
                 (8,  "equal",        0),
                 (8,  "signal",       0),
                 (12, "equal",        0),
@@ -700,37 +676,20 @@ class StrategyValidator:
             ]
 
             daily_returns_dict: dict[str, pd.Series] = {}
-            bt_config = self._make_bt_config(universe, start, end)
-            pbo_feed = getattr(self, '_shared_feed', None)
-
-            def _run_variant(args: tuple[int, str, int]) -> tuple[str, pd.Series | None]:
-                top_n, wmode, skip = args
-                variant = _VariantStrategy(strategy, top_n, wmode, skip)
+            for top_n, wmode, skip in variant_configs:
                 try:
-                    engine = BacktestEngine()
-                    result = engine.run(variant, bt_config, feed_override=pbo_feed)
-                    if result.daily_returns is not None and len(result.daily_returns) > 20:
-                        return f"n{top_n}_{wmode}_s{skip}", result.daily_returns
+                    rets = vbt.run_variant(compute_fn, top_n, wmode, skip)
+                    if rets is not None and len(rets) > 20:
+                        daily_returns_dict[f"n{top_n}_{wmode}_s{skip}"] = rets
                 except Exception as e:
-                    logger.debug("PBO variant n%d_%s_s%d failed: %s", top_n, wmode, skip, e)
-                return f"n{top_n}_{wmode}_s{skip}", None
-
-            # Run variants in parallel (threads — avoids pickle issues with nested classes)
-            from concurrent.futures import ThreadPoolExecutor
-            import os as _os2
-            n_workers = min(len(variant_configs), int(_os2.environ.get("PBO_WORKERS", 4)))
-            with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                for label, rets in pool.map(_run_variant, variant_configs):
-                    if rets is not None:
-                        daily_returns_dict[label] = rets
+                    logger.debug("PBO vectorized variant n%d_%s_s%d failed: %s",
+                                 top_n, wmode, skip, e)
 
             if len(daily_returns_dict) < 4:
                 logger.warning("PBO: only %d variants produced returns (need >=4), "
                                "returning pessimistic (1.0)", len(daily_returns_dict))
                 return 1.0
 
-            # Align by date — ffill(limit=5) then drop remaining NaN rows
-            # (avoids dropna() discarding entire rows when one variant has a gap)
             returns_matrix = pd.DataFrame(daily_returns_dict)
             returns_matrix = returns_matrix.ffill(limit=5).dropna()
             if len(returns_matrix) < 120:
@@ -738,15 +697,16 @@ class StrategyValidator:
                                "returning pessimistic (1.0)", len(returns_matrix))
                 return 1.0
 
-            # 8-16 partitions, each >= 60 trading days for stable Sharpe
             n_parts = min(16, max(8, len(returns_matrix) // 60))
             if n_parts % 2 != 0:
                 n_parts -= 1
 
             pbo_result = compute_pbo(returns_matrix, n_partitions=n_parts)
-            logger.info("PBO CSCV: %.3f (%d combos, %d variants, %d days, %d partitions)",
+            elapsed = __import__("time").time() - t0
+            logger.info("PBO CSCV (vectorized): %.3f (%d combos, %d variants, %d days, "
+                        "%d partitions, %.1fs)",
                         pbo_result.pbo, pbo_result.n_combinations,
-                        len(daily_returns_dict), len(returns_matrix), n_parts)
+                        len(daily_returns_dict), len(returns_matrix), n_parts, elapsed)
             return pbo_result.pbo
 
         except Exception as e:
