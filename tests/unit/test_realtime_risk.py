@@ -124,14 +124,15 @@ class TestDrawdownAlerts:
         assert monitor._alerts_count >= 2
 
     def test_5pct_kill_switch(self) -> None:
-        """5% drawdown triggers kill switch."""
+        """5% drawdown triggers kill switch alert and generates liquidation orders."""
         monitor, portfolio, ws = _make_monitor(
             cash=0, positions={"AAPL": (1000, 100)}
         )
-        with patch.object(monitor.risk_engine, "kill_switch") as mock_ks:
+        with patch.object(monitor.risk_engine, "generate_liquidation_orders") as mock_liq:
+            mock_liq.return_value = []
             monitor.on_price_update("AAPL", Decimal("94"))
             assert "kill_switch" in monitor._alerts_sent
-            mock_ks.assert_called_once_with(portfolio)
+            mock_liq.assert_called_once_with(portfolio)
 
     def test_no_duplicate_alerts(self) -> None:
         """Same alert level should only fire once."""
@@ -257,3 +258,90 @@ class TestZeroNav:
         # Should return early without crash
         monitor.on_price_update("AAPL", Decimal("100"))
         assert "dd_2pct" not in monitor._alerts_sent
+
+
+class TestAppStateGuard:
+    """Tests for race condition prevention with app_state injection."""
+
+    def _make_monitor_with_state(
+        self,
+        cash: float = 0,
+        positions: dict[str, tuple[int, int]] | None = None,
+        kill_switch_fired: bool = False,
+    ) -> tuple["RealtimeRiskMonitor", MagicMock]:
+        portfolio = _make_portfolio(cash, positions)
+        risk_engine = RiskEngine()
+        ws_manager = MagicMock()
+        ws_manager.broadcast = AsyncMock()
+
+        app_state = MagicMock()
+        app_state.kill_switch_fired = kill_switch_fired
+        app_state.mutation_lock = asyncio.Lock()
+
+        monitor = RealtimeRiskMonitor(
+            portfolio=portfolio,
+            risk_engine=risk_engine,
+            ws_manager=ws_manager,
+            app_state=app_state,
+        )
+        return monitor, app_state
+
+    def test_app_state_stored(self) -> None:
+        """app_state kwarg is stored on the monitor."""
+        monitor, app_state = self._make_monitor_with_state()
+        assert monitor._app_state is app_state
+
+    def test_no_app_state_still_works(self) -> None:
+        """Without app_state, kill switch path still runs (backward compat)."""
+        monitor, _, _ = _make_monitor(cash=0, positions={"AAPL": (1000, 100)})
+        assert monitor._app_state is None
+        with patch.object(monitor.risk_engine, "generate_liquidation_orders") as mock_liq:
+            mock_liq.return_value = []
+            monitor.on_price_update("AAPL", Decimal("94"))
+            assert "kill_switch" in monitor._alerts_sent
+            mock_liq.assert_called_once()
+
+    def test_kill_switch_generates_liquidation_with_state(self) -> None:
+        """With app_state, 5% drawdown still generates liquidation orders."""
+        monitor, app_state = self._make_monitor_with_state(
+            positions={"AAPL": (1000, 100)}
+        )
+        with patch.object(monitor.risk_engine, "generate_liquidation_orders") as mock_liq:
+            mock_liq.return_value = []
+            monitor.on_price_update("AAPL", Decimal("94"))
+            assert "kill_switch" in monitor._alerts_sent
+            mock_liq.assert_called_once()
+
+    def test_no_execution_when_already_fired(self) -> None:
+        """When kill_switch_fired is already True, path B skips liquidation."""
+        monitor, app_state = self._make_monitor_with_state(
+            positions={"AAPL": (1000, 100)},
+            kill_switch_fired=True,
+        )
+        loop = asyncio.new_event_loop()
+        monitor._loop = loop
+        mock_svc = MagicMock()
+        monitor.execution_service = mock_svc
+
+        with patch.object(monitor.risk_engine, "generate_liquidation_orders") as mock_liq:
+            from unittest.mock import MagicMock as MM
+            fake_order = MM()
+            mock_liq.return_value = [fake_order]
+
+            # Patch run_coroutine_threadsafe to capture the coroutine and run it
+            scheduled_coros: list = []
+
+            def capture(coro, lp):  # type: ignore[no-untyped-def]
+                scheduled_coros.append(coro)
+                return MagicMock()
+
+            with patch("asyncio.run_coroutine_threadsafe", side_effect=capture):
+                monitor.on_price_update("AAPL", Decimal("94"))
+
+            # Run the scheduled coroutine synchronously
+            if scheduled_coros:
+                loop.run_until_complete(scheduled_coros[0])
+
+            # submit_orders should NOT have been called because fired=True
+            mock_svc.submit_orders.assert_not_called()
+        loop.close()

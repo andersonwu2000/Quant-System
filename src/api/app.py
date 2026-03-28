@@ -141,6 +141,7 @@ def create_app() -> FastAPI:
                 ws_manager=ws_manager,
                 loop=loop,
                 execution_service=state.execution_service,
+                app_state=state,
             )
             state.realtime_risk_monitor = realtime_risk
 

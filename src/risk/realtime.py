@@ -34,11 +34,13 @@ class RealtimeRiskMonitor:
         *,
         loop: asyncio.AbstractEventLoop | None = None,
         execution_service: Any = None,
+        app_state: Any = None,
     ) -> None:
         self.portfolio = portfolio
         self.risk_engine = risk_engine
         self.ws_manager = ws_manager
         self.execution_service = execution_service  # for kill switch liquidation
+        self._app_state = app_state  # shared AppState for kill_switch_fired + mutation_lock
         self._loop = loop
         # Price updates use portfolio.lock (shared with apply_trades) for thread safety
         self._nav_high: float = float(portfolio.nav)
@@ -107,15 +109,41 @@ class RealtimeRiskMonitor:
                 f"KILL SWITCH: drawdown {intraday_dd:.1%}",
             )
             self._alerts_sent.add("kill_switch")
-            # H4 fix: 用 lock 內算好的 intraday_dd 判斷，不重新讀 portfolio
-            # kill_switch 門檻是 5%，intraday_dd 已 < -0.05 才到這裡
-            if True:  # already confirmed intraday_dd < -0.05
-                liq_orders = self.risk_engine.generate_liquidation_orders(self.portfolio)
-                if liq_orders and self.execution_service is not None and self._loop is not None:
-                    import asyncio
+            liq_orders = self.risk_engine.generate_liquidation_orders(self.portfolio)
+            if liq_orders and self.execution_service is not None and self._loop is not None:
+                import asyncio
 
-                    async def _execute_liquidation(orders: list[Any], svc: Any, pf: Any) -> None:
-                        try:
+                _app_state = self._app_state
+
+                async def _execute_liquidation(
+                    orders: list[Any], svc: Any, pf: Any, state: Any
+                ) -> None:
+                    try:
+                        # Guard: if app_state is available, use shared kill_switch_fired
+                        # + mutation_lock to prevent double-liquidation with path A.
+                        if state is not None:
+                            if state.kill_switch_fired:
+                                logger.warning(
+                                    "Kill switch (tick): already fired by path A, skipping"
+                                )
+                                return
+                            async with state.mutation_lock:
+                                if state.kill_switch_fired:  # re-check after acquiring lock
+                                    logger.warning(
+                                        "Kill switch (tick): already fired (race), skipping"
+                                    )
+                                    return
+                                state.kill_switch_fired = True
+                                trades = svc.submit_orders(orders, pf)
+                                if trades:
+                                    from src.execution.oms import apply_trades
+                                    apply_trades(pf, trades)
+                                    logger.critical(
+                                        "Kill switch (tick): %d liquidation trades, NAV=%s",
+                                        len(trades), pf.nav,
+                                    )
+                        else:
+                            # No app_state (tests / legacy): execute without coordination
                             trades = svc.submit_orders(orders, pf)
                             if trades:
                                 from src.execution.oms import apply_trades
@@ -124,18 +152,18 @@ class RealtimeRiskMonitor:
                                     "Kill switch (tick): %d liquidation trades, NAV=%s",
                                     len(trades), pf.nav,
                                 )
-                        except Exception:
-                            logger.exception("Kill switch liquidation failed")
+                    except Exception:
+                        logger.exception("Kill switch liquidation failed")
 
-                    asyncio.run_coroutine_threadsafe(
-                        _execute_liquidation(liq_orders, self.execution_service, self.portfolio),
-                        self._loop,
-                    )
-                elif liq_orders:
-                    logger.critical(
-                        "Kill switch: %d liquidation orders but no ExecutionService/loop",
-                        len(liq_orders),
-                    )
+                asyncio.run_coroutine_threadsafe(
+                    _execute_liquidation(liq_orders, self.execution_service, self.portfolio, _app_state),
+                    self._loop,
+                )
+            elif liq_orders:
+                logger.critical(
+                    "Kill switch: %d liquidation orders but no ExecutionService/loop",
+                    len(liq_orders),
+                )
 
     def poll_prices_from_feed(self, feed: Any) -> int:
         """Fallback price update when tick callbacks are unavailable.
