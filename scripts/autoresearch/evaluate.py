@@ -980,6 +980,7 @@ def evaluate() -> dict:
     oos_ics_20d: list[float] = []
     oos_ic_by_month: dict[str, list[float]] = {}
 
+    oos_q1_excess_list: list[float] = []  # C-001: OOS quintile profitability
     if oos_sample:
         print(f"\n  L5 OOS validation: {len(oos_sample)} dates")
         for as_of in oos_sample:
@@ -1001,6 +1002,15 @@ def evaluate() -> dict:
                 oos_ics_20d.append(ic)
                 month_key = as_of.strftime("%Y-%m")
                 oos_ic_by_month.setdefault(month_key, []).append(ic)
+            # C-001: OOS quintile excess for L5b verification
+            common_oos = sorted(set(values) & set(fwd))
+            if len(common_oos) >= 50:
+                n_q_oos = len(common_oos) // 5
+                ranked_oos = sorted(common_oos, key=lambda s: values[s], reverse=True)
+                q1_members = ranked_oos[:n_q_oos]
+                ew_oos = float(np.mean([fwd[s] for s in common_oos]))
+                q1_oos = float(np.mean([fwd[s] for s in q1_members]))
+                oos_q1_excess_list.append(q1_oos - ew_oos)
 
     oos_ic_mean = float(np.mean(oos_ics_20d)) if oos_ics_20d else 0.0
     oos_ic_std = float(np.std(oos_ics_20d, ddof=1)) if len(oos_ics_20d) > 1 else 1.0
@@ -1055,13 +1065,15 @@ def evaluate() -> dict:
 
     print(f"  L5 passed: OOS validated")
 
-    # ── L5b: Profitability gate (top quintile > universe, pass/fail only) ──
-    avg_q1_excess = float(np.mean(q1_excess_list)) if q1_excess_list else 0.0
-    l5b_pass = avg_q1_excess > 0
+    # ── L5b: Profitability gate — must pass BOTH IS and OOS (pass/fail only) ──
+    avg_q1_excess_is = float(np.mean(q1_excess_list)) if q1_excess_list else 0.0
+    avg_q1_excess_oos = float(np.mean(oos_q1_excess_list)) if oos_q1_excess_list else 0.0
+    l5b_pass = avg_q1_excess_is > 0 and avg_q1_excess_oos > 0
     print(f"  L5b profitability: {'PASS' if l5b_pass else 'FAIL'}")
     if not l5b_pass:
+        _which = "IS" if avg_q1_excess_is <= 0 else "OOS"
         return _make_result(
-            level="L5", failure="L5b profitability: top quintile does not beat universe average",
+            level="L5", failure=f"L5b profitability: top quintile does not beat universe ({_which})",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             fitness=fitness, positive_years=positive_years, total_years=total_years,

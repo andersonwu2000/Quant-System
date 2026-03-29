@@ -186,7 +186,13 @@ def _process_pending():
             except Exception:
                 pass
 
-        if best_icir > ref_icir and best_icir > 0:
+        if ref_icir <= 0:
+            # C-007: metadata missing — cannot verify, skip all clones (don't promote)
+            log(f"Validator: SKIP clone group for {ref_stem} (ref_icir unknown, metadata missing)")
+            for cp, _ in clones:
+                cp.unlink()
+                skipped += 1
+        elif best_icir > ref_icir:
             # Best clone has higher ICIR than reference — keep it as novel
             log(f"Validator: PROMOTED {best_path.name} (ICIR {best_icir:.3f} > ref {ref_icir:.3f})")
             novel.append(best_path)
@@ -256,6 +262,8 @@ def _process_pending():
                     f"({validator_report['n_passed']}/{validator_report['n_total']})")
             else:
                 soft_fails = validator_report.get("soft_fails", [])
+                # C-010: delete marker BEFORE deploy to prevent duplicate on crash
+                marker_path.unlink()
                 _write_background_report(results, validator_report, factor_code)
                 _queue_for_deployment(results, validator_report, factor_code)
                 pbo_msg = f", factor_pbo={factor_pbo_val:.3f}" if factor_pbo_val is not None else ""
@@ -273,8 +281,9 @@ def _process_pending():
             else:
                 log(f"Validator: not deployed ({n_p}/{n_t})")
 
-        # Remove marker after processing
-        marker_path.unlink()
+        # Remove marker (if not already deleted by deploy path above)
+        if marker_path.exists():
+            marker_path.unlink()
 
     except Exception as e:
         log(f"Validator: failed — {e}")
