@@ -1115,8 +1115,7 @@ class StrategyValidator:
             ew_total = float((1 + ew_clean).prod() - 1)
             if ew_total <= -1:
                 return -999.0
-            n_years = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
-                else max(len(ew_clean) / 252, 0.5)
+            n_years = max(len(ew_clean) / 252, 0.5)
             ew_annual = (1 + ew_total) ** (1 / n_years) - 1
             return float(strategy_gross_annual - ew_annual)
 
