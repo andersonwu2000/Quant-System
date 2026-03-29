@@ -776,6 +776,67 @@ def evaluate() -> dict:
     effective_turnover = max(avg_turnover, 0.125)
     fitness = math.sqrt(returns_proxy / effective_turnover) * median_icir if returns_proxy > 0 else 0.0
 
+    # Industry-neutral IC diagnostic (last 10 dates, not a gate)
+    # Taiwan stock code prefix → rough industry: 11=cement, 12=food, 14=textile, 15=electric,
+    # 16=wire, 17=chemical, 21=glass, 22=paper, 23=semiconductor, 24=auto, 25=construction,
+    # 26=shipping, 27=tourism, 28=finance, 29=department, 30-39=electronics
+    ic_neutral_label = "unknown"
+    try:
+        _last_dates = sample_dates[-10:] if len(sample_dates) >= 10 else sample_dates
+        _raw_ics: list[float] = []
+        _neutral_ics: list[float] = []
+        for _d in _last_dates:
+            _md = _mask_data(data, _d)
+            _active = [s for s in universe if s in bars and _d in bars[s].index]
+            if len(_active) < MIN_SYMBOLS:
+                continue
+            try:
+                _vals = compute_factor(_active, _d, _md)
+            except Exception:
+                continue
+            _vals = {k: v for k, v in (_vals or {}).items() if isinstance(v, (int, float)) and np.isfinite(v)}
+            if len(_vals) < MIN_SYMBOLS:
+                continue
+            _fwd = _compute_forward_returns(bars, _d, 20)
+            _ric = _compute_ic(_vals, _fwd)
+            if _ric is not None:
+                _raw_ics.append(_ric)
+            # Neutralize: demean by industry prefix
+            _ind_groups: dict[str, list[float]] = {}
+            for s, v in _vals.items():
+                prefix = s[:2] if s[0].isdigit() else s[:4]
+                _ind_groups.setdefault(prefix, []).append(v)
+            _ind_means = {p: np.mean(vs) for p, vs in _ind_groups.items()}
+            _n_vals = {s: v - _ind_means.get(s[:2] if s[0].isdigit() else s[:4], 0) for s, v in _vals.items()}
+            _nic = _compute_ic(_n_vals, _fwd)
+            if _nic is not None:
+                _neutral_ics.append(_nic)
+        if _raw_ics and _neutral_ics:
+            _raw_mean = abs(float(np.mean(_raw_ics)))
+            _neutral_mean = abs(float(np.mean(_neutral_ics)))
+            if _raw_mean > 0.001:
+                _retention = _neutral_mean / _raw_mean
+                if _retention > 0.80:
+                    ic_neutral_label = "stock_alpha"  # mostly stock-level signal
+                elif _retention > 0.40:
+                    ic_neutral_label = "mixed"  # part industry, part stock
+                else:
+                    ic_neutral_label = "industry_beta"  # mostly industry rotation
+    except Exception:
+        pass
+
+    # IC trend regression (diagnostic, not a gate)
+    ic_trend_slope = 0.0
+    ic_trend_label = "stable"
+    if len(ic_series_20d) >= 20:
+        from scipy.stats import linregress as _linregress
+        _slope, _, _, _p, _ = _linregress(range(len(ic_series_20d)), ic_series_20d)
+        ic_trend_slope = float(_slope)
+        if _slope < 0 and _p < 0.05:
+            ic_trend_label = "declining"
+        elif _slope > 0 and _p < 0.05:
+            ic_trend_label = "improving"
+
     # L3: Dedup check
     max_corr, corr_with, n_high_corr = _check_dedup(ic_series_20d, known_ics)
 
@@ -1046,6 +1107,8 @@ def evaluate() -> dict:
     if replaced_name:
         result["replaced"] = replacement_target
         result["replaced_by"] = replaced_name
+    result["ic_trend"] = ic_trend_label
+    result["ic_source"] = ic_neutral_label
     return result
 
 
@@ -1087,6 +1150,8 @@ def _make_result(
         "oos_positive_months": oos_positive_months,
         "oos_total_months": oos_total_months,
         "elapsed_seconds": round(elapsed, 1),
+        "ic_trend": "",  # set after _make_result for L5
+        "ic_source": "",  # set after _make_result for L5
     }
 
 
@@ -1141,6 +1206,8 @@ def main() -> None:
     _novelty = "high" if _abs_corr < 0.20 else ("moderate" if _abs_corr < 0.40 else "low")
     print(f"novelty:          {_novelty}")
     print(f"max_correlation:  {results['max_correlation']:.3f} ({results['correlated_with']})")
+    print(f"ic_trend:         {results.get('ic_trend', 'unknown')}")
+    print(f"ic_source:        {results.get('ic_source', 'unknown')}")
     print(f"large_icir_20d:   {results['large_icir_20d']:.4f}")
     # P-01: hide exact OOS values from agent (only show pass/fail)
     print(f"oos_validated:    {results['level'] == 'L5'}")
