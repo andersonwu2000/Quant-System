@@ -259,14 +259,46 @@ networks:
 
 ---
 
-## 5. 不做的事
+## 5. 微額實盤併行（零股模式）
+
+**時間線**：CA 憑證取得後（預計 2026-04-05）。
+
+**目的**：Paper trading 無法驗證執行層（滑價、部分成交、券商 API 穩定性）。用極小額實盤補足。
+
+**架構**：同一個 `execute_pipeline`，兩個 config instance 併行：
+
+```
+Paper Trading (SimBroker)               Micro Live (SinopacBroker)
+  config.mode = "paper"                   config.mode = "live"
+  fractional_shares = false               fractional_shares = true  ← 零股
+  NAV = 10,000,000 (虛擬)                 NAV = 50,000~100,000 (實際)
+  目的：驗證因子邏輯                       目的：驗證執行層
+```
+
+**零股代碼支援現狀**：
+
+| 元件 | 狀態 | 說明 |
+|------|:----:|------|
+| `weights_to_orders(fractional_shares=True)` | ✅ | lot_size=1 |
+| `cost_model(is_odd_lot=True)` | ✅ | 最低手續費 $1 |
+| `market_hours.is_odd_lot_session()` | ✅ | 09:10-13:30 |
+| `smart_order` 零股撮合 | ✅ | 3 分鐘間隔 |
+| SinopacBroker 零股下單 | ⚠️ | 需 CA 憑證後驗證 |
+
+**注意事項**：
+- 零股滑價 10-20 bps（高於整張 ~5 bps），微額驗證可接受
+- 50K TWD / 15 支 ≈ 每支 3,333 元 ≈ 幾十股，足以驗證
+- 月頻策略 → 每月一次交易，手續費影響小
+
+---
+
+## 6. 不做的事
 
 | 提議 | 為什麼不做 |
 |------|-----------|
-| 自動替換主策略 | 太危險。30 天 paper trading 後人工決定 |
-| 多因子同時交易 | Phase 4 的範圍。先一個一個驗證 |
+| 自動替換主策略 | 太危險。90 天數據 + 人工決定 |
+| 多因子同時交易 | 先一個一個驗證 |
 | 接入 14 種組合最佳化 | Phase AA-2。先用 signal_weight 驗證因子本身 |
-| Live trading | 需要 SinopacBroker 穩定。先 paper |
 | 即時切換 | 月頻策略不需要即時切換 |
 
 ---
@@ -295,16 +327,16 @@ networks:
 
 ## 8. 預估
 
-| Step | 內容 | 工作量 |
-|------|------|:------:|
-| 1 | watchdog 自動提交 | ~30 行 |
-| 2 | PaperDeployer 修復 | ~20 行 |
-| 3 | DeployedStrategyExecutor | ~80 行 |
-| 4 | Scheduler 註冊 | ~10 行 |
-| 5 | 比較報告 | ~60 行 |
-| 6 | 30 天停止 + 報告 | ~20 行 |
-| 7 | 因子健康檢查 + 淘汰 | ~50 行 |
-| **總計** | | **~270 行** |
+| Step | 內容 | 狀態 |
+|------|------|:----:|
+| 1 | watchdog deploy_queue（去重 + 無需網路） | ✅ |
+| 2 | PaperDeployer（10 項測試通過） | ✅ |
+| 3 | DeployedStrategyExecutor + NAV 追蹤 | ✅ |
+| 4 | Scheduler 月度 job | ✅ |
+| 5 | 比較報告（含 30/90 天決策標準） | ✅ |
+| 6 | 30 天 auto-stop（PaperDeployer 已有） | ✅ |
+| 7 | 因子健康檢查 + 淘汰 | ⏳ 部署後實作 |
+| 8 | 微額實盤配置（零股模式 + SinopacBroker） | ⏳ CA 憑證後 |
 
 ---
 
@@ -325,45 +357,40 @@ Phase AG 在整體架構中的位置：
   Phase 2       乾淨研究週期（autoresearch 跑實驗）
     │
     ▼
-最高優先 → Phase AB-4（PBO 正確性修正）         ← AG 的 BLOCKING 前置
-    │  1. factor_returns 只存 L3+（消除噪音源）
-    │  2. hierarchical clustering（修正 n_independent）
-    │  3. 清理舊 L1/L2 parquet + 重算 PBO
-    │  不修 → PBO=0.0 不可信 → AG 所有部署決策無根據
+✅ 已完成 → Phase AB-4（PBO 正確性修正）
+    │  L3+ 過濾、hierarchical clustering、舊 parquet 清理
+    │
+✅ 已完成 → Phase AG 前置驗證
+    │  PaperDeployer 10 項測試、手動 E2E 2 次
+    │
+✅ 已完成 → Phase AG 代碼（Steps 1-6）
+    │  deploy_queue、DeployedStrategyExecutor、Scheduler、比較報告
+    │  等 L5 因子產出後自動走完整流程
     │
     ▼
-第一優先 → Phase AG 前置驗證
-    │  1. PaperDeployer API 驗證能跑
-    │  2. 手動端到端流程跑通 3 次
-    │  3. Validator 職責確認（watchdog 唯一驗證）
+下一步 → CA 憑證取得（~2026-04-05）
+    │
+    ├── Paper Trading（SimBroker）     ← L5 因子產出後立即開始
+    │   驗證因子邏輯，independent NAV
+    │
+    └── 微額實盤（SinopacBroker 零股）  ← CA 憑證後併行
+        fractional_shares=true, ~50K TWD
+        驗證執行層（滑價、部分成交、API 穩定）
     │
     ▼
-第二優先 → Phase AG（本計畫）
-    │  打通 autoresearch → paper trading
-    │  不做這個，研究成果無法驗證
-    │
-    ▼
-第三優先 → Phase AA-2（組合最佳化接入）
+後續 → Phase AA-2（組合最佳化接入）
     │  signal_weight → inverse-vol / cost-aware construction
-    │  改善 paper trading 實際表現
-    │  但可先用簡單權重驗證因子本身
-    │
-    ▼
-第四優先 → Phase N + CA 憑證（Live Trading）
-    │  需外部條件（永豐 CA 憑證）
-    │  Paper trading 驗證成功後才有意義
     │
     ├── Phase AD（數據管線自動化）     ← 可並行
-    │   營收/籌碼定時更新，trading pipeline 依賴
+    │   營收/籌碼定時更新
     │
     └── Phase R 收尾（R7-R9）         ← 可並行
-        代碼衛生（文件清理、型別、測試覆蓋）
+        代碼衛生
 
-延後（有了更好但不阻塞）
+延後
   Phase J       跨資產自動化（等台股因子穩定）
   Phase N2      Web 前端 Alpha Research 頁面
   Phase Z3      引擎加速（效能已可接受）
-  Phase E       Live Trading 生產測試（等 CA 憑證）
 ```
 
 ### 核心邏輯
