@@ -433,3 +433,85 @@ Phase 2 的三個 step 和 Phase 3 的獨立假說聚類被合併在同一次實
 **修正狀態**：
 - #1：待修 — 改用 `scipy.cluster.hierarchy.fcluster(method='average', t=0.50)` 或 networkx connected components。偏保守方向（N 膨脹 → PBO 偏高），不緊急
 - #2：✅ 已修（2026-03-29）— 改用 `cluster[len(cluster)//2]`（中位數因子）。原 `max(..., key=mean_return)` 會造成 IS selection bias → PBO 偏低（危險方向）
+
+---
+
+## Phase AB-4：PBO 正確性修正 + 因子淘汰（2026-03-29 發現）
+
+### 問題 A（HIGH）：L1/L2 噪音因子膨脹 n_independent
+
+**現狀**：evaluate.py 對所有非 L0 因子存 factor_returns。110 個 parquet 中 84 個是 L1/L2 失敗因子。
+
+**影響**：L1 因子的 IC < 0.02，其 top-15 等權日報酬是**純噪音**。噪音因子之間互不相關 → 每個成為獨立 cluster → n_independent 被人為膨脹。
+
+**量化**：n_total=110, n_independent=28。若去除 84 個 L1/L2，剩 26 個有效因子，真正的 n_independent 可能只有 8-12。PBO=0.0 不可信。
+
+**Bailey (2014) 的 N**：「研究者實際測試過的所有配置」。但 L1/L2 因子的日報酬不反映任何有意義的策略（因為信號本身不存在），不應計入 CSCV 矩陣。
+
+**修復方案**：
+1. evaluate.py：只對 **L3+** 因子存 factor_returns（有信號但被去重/穩定性擋住的才算「測試過的策略」）
+2. 或：watchdog clustering 時過濾 metadata 中 level ∈ {L3, L4, L5} 的因子
+
+**推薦方案 1** — 從源頭過濾。L1/L2 因子沒有選股能力，其等權 portfolio 的日報酬不代表任何投資策略。
+
+```python
+# evaluate.py 修改（~3 行）
+# 現在：if results.get("level") not in ("L0",):
+# 改為：
+if results.get("level") in ("L3", "L4", "L5"):
+    _store_factor_returns(results)
+```
+
+**影響**：修改後需要清理 factor_returns/ 中的 L1/L2 parquet。用 metadata.json 過濾刪除。
+
+### 問題 B（HIGH）：greedy clustering 遺漏 transitive 相關
+
+已在 #1 記錄。升級嚴重度從 MEDIUM → HIGH，因為和問題 A 疊加後 n_independent 嚴重失真。
+
+**修復方案**：改用 connected components（union-find）或 hierarchical clustering。
+
+```python
+# watchdog.py 修改（~15 行）
+# 用 scipy hierarchical clustering 替換 greedy loop
+from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.spatial.distance import squareform
+
+dist_matrix = 1 - corr_matrix.abs()
+np.fill_diagonal(dist_matrix.values, 0)
+condensed = squareform(dist_matrix, checks=False)
+Z = linkage(condensed, method='average')
+labels = fcluster(Z, t=0.50, criterion='distance')  # corr > 0.50 = 同 cluster
+clusters = {}
+for col, label in zip(corr_matrix.columns, labels):
+    clusters.setdefault(label, []).append(col)
+```
+
+### 問題 C（MEDIUM）：無因子淘汰機制
+
+**現狀**：
+- baseline_ic_series.json 的因子只能被 1.3× 替換，不能主動移除
+- 退化因子（OOS 表現崩壞）永遠佔位
+- 沒有定期重新評估已有因子
+
+**修復方案**：Phase AG 部署管線中加入因子定期健康檢查。
+
+```
+每月 watchdog 重新計算所有 active 因子的 rolling 12 月 ICIR
+  → ICIR < 0.10 連續 3 個月 → 標記為 "probation"
+  → probation 3 個月仍未恢復 → 自動移除 + 記錄到 learnings
+```
+
+**不在 AB 範圍內** — 因子淘汰是部署階段的需求，寫入 Phase AG。
+
+### AB-4 實施步驟
+
+| Step | 內容 | 位置 | 優先級 |
+|------|------|------|:------:|
+| 1 | factor_returns 只存 L3+ | evaluate.py | P0 |
+| 2 | 清理現有 L1/L2 parquet | 一次性腳本 | P0 |
+| 3 | hierarchical clustering | watchdog.py | P0 |
+| 4 | 清理後重算 PBO | watchdog 自動 | 自動 |
+
+### 預估
+
+~20 行代碼修改 + 一次性清理。修完後 PBO 數值會改變（可能從 0.0 上升），這是正確的 — 舊的 0.0 是被噪音因子稀釋的假象。

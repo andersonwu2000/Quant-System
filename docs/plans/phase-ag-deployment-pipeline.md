@@ -27,9 +27,16 @@ Trading Pipeline (execute_pipeline)                Research Pipeline (autoresear
 | 3 | Trading + Auto-Alpha 共享 Portfolio 無隔離 | race condition |
 | 4 | AlphaScheduler cron 定義了但未註冊 | 自動化不存在 |
 
-### 1.3 不在本 Phase 的範圍
+### 1.3 因子淘汰問題（Phase AB-4 C 提出）
 
-- 多策略同時交易（Phase 4）
+部署後的因子可能退化（市場 regime 變化、alpha 衰減），但目前沒有移除機制。
+baseline_ic_series.json 的因子只能被 1.3× 替換，不能主動移除。
+
+**本 Phase 加入因子健康檢查**（Step 7）。
+
+### 1.4 不在本 Phase 的範圍
+
+- 多策略同時交易
 - 14 種組合最佳化接入（Phase AA-2）
 - 成本感知建構（Phase AA-2）
 - Live trading（需要券商 API 穩定後）
@@ -197,6 +204,39 @@ def generate_comparison_report(deployed_navs, benchmark_nav):
   - 繼續 paper trading 延長觀察
   - 放棄
 
+### Step 7：因子健康檢查 + 淘汰機制
+
+**位置**：`docker/autoresearch/watchdog.py` 新增 `_check_factor_health()`
+
+部署後的因子可能退化。每月重新評估所有 active 因子：
+
+```python
+def _check_factor_health():
+    """Monthly health check for deployed factors."""
+    # 1. 對每個 active 因子重算 rolling 12 月 ICIR
+    # 2. ICIR < 0.10 連續 3 個月 → probation
+    # 3. probation 3 個月仍未恢復 → 自動移除
+    # 4. 移除時：
+    #    - 從 baseline_ic_series.json 刪除
+    #    - 記錄到 learnings.jsonl（freed_direction）
+    #    - 更新 library_health_metrics
+    #    - 通知（寫報告到 docs/research/autoresearch/）
+```
+
+**觸發時機**：watchdog 主迴圈中，每月 1 日執行一次。
+
+**淘汰門檻**：
+| 狀態 | 條件 | 動作 |
+|------|------|------|
+| healthy | rolling 12m ICIR ≥ 0.10 | 保持 |
+| probation | ICIR < 0.10 連續 3 個月 | 標記，不再用於 dedup 阻擋新因子 |
+| retired | probation 3 個月未恢復 | 從 active 移除，記錄到 archived |
+
+**和 Phase AF 替換的關係**：
+- 替換 = 新因子更好 → 舊的被替代（主動）
+- 淘汰 = 舊因子退化 → 自己被移除（被動）
+- 兩者互補。替換不需要等退化，淘汰不需要等到有更好的
+
 ---
 
 ## 4. 網路架構修改
@@ -259,7 +299,8 @@ watchdog:
 | 4 | Scheduler 註冊 | ~10 行 |
 | 5 | 比較報告 | ~60 行 |
 | 6 | 30 天停止 + 報告 | ~20 行 |
-| **總計** | | **~220 行** |
+| 7 | 因子健康檢查 + 淘汰 | ~50 行 |
+| **總計** | | **~270 行** |
 
 ---
 
