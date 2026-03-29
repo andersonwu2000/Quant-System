@@ -383,14 +383,21 @@ class StrategyValidator:
         ))
 
         # 7. vs equal-weight universe benchmark (Phase AC: replaces 0050)
+        # Use GROSS return for fair comparison — EW benchmark has 0 cost,
+        # so strategy must also be compared at gross level.
+        # Cost efficiency is tested separately by check #8 (annual_cost_ratio).
         logger.info("[Validator] Running equal-weight benchmark comparison...")
-        excess = self._vs_ew_benchmark(result, universe, start, end)
+        _n_yrs = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
+            else max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
+        _annual_cost = result.total_commission / cfg.initial_cash / _n_yrs
+        _gross_annual = result.annual_return + _annual_cost
+        excess = self._vs_ew_benchmark_gross(_gross_annual, universe, start, end)
         report.checks.append(CheckResult(
             name="vs_ew_universe",
             passed=excess >= cfg.min_excess_return,
             value=f"{excess:+.2%}",
             threshold=f">= {cfg.min_excess_return:+.2%}",
-            detail="vs equal-weight universe average (measures selection alpha, not size premium)",
+            detail=f"GROSS selection alpha (strategy gross {_gross_annual:+.2%} vs EW gross)",
         ))
 
         # 3. PBO (needs Walk-Forward period returns as strategy variants)
@@ -1047,17 +1054,17 @@ class StrategyValidator:
             detail=f"Worst year: {worst_year}",
         )
 
-    def _vs_ew_benchmark(
+    def _vs_ew_benchmark_gross(
         self,
-        result: BacktestResult,
+        strategy_gross_annual: float,
         universe: list[str],
         start: str,
         end: str,
     ) -> float:
-        """計算 vs 等權 universe average 的年化超額報酬。
+        """計算 GROSS selection alpha = strategy gross - EW gross。
 
-        等權 universe = 全 universe 等權持有的報酬。
-        和策略的唯一差別是選股 → 測量純 selection alpha。
+        Both sides are gross (no trading costs) for fair comparison.
+        Cost efficiency is tested separately by annual_cost_ratio check.
         """
         from pathlib import Path
         import os as _os
@@ -1111,7 +1118,7 @@ class StrategyValidator:
             n_years = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
                 else max(len(ew_clean) / 252, 0.5)
             ew_annual = (1 + ew_total) ** (1 / n_years) - 1
-            return float(result.annual_return - ew_annual)
+            return float(strategy_gross_annual - ew_annual)
 
         except Exception as e:
             logger.warning("EW benchmark failed: %s", e)
