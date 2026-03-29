@@ -1,7 +1,7 @@
 # 系統現況報告
 
-> **更新**: 2026-03-28
-> **版本**: v14.0
+> **更新**: 2026-03-29
+> **版本**: v15.0
 
 ---
 
@@ -9,12 +9,12 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python | ~160 檔 / ~29,000 LOC |
-| 測試 | **1,734+** passed |
+| 後端 Python | 153 檔 / 35,870 LOC |
+| 測試 | 114 檔 / 25,870 LOC / **1,544** test functions |
 | CI | 9 jobs（lint + mypy + test + web + e2e + android + release） |
 | API 端點 | 117（16 路由模組） |
 | 因子 | 83（66 技術 + 17 基本面） |
-| 策略 | 13 |
+| 策略 | 13（11 standalone + alpha + multi_asset） |
 | 最佳化方法 | 14 |
 | 風控規則 | 12 |
 | 數據源 | 4（Yahoo / FinMind / FRED / Shioaji） |
@@ -83,17 +83,20 @@
 
 詳細架構見 `docs/claude/ARCHITECTURE.md`。
 
-| 模組 | 檔案 | 核心功能 |
-|------|:----:|---------|
-| `src/api/` | 24 | REST + WebSocket + JWT/RBAC |
-| `src/alpha/` | 25 | Alpha Pipeline + Auto-Alpha（9 子模組） |
-| `src/backtest/` | 12 | Engine + Validator(16項) + PBO(CSCV) + WF + 向量化(Z1) |
-| `src/strategy/` | 12 | 83 因子 + optimizer + registry |
-| `src/portfolio/` | 4 | 14 最佳化方法 + 風險模型 + 幣別對沖 |
-| `src/execution/` | 16 | SimBroker + Sinopac + TWAP + OMS + 零股分流 |
-| `src/data/` | 15 | 4 數據源 + 品質檢查 + Parquet 快取 |
-| `src/risk/` | 5 | 12 規則 + Kill Switch + RealtimeMonitor |
-| `src/scheduler/` | 2 | Trading Pipeline（統一入口） |
+| 模組 | 檔案 | LOC | 核心功能 |
+|------|:----:|----:|---------|
+| `src/api/` | 25 | 6,965 | REST + WebSocket + JWT/RBAC + 16 路由 |
+| `src/alpha/` | 31 | 6,663 | Alpha Pipeline + Auto-Alpha（9 子模組）+ FilterStrategy |
+| `src/backtest/` | 13 | 5,448 | Engine + Validator(16項) + PBO(CSCV) + WF + 向量化(Z1) |
+| `src/strategy/` | 19 | 4,689 | 83 因子（tech+fundamental+kakushadze）+ optimizer + registry |
+| `src/data/` | 15 | 2,752 | 4 數據源 + 品質檢查 + LocalMarketData |
+| `src/execution/` | 14 | 2,666 | SimBroker + Sinopac + TWAP + OMS + 零股分流 |
+| `src/portfolio/` | 4 | 1,596 | 14 最佳化方法 + 風險模型(GARCH/PCA) + 幣別對沖 |
+| `src/core/` | 7 | 1,215 | 統一模型 + Config + Logging + TradingCalendar + TradingPipeline |
+| `src/scheduler/` | 2 | 1,127 | Trading Pipeline（統一入口）+ 3 排程路徑 |
+| `src/risk/` | 5 | 1,075 | 12 規則 + Kill Switch + RealtimeMonitor |
+| `src/allocation/` | 4 | 713 | 宏觀因子 + 跨資產信號 + 戰術配置 |
+| 其他 | 14 | 961 | CLI + Notifications + Instrument |
 
 ---
 
@@ -174,8 +177,10 @@ Autoresearch Pipeline（獨立）
 | U (Autoresearch) | ✅ | Karpathy pattern + API 整合 |
 | X (防過擬合) | ✅ | L5 OOS holdout + 複雜度限制 |
 | Y (容器化) | ✅ | Docker + Watchdog |
-| Z (向量化) | 🟢 | Z1(PBO)✅ Z2(shared feed)✅ Z3 待開工 |
-| AA (策略構建) | 📋 | inverse-vol + no-trade zone + cost-aware |
+| Z (向量化) | 🟢 | Z1(PBO)✅ Z2(shared feed)✅ Z3 延後 |
+| AA (策略構建) | ✅ | inverse-vol + no-trade zone + cost-aware |
+| AB (Factor PBO) | ✅ | Factor-Level PBO |
+| AC (Validator 修正) | ✅ | 16 項方法論修正 |
 
 ---
 
