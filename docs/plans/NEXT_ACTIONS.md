@@ -96,9 +96,43 @@ Phase 2.4 前置條件：
 
 並行：
 - **4A** 繼續觀察（不動代碼）
-- **4B** autoresearch 研究新因子（目標 5+ L5 因子）
+- **4B** autoresearch 研究新因子（目標 5+ 獨立方向 L5 因子）
 - **4C** 根據實際數據校準成本模型
-- **4D** L5 因子部署時的管線管理（已有基礎設施：PaperDeployer singleton、併發 lock、kill switch 連動）
+- **4D** L5 因子部署時的管線管理
+- **4E-4F** evaluate.py 診斷改進
+
+### 數據擴充（FinLab 借鑒，2026-03-30 研究）
+
+| # | 數據 | 來源 | 因子用途 | 優先級 |
+|---|------|------|---------|:------:|
+| D1 | **集保戶股權分散表** | FinMind `TaiwanStockShareholding` / TDCC API | 大戶增持+散戶減少（台股最強籌碼信號） | **高** |
+| D2 | **處置股/注意股/全額交割** | 公開資訊觀測站 | 風控過濾（必須排除不可交易股） | **高** |
+| D3 | **市值** | close × shares_outstanding（自算） | size neutralization、factor analysis 基礎 | **高** |
+| D4 | 內部人持股變化+質押 | 公開資訊觀測站 | 董監減持=負面信號、高質押=風險 | 中 |
+| D5 | 借券餘額 | FinMind `TaiwanStockSecuritiesLending` | 做空壓力指標 | 中 |
+| D6 | 景氣指標+PMI | FinMind `tw_business_indicators` / `tw_total_pmi` | 總經擇時 | 低 |
+
+### 因子維度擴充
+
+Agent 目前只在 revenue ratio 空間。以下是 FinLab 驗證過的台股因子方向（需要對應數據先到位）：
+
+| 方向 | 因子範例 | 需要數據 | 預期 |
+|------|---------|---------|------|
+| **籌碼-大戶** | 大戶持股連 3 週增加 + 散戶減少 | D1 集保 | 台股經典信號，和 revenue 不相關 |
+| **籌碼-法人** | 三大法人同買、外資買超率 | 已有 institutional | 可立即嘗試（但之前 L1） |
+| **營收進階** | 營收創 N 月新高、YoY 連續 > 20% | 已有 revenue | 比純 ratio 更穩健 |
+| **估值動量** | PE 動量（PE 在改善中）、PEG | 已有 per_history | 可立即嘗試 |
+| **融資融券** | 券資比變化、融券增加 | 已有 margin | 可立即嘗試 |
+| **內部人** | 董監增持、低質押率 | D4 | 需要新數據 |
+
+### 評估改進
+
+| # | 項目 | 說明 | 優先級 |
+|---|------|------|:------:|
+| 4E | **行業中性化 IC 診斷** | demean factor values by industry，IC 下降 → 因子只是在挑產業 | 高 |
+| 4F | **IC 趨勢回歸** | `linregress(ic_series)` slope < 0 → 因子衰退。記錄到 output | 高 |
+| 4G | **Rebalance 對齊營收公告日** | 月 10 日前公告 → 公告後才 rebalance | 中 |
+| 4H | **Size neutralization** | 用 market_value 做 neutralize，確保非 small-cap bias | 中 |
 
 ## Phase 5：90 天後（決策點）
 
