@@ -43,19 +43,32 @@ $statusJob = Start-Job -ScriptBlock {
 # Host-side `claude --version` triggers token refresh via SDK.
 Write-Host "Starting credentials refresher (every 30 min)..." -ForegroundColor Yellow
 $credJob = Start-Job -ScriptBlock {
+    # Check immediately on startup, then every 10 min
     while ($true) {
-        Start-Sleep -Seconds 1800
         try {
             $creds = Get-Content "$env:USERPROFILE\.claude\.credentials.json" -Raw | ConvertFrom-Json
             $expiresMs = $creds.claudeAiOauth.expiresAt
             $expiresAt = [DateTimeOffset]::FromUnixTimeMilliseconds($expiresMs).LocalDateTime
             $remaining = ($expiresAt - (Get-Date)).TotalMinutes
-            if ($remaining -lt 60) {
-                # Force token refresh by running a trivial claude command on host
+            if ($remaining -lt 120) {
+                # Proactive refresh: 2 hours before expiry (was 60 min — too late)
                 claude --version 2>$null
-                Write-Output "[$(Get-Date -Format 'HH:mm:ss')] Credentials refreshed (was expiring in $([int]$remaining)m)"
+                # Verify refresh worked
+                Start-Sleep -Seconds 3
+                $newCreds = Get-Content "$env:USERPROFILE\.claude\.credentials.json" -Raw | ConvertFrom-Json
+                $newMs = $newCreds.claudeAiOauth.expiresAt
+                $newAt = [DateTimeOffset]::FromUnixTimeMilliseconds($newMs).LocalDateTime
+                $newRemaining = ($newAt - (Get-Date)).TotalMinutes
+                if ($newRemaining -gt $remaining + 10) {
+                    Write-Output "[$(Get-Date -Format 'HH:mm:ss')] Credentials refreshed: $([int]$remaining)m -> $([int]$newRemaining)m"
+                } else {
+                    Write-Output "[$(Get-Date -Format 'HH:mm:ss')] WARNING: refresh may have failed (remaining=$([int]$newRemaining)m)"
+                }
             }
-        } catch {}
+        } catch {
+            Write-Output "[$(Get-Date -Format 'HH:mm:ss')] Credentials check error: $_"
+        }
+        Start-Sleep -Seconds 600  # Check every 10 min (was 30 min)
     }
 }
 Write-Host "  Credentials refresher running (Job $($credJob.Id))" -ForegroundColor Green
