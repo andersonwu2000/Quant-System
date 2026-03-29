@@ -115,7 +115,7 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 |------|------|----------|------|----------|
 | **L0** | factor.py ≤ 80 行 | — | 複雜度限制（防過擬合） | 直接拒絕 |
 | **L1** | \|IC(20d)\| ≥ 0.02 | Core 200 | IS 前 30 個日期快篩（~30 秒） | 換方向 |
-| **L2** | \|ICIR_20d\| ≥ 0.50 | Core 200 | IS 全期間、固定 20d horizon（Fix #8: 消除 horizon selection bias） | 訊號不穩，試平滑 |
+| **L2** | median\|ICIR\| ≥ 0.30, ≤ 1.00 | Core 200 | IS 全期間、median across 4 horizons（Method D: 不偏向任何 horizon） | 訊號不穩，試平滑 |
 | **L3a** | dedup corr ≤ 0.50 | Core 200 | IC-series 與已知因子相關性 | 因子是 clone |
 | **L3b** | positive_years ≥ 4/6.5 | Core 200 | IS 年度穩定性 | regime 依賴 |
 | **L4** | fitness ≥ 3.0 | Core 200 | WorldQuant BRAIN 公式 | 綜合不足 |
@@ -125,7 +125,7 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 | **Stage 2** | large ICIR(20d)（參考） | Large 865+ | 全市場驗證，不硬擋，記錄於報告 | — |
 
 **防過擬合設計：**
-- L2 使用固定 20d horizon ICIR（Fix #8），不取最佳 horizon，消除 Harvey & Liu (2015) 指出的 selection bias
+- L2 使用 median |ICIR| across 4 horizons（Method D），不取最佳也不固定單一 horizon，消除 selection bias 且不歧視長期因子
 - L5 只向 agent 回報 pass/fail，不洩漏 OOS 具體數值（P-01）
 - eval_server 回傳 bucketed ICIR（none/weak/moderate/strong），agent 無法做梯度式優化
 - Thresholdout 加 Laplace 噪音降低每次 L5 查詢的資訊洩漏

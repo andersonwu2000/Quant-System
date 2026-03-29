@@ -547,7 +547,7 @@ File handle 依賴 GC 關閉。影響極小。
 |------|------|------|
 | **#8 Horizon selection bias** | L2/fitness 用 max-across-4-horizons ICIR | 固定用 20d ICIR（Harvey & Liu 2015） |
 | **ICIR 門檻 0.15 太低** | 舊週期 L5 pass rate 44.7% | 提高至 0.50（業界 "good" 標準） |
-| **替換邏輯用 `best_icir`** | 和 L2 gate 不一致 | 改用 `icir_20d`（含比較、存儲、bucket） |
+| **替換邏輯用 `best_icir`** | 和 L2 gate 不一致 | 改用 `median_icir`（Method D：median across horizons） |
 
 ### 10.3 數據完整性修正
 
@@ -577,7 +577,7 @@ File handle 依賴 GC 關閉。影響極小。
 
 ### 10.6 文件更新
 
-- `docs/claude/EXPERIMENT_STANDARDS.md`：L0=80 行、L2=0.50 固定 20d、§3.1 autoresearch 模式、§3.5 watchdog 報告流程
+- `docs/claude/EXPERIMENT_STANDARDS.md`：L0=80 行、L2=median|ICIR|≥0.30（Method D）、§3.1 autoresearch 模式、§3.5 watchdog 報告流程
 - `scripts/autoresearch/program.md`：near-miss 門檻更新
 - `docs/reviews/FACTOR_METHODOLOGY_AUDIT_20260329.md`：#8/#9/#10 狀態更新
 

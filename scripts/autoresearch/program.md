@@ -113,7 +113,7 @@ Known dead ends — don't waste time:
 2. **Experiments 11-30**: For each dimension that showed signal (reached L2+), try 2-3 variations (different windows, normalizations).
 3. **After 30**: Combine top performers across dimensions into multi-factor composites.
 4. **If stuck**: Try non-linear transforms, cross-sectional vs time-series normalization, interaction terms, regime-conditional logic.
-5. **Learn from near-misses**: ICIR just below L2's 0.50 threshold is worth tweaking.
+5. **Learn from near-misses**: median ICIR just below L2's 0.30 threshold is worth tweaking.
 
 **Key principle: breadth first, depth second.** Don't run 20 revenue variants before trying a single institutional factor.
 
