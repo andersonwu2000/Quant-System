@@ -96,6 +96,20 @@ Paper Trading (SimBroker)          微額實盤 (SinopacBroker)
 | API 斷線次數 | 重連次數 / 交易日 | < 1 次/週 |
 | 零股未成交處理 | 策略如何處理部分成交 | 記錄（pending order 管理） |
 
+### 管線管理注意事項
+
+Auto-deployed 因子策略和主策略**完全隔離**（設計如此，Phase AG §4）：
+
+| | 主策略 | Auto 因子 |
+|---|------|---------|
+| Portfolio | `state.portfolio`（真 SimBroker） | JSON 記帳（無成本模型） |
+| 風控 | risk_engine 完整檢查 | 獨立 3% DD kill switch |
+| 排程 | 每月 11 日 08:30 | 每月 12 日 10:00 |
+| 限制 | 無 | 最多 3 個，各 5% NAV，30 天自動停 |
+| NAV 比較 | 有滑價+手續費 | 無（理想化），不可直接比較 |
+
+**不需要額外管理**：auto 策略只是獨立追蹤 NAV 來評估因子品質，不影響主策略的持倉和資金。真正的策略替換需要人工決策（Phase AG §11: 90 天觀察後）。
+
 ## Phase 2：開盤第一週
 
 | # | 項目 | 來源 | 工作量 |

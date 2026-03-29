@@ -142,30 +142,40 @@ class SchedulerService:
 
     async def _run_deployed_strategies(self) -> None:
         """Phase AG: monthly execution of auto-deployed factor strategies."""
-        try:
-            from src.alpha.auto.paper_deployer import PaperDeployer
-            from src.alpha.auto.deployed_executor import (
-                process_deploy_queue,
-                execute_deployed_strategies,
-                generate_comparison_report,
-            )
+        # Share pipeline lock — prevent concurrent execution with main pipeline
+        if _pipeline_lock.locked():
+            logger.warning("Pipeline lock held (main pipeline running), skipping deployed strategies")
+            return
+        async with _pipeline_lock:
+            try:
+                from src.alpha.auto.paper_deployer import PaperDeployer, MAX_AUTO_STRATEGIES
+                from src.alpha.auto.deployed_executor import (
+                    process_deploy_queue,
+                    execute_deployed_strategies,
+                    generate_comparison_report,
+                )
 
-            deployer = PaperDeployer()
+                deployer = PaperDeployer()
+                active = deployer.get_active()
+                logger.info(
+                    "Auto-alpha pipeline: %d/%d active strategies (max %d)",
+                    len(active), MAX_AUTO_STRATEGIES, MAX_AUTO_STRATEGIES,
+                )
 
-            # 1. Process any pending deploy queue markers
-            deployed = process_deploy_queue(deployer)
-            if deployed:
-                logger.info("Deployed from queue: %s", deployed)
+                # 1. Process any pending deploy queue markers
+                deployed = process_deploy_queue(deployer)
+                if deployed:
+                    logger.info("Deployed from queue: %s", deployed)
 
-            # 2. Execute all active strategies (generate weights, track NAV)
-            results = execute_deployed_strategies(deployer)
-            for name, r in results.items():
-                logger.info("Deployed execution: %s → %s", name, r.get("status"))
+                # 2. Execute all active strategies (generate weights, track NAV)
+                results = execute_deployed_strategies(deployer)
+                for name, r in results.items():
+                    logger.info("Deployed execution: %s → %s", name, r.get("status"))
 
-            # 3. Generate comparison report
-            report = generate_comparison_report(deployer)
-            if report:
-                logger.info("Comparison report: %s", report)
+                # 3. Generate comparison report
+                report = generate_comparison_report(deployer)
+                if report:
+                    logger.info("Comparison report: %s", report)
 
-        except Exception:
-            logger.exception("Deployed strategies execution failed")
+            except Exception:
+                logger.exception("Deployed strategies execution failed")

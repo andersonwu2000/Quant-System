@@ -51,10 +51,14 @@ def process_deploy_queue(deployer: PaperDeployer) -> list[str]:
                 marker_path.unlink()
                 continue
 
+            # Use actual portfolio NAV (not hardcoded 10M) for realistic allocation
+            from src.api.state import get_app_state
+            _state = get_app_state()
+            _total_nav = float(_state.portfolio.nav) if _state.portfolio.nav > 0 else 10_000_000
             result = deployer.deploy(
                 name=f"auto_{factor_name}",
                 factor_name=factor_name,
-                total_nav=10_000_000,
+                total_nav=_total_nav,
             )
             if result:
                 deployed_names.append(result.name)
