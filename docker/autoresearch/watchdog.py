@@ -599,8 +599,9 @@ def _compute_factor_level_pbo():
         from scipy.cluster.hierarchy import linkage, fcluster
         from scipy.spatial.distance import squareform
 
-        dist_matrix = (1 - corr_matrix.abs()).clip(lower=0).copy()
-        np.fill_diagonal(dist_matrix.values, 0)
+        dist_arr = (1 - corr_matrix.abs()).clip(lower=0).to_numpy(copy=True, dtype=float)
+        np.fill_diagonal(dist_arr, 0)
+        dist_matrix = pd.DataFrame(dist_arr, index=corr_matrix.index, columns=corr_matrix.columns)
         condensed = squareform(dist_matrix, checks=False).copy()
         Z = linkage(condensed, method='average')
         labels = fcluster(Z, t=0.50, criterion='distance')  # corr > 0.50 = same cluster
