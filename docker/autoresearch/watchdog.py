@@ -228,7 +228,14 @@ def _process_pending():
         validator_report = _run_background_validator(results, factor_code)
 
         if validator_report and validator_report.get("deployed"):
-            # Returns dedup already passed in pre-filter above
+            # Returns dedup — final check against ALL factor_returns (not just pending)
+            # Pre-filter catches most clones, but can miss if stem doesn't match
+            ret_ok, ret_corr, ret_with = _check_returns_dedup(marker_path.stem)
+            if not ret_ok:
+                log(f"Validator: BLOCKED by returns dedup post-validation (corr={ret_corr:.3f} with {ret_with})")
+                validator_report["deployed"] = False
+                marker_path.unlink()
+                return
 
             # Gate: Factor-Level PBO must be <= 0.70 (if available)
             pbo_path = WATCHDOG_DATA / "factor_pbo.json"
