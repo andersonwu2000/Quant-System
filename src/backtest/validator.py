@@ -392,11 +392,10 @@ class StrategyValidator:
                 continue
             wf_year = wf.get("year", 0)
             wf_return = wf.get("return", wf.get("cagr", 0))
-            # Estimate gross: add back proportional cost
-            _n_yrs_full = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
-                else max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
-            _annual_cost = result.total_commission / cfg.initial_cash / _n_yrs_full
-            wf_gross = wf_return + _annual_cost
+            # Per-window gross: add back THIS window's actual commission
+            wf_commission = wf.get("commission", 0)
+            wf_cost_rate = wf_commission / cfg.initial_cash if cfg.initial_cash > 0 else 0
+            wf_gross = wf_return + wf_cost_rate
             # EW benchmark for this WF window year
             wf_start = f"{wf_year}-01-01"
             wf_end = f"{wf_year}-12-31"
@@ -573,6 +572,7 @@ class StrategyValidator:
                     "sharpe": r.sharpe,
                     "max_drawdown": r.max_drawdown,
                     "trades": r.total_trades,
+                    "commission": r.total_commission,
                 }
             except Exception as e:
                 return {"year": year, "sharpe": 0.0, "error": str(e)}
