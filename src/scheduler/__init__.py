@@ -85,6 +85,15 @@ class SchedulerService:
             )
             logger.info("Daily reconcile scheduled: cron=%s", reconcile_cron)
 
+        # ── Phase AG: 部署因子月度模擬執行 + 比較報告 ──
+        if getattr(config, "auto_alpha_enabled", False):
+            self._scheduler.add_job(  # type: ignore[union-attr]
+                self._run_deployed_strategies,
+                trigger=CronTrigger.from_crontab("0 10 12 * *"),  # 每月 12 日 10:00
+                id="deployed_strategies",
+            )
+            logger.info("Deployed strategies executor scheduled: monthly 12th 10:00")
+
         self._scheduler.start()  # type: ignore[union-attr]
         self._running = True
         logger.info(
@@ -131,5 +140,32 @@ class SchedulerService:
         except Exception:
             logger.exception("Daily reconcile failed")
 
-    # Deprecated methods removed in Phase S cleanup.
-    # Git history preserves them (commit fc5eab4).
+    async def _run_deployed_strategies(self) -> None:
+        """Phase AG: monthly execution of auto-deployed factor strategies."""
+        try:
+            from src.alpha.auto.paper_deployer import PaperDeployer
+            from src.alpha.auto.deployed_executor import (
+                process_deploy_queue,
+                execute_deployed_strategies,
+                generate_comparison_report,
+            )
+
+            deployer = PaperDeployer()
+
+            # 1. Process any pending deploy queue markers
+            deployed = process_deploy_queue(deployer)
+            if deployed:
+                logger.info("Deployed from queue: %s", deployed)
+
+            # 2. Execute all active strategies (generate weights, track NAV)
+            results = execute_deployed_strategies(deployer)
+            for name, r in results.items():
+                logger.info("Deployed execution: %s → %s", name, r.get("status"))
+
+            # 3. Generate comparison report
+            report = generate_comparison_report(deployer)
+            if report:
+                logger.info("Comparison report: %s", report)
+
+        except Exception:
+            logger.exception("Deployed strategies execution failed")

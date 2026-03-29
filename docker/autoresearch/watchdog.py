@@ -177,6 +177,7 @@ def _process_pending():
             else:
                 soft_fails = validator_report.get("soft_fails", [])
                 _write_background_report(results, validator_report, factor_code)
+                _queue_for_deployment(results, validator_report, factor_code)
                 pbo_msg = f", factor_pbo={factor_pbo_val:.3f}" if factor_pbo_val is not None else ""
                 if soft_fails:
                     log(f"Validator: DEPLOYED ({validator_report['n_passed']}/{validator_report['n_total']}{pbo_msg}) "
@@ -201,6 +202,50 @@ def _process_pending():
         failed_dir = pending_dir / "failed"
         failed_dir.mkdir(exist_ok=True)
         marker_path.rename(failed_dir / marker_path.name)
+
+
+def _queue_for_deployment(results: dict, validator_report: dict, factor_code: str) -> None:
+    """Write deployed factor to deploy_queue/ for host-side processing (Phase AG Step 1).
+
+    No network needed — uses shared watchdog_data/ volume.
+    Host scheduler reads deploy_queue/ and calls PaperDeployer.deploy().
+    Dedup: hash factor_code to prevent duplicate submissions.
+    """
+    import hashlib
+
+    deploy_dir = WATCHDOG_DATA / "deploy_queue"
+    deploy_dir.mkdir(parents=True, exist_ok=True)
+
+    # Dedup: check submitted_factors.json
+    submitted_path = WATCHDOG_DATA / "submitted_factors.json"
+    code_hash = hashlib.sha256(factor_code.encode()).hexdigest()[:16]
+    submitted = {}
+    if submitted_path.exists():
+        try:
+            submitted = json.loads(submitted_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    if code_hash in submitted:
+        log(f"Deploy: skip duplicate factor (hash={code_hash})")
+        return
+
+    # Write deploy marker
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    marker = {
+        "factor_code": factor_code,
+        "results": {k: v for k, v in results.items()
+                    if k not in ("oos_icir", "oos_positive_months", "oos_total_months")},
+        "validator_report": validator_report,
+        "timestamp": ts,
+        "code_hash": code_hash,
+    }
+    marker_path = deploy_dir / f"{ts}.json"
+    marker_path.write_text(json.dumps(marker, indent=2, default=str), encoding="utf-8")
+
+    # Record hash
+    submitted[code_hash] = ts
+    submitted_path.write_text(json.dumps(submitted, indent=2), encoding="utf-8")
+    log(f"Deploy: queued {marker_path.name} (hash={code_hash})")
 
 
 def _run_background_validator(results: dict, factor_code: str) -> dict | None:
