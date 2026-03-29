@@ -155,6 +155,13 @@ class SchedulerService:
                     generate_comparison_report,
                 )
 
+                # Check main kill switch before running auto strategies
+                from src.api.state import get_app_state
+                _state = get_app_state()
+                if hasattr(_state, 'kill_switch_fired') and _state.kill_switch_fired:
+                    logger.warning("Main kill switch active — skipping auto strategy execution")
+                    return
+
                 deployer = PaperDeployer()
                 active = deployer.get_active()
                 logger.info(

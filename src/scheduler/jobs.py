@@ -444,6 +444,15 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         # H-6: kill switch 可能在策略計算期間觸發，重新檢查
         if hasattr(state, 'kill_switch_fired') and state.kill_switch_fired:
             logger.warning("Kill switch fired during strategy calculation — aborting trade execution")
+            # Also pause all auto-deployed strategies to prevent misleading tracking
+            try:
+                from src.alpha.auto.paper_deployer import PaperDeployer
+                deployer = PaperDeployer()
+                for d in deployer.get_active():
+                    deployer.stop(d.name, reason="main_kill_switch")
+                    logger.warning("Auto strategy %s stopped due to main kill switch", d.name)
+            except Exception:
+                pass
             return PipelineResult(status="aborted", strategy_name=strategy.name(), error="Kill switch fired")
         trades = execute_from_weights(
             target_weights=target_weights,
