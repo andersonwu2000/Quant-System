@@ -362,7 +362,9 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         return PipelineResult(status="error", error="ExecutionService not initialized")
 
     try:
-        strategy = resolve_strategy(config.active_strategy)
+        import json as _json
+        _params = _json.loads(config.active_strategy_params) if config.active_strategy_params else None
+        strategy = resolve_strategy(config.active_strategy, _params)
     except ValueError as e:
         return PipelineResult(status="error", error=f"Unknown strategy: {e}")
 

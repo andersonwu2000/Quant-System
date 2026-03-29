@@ -80,7 +80,14 @@ def resolve_strategy(name: str, params: dict[str, Any] | None = None) -> Strateg
         )
 
     if params:
-        valid_params = set(inspect.signature(cls.__init__).parameters.keys()) - {"self"}
+        sig = inspect.signature(cls.__init__)
+        has_var_keyword = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if has_var_keyword:
+            # Class accepts **kwargs — pass all params through
+            return cls(**params)
+        valid_params = set(sig.parameters.keys()) - {"self"}
         dropped = {k: v for k, v in params.items() if k not in valid_params}
         if dropped:
             logger.warning(

@@ -299,6 +299,17 @@ class StrategyValidator:
             detail=f"Annual cost: {annual_cost_rate:.2%}, Gross CAGR: {gross_alpha:.2%}, Net CAGR: {result.annual_return:.2%}",
         ))
 
+        # 8b. 2× cost safety margin (Man AHL methodology)
+        # Even with doubled trading costs, strategy must still have positive CAGR
+        net_cagr_2x_cost = result.annual_return - annual_cost_rate  # subtract another 1× cost
+        report.checks.append(CheckResult(
+            name="cost_2x_safety",
+            passed=net_cagr_2x_cost > 0,
+            value=f"{net_cagr_2x_cost:.2%}",
+            threshold="> 0% CAGR after 2× cost",
+            detail=f"Gross: {gross_alpha:.2%}, 2× cost: {2*annual_cost_rate:.2%}, Net(2×): {net_cagr_2x_cost:.2%}",
+        ))
+
         # 2. Walk-Forward
         logger.info("[Validator] Running Walk-Forward...")
         wf_results = self._run_walkforward(strategy, universe, start, end)

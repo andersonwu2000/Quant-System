@@ -95,6 +95,7 @@ class TradingConfig(BaseSettings):
     scheduler_enabled: bool = False
     # 統一交易管線（Phase S）
     active_strategy: str = "revenue_momentum_hedged"
+    active_strategy_params: str = ""  # JSON string, e.g. '{"max_holdings": 10}'
     trading_pipeline_cron: str = "30 8 11 * *"
     pipeline_data_update: bool = True
     # 收盤後自動對帳（paper/live mode）
