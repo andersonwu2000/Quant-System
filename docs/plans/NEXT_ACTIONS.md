@@ -42,37 +42,51 @@ LESSONS #27：定期停下來驗證，不要被進展感掩蓋底層問題。
 | 0.21 | Discord 通知設定 | PRODUCTION_READINESS §5 | ✅ 2026-03-29 |
 | 0.22 | Paper trading dry run 通過 | 驗證 | ✅ 2026-03-29（7 筆零股，NAV=9992，持久化 OK） |
 
-## Phase 1：開盤第一天（3/30）
+## Phase 1：開盤第一天（3/30）— ✅ 完成
 
-| # | 項目 | 做法 | 狀態 |
-|---|------|------|:----:|
-| 1.1 | 啟動 API server | `make dev` | 3/30 |
-| 1.2 | 確認 scheduler 啟動 | log 出現 `Scheduler started` | 3/30 |
-| 1.3 | 手動觸發首次建倉 | `curl -X POST http://localhost:8000/api/v1/scheduler/trigger/pipeline -H "X-API-Key: dev-key"` | 3/30 |
-| 1.4 | 確認 7 筆零股訂單 | 查 `data/paper_trading/trades/` | 3/30 |
-| 1.5 | 確認 portfolio_state.json | cash 從 10000 減少，7 positions | 3/30 |
-| 1.6 | 確認 Discord 通知 | pipeline 完成後收到通知 | 3/30 |
+| # | 項目 | 狀態 |
+|---|------|:----:|
+| 1.1 | 啟動 API server | ✅ |
+| 1.2 | 確認 scheduler 啟動 | ✅ |
+| 1.3 | 手動觸發首次建倉 | ✅ 06:44 成功（4 次失敗後第 5 次成功，`stock_order_lot` 欄位問題已修） |
+| 1.4 | 確認零股訂單 data/paper_trading/trades/ | ✅ **9 筆**（比 dry run 多 2 筆，選股因新數據變化） |
+| 1.5 | 確認 portfolio_state.json | ✅ cash=2603, 9 positions, NAV≈9989 |
+| 1.6 | 確認 Discord 通知 | ✅ |
 
-**預期結果**（dry run 驗證）：
+**實際結果 vs dry run 預期**：
 
-| 指標 | 值 |
-|------|------|
-| 策略選股 | 10 支 |
-| 可執行 | 7 支（3 支高價股跳過） |
-| 總投入 | ~5,660 TWD（57%） |
-| 手續費 | ~8 TWD（0.15%） |
-| 現金餘額 | ~4,330 TWD |
+| 指標 | dry run 預期 | 實際 |
+|------|:----------:|:----:|
+| 策略選股 | 10 支 | — |
+| 可執行 | 7 支 | **9 支** |
+| 總投入 | ~5,660 TWD | **~7,397 TWD** |
+| 現金餘額 | ~4,330 TWD | **2,603 TWD** |
+| NAV | ~9,992 | **9,989** |
 
 ## Phase 2：開盤第一週
 
 | # | 項目 | 來源 | 狀態 |
 |---|------|------|:----:|
 | 2.1 | ~~AD1 增量數據更新~~ | ~~phase-ad §AD1~~ | ✅ 0.14 已做 |
-| 2.2 | 用 2× 成本重跑 Validator（全策略） | QUANT_FUND_COMPARISON §7.1 | ⏳ |
-| 2.3 | AG 手動端到端第 3 次 | phase-ag §10 BLOCKING | ⏳ |
-| 2.4 | **確認 paper trading 正常後準備微額實盤** | 見 §微額實盤設計 | CA 憑證取得後 |
+| 2.2 | **Paper mode 改用 SimBroker** | 真實性問題 | **高** ⏳ |
+| 2.3 | 用 2× 成本重跑 Validator（全策略） | QUANT_FUND_COMPARISON §7.1 | ⏳ |
+| 2.4 | AG 手動端到端第 3 次 | phase-ag §10 BLOCKING | ⏳ |
+| 2.5 | **確認 paper trading 正常後準備微額實盤** | 見 §微額實盤設計 | CA 憑證取得後 |
 
-Phase 2.4 前置條件：
+### 2.2 Paper mode SimBroker 改造
+
+目前 paper mode 用 SinopacBroker(simulation=True)，和回測（SimBroker）是不同路徑：
+- 成交價用昨天收盤（非開盤價）
+- 無漲跌停/成交量/部分成交模擬
+- 和回測結果不可直接比較
+
+改為 paper mode 也用 SimBroker + 即時 current_bars：
+1. Pipeline 觸發時透過 Shioaji snapshot 或 Yahoo 取當天即時報價
+2. 建構 current_bars dict 傳給 SimBroker
+3. 移除 SinopacBroker simulation 路徑
+4. Paper 和回測共用同一條成交邏輯
+
+Phase 2.5 前置條件：
 - Phase 1 paper trading 已跑 1 週無異常
 - CA 憑證已取得
 - Discord 通知已確認能收到
