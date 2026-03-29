@@ -41,7 +41,17 @@ class DeployedStrategy:
 
 
 class PaperDeployer:
-    """管理自動策略的 Paper Trading 部署。"""
+    """管理自動策略的 Paper Trading 部署。
+
+    PT-5: 使用 get_instance() 取得 singleton，避免多實例 race condition。
+    """
+    _instance: "PaperDeployer | None" = None
+
+    @classmethod
+    def get_instance(cls) -> "PaperDeployer":
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     def __init__(self, deploy_dir: str = str(DEPLOY_DIR)):
         self._dir = Path(deploy_dir)
@@ -138,6 +148,9 @@ class PaperDeployer:
         """更新策略 NAV（每日呼叫）。"""
         for d in self._deployed:
             if d.name == name and d.status == "active":
+                if new_nav <= 0:
+                    logger.warning("PT-12: %s new_nav=%.2f <= 0, clamping to 0.01", name, new_nav)
+                    new_nav = 0.01
                 d.current_nav = new_nav
                 d.peak_nav = max(d.peak_nav, new_nav)
                 d.daily_navs.append({
@@ -145,7 +158,7 @@ class PaperDeployer:
                     "nav": new_nav,
                 })
 
-                # Kill Switch: DD > 3%
+                # Kill Switch: DD > 3% (PT-10: check kill before expire, return early)
                 dd = (d.peak_nav - new_nav) / d.peak_nav if d.peak_nav > 0 else 0
                 if dd > KILL_SWITCH_DD:
                     d.status = "killed"
@@ -153,6 +166,8 @@ class PaperDeployer:
                         "KILL: %s DD %.1f%% > %.0f%% threshold",
                         name, dd * 100, KILL_SWITCH_DD * 100,
                     )
+                    self._save_deployed()
+                    return
 
                 # Auto-stop: 30 days
                 if datetime.now().isoformat() > d.stop_date:

@@ -162,10 +162,18 @@ class TestIdempotency:
 
     def test_has_completed_run_this_month(self, tmp_pipeline_dir: Path) -> None:
         month = datetime.now().strftime("%Y-%m")
-        record = {"status": "completed"}
+        # P-2: only blocks when n_trades > 0
+        record = {"status": "completed", "n_trades": 5}
         path = tmp_pipeline_dir / f"{month}-01_0900.json"
         path.write_text(json.dumps(record), encoding="utf-8")
         assert _has_completed_run_this_month() is True
+
+    def test_zero_trades_does_not_block_month(self, tmp_pipeline_dir: Path) -> None:
+        month = datetime.now().strftime("%Y-%m")
+        record = {"status": "completed", "n_trades": 0}
+        path = tmp_pipeline_dir / f"{month}-01_0900.json"
+        path.write_text(json.dumps(record), encoding="utf-8")
+        assert _has_completed_run_this_month() is False
 
     def test_nonexistent_dir_returns_false(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

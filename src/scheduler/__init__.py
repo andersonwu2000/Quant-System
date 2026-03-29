@@ -162,7 +162,7 @@ class SchedulerService:
                     logger.warning("Main kill switch active — skipping auto strategy execution")
                     return
 
-                deployer = PaperDeployer()
+                deployer = PaperDeployer.get_instance()
                 active = deployer.get_active()
                 logger.info(
                     "Auto-alpha pipeline: %d/%d active strategies (max %d)",

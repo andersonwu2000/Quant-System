@@ -461,12 +461,21 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     # 3. 執行策略
     target_weights = strategy.on_bar(ctx)
     if not target_weights:
-        logger.warning(
-            "Strategy %s returned empty weights (universe=%d symbols, date=%s). "
-            "Possible causes: no stocks pass filters, revenue data stale, or data feed issue.",
-            strategy.name(), len(universe), ctx.now().strftime("%Y-%m-%d") if ctx.now() else "unknown",
-        )
-        return PipelineResult(status="no_weights", strategy_name=strategy.name())
+        has_positions = bool(state.portfolio.positions)
+        if has_positions:
+            # PT-3: empty weights with existing positions → sell all (strategy wants 0% exposure)
+            logger.warning(
+                "Strategy %s returned empty weights but portfolio has %d positions — will liquidate.",
+                strategy.name(), len(state.portfolio.positions),
+            )
+            target_weights = {}  # proceed to execute_from_weights which will generate SELL orders
+        else:
+            logger.warning(
+                "Strategy %s returned empty weights (universe=%d symbols, date=%s). "
+                "Possible causes: no stocks pass filters, revenue data stale, or data feed issue.",
+                strategy.name(), len(universe), ctx.now().strftime("%Y-%m-%d") if ctx.now() else "unknown",
+            )
+            return PipelineResult(status="no_weights", strategy_name=strategy.name())
 
     logger.info("Strategy %s: %d targets", strategy.name(), len(target_weights))
     _save_selection_log(target_weights, strategy.name())
@@ -490,7 +499,10 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         except Exception:
             missing_prices.append(s)
     if missing_prices:
-        logger.warning("Missing prices for %d symbols: %s", len(missing_prices), missing_prices[:10])
+        logger.warning(
+            "Missing prices for %d/%d symbols (will not be traded): %s",
+            len(missing_prices), len(all_needed), missing_prices[:10],
+        )
 
     # U1: 使用統一執行路徑（和回測共用 execute_from_weights）
     from src.core.trading_pipeline import execute_from_weights
@@ -502,7 +514,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             # Also pause all auto-deployed strategies to prevent misleading tracking
             try:
                 from src.alpha.auto.paper_deployer import PaperDeployer
-                deployer = PaperDeployer()
+                deployer = PaperDeployer.get_instance()
                 for d in deployer.get_active():
                     deployer.stop(d.name, reason="main_kill_switch")
                     logger.warning("Auto strategy %s stopped due to main kill switch", d.name)

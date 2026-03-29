@@ -100,25 +100,33 @@ class PaperBroker(BrokerAdapter):
         order.status = OrderStatus.FILLED
 
         notional = order.quantity * fill_price
+        # #14: 追蹤內部持倉（LT-1 fix: sym must be defined before is_odd check）
+        sym = order.instrument.symbol
         # Detect odd lot: qty < 1000 for TW stocks
         is_odd = order.quantity < 1000 and (
             sym.endswith(".TW") or sym.endswith(".TWO")
         )
         order.commission = self._cost.total_cost(notional, is_sell=(not is_buy), is_odd_lot=is_odd)
-
-        # #14: 追蹤內部持倉
-        sym = order.instrument.symbol
+        # PT-1 fix: store qty as str(Decimal) to avoid float precision loss
         if order.side == Side.BUY:
             if sym in self._positions:
-                self._positions[sym]["qty"] = float(Decimal(str(self._positions[sym]["qty"])) + order.quantity)
+                old_qty = Decimal(str(self._positions[sym]["qty"]))
+                old_cost = Decimal(str(self._positions[sym]["avg_cost"]))
+                new_qty = old_qty + order.quantity
+                # PT-6 fix: weighted average cost
+                self._positions[sym]["avg_cost"] = str((old_cost * old_qty + fill_price * order.quantity) / new_qty) if new_qty > 0 else str(fill_price)
+                self._positions[sym]["qty"] = str(new_qty)
             else:
-                self._positions[sym] = {"qty": float(order.quantity), "avg_cost": float(fill_price)}
+                self._positions[sym] = {"qty": str(order.quantity), "avg_cost": str(fill_price)}
             self._cash -= notional + order.commission
         else:
             if sym in self._positions:
-                self._positions[sym]["qty"] = float(Decimal(str(self._positions[sym]["qty"])) - order.quantity)
-                if self._positions[sym]["qty"] <= 0:
+                old_qty = Decimal(str(self._positions[sym]["qty"]))
+                new_qty = old_qty - order.quantity
+                if new_qty <= 0:
                     del self._positions[sym]
+                else:
+                    self._positions[sym]["qty"] = str(new_qty)
             self._cash += notional - order.commission
 
         return order.id
@@ -127,7 +135,11 @@ class PaperBroker(BrokerAdapter):
         return True
 
     def query_positions(self) -> dict[str, dict[str, Any]]:
-        return dict(self._positions)
+        # Convert str-stored Decimals back to float for API compatibility
+        return {
+            sym: {"qty": float(Decimal(pos["qty"])), "avg_cost": float(Decimal(pos["avg_cost"]))}
+            for sym, pos in self._positions.items()
+        }
 
     def query_account(self) -> dict[str, Any]:
         return {"cash": float(self._cash), "status": "active"}
