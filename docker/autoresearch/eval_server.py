@@ -116,6 +116,25 @@ def learnings():
 @app.route("/evaluate", methods=["POST"])
 def evaluate():
     """Run evaluate.py and return only safe fields."""
+    # Enforce commit before evaluate — agent must follow program.md protocol
+    # Compare factor.py hash with last known hash stored after each successful evaluate
+    try:
+        import hashlib
+        factor_path = "/app/work/factor.py"
+        hash_path = "/app/watchdog_data/last_evaluated_hash.txt"
+        current_hash = hashlib.sha256(open(factor_path, "rb").read()).hexdigest()
+        last_hash = ""
+        if os.path.exists(hash_path):
+            last_hash = open(hash_path).read().strip()
+        if current_hash == last_hash:
+            return jsonify({
+                "passed": False, "level": "UNCHANGED",
+                "score": "none", "icir": "none",
+                "error": "factor.py unchanged since last evaluate. Edit factor.py first."
+            })
+    except Exception:
+        pass  # hash check failure should not block evaluation
+
     env = {**os.environ, "PYTHONPATH": "/app/work:/app", "PYTHONDONTWRITEBYTECODE": "1"}
     try:
         result = subprocess.run(
@@ -164,6 +183,15 @@ def evaluate():
         score_bucket = "low"
     else:
         score_bucket = "none"
+
+    # Record hash to prevent re-evaluating unchanged factor.py
+    try:
+        import hashlib
+        current_hash = hashlib.sha256(open("/app/work/factor.py", "rb").read()).hexdigest()
+        with open("/app/watchdog_data/last_evaluated_hash.txt", "w") as f:
+            f.write(current_hash)
+    except Exception:
+        pass
 
     return jsonify({
         "passed": passed,

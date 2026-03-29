@@ -58,7 +58,7 @@ FORWARD_HORIZONS = [5, 10, 20, 60]  # Forward return horizons (trading days)
 
 # L1-L4 gate thresholds (from legacy factor_evaluator.py)
 MIN_IC_L1 = 0.02              # L1: minimum |IC_20d| — fast reject
-MIN_ICIR_L2 = 0.15            # L2: minimum ICIR (best horizon)
+MIN_ICIR_L2 = 0.50            # L2: minimum ICIR_20d (industry standard "good" threshold)
 MAX_CORRELATION = 0.50         # L3: max IC-series correlation with known factors
 MIN_POSITIVE_YEARS = 4         # L3: minimum years with positive mean IC (IS=6.5yr)
 MIN_FITNESS = 3.0              # L4: minimum WorldQuant BRAIN fitness
@@ -704,9 +704,13 @@ def evaluate() -> dict:
     avg_turnover = turnover_changes / turnover_total if turnover_total > 0 else 0.0
     positive_years = sum(1 for ics in ic_by_year.values() if np.mean(ics) > 0)
     total_years = len(ic_by_year)
+
+    # Fix #8: use fixed 20d ICIR for gates (no horizon selection bias)
+    # best_icir still recorded for reference but gates use icir_20d only
+    icir_20d = icir_by_horizon.get("20d", 0.0)
     returns_proxy = abs(ic_20d) * 10000
     effective_turnover = max(avg_turnover, 0.125)
-    fitness = math.sqrt(returns_proxy / effective_turnover) * abs(best_icir) if returns_proxy > 0 else 0.0
+    fitness = math.sqrt(returns_proxy / effective_turnover) * abs(icir_20d) if returns_proxy > 0 else 0.0
 
     # L3: Dedup check
     max_corr, corr_with, n_high_corr = _check_dedup(ic_series_20d, known_ics)
@@ -716,9 +720,10 @@ def evaluate() -> dict:
     replacement_target = ""
 
     # ── Gate checks (L2-L4) ──
-    if abs(best_icir) < MIN_ICIR_L2:
+    # Fix #8: use fixed 20d ICIR to avoid horizon selection bias
+    if abs(icir_20d) < MIN_ICIR_L2:
         return _make_result(
-            level="L2", failure=f"|ICIR|={abs(best_icir):.4f} < {MIN_ICIR_L2}",
+            level="L2", failure=f"|ICIR_20d|={abs(icir_20d):.4f} < {MIN_ICIR_L2}",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             elapsed=elapsed,
@@ -734,15 +739,15 @@ def evaluate() -> dict:
         can_replace = (
             n_high_corr == 1  # one-to-one only
             and correlated_icir > 0  # can't replace unknown-ICIR factors
-            and abs(best_icir) >= REPLACEMENT_ICIR_MULTIPLIER * correlated_icir
-            and abs(best_icir) >= REPLACEMENT_MIN_ICIR
+            and abs(icir_20d) >= REPLACEMENT_ICIR_MULTIPLIER * correlated_icir
+            and abs(icir_20d) >= REPLACEMENT_MIN_ICIR
             and replacement_count < MAX_REPLACEMENTS_PER_CYCLE
         )
 
         if can_replace:
             is_replacement_candidate = True
             replacement_target = corr_with
-            print(f"  L3: replacement candidate (ICIR {abs(best_icir):.4f} >= {REPLACEMENT_ICIR_MULTIPLIER}x {correlated_icir:.4f})")
+            print(f"  L3: replacement candidate (ICIR_20d {abs(icir_20d):.4f} >= {REPLACEMENT_ICIR_MULTIPLIER}x {correlated_icir:.4f})")
         elif match_count >= SATURATION_MATCH_LIMIT:
             return _make_result(
                 level="L3", failure=f"direction saturated: {match_count} variants for {corr_with}",
@@ -916,7 +921,7 @@ def evaluate() -> dict:
         else:
             if health["diversity_ratio"] < DIVERSITY_WARN_THRESHOLD:
                 print(f"  [WARN] Low diversity after replacement: {health['diversity_ratio']:.4f}")
-            replaced_name = _replace_factor(replacement_target, ic_series_20d, best_icir)
+            replaced_name = _replace_factor(replacement_target, ic_series_20d, icir_20d)
             _increment_replacement_count()
             print(f"  REPLACED: {replacement_target} -> {replaced_name} "
                   f"(health: corr={health['avg_pairwise_corr']:.3f}, "
@@ -1146,7 +1151,8 @@ def _write_learning(results: dict) -> None:
             pass
 
         # AF-H1 fix: bucket ICIR (same as /evaluate) to prevent leaking precise values
-        raw_icir = abs(results.get("best_icir", 0))
+        # Use fixed 20d ICIR (consistent with L2 gate, no horizon selection bias)
+        raw_icir = abs(results.get("icir_by_horizon", {}).get("20d", 0))
         if raw_icir >= 0.40:
             icir_bucket = "strong"
         elif raw_icir >= 0.20:

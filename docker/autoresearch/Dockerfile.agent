@@ -10,7 +10,9 @@ RUN npm install -g @anthropic-ai/claude-code
 
 # Non-root user
 RUN useradd -m -s /bin/bash researcher && \
-    mkdir -p /app/work && chown researcher:researcher /app/work
+    mkdir -p /app/work && chown researcher:researcher /app/work && \
+    mkdir -p /home/researcher/.claude/session-env && \
+    chown -R researcher:researcher /home/researcher/.claude
 
 # Copy research protocol (read-only, agent cannot modify)
 COPY scripts/autoresearch/program.md /app/program.md

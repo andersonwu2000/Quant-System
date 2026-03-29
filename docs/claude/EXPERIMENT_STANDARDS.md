@@ -28,7 +28,7 @@
 
 ---
 
-## 2. StrategyValidator 13 項驗證
+## 2. StrategyValidator 16+1 項驗證
 
 | 項目 | 標準 |
 |------|------|
@@ -54,33 +54,20 @@
 
 ## 3. Auto-Alpha 研究管線
 
-### 3.1 假說生成
+### 3.1 假說生成（Autoresearch 模式）
 
-假說模板存放在 `data/research/hypothesis_templates.json`，由 Claude Code 動態維護。
+Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/program.md` 協議循環。
 
-**生成新假說時應考慮：**
-1. Experience memory 中的成功/失敗模式（`data/research/memory.json`）
-2. 禁區列表（已知無效的因子模式）
-3. 學術文獻依據
-4. 與現有因子的差異化（避免高相關）
-5. 數據可得性（僅用本地已有的 revenue / financial_statement parquet）
+**資訊來源：**
+1. `curl -s http://evaluator:5000/learnings` — 成功模式、失敗模式、forbidden 方向、飽和度（Phase AF）
+2. `results.tsv` — 實驗記錄
+3. Agent 自身的量化知識
 
-**模板格式：**
-```json
-{
-  "direction_name": [
-    {
-      "name": "factor_name",
-      "description": "因子描述",
-      "formula_sketch": "公式概要",
-      "academic_basis": "學術依據",
-      "data_requirements": ["revenue"]
-    }
-  ]
-}
-```
-
-研究腳本 `scripts/alpha_research_agent.py` 每輪自動從 JSON 讀取未測假說。
+**安全限制：**
+- Agent 只能編輯 `factor.py` 和 `results.tsv`
+- 不能讀 evaluate.py、watchdog_data、src/
+- learnings API 只回傳方向描述和 bucketed 指標（不含精確 ICIR）
+- 方向飽和（同方向 ≥10 個變體）在 L3 強制阻擋（correlation-based）
 
 ### 3.2 StrategyValidator 16 項（2026-03-28 Phase AC 凍結）
 
@@ -126,9 +113,9 @@
 
 | 閘門 | 條件 | Universe | 說明 | 失敗處理 |
 |------|------|----------|------|----------|
-| **L0** | factor.py ≤ 60 行 | — | 複雜度限制（防過擬合） | 直接拒絕 |
+| **L0** | factor.py ≤ 80 行 | — | 複雜度限制（防過擬合） | 直接拒絕 |
 | **L1** | \|IC(20d)\| ≥ 0.02 | Core 200 | IS 前 30 個日期快篩（~30 秒） | 換方向 |
-| **L2** | \|ICIR\| ≥ 0.15 | Core 200 | IS 全期間、全 horizon（5/10/20/60d） | 訊號不穩，試平滑 |
+| **L2** | \|ICIR_20d\| ≥ 0.50 | Core 200 | IS 全期間、固定 20d horizon（Fix #8: 消除 horizon selection bias） | 訊號不穩，試平滑 |
 | **L3a** | dedup corr ≤ 0.50 | Core 200 | IC-series 與已知因子相關性 | 因子是 clone |
 | **L3b** | positive_years ≥ 4/6.5 | Core 200 | IS 年度穩定性 | regime 依賴 |
 | **L4** | fitness ≥ 3.0 | Core 200 | WorldQuant BRAIN 公式 | 綜合不足 |
@@ -138,8 +125,10 @@
 | **Stage 2** | large ICIR(20d)（參考） | Large 865+ | 全市場驗證，不硬擋，記錄於報告 | — |
 
 **防過擬合設計：**
+- L2 使用固定 20d horizon ICIR（Fix #8），不取最佳 horizon，消除 Harvey & Liu (2015) 指出的 selection bias
 - L5 只向 agent 回報 pass/fail，不洩漏 OOS 具體數值（P-01）
-- 不使用全域 Bonferroni/DSR 修正（業界共識：會導致無法發現因子）
+- eval_server 回傳 bucketed ICIR（none/weak/moderate/strong），agent 無法做梯度式優化
+- Thresholdout 加 Laplace 噪音降低每次 L5 查詢的資訊洩漏
 - 最終驗證靠 StrategyValidator + paper trading
 
 > **deflated_sharpe 說明**：90+ trials 下 DSR 0.95 需 Sharpe > 2.0（業界不現實）。0.70 對應 Sharpe ~1.5，是合理門檻。Bailey & López de Prado 原意是排名工具而非絕對門檻。
@@ -155,11 +144,11 @@
 
 因子報告存放在 `docs/research/autoresearch/`。
 
-**報告生成條件：** 通過 L5 OOS 驗證（`passed=True`）。由 evaluate.py 的 `_write_report()` 直接寫入，不依賴 API server。報告包含完整指標和因子原始碼。
+**報告生成條件：** 通過 L5 OOS 驗證後，evaluate.py 寫 pending marker 到 watchdog_data/pending/。Watchdog 背景執行 StrategyValidator 17 項，10 項 HARD 全過（deployed=True）才寫報告到 `docs/research/autoresearch/`。
 
 **部署條件（硬/軟門檻，Phase AC §7 + FACTOR_PIPELINE_DEEP_REVIEW）：**
 
-硬門檻 — 統計/結構檢定（防過擬合，6 項）：
+硬門檻 — 統計/結構檢定（防過擬合）：
 | Check | 門檻 | 測什麼 |
 |-------|------|--------|
 | deflated_sharpe | ≥ 0.70 | 多重測試後 Sharpe 是否顯著 |
@@ -169,7 +158,7 @@
 | market_correlation | ≤ 0.80 | 獨立於大盤（非 beta 搬運） |
 | permutation_p | < 0.10 | 信號打亂後 Sharpe 是否下降（條件式：需有 compute_fn） |
 
-硬門檻 — 經濟可行性（確保值得交易，4 項）：
+硬門檻 — 經濟可行性（確保值得交易）：
 | Check | 門檻 | 測什麼 |
 |-------|------|--------|
 | cagr | ≥ 8% | 最低報酬門檻 |

@@ -77,6 +77,11 @@ def main():
         unexpected = actual - expected
         if unexpected:
             log(f"WARNING: unexpected files in work/: {unexpected}")
+            for name in unexpected:
+                p = WORK_DIR / name
+                if p.is_file():
+                    p.unlink()
+                    log(f"REMOVED: {name}")
 
         # 5. consecutive crash detection (use mtime to avoid false counts)
         run_log = WORK_DIR / "run.log"
@@ -140,32 +145,14 @@ def _process_pending():
     if not markers:
         return
 
-    # Read best validated composite from results.tsv (keep factors only)
-    best_composite = 0.0
-    results_path = WORK_DIR / "results.tsv"
-    if results_path.exists():
-        for line in results_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines()[1:]:
-            cols = line.split("\t")
-            if len(cols) >= 5 and cols[4] == "keep":
-                try:
-                    best_composite = max(best_composite, float(cols[1]))
-                except ValueError:
-                    pass
-
-    # Process one at a time — only validate "keep" factors (composite > best)
+    # Process one at a time — validate all pending markers (results.tsv may use bucketed scores)
     marker_path = markers[0]
     try:
         marker = _json.loads(marker_path.read_text(encoding="utf-8"))
         results = marker["results"]
         factor_code = marker["factor_code"]
         composite = results.get("composite_score", 0)
-
-        if composite <= best_composite:
-            marker_path.unlink()
-            log(f"Validator: skip {marker_path.name} (composite {composite:.1f} <= best {best_composite:.1f})")
-            return
-
-        log(f"Validator: processing {marker_path.name} (composite {composite:.1f})")
+        log(f"Validator: processing {marker_path.name} (composite {composite})")
 
         validator_report = _run_background_validator(results, factor_code)
 

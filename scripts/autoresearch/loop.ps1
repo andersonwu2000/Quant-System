@@ -82,6 +82,7 @@ if ($HostMode) {
 }
 
 # --- Research loop ---
+$consecutiveFails = 0
 try {
     while ($true) {
         Write-Host ""
@@ -94,6 +95,7 @@ try {
 
         powershell -ExecutionPolicy Bypass -File "$ScriptDir\status.ps1" 2>$null
 
+        $sessionStart = Get-Date
         if ($HostMode) {
             claude -p $hostPrompt --dangerously-skip-permissions --max-turns 200
         } else {
@@ -101,6 +103,20 @@ try {
                 -e "HOME=/home/researcher" `
                 autoresearch-agent `
                 claude -p $dockerPrompt --dangerously-skip-permissions --max-turns 200
+        }
+
+        # Detect auth failure — back off instead of crash-loop
+        $sessionDuration = (Get-Date) - $sessionStart
+        if ($sessionDuration.TotalSeconds -lt 30) {
+            $consecutiveFails++
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Session lasted < 30s ($consecutiveFails consecutive). Possible auth issue." -ForegroundColor Red
+            if ($consecutiveFails -ge 3) {
+                $backoff = [math]::Min(300, 60 * $consecutiveFails)
+                Write-Host "  Backing off for $backoff seconds (run '/login' to refresh credentials)..." -ForegroundColor Red
+                Start-Sleep -Seconds $backoff
+            }
+        } else {
+            $consecutiveFails = 0
         }
 
         Write-Host ""
