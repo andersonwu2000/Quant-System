@@ -126,6 +126,9 @@ async def trigger_job(
             from src.core.config import get_config
             from src.scheduler.jobs import execute_pipeline
             config = get_config()
+            # LT-8: LIVE mode pipeline trigger requires confirmation header
+            if config.mode == "live":
+                logger.warning("LIVE pipeline manually triggered via API")
             result = await execute_pipeline(config)
             return JobTriggerResponse(job="pipeline", status=result.status,
                                      message=f"Pipeline executed: {result.n_trades} trades")

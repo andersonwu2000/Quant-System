@@ -100,16 +100,18 @@ def create_app() -> FastAPI:
             default_slippage_bps=config.default_slippage_bps,
         )
         state.execution_service = ExecSvc(exec_config)
-        state.execution_service.initialize()
-        logger.info("ExecutionService initialized: mode=%s", config.mode)
 
         # ── Market channel + Realtime risk (paper/live only) ──
         if config.mode in ("paper", "live"):
             loop = asyncio.get_running_loop()
 
-            # Live mode: 設定 portfolio + event loop 供 async fill callback 使用
+            # LT-7: set_portfolio BEFORE initialize (connect may trigger fill callbacks)
             state.execution_service.set_portfolio(state.portfolio, loop)
 
+        state.execution_service.initialize()
+        logger.info("ExecutionService initialized: mode=%s", config.mode)
+
+        if config.mode in ("paper", "live"):
             from src.execution.broker.sinopac import SinopacBroker
             from src.execution.quote.sinopac import SinopacQuoteManager, TickData
             from src.risk.realtime import RealtimeRiskMonitor

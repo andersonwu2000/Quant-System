@@ -390,7 +390,9 @@ class ExecutionService:
         portfolio = getattr(self, '_portfolio', None)
         loop = getattr(self, '_event_loop', None)
         if portfolio is None or loop is None:
-            logger.warning("Async fill: no portfolio/loop set, skipping apply_trades for %s",
+            # LT-7: this means set_portfolio() wasn't called before broker connect
+            logger.critical("CRITICAL: Async fill but no portfolio/loop set — TRADE LOST for %s. "
+                            "Call set_portfolio() before broker.connect().",
                           order.instrument.symbol)
             return
 

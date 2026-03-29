@@ -206,10 +206,10 @@ class SinopacBroker(BrokerAdapter):
                 from src.execution.market_hours import is_odd_lot_session
                 if not is_odd_lot_session():
                     logger.warning(
-                        "%s: odd-lot order (%d shares) outside odd-lot session, queuing",
+                        "LT-10: %s odd-lot (%d shares) outside session (09:10-13:30), skipped",
                         order.instrument.symbol, quantity,
                     )
-                    continue  # skip this part, regular lot part still submitted
+                    continue  # skip — if ALL parts skipped, L243 will REJECT
 
             sj_order = self._api.Order(
                 price=float(order.price) if order.price else 0,
@@ -463,16 +463,17 @@ class SinopacBroker(BrokerAdapter):
                 filled_price = Decimal(str(msg.get("price", 0)))
 
                 # B-10 fix: write filled_qty/avg_price inside lock
+                # LT-14: status update inside lock (prevent race with cancel)
                 with self._lock:
                     prev_notional = order.filled_avg_price * order.filled_qty
                     order.filled_qty += filled_qty
                     new_notional = prev_notional + filled_price * filled_qty
                     order.filled_avg_price = new_notional / order.filled_qty if order.filled_qty > 0 else filled_price
 
-                if order.filled_qty >= order.quantity:
-                    order.status = OrderStatus.FILLED
-                else:
-                    order.status = OrderStatus.PARTIAL
+                    if order.filled_qty >= order.quantity:
+                        order.status = OrderStatus.FILLED
+                    else:
+                        order.status = OrderStatus.PARTIAL
 
             elif stat_name == "StockOrder":
                 broker_id = msg.get("order", {}).get("id", "")
@@ -510,14 +511,27 @@ class SinopacBroker(BrokerAdapter):
             logger.exception("Error processing order callback")
 
     def _find_broker_id_for_deal(self, msg: dict[str, Any]) -> str:
-        """從成交回報中找到對應的 broker_order_id。"""
+        """從成交回報中找到對應的 broker_order_id。
+
+        LT-4: 同 symbol 多筆 pending → 拒絕匹配（避免歸錯）。
+        """
         code = msg.get("code", "")
+        matches = []
         with self._lock:
             for bid, order in self._order_map.items():
                 if order.instrument.symbol == code and order.status in (
                     OrderStatus.SUBMITTED, OrderStatus.PARTIAL
                 ):
-                    return bid
+                    matches.append(bid)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            logger.warning(
+                "LT-4: %d pending orders for %s — refusing to match (ambiguous). "
+                "Manual reconciliation needed. broker_ids=%s",
+                len(matches), code, matches,
+            )
+            return ""
         return ""
 
     # ── 斷線重連 ──────────────────────────────────────────
