@@ -689,6 +689,8 @@ def evaluate() -> dict:
     turnover_changes = 0
     turnover_total = 0
     prev_top: set[str] | None = None
+    q1_excess_list: list[float] = []  # L5b: top quintile excess vs universe mean
+    mono_list: list[float] = []  # L5c: quintile monotonicity
 
     for as_of in sample_dates:
         masked_data = _mask_data(data, as_of)
@@ -721,6 +723,24 @@ def evaluate() -> dict:
             turnover_changes += changed
             turnover_total += len(top | prev_top)
         prev_top = top
+
+        # L5b/L5c: quintile profitability + monotonicity (using 20d forward returns)
+        fwd_20d = _compute_forward_returns(bars, as_of, 20) if 20 in FORWARD_HORIZONS else {}
+        common_q = sorted(set(values) & set(fwd_20d))
+        if len(common_q) >= 50:
+            n_q = len(common_q) // 5
+            ranked_q = sorted(common_q, key=lambda s: values[s], reverse=True)
+            q_means = []
+            for qi in range(5):
+                members = ranked_q[qi * n_q:(qi + 1) * n_q]
+                q_means.append(float(np.mean([fwd_20d[s] for s in members])))
+            ew_mean = float(np.mean([fwd_20d[s] for s in common_q]))
+            q1_excess_list.append(q_means[0] - ew_mean)  # top quintile excess
+            if len(q_means) >= 3:
+                from scipy.stats import spearmanr as _spearmanr
+                _mono, _ = _spearmanr(list(range(5)), q_means[::-1])  # Q1=best should have highest return
+                if not np.isnan(_mono):
+                    mono_list.append(float(_mono))
 
     elapsed = time.time() - t0
 
@@ -917,6 +937,38 @@ def evaluate() -> dict:
 
     print(f"  L5 passed: OOS validated")
 
+    # ── L5b: Profitability gate (top quintile > universe, pass/fail only) ──
+    avg_q1_excess = float(np.mean(q1_excess_list)) if q1_excess_list else 0.0
+    l5b_pass = avg_q1_excess > 0
+    print(f"  L5b profitability: {'PASS' if l5b_pass else 'FAIL'}")
+    if not l5b_pass:
+        return _make_result(
+            level="L5", failure="L5b profitability: top quintile does not beat universe average",
+            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+            fitness=fitness, positive_years=positive_years, total_years=total_years,
+            max_correlation=max_corr, correlated_with=corr_with,
+            oos_icir=oos_icir, oos_positive_months=oos_positive_months,
+            oos_total_months=oos_total_months,
+            elapsed=time.time() - t0,
+        )
+
+    # ── L5c: Monotonicity gate (quintile returns should be monotonic, pass/fail only) ──
+    avg_mono = float(np.mean(mono_list)) if mono_list else 0.0
+    l5c_pass = avg_mono > 0.5
+    print(f"  L5c monotonicity: {'PASS' if l5c_pass else 'FAIL'}")
+    if not l5c_pass:
+        return _make_result(
+            level="L5", failure="L5c monotonicity: quintile returns not monotonic",
+            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+            fitness=fitness, positive_years=positive_years, total_years=total_years,
+            max_correlation=max_corr, correlated_with=corr_with,
+            oos_icir=oos_icir, oos_positive_months=oos_positive_months,
+            oos_total_months=oos_total_months,
+            elapsed=time.time() - t0,
+        )
+
     # ── Stage 2: Large-scale IC verification (865+ symbols) ──
     large_icir_20d = 0.0
     large_universe = _load_universe(large=True)
@@ -1085,6 +1137,9 @@ def main() -> None:
     print(f"fitness:          {results['fitness']:.2f}")
     print(f"avg_turnover:     {results['avg_turnover']:.4f}")
     print(f"positive_years:   {results['positive_years']}/{results['total_years']}")
+    _abs_corr = abs(results['max_correlation'])
+    _novelty = "high" if _abs_corr < 0.20 else ("moderate" if _abs_corr < 0.40 else "low")
+    print(f"novelty:          {_novelty}")
     print(f"max_correlation:  {results['max_correlation']:.3f} ({results['correlated_with']})")
     print(f"large_icir_20d:   {results['large_icir_20d']:.4f}")
     # P-01: hide exact OOS values from agent (only show pass/fail)
@@ -1149,7 +1204,8 @@ def _store_factor_returns(results: dict) -> None:
             fund_dir=str(PROJECT_ROOT / "data" / "fundamental"),
         )
 
-        daily_rets = vbt.run_variant(compute_factor, top_n=15, weight_mode="equal")
+        # top-40 score-tilt: higher TC (0.45 vs 0.10), lower variance drag
+        daily_rets = vbt.run_variant(compute_factor, top_n=40, weight_mode="score_tilt")
 
         if daily_rets is not None and len(daily_rets) > 20:
             # Clean inf/nan before storing

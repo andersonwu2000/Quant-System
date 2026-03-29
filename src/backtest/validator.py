@@ -382,22 +382,45 @@ class StrategyValidator:
             detail=oos_detail,
         ))
 
-        # 7. vs equal-weight universe benchmark (Phase AC: replaces 0050)
-        # Use GROSS return for fair comparison — EW benchmark has 0 cost,
-        # so strategy must also be compared at gross level.
-        # Cost efficiency is tested separately by check #8 (annual_cost_ratio).
-        logger.info("[Validator] Running equal-weight benchmark comparison...")
-        _n_yrs = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
-            else max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
-        _annual_cost = result.total_commission / cfg.initial_cash / _n_yrs
-        _gross_annual = result.annual_return + _annual_cost
-        excess = self._vs_ew_benchmark_gross(_gross_annual, universe, start, end)
+        # 7. vs equal-weight universe benchmark — walk-forward (eliminates regime bias)
+        # Compare strategy GROSS return vs EW GROSS in each WF window.
+        # Pass if majority of windows show positive excess.
+        logger.info("[Validator] Running walk-forward EW benchmark comparison...")
+        wf_excess_results = []
+        for wf in report.walkforward_results:
+            if "error" in wf or wf.get("trades", 0) == 0:
+                continue
+            wf_year = wf.get("year", 0)
+            wf_return = wf.get("return", wf.get("cagr", 0))
+            # Estimate gross: add back proportional cost
+            _n_yrs_full = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
+                else max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
+            _annual_cost = result.total_commission / cfg.initial_cash / _n_yrs_full
+            wf_gross = wf_return + _annual_cost
+            # EW benchmark for this WF window year
+            wf_start = f"{wf_year}-01-01"
+            wf_end = f"{wf_year}-12-31"
+            ew_annual = self._get_ew_annual(universe, wf_start, wf_end)
+            if ew_annual is not None:
+                wf_excess_results.append(wf_gross - ew_annual)
+
+        if wf_excess_results:
+            n_positive = sum(1 for e in wf_excess_results if e >= 0)
+            positive_ratio = n_positive / len(wf_excess_results)
+            avg_excess = float(np.mean(wf_excess_results))
+            excess_detail = (f"WF: {n_positive}/{len(wf_excess_results)} windows positive, "
+                           f"avg excess {avg_excess:+.2%}")
+        else:
+            positive_ratio = 0.0
+            avg_excess = -999.0
+            excess_detail = "No valid WF windows for EW comparison"
+
         report.checks.append(CheckResult(
             name="vs_ew_universe",
-            passed=excess >= cfg.min_excess_return,
-            value=f"{excess:+.2%}",
-            threshold=f">= {cfg.min_excess_return:+.2%}",
-            detail=f"GROSS selection alpha (strategy gross {_gross_annual:+.2%} vs EW gross)",
+            passed=positive_ratio >= 0.5,  # majority of windows beat EW
+            value=f"{positive_ratio:.0%} ({avg_excess:+.2%} avg)",
+            threshold=">= 50% windows positive excess",
+            detail=excess_detail,
         ))
 
         # 3. PBO (needs Walk-Forward period returns as strategy variants)
@@ -1053,6 +1076,54 @@ class StrategyValidator:
             threshold=f">= {max_worst_loss:+.0%}",
             detail=f"Worst year: {worst_year}",
         )
+
+    def _get_ew_annual(self, universe: list[str], start: str, end: str) -> float | None:
+        """Get equal-weight universe annual return for a specific period."""
+        from pathlib import Path
+        import os as _os
+
+        try:
+            project_root = Path(_os.environ.get("PROJECT_ROOT",
+                                str(Path(__file__).resolve().parent.parent.parent)))
+            market_dir = project_root / "data" / "market"
+
+            all_returns: list[pd.Series] = []
+            for sym in universe:
+                bare = sym.replace(".TW", "").replace(".TWO", "")
+                for pattern in [f"{sym}_1d.parquet", f"{sym}.parquet", f"finmind_{bare}.parquet"]:
+                    path = market_dir / pattern
+                    if not path.exists():
+                        continue
+                    try:
+                        df = pd.read_parquet(path)
+                        if "date" in df.columns:
+                            df["date"] = pd.to_datetime(df["date"])
+                            df = df.set_index("date").sort_index()
+                        if "close" in df.columns:
+                            sliced = df.loc[start:end]["close"]
+                            sliced = sliced.where(sliced > 0)
+                            if len(sliced.dropna()) > 20:
+                                rets = sliced.ffill().pct_change().dropna()
+                                rets = rets.replace([np.inf, -np.inf], 0.0)
+                                all_returns.append(rets)
+                    except Exception:
+                        pass
+                    break
+
+            if len(all_returns) < 20:
+                return None
+
+            ew_daily = pd.DataFrame({f"s{i}": r for i, r in enumerate(all_returns)}).mean(axis=1).dropna()
+            ew_clean = ew_daily.replace([np.inf, -np.inf], np.nan).dropna().clip(lower=-0.5)
+            if len(ew_clean) < 20:
+                return None
+            ew_total = float((1 + ew_clean).prod() - 1)
+            if ew_total <= -1:
+                return None
+            n_years = max(len(ew_clean) / 252, 0.5)
+            return float((1 + ew_total) ** (1 / n_years) - 1)
+        except Exception:
+            return None
 
     def _vs_ew_benchmark_gross(
         self,

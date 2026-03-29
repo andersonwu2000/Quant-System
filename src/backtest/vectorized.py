@@ -176,6 +176,19 @@ class VectorizedPBOBacktest:
                 total = n * (n + 1) / 2
                 for i, s in enumerate(selected):
                     weight_matrix.loc[date, s] = (n - i) / total
+            elif weight_mode == "score_tilt":
+                # Weight by z-score (positive only): higher factor value → more weight
+                import numpy as _np
+                all_vals = [values[s] for s in selected]
+                _mean = _np.mean(all_vals)
+                _std = _np.std(all_vals)
+                if _std > 1e-10:
+                    z = {s: max((values[s] - _mean) / _std, 0.01) for s in selected}
+                else:
+                    z = {s: 1.0 for s in selected}
+                z_total = sum(z.values())
+                for s in selected:
+                    weight_matrix.loc[date, s] = z[s] / z_total
             else:  # equal
                 w = 1.0 / len(selected)
                 for s in selected:
