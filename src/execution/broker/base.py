@@ -100,7 +100,11 @@ class PaperBroker(BrokerAdapter):
         order.status = OrderStatus.FILLED
 
         notional = order.quantity * fill_price
-        order.commission = self._cost.total_cost(notional, is_sell=(not is_buy))
+        # Detect odd lot: qty < 1000 for TW stocks
+        is_odd = order.quantity < 1000 and (
+            sym.endswith(".TW") or sym.endswith(".TWO")
+        )
+        order.commission = self._cost.total_cost(notional, is_sell=(not is_buy), is_odd_lot=is_odd)
 
         # #14: 追蹤內部持倉
         sym = order.instrument.symbol
