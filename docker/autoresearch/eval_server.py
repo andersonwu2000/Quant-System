@@ -153,18 +153,22 @@ def evaluate():
     level = _extract(stdout, "level:") or "UNKNOWN"
     passed = _extract(stdout, "passed:") == "True"
 
-    # Bucket ICIR_20d (fixed horizon, consistent with L2 gate — Fix #8).
-    # Using best_icir (max across horizons) would confuse agent: "strong" but L2 fail.
-    icir_20d = 0.0
-    try:
-        icir_20d = abs(float(_extract(stdout, "icir_20d:")))
-    except (ValueError, TypeError):
-        pass
-    if icir_20d >= ICIR_THRESHOLDS[0]:
+    # Bucket median |ICIR| across horizons (Method D — consistent with L2 gate).
+    import statistics
+    horizon_icirs = []
+    for h in ["5d", "10d", "20d", "60d"]:
+        try:
+            v = abs(float(_extract(stdout, f"icir_{h}:")))
+            if v > 0:
+                horizon_icirs.append(v)
+        except (ValueError, TypeError):
+            pass
+    median_icir = statistics.median(horizon_icirs) if horizon_icirs else 0.0
+    if median_icir >= ICIR_THRESHOLDS[0]:
         icir_bucket = "strong"
-    elif icir_20d >= ICIR_THRESHOLDS[1]:
+    elif median_icir >= ICIR_THRESHOLDS[1]:
         icir_bucket = "moderate"
-    elif icir_20d >= ICIR_THRESHOLDS[2]:
+    elif median_icir >= ICIR_THRESHOLDS[2]:
         icir_bucket = "weak"
     else:
         icir_bucket = "none"
