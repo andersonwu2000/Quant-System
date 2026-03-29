@@ -38,6 +38,28 @@ $statusJob = Start-Job -ScriptBlock {
     }
 } -ArgumentList $StatusInterval, "$ScriptDir\status.ps1"
 
+# --- Start credentials refresher (background, every 30 min) ---
+# credentials is :ro mount — Claude Code in container can't refresh.
+# Host-side `claude --version` triggers token refresh via SDK.
+Write-Host "Starting credentials refresher (every 30 min)..." -ForegroundColor Yellow
+$credJob = Start-Job -ScriptBlock {
+    while ($true) {
+        Start-Sleep -Seconds 1800
+        try {
+            $creds = Get-Content "$env:USERPROFILE\.claude\.credentials.json" -Raw | ConvertFrom-Json
+            $expiresMs = $creds.claudeAiOauth.expiresAt
+            $expiresAt = [DateTimeOffset]::FromUnixTimeMilliseconds($expiresMs).LocalDateTime
+            $remaining = ($expiresAt - (Get-Date)).TotalMinutes
+            if ($remaining -lt 60) {
+                # Force token refresh by running a trivial claude command on host
+                claude --version 2>$null
+                Write-Output "[$(Get-Date -Format 'HH:mm:ss')] Credentials refreshed (was expiring in $([int]$remaining)m)"
+            }
+        } catch {}
+    }
+}
+Write-Host "  Credentials refresher running (Job $($credJob.Id))" -ForegroundColor Green
+
 Write-Host "  Status reporter running (Job $($statusJob.Id))" -ForegroundColor Green
 
 # --- Ensure Docker containers are up ---
@@ -124,9 +146,11 @@ try {
         Start-Sleep -Seconds 10
     }
 } finally {
-    Write-Host "`nStopping status reporter..." -ForegroundColor Yellow
+    Write-Host "`nStopping background jobs..." -ForegroundColor Yellow
     Stop-Job $statusJob -ErrorAction SilentlyContinue
     Remove-Job $statusJob -Force -ErrorAction SilentlyContinue
+    Stop-Job $credJob -ErrorAction SilentlyContinue
+    Remove-Job $credJob -Force -ErrorAction SilentlyContinue
     powershell -ExecutionPolicy Bypass -File "$ScriptDir\status.ps1" 2>$null
     Write-Host "Final status report written." -ForegroundColor Green
 }

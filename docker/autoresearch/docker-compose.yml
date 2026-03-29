@@ -17,7 +17,7 @@ services:
       - ../../data/market:/app/data/market:ro        # market data (agent needs schema)
       - ../../data/fundamental:/app/data/fundamental:ro
       - ../../data/research:/app/data/research:ro    # universe.txt, baseline_ic
-      - ${CLAUDE_CREDENTIALS:-C:/Users/ander/.claude/.credentials.json}:/home/researcher/.claude/.credentials.json:rw
+      - ${CLAUDE_CREDENTIALS:-C:/Users/ander/.claude/.credentials.json}:/home/researcher/.claude/.credentials.json:ro
     environment:
       - EVAL_URL=http://evaluator:5000/evaluate
     entrypoint: ["sleep", "infinity"]  # loop.ps1 uses docker exec

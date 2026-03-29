@@ -24,5 +24,13 @@ ENV HOME=/home/researcher
 ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 ENV CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 
-# Git safe directory (volume mount ownership mismatch)
+# Git safe directory (volume mount ownership mismatch) — must run BEFORE wrapper
 RUN git config --global --add safe.directory /app/work
+
+# Git wrapper: block destructive commands (reset --hard, clean -fd)
+USER root
+RUN mkdir -p /usr/local/lib/git-safe && \
+    ln -s /usr/bin/git /usr/local/lib/git-safe/git && \
+    printf '#!/bin/sh\ncase "$*" in *reset*--hard*|*clean*-f*) echo "blocked: destructive git operation" >&2; exit 1;; esac\nexec /usr/local/lib/git-safe/git "$@"\n' > /usr/local/bin/git && \
+    chmod +x /usr/local/bin/git
+USER researcher
