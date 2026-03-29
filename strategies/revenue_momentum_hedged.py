@@ -31,7 +31,7 @@ class RevenueMomentumHedgedStrategy(Strategy):
     def __init__(
         self,
         market_proxy: str = "0050.TW",
-        bear_scale: float = 0.0,
+        bear_scale: float = 0.30,  # P-1: was 0.0 (full liquidation) — too aggressive, untested
         sideways_scale: float = 0.3,
         ma_threshold: float = 0.95,
         vol_threshold: float = 0.25,

@@ -169,8 +169,9 @@ class TestRegimeDetectionBear:
         inner_weights = {"2330.TW": 0.10, "2317.TW": 0.08}
         with patch.object(s._inner, "on_bar", return_value=inner_weights):
             result = s.on_bar(ctx)
-        # bear_scale default is 0.0, so all weights should be 0
-        assert all(v == 0.0 for v in result.values())
+        # bear_scale default is 0.30, so weights should be 30% of inner
+        for sym, w in result.items():
+            assert abs(w - inner_weights[sym] * 0.30) < 1e-9
 
 
 class TestRegimeDetectionSideways:
