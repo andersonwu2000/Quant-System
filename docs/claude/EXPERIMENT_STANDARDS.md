@@ -140,6 +140,28 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 3. **大規模 IC 和 L1-L5 forward return 必須一致**：都用 `close[as_of+h] / close[as_of] - 1`
 4. **月度取樣用最近交易日**：不可直接用月末日期（可能不是交易日）
 
+### 3.5 因子淘汰與 clone 處理（2026-03-29 確立）
+
+**四層 dedup 機制：**
+
+| 層 | 位置 | 檢查 | 門檻 | 速度 |
+|:--:|------|------|:----:|:----:|
+| 1 | evaluate.py L3 | IC series correlation | > 0.50 擋 | 即時 |
+| 2 | watchdog pre-filter | Portfolio returns correlation | > 0.85 擋 | 秒級 |
+| 3 | watchdog Validator | 17 項策略級驗證（含 vs_ew_universe） | 全通過才部署 | ~9 min |
+| 4 | watchdog PBO | Factor-Level PBO（Bailey CSCV） | > 0.70 擋 | 分鐘級 |
+
+**Clone 群處理（Layer 2 細節）：**
+- 同一 reference factor 的 clone 群（returns corr > 0.85）中，**保留 median ICIR 最高的一個送 Validator，其餘刪除 pending marker**
+- 如果 best clone ICIR > reference 的 ICIR → 升格為 novel（替換代表）
+- **不刪除 factor_returns parquet** — PBO 計算需要完整的試驗歷史
+
+**已知的 accepted selection bias：**
+- 部署時選 clone 群中 ICIR 最高的實作版本（工程決策，非過擬合）
+- PBO 計算使用 cluster 中位數因子（Bailey 原則，不受部署選擇影響）
+- 兩條路徑獨立：PBO 的 N 包含所有 factor_returns（含被跳過的 clone），DSR 正確反映總試驗次數
+- Within-cluster selection bias 量級約 3%（觀測值：0.530 vs 0.513），遠小於跨 cluster 不確定性
+
 ### 3.5 報告流程（autoresearch 模式）
 
 因子報告存放在 `docs/research/autoresearch/`。
