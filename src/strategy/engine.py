@@ -100,8 +100,8 @@ def weights_to_orders(
     orders: list[Order] = []
     nav = portfolio.nav
 
-    # 收集所有涉及的標的（持倉中的 + 目標中的）
-    all_symbols = set(target_weights.keys()) | set(portfolio.positions.keys())
+    # 收集所有涉及的標的（持倉中的 + 目標中的），排序確保確定性分配
+    all_symbols = sorted(set(target_weights.keys()) | set(portfolio.positions.keys()))
 
     for symbol in all_symbols:
         target_w = target_weights.get(symbol, 0.0)

@@ -75,6 +75,13 @@ def signal_weight(
         if abs(w) >= c.min_weight:
             weights[symbol] = w
 
+    # 空頭總曝險約束：short 不超過 max_total_weight
+    if not c.long_only:
+        total_short = sum(w for w in weights.values() if w < 0)
+        if total_short < -c.max_total_weight:
+            scale = -c.max_total_weight / total_short
+            weights = {k: (v * scale if v < 0 else v) for k, v in weights.items()}
+
     return weights
 
 

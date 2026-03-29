@@ -67,7 +67,8 @@ class RealtimeRiskMonitor:
             now = datetime.now(_tw_tz)
             today_str = now.strftime("%Y-%m-%d")
             if self._last_reset_date and today_str != self._last_reset_date:
-                self._nav_high = float(self.portfolio.nav)
+                sod = float(self.portfolio.nav_sod) if self.portfolio.nav_sod > 0 else float(self.portfolio.nav)
+                self._nav_high = sod
                 self._alerts_sent.clear()
                 logger.info("RealtimeRiskMonitor auto-reset for new day %s", today_str)
             self._last_reset_date = today_str

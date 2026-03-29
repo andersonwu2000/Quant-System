@@ -162,8 +162,11 @@ class YahooFeed(DataFeed):
         if not result.ok:
             logger.warning("Data quality issues for %s: %s", symbol, result.issues)
 
-        # 去除 NaN 行
+        # 去除 NaN 和零價格行（close=0 → pct_change=inf，汙染因子計算）
         df = df.dropna()
+        price_cols = [c for c in ["open", "high", "low", "close"] if c in df.columns]
+        if price_cols:
+            df = df[(df[price_cols] > 0).all(axis=1)]
 
         # 寫入快取
         self._store.save(symbol, freq, df)

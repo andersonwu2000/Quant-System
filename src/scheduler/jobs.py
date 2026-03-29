@@ -439,6 +439,10 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     from src.core.trading_pipeline import execute_from_weights
 
     async with state.mutation_lock:
+        # H-6: kill switch 可能在策略計算期間觸發，重新檢查
+        if hasattr(state, 'kill_switch_fired') and state.kill_switch_fired:
+            logger.warning("Kill switch fired during strategy calculation — aborting trade execution")
+            return PipelineResult(status="aborted", strategy_name=strategy.name(), error="Kill switch fired")
         trades = execute_from_weights(
             target_weights=target_weights,
             portfolio=state.portfolio,

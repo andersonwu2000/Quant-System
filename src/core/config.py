@@ -43,7 +43,6 @@ class TradingConfig(BaseSettings):
     max_position_pct: float = 0.10    # 10%（配合 15 支等權策略的 ~6.7%，含容差）
     max_sector_pct: float = 0.20
     max_daily_drawdown_pct: float = 0.03
-    kill_switch_weekly_drawdown_pct: float = 0.10
     max_daily_trades: int = 100
     fat_finger_pct: float = 0.05
     max_order_vs_adv_pct: float = 0.10

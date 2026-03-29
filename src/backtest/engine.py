@@ -298,11 +298,7 @@ class BacktestEngine:
                         progress_callback(i + 1, total_bars)
                     continue
 
-            # 股利注入
-            if config.enable_dividends:
-                self._inject_dividends_impl(portfolio, date_str)
-
-            # 判斷是否再平衡日
+            # 判斷是否再平衡日（在股利注入之前，避免策略看到當日除息現金 — look-ahead bias）
             if self._is_rebalance_day(bar_date, i, config.rebalance_freq):
                 rebalanced = self._do_rebalance(
                     strategy, config, bar_date, portfolio, feed,
@@ -313,6 +309,10 @@ class BacktestEngine:
                     portfolio, pending_orders, did_rebalance = rebalanced
                     if did_rebalance:
                         rebalance_count += 1
+
+            # 股利注入（在 rebalance 之後，避免策略看到當日除息現金）
+            if config.enable_dividends:
+                self._inject_dividends_impl(portfolio, date_str)
 
             # 記錄 NAV
             nav_history.append(self._snap_nav(portfolio, bar_date))

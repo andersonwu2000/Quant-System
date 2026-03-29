@@ -13,14 +13,16 @@ $Now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 # --- Gather data ---
 
 $agentUp = docker ps --filter "name=autoresearch-agent" --format "{{.Status}}" 2>$null
+$evaluatorUp = docker ps --filter "name=autoresearch-evaluator" --format "{{.Status}}" 2>$null
 $watchdogUp = docker ps --filter "name=autoresearch-watchdog" --format "{{.Status}}" 2>$null
 $agentLabel = if ($agentUp) { "Running ($agentUp)" } else { "Stopped" }
+$evaluatorLabel = if ($evaluatorUp) { "Running ($evaluatorUp)" } else { "Stopped" }
 $watchdogLabel = if ($watchdogUp) { "Running ($watchdogUp)" } else { "Stopped" }
 
 $results = @()
 $bestScore = 0
 $bestFactor = "N/A"
-$total = 0; $keepN = 0; $discardN = 0; $crashN = 0; $l5N = 0; $l0N = 0
+$total = 0; $keepN = 0; $discardN = 0; $crashN = 0; $l5N = 0; $l0N = 0; $l1N = 0; $l2N = 0; $l3N = 0; $l4N = 0
 
 # Docker mode: read from work/ (current cycle); fallback to host results.tsv (legacy)
 $dockerResults = "D:\Finance\docker\autoresearch\work\results.tsv"
@@ -41,8 +43,12 @@ if (Test-Path $resultsFile) {
             if ($st -eq "keep") { $keepN++ }
             if ($st -eq "discard") { $discardN++ }
             if ($st -eq "crash") { $crashN++ }
-            if ($level -eq "L5") { $l5N++ }
             if ($level -eq "L0") { $l0N++ }
+            if ($level -eq "L1") { $l1N++ }
+            if ($level -eq "L2") { $l2N++ }
+            if ($level -eq "L3") { $l3N++ }
+            if ($level -eq "L4") { $l4N++ }
+            if ($level -eq "L5") { $l5N++ }
             if ($score -gt $bestScore) { $bestScore = $score; $bestFactor = $desc }
             # For bucketed scores, track best by bucket rank
             if ($score -eq 0 -and $scoreRaw -match "high|medium|low") {
@@ -83,13 +89,14 @@ $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine("| Item | Value |")
 [void]$sb.AppendLine("|------|-------|")
 [void]$sb.AppendLine("| Agent | $agentLabel |")
+[void]$sb.AppendLine("| Evaluator | $evaluatorLabel |")
 [void]$sb.AppendLine("| Watchdog | $watchdogLabel |")
 [void]$sb.AppendLine("| Experiments | $total |")
 [void]$sb.AppendLine("| Keep / Discard / Crash | $keepN / $discardN / $crashN |")
-[void]$sb.AppendLine("| L5 OOS Passed | $l5N ($passRate%) |")
-[void]$sb.AppendLine("| L0 Early Reject | $l0N |")
+[void]$sb.AppendLine("| Level Distribution | L0:$l0N L1:$l1N L2:$l2N L3:$l3N L4:$l4N L5:$l5N |")
 [void]$sb.AppendLine("| Deployed | $deployReports |")
 [void]$sb.AppendLine("| Factor-Level PBO | $pboInfo |")
+[void]$sb.AppendLine("| ICIR Method | Method D (median \|ICIR\| ≥ 0.30) |")
 [void]$sb.AppendLine("| Best Score | $bestScore |")
 [void]$sb.AppendLine("| Best Factor | $bestFactor |")
 [void]$sb.AppendLine("")
