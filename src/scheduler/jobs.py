@@ -517,22 +517,50 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             slippage_bps=config.default_slippage_bps,
         )
         _broker = SimBroker(_sim_config)
-        # Build current_bars from feed (SimBroker needs OHLCV for each symbol)
+        # Build current_bars: try real-time first, fall back to latest parquet bar
         current_bars: dict[str, dict] = {}
-        for s in set(target_weights.keys()) | set(state.portfolio.positions.keys()):
-            try:
-                b = feed.get_bars(s, start=None, end=None)
-                if b is not None and len(b) >= 1:
-                    last = b.iloc[-1]
-                    current_bars[s] = {
-                        "open": float(last.get("open", last["close"])),
-                        "high": float(last.get("high", last["close"])),
-                        "low": float(last.get("low", last["close"])),
-                        "close": float(last["close"]),
-                        "volume": float(last.get("volume", 0)),
-                    }
-            except Exception:
-                pass
+        _all_syms = set(target_weights.keys()) | set(state.portfolio.positions.keys())
+        # Attempt real-time fetch for today's prices
+        _realtime_fetched = 0
+        try:
+            import yfinance as _yf
+            _today = datetime.now().strftime("%Y-%m-%d")
+            for s in _all_syms:
+                try:
+                    _t = _yf.Ticker(s)
+                    _d = _t.history(period="1d")
+                    if _d is not None and not _d.empty:
+                        _r = _d.iloc[-1]
+                        current_bars[s] = {
+                            "open": float(_r.get("Open", _r.get("Close", 0))),
+                            "high": float(_r.get("High", _r.get("Close", 0))),
+                            "low": float(_r.get("Low", _r.get("Close", 0))),
+                            "close": float(_r.get("Close", 0)),
+                            "volume": float(_r.get("Volume", 0)),
+                        }
+                        _realtime_fetched += 1
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+        # Fall back to parquet for symbols not fetched
+        for s in _all_syms:
+            if s not in current_bars:
+                try:
+                    b = feed.get_bars(s, start=None, end=None)
+                    if b is not None and len(b) >= 1:
+                        last = b.iloc[-1]
+                        current_bars[s] = {
+                            "open": float(last.get("open", last["close"])),
+                            "high": float(last.get("high", last["close"])),
+                            "low": float(last.get("low", last["close"])),
+                            "close": float(last["close"]),
+                            "volume": float(last.get("volume", 0)),
+                        }
+                except Exception:
+                    pass
+        logger.info("Paper SimBroker: %d realtime + %d parquet fallback = %d current_bars",
+                    _realtime_fetched, len(current_bars) - _realtime_fetched, len(current_bars))
     else:
         _broker = state.execution_service
         current_bars = None
