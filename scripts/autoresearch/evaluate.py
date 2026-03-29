@@ -1172,9 +1172,9 @@ def _write_learning(results: dict) -> None:
         raw_icir = float(np.median(horizon_vals)) if horizon_vals else 0.0
         if raw_icir >= 0.40:
             icir_bucket = "strong"
-        elif raw_icir >= 0.20:
+        elif raw_icir >= 0.30:
             icir_bucket = "moderate"
-        elif raw_icir >= 0.10:
+        elif raw_icir >= 0.15:
             icir_bucket = "weak"
         else:
             icir_bucket = "none"
