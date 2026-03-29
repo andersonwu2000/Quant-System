@@ -287,9 +287,16 @@ def _process_pending():
 
     except Exception as e:
         log(f"Validator: failed — {e}")
-        # Move to failed/ to avoid retry loop
-        failed_dir = pending_dir / "failed"
-        failed_dir.mkdir(exist_ok=True)
+        # H-006: retry up to 3 times before moving to failed/
+        retry_suffix = ".retry"
+        retry_count = marker_path.stem.count(retry_suffix) if marker_path.exists() else 99
+        if retry_count < 3 and marker_path.exists():
+            retry_path = marker_path.parent / f"{marker_path.stem}{retry_suffix}{marker_path.suffix}"
+            marker_path.rename(retry_path)
+            log(f"Validator: will retry ({retry_count + 1}/3)")
+        else:
+            failed_dir = pending_dir / "failed"
+            failed_dir.mkdir(exist_ok=True)
         marker_path.rename(failed_dir / marker_path.name)
 
 
@@ -307,7 +314,7 @@ def _queue_for_deployment(results: dict, validator_report: dict, factor_code: st
 
     # Dedup: check submitted_factors.json
     submitted_path = WATCHDOG_DATA / "submitted_factors.json"
-    code_hash = hashlib.sha256(factor_code.encode()).hexdigest()[:16]
+    code_hash = hashlib.sha256(factor_code.encode()).hexdigest()  # full SHA256, no truncation
     submitted = {}
     if submitted_path.exists():
         try:
@@ -584,6 +591,16 @@ def _compute_factor_level_pbo():
     parquets = sorted(returns_dir.glob("*.parquet"))
     n_factors = len(parquets)
 
+    # M-005: cap factor_returns at 500 (delete oldest if exceeded)
+    MAX_FACTOR_RETURNS = 500
+    if n_factors > MAX_FACTOR_RETURNS:
+        to_delete = parquets[:n_factors - MAX_FACTOR_RETURNS]
+        for p in to_delete:
+            p.unlink()
+        parquets = parquets[n_factors - MAX_FACTOR_RETURNS:]
+        n_factors = len(parquets)
+        log(f"Factor returns cleanup: deleted {len(to_delete)} oldest, kept {n_factors}")
+
     # Need >= 20 factors, and only recompute every 5 new factors
     if n_factors < 20 or n_factors - _last_factor_pbo_count < 5:
         return
@@ -633,7 +650,11 @@ def _compute_factor_level_pbo():
         # Using IS-best would bias PBO downward (optimistic = dangerous)
         independent_factors: list[str] = []
         for cluster in clusters:
-            ranked = sorted(cluster, key=lambda c: returns_matrix[c].mean())
+            # M-003: rank by Sharpe (risk-adjusted) not raw mean return
+            def _sharpe(s):
+                std = returns_matrix[s].std()
+                return returns_matrix[s].mean() / std if std > 0 else 0
+            ranked = sorted(cluster, key=_sharpe)
             independent_factors.append(ranked[len(ranked) // 2])
 
         n_raw = len(daily_returns_dict)

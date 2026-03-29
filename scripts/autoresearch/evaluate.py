@@ -1085,7 +1085,20 @@ def evaluate() -> dict:
 
     # ── L5c: Monotonicity gate — Patton & Timmermann (2010) MR test (pass/fail only) ──
     l5c_pass = False
-    if len(quintile_returns_matrix) >= 20:
+    if len(quintile_returns_matrix) < 20:
+        # C-002: insufficient data — explicit fail, not silent skip
+        print(f"  L5c monotonicity (MR test): FAIL (only {len(quintile_returns_matrix)} quintile dates, need 20)")
+        return _make_result(
+            level="L5", failure=f"L5c monotonicity: insufficient quintile data ({len(quintile_returns_matrix)} < 20)",
+            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+            fitness=fitness, positive_years=positive_years, total_years=total_years,
+            max_correlation=max_corr, correlated_with=corr_with,
+            oos_icir=oos_icir, oos_positive_months=oos_positive_months,
+            oos_total_months=oos_total_months,
+            elapsed=time.time() - t0,
+        )
+    else:
         qr = np.array(quintile_returns_matrix)  # (T, 5), Q1=top .. Q5=bottom
         mr = _mr_test(qr, n_boot=1000, block_size=max(int(len(qr)**0.5), 5))
         l5c_pass = mr["up_pval"] < 0.05 or mr["down_pval"] < 0.05
@@ -1274,9 +1287,9 @@ def main() -> None:
     print(f"fitness:          {results['fitness']:.2f}")
     print(f"avg_turnover:     {results['avg_turnover']:.4f}")
     print(f"positive_years:   {results['positive_years']}/{results['total_years']}")
+    # H-002: binary novelty (high or not) — prevents gradient optimization via noise
     _abs_corr = abs(results['max_correlation'])
-    _novelty = "high" if _abs_corr < 0.20 else ("moderate" if _abs_corr < 0.40 else "low")
-    print(f"novelty:          {_novelty}")
+    print(f"novelty:          {'high' if _abs_corr < 0.20 else 'not_high'}")
     print(f"max_correlation:  {results['max_correlation']:.3f} ({results['correlated_with']})")
     print(f"ic_trend:         {results.get('ic_trend', 'unknown')}")
     print(f"ic_source:        {results.get('ic_source', 'unknown')}")
@@ -1380,6 +1393,12 @@ def _write_learning(results: dict) -> None:
             learnings_dir = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data"
         learnings_dir.mkdir(parents=True, exist_ok=True)
         learnings_path = learnings_dir / "learnings.jsonl"
+
+        # M-006: cap learnings at 10000 lines (truncate oldest)
+        if learnings_path.exists() and learnings_path.stat().st_size > 5_000_000:  # > 5MB
+            lines = learnings_path.read_text(encoding="utf-8").splitlines()
+            if len(lines) > 10000:
+                learnings_path.write_text("\n".join(lines[-5000:]) + "\n", encoding="utf-8")
 
         # AF-M1 fix: extract direction from compute_factor docstring (first triple-quoted line)
         direction = "unknown"
