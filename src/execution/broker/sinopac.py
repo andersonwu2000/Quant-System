@@ -62,7 +62,8 @@ class SinopacConfig:
     sim_commission_rate: float = 0.001425
     sim_tax_rate: float = 0.003
     sim_slippage_bps: float = 5.0
-    sim_min_commission: float = 20.0
+    sim_min_commission: float = 20.0         # 整張最低手續費
+    sim_min_commission_odd: float = 1.0     # 零股最低手續費（多數券商 1 元）
     non_blocking: bool = True         # timeout=0 for non-blocking place_order (~12ms vs ~136ms)
 
 
@@ -134,6 +135,8 @@ class SinopacBroker(BrokerAdapter):
                         "Orders will be REJECTED by the exchange. "
                         "Set QUANT_SINOPAC_CA_PATH and QUANT_SINOPAC_CA_PASSWORD."
                     )
+                    self._connected = False
+                    return False
                 else:
                     self._api.activate_ca(
                         ca_path=ca,
@@ -222,7 +225,8 @@ class SinopacBroker(BrokerAdapter):
                     pass
 
             try:
-                if self._config.non_blocking:
+                # LT-3: LIVE mode forces blocking to get valid broker ID
+                if self._config.non_blocking and self._config.simulation:
                     trade = self._api.place_order(contract, sj_order, timeout=0)
                 else:
                     trade = self._api.place_order(contract, sj_order)
@@ -267,8 +271,10 @@ class SinopacBroker(BrokerAdapter):
             order.filled_avg_price = fill_price
             notional = order.quantity * fill_price
             commission = notional * Decimal(str(self._config.sim_commission_rate))
-            # 零股最低手續費（台股零股手續費最低 1 元）
-            min_comm = Decimal(str(self._config.sim_min_commission))
+            # 最低手續費：整張 20 元、零股 1 元（多數券商）
+            is_all_odd = all(is_odd for _, is_odd in lot_parts)
+            min_comm_val = self._config.sim_min_commission_odd if is_all_odd else self._config.sim_min_commission
+            min_comm = Decimal(str(min_comm_val))
             if commission < min_comm:
                 commission = min_comm
             tax = notional * Decimal(str(self._config.sim_tax_rate)) if order.side == Side.SELL else Decimal("0")

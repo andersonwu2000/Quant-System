@@ -145,15 +145,13 @@ class TestInitialization:
         if svc.fallback_mode:
             assert isinstance(svc.broker, PaperBroker)
 
-    def test_initialize_live_fallback_import_error(self) -> None:
-        """Live mode without shioaji falls back to PaperBroker."""
+    def test_initialize_live_no_api_key_fails(self) -> None:
+        """Live mode without API key refuses to start (LT-6)."""
         cfg = ExecutionConfig(mode="live")
         svc = ExecutionService(cfg)
         result = svc.initialize()
-        assert result is True
-        assert svc.is_initialized is True
-        if svc.fallback_mode:
-            assert isinstance(svc.broker, PaperBroker)
+        assert result is False
+        assert svc.is_initialized is False
 
     def test_twap_created_when_enabled(self) -> None:
         cfg = ExecutionConfig(smart_order_enabled=True, smart_order_slices=3)

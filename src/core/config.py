@@ -153,6 +153,12 @@ class TradingConfig(BaseSettings):
             raise ValueError(
                 "QUANT_API_KEY must not also appear in QUANT_API_KEY_ROLES"
             )
+        # LT-5: live mode must have broker credentials
+        if self.mode == "live":
+            if not self.sinopac_api_key:
+                raise ValueError("LIVE mode requires QUANT_SINOPAC_API_KEY")
+            if not self.sinopac_ca_path:
+                raise ValueError("LIVE mode requires QUANT_SINOPAC_CA_PATH")
         return self
 
     def resolve_api_key_role(self, provided_key: str) -> str | None:

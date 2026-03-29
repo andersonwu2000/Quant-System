@@ -119,29 +119,40 @@ class ExecutionService:
                 )
                 broker = SinopacBroker(sinopac_config)
 
-                if self._config.sinopac_api_key:
-                    connected = broker.connect()
-                    if not connected:
-                        if mode == "live":
-                            # Live mode: 不允許 fallback 到 PaperBroker（會造成假交易）
-                            logger.critical(
-                                "FATAL: Shioaji connection failed in LIVE mode. "
-                                "Refusing to fall back to PaperBroker — this would create "
-                                "phantom trades. Fix the connection and restart."
-                            )
-                            self._initialized = False
-                            return False
-                        # Paper mode: fallback 可接受（模擬環境）
+                if not self._config.sinopac_api_key:
+                    # LT-6: no API key → cannot connect. Live mode blocked by config validator.
+                    if mode == "live":
+                        logger.critical("FATAL: No Sinopac API key for LIVE mode")
+                        self._initialized = False
+                        return False
+                    # Paper mode without API key → fallback
+                    from src.execution.cost_model import CostModel
+                    self._broker = PaperBroker(cost_model=CostModel.from_config(self._config))
+                    self._fallback_mode = True
+                    self._initialized = True
+                    return True
+
+                connected = broker.connect()
+                if not connected:
+                    if mode == "live":
                         logger.critical(
-                            "FALLBACK: Shioaji connection failed in paper mode — "
-                            "falling back to PaperBroker."
+                            "FATAL: Shioaji connection failed in LIVE mode. "
+                            "Refusing to fall back to PaperBroker — this would create "
+                            "phantom trades. Fix the connection and restart."
                         )
-                        from src.execution.cost_model import CostModel
-                        self._broker = PaperBroker(cost_model=CostModel.from_config(self._config))
-                        self._fallback_mode = True
-                        self._initialized = True
-                        return True
-                    broker.start_reconnect_monitor()
+                        self._initialized = False
+                        return False
+                    # Paper mode: fallback 可接受（模擬環境）
+                    logger.critical(
+                        "FALLBACK: Shioaji connection failed in paper mode — "
+                        "falling back to PaperBroker."
+                    )
+                    from src.execution.cost_model import CostModel
+                    self._broker = PaperBroker(cost_model=CostModel.from_config(self._config))
+                    self._fallback_mode = True
+                    self._initialized = True
+                    return True
+                broker.start_reconnect_monitor()
 
                 self._broker = broker
                 self._initialized = True
@@ -255,6 +266,14 @@ class ExecutionService:
         ts = timestamp or datetime.now(timezone.utc)
 
         for order in orders:
+            # LT-9: check broker connection before each order (live mode)
+            if not self._fallback_mode and hasattr(self._broker, 'is_connected'):
+                if not self._broker.is_connected():
+                    logger.critical("Broker disconnected mid-execution — aborting remaining %d orders",
+                                    len(orders) - len(broker_trades))
+                    order.status = OrderStatus.REJECTED
+                    order.reject_reason = "Broker disconnected"
+                    break
             self._oms.submit(order)
             self._broker.submit_order(order)
 
