@@ -515,6 +515,8 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             commission_rate=config.commission_rate,
             tax_rate=config.tax_rate,
             slippage_bps=config.default_slippage_bps,
+            price_limit_pct=0.10,  # Taiwan ±10% limit
+            partial_fill=True,     # simulate odd-lot partial fills
         )
         _broker = SimBroker(_sim_config)
         # Build current_bars: try real-time first, fall back to latest parquet bar
@@ -531,12 +533,21 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                     _d = _t.history(period="1d")
                     if _d is not None and not _d.empty:
                         _r = _d.iloc[-1]
+                        # Get prev_close from parquet (yesterday's close)
+                        _prev = 0.0
+                        try:
+                            _pb = feed.get_bars(s, start=None, end=None)
+                            if _pb is not None and len(_pb) >= 1:
+                                _prev = float(_pb["close"].iloc[-1])
+                        except Exception:
+                            pass
                         current_bars[s] = {
                             "open": float(_r.get("Open", _r.get("Close", 0))),
                             "high": float(_r.get("High", _r.get("Close", 0))),
                             "low": float(_r.get("Low", _r.get("Close", 0))),
                             "close": float(_r.get("Close", 0)),
                             "volume": float(_r.get("Volume", 0)),
+                            "prev_close": _prev,
                         }
                         _realtime_fetched += 1
                 except Exception:
@@ -550,12 +561,14 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                     b = feed.get_bars(s, start=None, end=None)
                     if b is not None and len(b) >= 1:
                         last = b.iloc[-1]
+                        _prev = float(b["close"].iloc[-2]) if len(b) >= 2 else float(last["close"])
                         current_bars[s] = {
                             "open": float(last.get("open", last["close"])),
                             "high": float(last.get("high", last["close"])),
                             "low": float(last.get("low", last["close"])),
                             "close": float(last["close"]),
                             "volume": float(last.get("volume", 0)),
+                            "prev_close": _prev,
                         }
                 except Exception:
                     pass
