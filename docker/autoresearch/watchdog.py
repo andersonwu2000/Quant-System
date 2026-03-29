@@ -525,20 +525,20 @@ def _compute_factor_level_pbo():
         if len(daily_returns_dict) < 20:
             return
 
-        returns_matrix = pd.DataFrame(daily_returns_dict).fillna(0.0).dropna()
+        returns_matrix = pd.DataFrame(daily_returns_dict).fillna(0.0).dropna().copy()
         if len(returns_matrix) < 120:
             return
 
         # Phase AB Phase 3 + AB-4 Step 3: Independent hypothesis clustering
         # Factors with returns correlation > 0.50 are the same "direction"
         # AB-4: hierarchical clustering (captures transitive correlations)
-        corr_matrix = returns_matrix.corr().fillna(0.0)  # constant-return factors → uncorrelated
+        corr_matrix = returns_matrix.corr().fillna(0.0).copy()  # ensure writable
         from scipy.cluster.hierarchy import linkage, fcluster
         from scipy.spatial.distance import squareform
 
         dist_matrix = (1 - corr_matrix.abs()).clip(lower=0).copy()
         np.fill_diagonal(dist_matrix.values, 0)
-        condensed = squareform(dist_matrix, checks=False)
+        condensed = squareform(dist_matrix, checks=False).copy()
         Z = linkage(condensed, method='average')
         labels = fcluster(Z, t=0.50, criterion='distance')  # corr > 0.50 = same cluster
 
