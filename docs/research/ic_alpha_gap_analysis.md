@@ -27,7 +27,9 @@
 
 ## PBO
 
-N=1 cluster（113 clone），CSCV 無意義。替代驗證：Permutation ✅、DSR ⚠️、WFE ⚠️、OOS decay ✅、Paper Trading ⏳。
+N=1 cluster（113 clone 是 dedup 修復前累積的）。**暫時狀態** — returns dedup 修復後新因子如果來自不同方向會增加 cluster。PBO fallback 到 DSR 是過渡方案，因子庫多樣化後 PBO 自然恢復。
+
+替代驗證堆疊：Permutation ✅、DSR ⚠️（K 需校準）、WFE ⚠️、OOS decay ✅、Paper Trading ⏳。
 
 ## Agent 反饋信號
 
@@ -37,7 +39,7 @@ N=1 cluster（113 clone），CSCV 無意義。替代驗證：Permutation ✅、D
 | L5c monotonicity（分位單調性 > 0.5） | pass/fail only | 不洩漏值 |
 | novelty indicator（max corr with existing） | bucketed: high/moderate/low | 不洩漏精確 corr |
 
-不在 program.md 限制方向。代碼 gate 比文字引導可靠。
+代碼 gate 比文字引導可靠。program.md 提供**事實**（新數據可用、TC 概念），不規定探索方向。
 
 ## 待做
 
@@ -46,10 +48,12 @@ N=1 cluster（113 clone），CSCV 無意義。替代驗證：Permutation ✅、D
 | 1 | **Construction 改進**：top-15 EW → top-40 score-tilt | **最高** | 直接解決 vs_ew_universe（降 variance drag + 提高 TC） |
 | 2 | evaluate.py 加 L5b/L5c gate | 高 | 早期篩選，減少 Validator 浪費時間 |
 | 3 | evaluate.py 加 novelty indicator | 高 | 引導 agent 探索新方向 |
-| 4 | program.md 加 TC 概念 | 高 | 文字引導 |
+| 4 | program.md 更新（新數據可用 + TC 概念） | 高 | 事實告知，不限制方向 |
 | 5 | watchdog PBO fallback → DSR | 中 | |
 
-**已完成：** 新數據 ✅、returns dedup ✅、PBO 修復 ✅、診斷 ✅、score-tilt 測試（獨立腳本）✅、vs_ew gross 修復 ✅、**Validator 重跑確認：gross 修復後仍 16/17** ✅
+**已完成：** 新數據 ✅、returns dedup ✅、PBO 修復 ✅、診斷 ✅、score-tilt 測試（獨立腳本）✅、vs_ew gross 修復 ✅
+
+**Validator 重跑結果（gross 修復後）**：仍 16/17。策略 gross ≈ 20-25%，EW gross = 26.82%。差距 ~5% 來自 top-15 的 variance drag + TC 損耗 — 確認是 construction 問題，非 bug。
 
 **不做：** 不降 vs_ew_universe 門檻、不改為 soft fail、不量化多樣化為分數、不限制方向。
 
