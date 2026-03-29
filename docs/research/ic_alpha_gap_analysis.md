@@ -47,22 +47,41 @@
 
 **不在 program.md 說 revenue 飽和** — revenue 方向仍有潛力（sector-neutral revenue、revenue × momentum 交互項）。excess_return gate 會自然過濾無效變體。
 
+## 診斷結果（2026-03-30，22 個季度 2020-2025）
+
+| 診斷 | 結果 | 意義 |
+|------|------|------|
+| Cross-section dispersion | **10.6%** 月標準差 | 充足（> 10%），市場有空間 |
+| Q5 (top) 20d return | **+4.47%** | 最高分位 |
+| Q1 (bottom) 20d return | +2.79% | 最低分位 |
+| Q5-Q1 spread | **+1.68%/20d** | 有 spread |
+| Monotonicity (Spearman) | **0.50** | 中等 — 中間分位噪音大，但頂端有效 |
+| **Top quintile excess vs EW** | **+1.34%/20d** | **Q5 打敗大盤** |
+| Sector concentration | Semi 1/15, Fin 1/15 | **不是產業曝險，跨產業選股** |
+
+**關鍵發現：Top quintile（~40 支）打敗大盤，但 top-15 等權不行。問題在 portfolio construction（TC 損耗），不是因子無效。**
+
+這改變了優先級：
+- **Score-tilt 從「中」升為「高」** — 因子有效但 top-15 等權的 TC 太低，改建構方式可能直接解決 vs_ew_universe
+- **L5b excess_return gate 的門檻要用 quintile 而非 top-15** — top-15 可能 fail 但 top quintile pass，gate 不該擋住這種因子
+
 ## 待做
 
-| # | 項目 | 優先級 |
-|---|------|:------:|
-| 1 | evaluate.py 加 L5b excess_return gate | **高** |
-| 2 | evaluate.py 加 novelty indicator（bucketed corr） | **高** |
-| 3 | program.md 更新（新數據 + TC 概念，不限制方向） | 高 |
-| 4 | 診斷：quintile monotonicity + sector concentration | 中 |
-| 5 | 測試 score-tilt（TC 0.10 → 0.45） | 中 |
-| 6 | watchdog PBO fallback 到 DSR | 中 |
-| 7 | Cross-Market Validation（韓/日） | 低 |
+| # | 項目 | 優先級 | 備註 |
+|---|------|:------:|------|
+| 1 | evaluate.py portfolio construction 改為 top quintile（~40 支） | **高** | TC 0.10 → 0.25+，直接影響 vs_ew_universe |
+| 2 | evaluate.py 加 L5b excess_return gate（用 quintile） | **高** | 給 agent 營利反饋 |
+| 3 | evaluate.py 加 novelty indicator（bucketed corr） | **高** | 給 agent 多樣化反饋 |
+| 4 | program.md 更新（新數據 + TC 概念，不限制方向） | 高 | |
+| 5 | 測試 score-tilt（TC 0.10 → 0.45） | 高 | 在回測中比較 top-15 等權 vs score-tilt |
+| 6 | watchdog PBO fallback 到 DSR | 中 | |
+| 7 | Cross-Market Validation（韓/日） | 低 | |
 
 **已完成：**
 - [x] 新數據（per_history 472 支, margin 220 支）✅ 2026-03-30
 - [x] Returns dedup 擋 clone ✅ 2026-03-29
 - [x] PBO read-only bug 修復 ✅ 2026-03-30
+- [x] 診斷分析（dispersion + quintile + sector）✅ 2026-03-30
 
 **不做：** 不降低 vs_ew_universe 門檻、不把多樣化量化為分數、不限制 agent 探索方向。
 
