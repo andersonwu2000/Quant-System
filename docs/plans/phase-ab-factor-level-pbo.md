@@ -1,7 +1,7 @@
 # Phase AB：Factor-Level PBO 重新設計 ✅ 已完成（2026-03-29）
 
 > Bailey (2014) CSCV 的正確實作：N = 所有測試過的因子，不是 portfolio construction 變體
-> Phase 1-3 全部完成。已知 #1 greedy clustering 待改進（保守方向，不急）。
+> Phase 1-3 + AB-4 全部完成。
 
 ## 1. 問題
 
@@ -431,7 +431,7 @@ Phase 2 的三個 step 和 Phase 3 的獨立假說聚類被合併在同一次實
 **#1 和 #2 會互相部分抵消**：#1 膨脹 N（更多 cluster → PBO 偏高），#2 選 IS 最強（PBO 偏低）。但抵消不是系統性的，取決於實際因子分佈。
 
 **修正狀態**：
-- #1：待修 — 改用 `scipy.cluster.hierarchy.fcluster(method='average', t=0.50)` 或 networkx connected components。偏保守方向（N 膨脹 → PBO 偏高），不緊急
+- #1：✅ 已修（AB-4 Step 3）— 改用 `scipy.cluster.hierarchy.linkage(method='average')` + `fcluster(t=0.50)`。正確捕捉 transitive 相關
 - #2：✅ 已修（2026-03-29）— 改用 `cluster[len(cluster)//2]`（中位數因子）。原 `max(..., key=mean_return)` 會造成 IS selection bias → PBO 偏低（危險方向）
 
 ---
@@ -505,13 +505,98 @@ for col, label in zip(corr_matrix.columns, labels):
 
 ### AB-4 實施步驟
 
-| Step | 內容 | 位置 | 優先級 |
-|------|------|------|:------:|
-| 1 | factor_returns 只存 L3+ | evaluate.py | P0 |
-| 2 | 清理現有 L1/L2 parquet | 一次性腳本 | P0 |
-| 3 | hierarchical clustering | watchdog.py | P0 |
-| 4 | 清理後重算 PBO | watchdog 自動 | 自動 |
+| Step | 內容 | 位置 | 狀態 |
+|------|------|------|:----:|
+| 1 | factor_returns 只存 L3+ | evaluate.py | ✅ |
+| 2 | 清理舊 parquet（96 L1/L2 + 25 舊標準 L3+） | 一次性 | ✅ |
+| 3 | hierarchical clustering 取代 greedy | watchdog.py | ✅ |
+| 4 | 重算 PBO | 自動（累積 ≥20 L3+ 後） | ⏳ |
 
-### 預估
+### 實施記錄
 
-~20 行代碼修改 + 一次性清理。修完後 PBO 數值會改變（可能從 0.0 上升），這是正確的 — 舊的 0.0 是被噪音因子稀釋的假象。
+- Step 1：evaluate.py `_store_factor_returns` 條件從 `not in ("L0",)` 改為 `in ("L3", "L4", "L5")`
+- Step 2：清理 96 個 L1/L2 噪音 parquet → n_independent 28→13。再發現所有 25 個 L3+ 的 best_icir < 0.50（舊 L2 門檻 0.15 下產生），全部清除。factor_returns 從 0 重新累積
+- Step 3：`scipy.cluster.hierarchy.linkage(method='average')` + `fcluster(t=0.50, criterion='distance')` 取代 greedy loop。正確處理 A↔B↔C transitive 相關
+
+---
+
+## 10. 嚴格審批（2026-03-29）
+
+### 判定：AB Phase 1-3 有方法論隱患。AB-4 方向對但不完整。
+
+---
+
+### Phase 1 問題：N=15 的「獨立方向數」是拍腦袋的
+
+§8 審批接受了 N=15，理由是「revenue / technical-momentum / OBV / MA-fraction / ER / liquidity / combo 等，大約 10-15 個方向」。
+
+**問題**：15 這個數字沒有任何計算依據。
+- 沒有從 results.tsv 實際聚類過
+- 沒有計算過 IC series 的相關矩陣來判斷有多少獨立方向
+- Phase 3 的 hierarchical clustering 就是要解決這個問題，但 Phase 1 已經先用了 N=15
+
+**如果真正的獨立方向是 8 個呢？** N=8 的 DSR=0.85（仍過 0.70）。影響不大。
+**如果是 25 個呢？** N=25 的 DSR=0.72（勉強過 0.70）。門檻設得太寬。
+
+**問題不是 15 對不對，而是沒有驗證機制。** DSR 的 N 是整個系統最敏感的參數之一，用拍腦袋定不可接受。
+
+**要求**：AB-4 完成 hierarchical clustering 後，用實際的 cluster 數量更新 DSR 的 n_trials。不再硬編碼 15。
+
+---
+
+### Phase 2 問題：daily returns 的計算方式和 Validator 的不一致
+
+§2.3 說 daily returns 計算「和 `VectorizedPBOBacktest.run_variant(top_n=15, weight_mode="equal")` 幾乎相同，可以直接複用」。
+
+**但 evaluate.py 的 `_store_factor_returns` 是否真的用了同樣的邏輯？** 如果 evaluate.py 的 daily returns 和 Validator 的 construction_sensitivity PBO 用的 daily returns 計算方式不同（成本模型、rebalance 頻率、universe size），那 Factor-Level PBO 和 Construction Sensitivity PBO 的數值不可比較。
+
+**要求**：驗證 evaluate.py `_store_factor_returns()` 和 `VectorizedPBOBacktest` 的假設是否一致（成本率、rebalance 頻率、universe 大小）。如果不一致，文件中必須標明。
+
+---
+
+### Phase 3 問題：greedy clustering + IS selection bias 的「互相抵消」論述不嚴謹
+
+§9 Phase 3 審查寫：「#1 膨脹 N（更多 cluster → PBO 偏高），#2 選 IS 最強（PBO 偏低）。兩者互相部分抵消。」
+
+**這不是合理的論述。** 兩個 bias 的大小和方向都是未知的 — 你不能假設它們恰好抵消。一個可能是 +0.3，另一個可能是 -0.05。「部分抵消」是安慰劑，不是分析。
+
+#2 已修（改用中位數），但 #1 還沒修。這意味著目前的 PBO 數值仍然偏高（N 被膨脹）。
+
+**要求**：不要在文件中聲稱 bias 互相抵消。修完就是修完，沒修就承認數值有偏。
+
+---
+
+### AB-4 問題 A 的方法論爭議：L1/L2 該不該排除
+
+計畫說「L1/L2 因子的 top-15 等權是純噪音，不應計入 CSCV 矩陣」。
+
+**反面論點**：Bailey (2014) 原文明確要求 N 包含 "all model configurations tried by the researcher, **including failed ones**"。L1/L2 就是 failed trials。排除它們等於低估過擬合風險（PBO 偏低）。
+
+**支持排除的論點**：L1 因子的 IC < 0.02，其 top-15 等權 portfolio 的日報酬本質上是隨機的。把 84 個隨機 portfolio 加入 CSCV 矩陣，CSCV 比較的是「你選的最佳策略 vs 84 個隨機策略」— 當然會贏。這不是 Bailey 的本意。
+
+**我的判斷**：排除是正確的，但理由要寫清楚。Bailey 的 "failed trials" 指的是「有信號但 OOS 不好的策略」，不是「連信號都沒有的噪音」。L1/L2 不構成「策略」因為它們的因子值和未來回報不相關。
+
+**要求**：AB-4 的修改保留，但在代碼中加註釋解釋為什麼 L1/L2 被排除，引用 Bailey 的原文。避免未來有人看到這行改動認為是「為了讓 PBO 好看而排除失敗因子」。
+
+---
+
+### AB-4 問題 B 的實作細節缺失
+
+hierarchical clustering 方案只有 6 行偽代碼，沒有處理邊界情況：
+
+1. **只有 1-2 個 L3+ 因子時怎麼辦？** linkage 需要至少 2 個觀測值。1 個因子 → 1 個 cluster → n_independent=1 → PBO 無法計算（CSCV 需要 N ≥ 2）
+2. **IC series 長度不同怎麼辦？** 不同因子在不同日期計算，IC series 長度不一。corr_matrix 需要對齊。truncate 到最短？NaN 怎麼處理？
+3. **t=0.50 的 distance threshold 對應 |corr|=0.50。** 但 corr=0.49 和 corr=0.51 差一點點就分到不同 cluster。會不會太敏感？
+
+**要求**：實作時至少處理 (1) 和 (2)。(3) 可以先接受，但記錄為已知限制。
+
+---
+
+### 遺留風險（升級）
+
+| 風險 | 嚴重度 | 為什麼升級 |
+|------|:------:|-----------|
+| N=15 是拍腦袋的 | **HIGH** | DSR 最敏感參數，必須用實際 cluster 數量替換 |
+| AB-4 後 PBO > 0.50 | **HIGH** | 不是「心理準備」— 如果真的 > 0.50，現有因子全部不符合部署門檻，AG 無法啟動 |
+| R-02 可比性未驗證 | **HIGH** | 6 個月了一直沒跑 pilot。AB-4 是最後的修改機會，之後就定型了 |
+| daily returns 計算一致性 | MEDIUM | evaluate.py vs VectorizedPBOBacktest 假設可能不同 |
