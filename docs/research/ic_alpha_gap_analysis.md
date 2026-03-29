@@ -75,20 +75,27 @@
 
 **這意味著 Validator 的 vs_ew_universe 不通過可能不是因子或建構問題，而是 Validator 回測期間 / 配置差異。** 需要進一步排查 Validator 和此診斷的差異（IS 截斷、cost model、lot size 等）。
 
-### 優先級調整
+### 優先級原則
 
-Score-tilt 改善有限（+0.08% excess, +11% Sharpe）。**真正的問題不在建構方式，而在 Validator 為什麼和簡化測試結果不同。**
+以上診斷和測試都是針對 revenue ratio 這一個因子。如果之後找到 PE momentum 或 margin 方向的因子，可能有完全不同的 Q5 表現、monotonicity、sector 特性。**應優先做對所有未來因子都有效的結構性改進，而非只 debug 當前因子的 Validator 結果。**
 
 ## 待做
 
+### 結構性改進（對所有未來因子有效）
+
 | # | 項目 | 優先級 | 備註 |
 |---|------|:------:|------|
-| 1 | **排查 Validator vs 診斷的差異** | **高** | 診斷顯示 top-15 EW +1.41% 贏大盤，但 Validator 16/17。找出差異原因 |
-| 2 | evaluate.py 加 L5b excess_return gate | **高** | 給 agent 營利反饋（用 quintile 基準） |
-| 3 | evaluate.py 加 novelty indicator（bucketed corr） | **高** | 給 agent 多樣化反饋 |
-| 4 | program.md 更新（新數據 + TC 概念，不限制方向） | 高 | |
-| 5 | evaluate.py construction 改為 top quintile 或 score-tilt | 中 | Score-tilt Sharpe +11% 但 excess 差距小 |
-| 6 | watchdog PBO fallback 到 DSR | 中 | |
+| 1 | evaluate.py 加 L5b excess_return gate | **高** | 給 agent 營利反饋（用 quintile 基準） |
+| 2 | evaluate.py 加 novelty indicator（bucketed corr） | **高** | 給 agent 多樣化反饋 |
+| 3 | program.md 更新（新數據 + TC 概念，不限制方向） | **高** | |
+| 4 | evaluate.py construction 改為 top quintile 或 score-tilt | 高 | Score-tilt Sharpe +11%，對所有因子提升 TC |
+| 5 | watchdog PBO fallback 到 DSR | 中 | |
+
+### Factor-specific（只針對當前因子）
+
+| # | 項目 | 優先級 | 備註 |
+|---|------|:------:|------|
+| 6 | 排查 Validator vs 診斷的差異 | 中 | 可能揭示系統性 bug，但結論不一定適用其他因子 |
 | 7 | Cross-Market Validation（韓/日） | 低 | |
 
 **已完成：**
