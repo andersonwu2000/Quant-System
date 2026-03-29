@@ -26,11 +26,13 @@ N=1 cluster（113 clone），CSCV 無意義。替代：Permutation ✅、DSR ⚠
 
 ## Agent 反饋信號
 
-| 信號 | 做什麼 | 引導行為 |
-|------|--------|---------|
-| L5b excess_return | top quintile > universe | 營利 |
-| L5c monotonicity | 分位單調性 > 0.5 | 頂端有效 |
-| novelty indicator | bucketed corr | 多樣化 |
+| 信號 | 做什麼 | Agent 看到 | 防過擬合 |
+|------|--------|-----------|---------|
+| L5b excess_return | top quintile > universe | **pass/fail only** | 不洩漏 excess 量級 |
+| L5c monotonicity | 分位單調性 > 0.5 | **pass/fail only** | 不洩漏 Spearman 值 |
+| novelty indicator | max corr with existing | **bucketed: high/moderate/low** | 不洩漏精確 corr |
+
+原則：gate（L5b/L5c）只給 pass/fail，和現有 L5 OOS 一致。Novelty 給 bucketed 程度（引導探索方向）。不給精確數值防止 agent 做梯度式優化。
 
 不在 program.md 限制方向。代碼 gate 比文字引導可靠。
 
