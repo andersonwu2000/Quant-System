@@ -157,7 +157,16 @@ def _process_pending():
         validator_report = _run_background_validator(results, factor_code)
 
         if validator_report and validator_report.get("deployed"):
-            # Additional gate: Factor-Level PBO must be <= 0.70 (if available)
+            # Gate 1: Portfolio returns dedup (catches same-stock-selection clones)
+            ret_dedup_ok, ret_dedup_corr, ret_dedup_with = _check_returns_dedup(marker_path.stem)
+            if not ret_dedup_ok:
+                log(f"Validator: BLOCKED by returns dedup (corr={ret_dedup_corr:.3f} with {ret_dedup_with})")
+                validator_report["deployed"] = False
+                # Still move to processed (don't reprocess)
+                marker_path.unlink()
+                return
+
+            # Gate 2: Factor-Level PBO must be <= 0.70 (if available)
             pbo_path = WATCHDOG_DATA / "factor_pbo.json"
             factor_pbo_ok = True
             factor_pbo_val = None
@@ -420,6 +429,61 @@ def _write_background_report(results: dict, validator_report: dict, factor_code:
 
     report_path.write_text(content, encoding="utf-8")
     log(f"Report written: {report_path.name}")
+
+
+def _check_returns_dedup(current_stem: str) -> tuple[bool, float, str]:
+    """Check if this factor's portfolio returns are a clone of an existing factor.
+
+    Compares the factor_returns parquet matching current_stem against all other
+    stored factor_returns. If max |corr| > 0.85 → block as clone.
+
+    Returns (ok, max_corr, correlated_with).
+    """
+    import pandas as pd
+
+    returns_dir = WATCHDOG_DATA / "factor_returns"
+    if not returns_dir.exists():
+        return True, 0.0, ""
+
+    # Find current factor's returns
+    current_path = None
+    for p in returns_dir.glob("*.parquet"):
+        if current_stem in p.stem:
+            current_path = p
+            break
+
+    if current_path is None:
+        return True, 0.0, ""  # no returns stored yet, can't check
+
+    try:
+        current_df = pd.read_parquet(current_path)
+        if "returns" not in current_df.columns or len(current_df) < 50:
+            return True, 0.0, ""
+        current_ret = current_df["returns"]
+    except Exception:
+        return True, 0.0, ""
+
+    RETURNS_DEDUP_THRESHOLD = 0.85  # stricter than IC series (0.50)
+    max_corr = 0.0
+    max_name = ""
+
+    for p in sorted(returns_dir.glob("*.parquet")):
+        if p == current_path:
+            continue
+        try:
+            df = pd.read_parquet(p)
+            if "returns" not in df.columns or len(df) < 50:
+                continue
+            existing = df["returns"]
+            min_len = min(len(current_ret), len(existing))
+            corr = float(current_ret.iloc[:min_len].corr(existing.iloc[:min_len]))
+            if abs(corr) > abs(max_corr):
+                max_corr = corr
+                max_name = p.stem
+        except Exception:
+            continue
+
+    return abs(max_corr) <= RETURNS_DEDUP_THRESHOLD, max_corr, max_name
 
 
 _last_factor_pbo_count = 0  # track when to recompute

@@ -434,6 +434,10 @@ def _check_dedup(ic_series_20d: list[float], known: dict[str, list[float]]) -> t
 
     Returns (max_correlation, correlated_with_name, n_high_corr).
     n_high_corr = number of known factors with |corr| > MAX_CORRELATION (for one-to-one check).
+
+    Note: this checks IC series correlation only. Portfolio returns dedup
+    (catching same-stock-selection clones) is done in watchdog's Validator
+    stage where factor_returns are available.
     """
     if not known or len(ic_series_20d) < 10:
         return 0.0, "", 0
