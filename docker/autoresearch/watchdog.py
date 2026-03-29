@@ -423,7 +423,7 @@ def _compute_factor_level_pbo():
         # Phase AB Phase 3 + AB-4 Step 3: Independent hypothesis clustering
         # Factors with returns correlation > 0.50 are the same "direction"
         # AB-4: hierarchical clustering (captures transitive correlations)
-        corr_matrix = returns_matrix.corr()
+        corr_matrix = returns_matrix.corr().fillna(0.0)  # constant-return factors → uncorrelated
         from scipy.cluster.hierarchy import linkage, fcluster
         from scipy.spatial.distance import squareform
 

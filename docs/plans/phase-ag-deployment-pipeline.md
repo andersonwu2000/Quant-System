@@ -286,8 +286,8 @@ networks:
 | 條件 | 狀態 | 說明 |
 |------|:----:|------|
 | Phase 2 研究完成 | ⏳ | 累積 3+ 個 L5 通過因子 |
-| PBO 穩定 | ✅ | 0.0 (n_independent=26) |
-| Validator 17 checks 正常 | ✅ | watchdog 已跑通 |
+| AB-4 PBO 修正 | ✅ | Step 1-3 完成，factor_returns 從零累積 |
+| Validator 職責定義 | ✅ | watchdog 唯一驗證（不在 API 側重複跑） |
 | execute_pipeline 統一管線 | ✅ | Phase S 完成 |
 | 因子替換機制 | ✅ | Phase AF 完成 |
 
