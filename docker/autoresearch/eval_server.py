@@ -14,7 +14,7 @@ app = Flask(__name__)
 # evaluate.py 需要 5-60 秒，不需要 gunicorn
 
 # Bucket boundaries (AF-M3: centralized)
-ICIR_THRESHOLDS = (0.40, 0.20, 0.10)        # strong / moderate / weak / none
+ICIR_THRESHOLDS = (0.40, 0.30, 0.15)        # strong / moderate / weak / none (median |ICIR|, L2=0.30)
 SCORE_THRESHOLDS = (15, 5, 0)                # high / medium / low / none
 SATURATION_HIGH = 10
 SATURATION_MEDIUM = 5
