@@ -444,6 +444,60 @@ def _compute_forward_returns(
 
 
 # ---------------------------------------------------------------------------
+# Patton & Timmermann (2010) Monotonic Relation Test
+# ---------------------------------------------------------------------------
+
+def _mr_test(quintile_returns: np.ndarray, n_boot: int = 1000,
+             block_size: int = 10, seed: int = 42) -> dict:
+    """Monotonic Relation test (bootstrap-based).
+
+    Tests H0: quintile returns are NOT monotonically ordered.
+    Uses circular block bootstrap to preserve time-series dependence.
+
+    Args:
+        quintile_returns: (T, K) array, columns Q1 (top) to QK (bottom)
+        n_boot: bootstrap iterations
+        block_size: block length for block bootstrap
+        seed: random seed
+
+    Returns:
+        dict: up_pval (Q1>Q2>...>QK), down_pval (Q1<Q2<...<QK)
+    """
+    rng = np.random.default_rng(seed)
+    T, K = quintile_returns.shape
+
+    means = quintile_returns.mean(axis=0)
+    d_up = means[:-1] - means[1:]        # Q1-Q2, Q2-Q3, ...
+    d_down = means[1:] - means[:-1]
+    jt_up = float(d_up.min())
+    jt_down = float(d_down.min())
+
+    jt_up_boot = np.empty(n_boot)
+    jt_down_boot = np.empty(n_boot)
+
+    for b in range(n_boot):
+        indices = []
+        while len(indices) < T:
+            start = rng.integers(0, T)
+            for j in range(block_size):
+                indices.append((start + j) % T)
+        indices = indices[:T]
+
+        boot_means = quintile_returns[indices, :].mean(axis=0)
+        boot_d_up = boot_means[:-1] - boot_means[1:]
+        boot_d_down = boot_means[1:] - boot_means[:-1]
+
+        # Recenter under H0
+        jt_up_boot[b] = float((boot_d_up - d_up).min())
+        jt_down_boot[b] = float((boot_d_down - d_down).min())
+
+    return {
+        "up_pval": float((jt_up_boot >= jt_up).mean()),
+        "down_pval": float((jt_down_boot >= jt_down).mean()),
+    }
+
+
+# ---------------------------------------------------------------------------
 # IC / ICIR Computation
 # ---------------------------------------------------------------------------
 
@@ -690,7 +744,7 @@ def evaluate() -> dict:
     turnover_total = 0
     prev_top: set[str] | None = None
     q1_excess_list: list[float] = []  # L5b: top quintile excess vs universe mean
-    mono_list: list[float] = []  # L5c: quintile monotonicity
+    quintile_returns_matrix: list[list[float]] = []  # L5c: each row = [Q1_ret, Q2_ret, ..., Q5_ret]
 
     for as_of in sample_dates:
         masked_data = _mask_data(data, as_of)
@@ -738,11 +792,8 @@ def evaluate() -> dict:
                 q_means.append(float(np.mean([fwd_20d[s] for s in members])))
             ew_mean = float(np.mean([fwd_20d[s] for s in common_q]))
             q1_excess_list.append(q_means[0] - ew_mean)  # top quintile excess
-            if len(q_means) >= 3:
-                from scipy.stats import spearmanr as _spearmanr
-                _mono, _ = _spearmanr(list(range(5)), q_means[::-1])  # Q1=best should have highest return
-                if not np.isnan(_mono):
-                    mono_list.append(float(_mono))
+            if len(q_means) == 5:
+                quintile_returns_matrix.append(q_means)
 
     elapsed = time.time() - t0
 
@@ -1016,13 +1067,16 @@ def evaluate() -> dict:
             elapsed=time.time() - t0,
         )
 
-    # ── L5c: Monotonicity gate (quintile returns should be monotonic, pass/fail only) ──
-    avg_mono = float(np.mean(mono_list)) if mono_list else 0.0
-    l5c_pass = abs(avg_mono) > 0.5  # abs: reverse factors (low=good) also valid
-    print(f"  L5c monotonicity: {'PASS' if l5c_pass else 'FAIL'}")
+    # ── L5c: Monotonicity gate — Patton & Timmermann (2010) MR test (pass/fail only) ──
+    l5c_pass = False
+    if len(quintile_returns_matrix) >= 20:
+        qr = np.array(quintile_returns_matrix)  # (T, 5), Q1=top .. Q5=bottom
+        mr = _mr_test(qr, n_boot=1000, block_size=max(int(len(qr)**0.5), 5))
+        l5c_pass = mr["up_pval"] < 0.05 or mr["down_pval"] < 0.05
+    print(f"  L5c monotonicity (MR test): {'PASS' if l5c_pass else 'FAIL'}")
     if not l5c_pass:
         return _make_result(
-            level="L5", failure="L5c monotonicity: quintile returns not monotonic",
+            level="L5", failure="L5c monotonicity: Patton-Timmermann MR test p >= 0.05",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             fitness=fitness, positive_years=positive_years, total_years=total_years,
