@@ -507,11 +507,40 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     # U1: 使用統一執行路徑（和回測共用 execute_from_weights）
     from src.core.trading_pipeline import execute_from_weights
 
+    # Paper mode: use SimBroker (same as backtest) for realistic fills
+    # Live mode: use SinopacBroker (real orders)
+    if config.mode == "paper":
+        from src.execution.broker.simulated import SimBroker, SimConfig
+        _sim_config = SimConfig(
+            commission_rate=config.commission_rate,
+            tax_rate=config.tax_rate,
+            slippage_bps=config.default_slippage_bps,
+        )
+        _broker = SimBroker(_sim_config)
+        # Build current_bars from feed (SimBroker needs OHLCV for each symbol)
+        current_bars: dict[str, dict] = {}
+        for s in set(target_weights.keys()) | set(state.portfolio.positions.keys()):
+            try:
+                b = feed.get_bars(s, start=None, end=None)
+                if b is not None and len(b) >= 1:
+                    last = b.iloc[-1]
+                    current_bars[s] = {
+                        "open": float(last.get("open", last["close"])),
+                        "high": float(last.get("high", last["close"])),
+                        "low": float(last.get("low", last["close"])),
+                        "close": float(last["close"]),
+                        "volume": float(last.get("volume", 0)),
+                    }
+            except Exception:
+                pass
+    else:
+        _broker = state.execution_service
+        current_bars = None
+
     async with state.mutation_lock:
         # H-6: kill switch 可能在策略計算期間觸發，重新檢查
         if hasattr(state, 'kill_switch_fired') and state.kill_switch_fired:
             logger.warning("Kill switch fired during strategy calculation — aborting trade execution")
-            # Also pause all auto-deployed strategies to prevent misleading tracking
             try:
                 from src.alpha.auto.paper_deployer import PaperDeployer
                 deployer = PaperDeployer.get_instance()
@@ -527,7 +556,8 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             risk_engine=state.risk_engine,
             prices=prices,
             volumes=volumes if volumes else None,
-            broker=state.execution_service,
+            broker=_broker,
+            current_bars=current_bars,
             market_lot_sizes=config.market_lot_sizes,
             fractional_shares=config.fractional_shares,
         )
