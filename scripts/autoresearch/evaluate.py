@@ -230,6 +230,7 @@ def _load_all_data(universe: list[str]) -> dict:
     pb_ratios: dict[str, float] = {}
     roe_values: dict[str, float] = {}
     per_history: dict[str, pd.DataFrame] = {}  # daily PER/PBR/dividend_yield
+    market_cap: dict[str, float] = {}  # D3: latest market cap (close × shares_issued)
     margin_data: dict[str, pd.DataFrame] = {}  # daily margin purchase/short sale
 
     market_dir = PROJECT_ROOT / "data" / "market"
@@ -303,6 +304,21 @@ def _load_all_data(universe: list[str]) -> dict:
             except Exception:
                 pass
 
+        # D3: Market cap (close × shares_issued)
+        sh_path = fund_dir / f"{sym}_shareholding.parquet"
+        if not sh_path.exists():
+            sh_path = fund_dir / f"{bare}_shareholding.parquet"
+        if sh_path.exists() and sym in bars:
+            try:
+                sh_df = pd.read_parquet(sh_path)
+                if not sh_df.empty and "NumberOfSharesIssued" in sh_df.columns:
+                    shares = float(sh_df.sort_values("date").iloc[-1]["NumberOfSharesIssued"])
+                    last_close = float(bars[sym]["close"].iloc[-1])
+                    if shares > 0 and last_close > 0:
+                        market_cap[sym] = last_close * shares
+            except Exception:
+                pass
+
         # Financial metrics (PE, PB, ROE)
         fin_path = fund_dir / f"{sym}_financial_statement.parquet"
         if not fin_path.exists():
@@ -334,6 +350,7 @@ def _load_all_data(universe: list[str]) -> dict:
         "pe": pe_ratios,
         "pb": pb_ratios,
         "roe": roe_values,
+        "market_cap": market_cap,  # D3: {sym: float} latest market cap
     }
     return _data_cache
 
@@ -414,6 +431,7 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
         "pe": data["pe"],
         "pb": data["pb"],
         "roe": data["roe"],
+        "market_cap": data.get("market_cap", {}),
     }
     return masked
 
@@ -935,12 +953,25 @@ def evaluate() -> dict:
         correlated_icir = abs(factor_icirs.get(corr_with, 0.0))
         replacement_count = _get_replacement_count()
 
+        # H-003: check replacement chain depth (prevent indirect drift)
+        _chain_depth = 0
+        _check_name = corr_with
+        _ics_raw = _load_dedup_ic_series()
+        for _ in range(10):  # max 10 hops
+            _entry = _ics_raw.get(_check_name)
+            if isinstance(_entry, dict) and "replaced" in _entry:
+                _chain_depth += 1
+                _check_name = _entry["replaced"]
+            else:
+                break
+
         can_replace = (
             n_high_corr == 1  # one-to-one only
             and correlated_icir > 0  # can't replace unknown-ICIR factors
             and median_icir >= REPLACEMENT_ICIR_MULTIPLIER * correlated_icir
             and median_icir >= REPLACEMENT_MIN_ICIR
             and replacement_count < MAX_REPLACEMENTS_PER_CYCLE
+            and _chain_depth < 3  # H-003: max 3 hops in replacement chain
         )
 
         if can_replace:

@@ -244,6 +244,7 @@ def _process_pending():
                 return
 
             # Gate: Factor-Level PBO must be <= 0.70 (if available)
+            # M-002: validate PBO file integrity — stale/corrupt PBO should not auto-pass
             pbo_path = WATCHDOG_DATA / "factor_pbo.json"
             factor_pbo_ok = True
             factor_pbo_val = None
@@ -251,6 +252,9 @@ def _process_pending():
                 try:
                     import json as _j2
                     fpbo = _j2.loads(pbo_path.read_text(encoding="utf-8"))
+                    if not fpbo or not isinstance(fpbo, dict):
+                        log("PBO gate: factor_pbo.json empty or corrupt — skipping PBO check")
+                        fpbo = {}
                     factor_pbo_val = fpbo.get("factor_pbo")
                     if factor_pbo_val is not None and factor_pbo_val > 0.70:
                         factor_pbo_ok = False
