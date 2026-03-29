@@ -48,11 +48,22 @@ N=1 cluster（113 clone），CSCV 無意義。替代：Permutation ✅、DSR ⚠
 | 4 | evaluate.py construction → quintile/score-tilt | 高 |
 | 5 | watchdog PBO fallback → DSR | 中 |
 
-**Factor-specific：** Validator 差異排查（中）、Cross-Market（低）
+**Validator 排查結果（2026-03-30）：**
+
+`vs_ew_universe` 是不公平比較 — **策略扣成本，benchmark 不扣成本。**
+- EW benchmark 2017-2024: **+26.82%/年**（raw price return，0 成本）
+- 策略必須 `annual_return ≥ 26.82%` 才通過，但 `annual_return` 已扣手續費 + 稅 + 滑價
+- 月頻再平衡成本 ~6-8%/年 → 即使 gross = EW，net 也差 6-8% → 不通過
+- **修復**：benchmark 應同樣扣成本（月頻等權再平衡的成本），或策略用 gross return 比較
+
+**Factor-specific：** Cross-Market Validation（低）
 
 **已完成：** 新數據 ✅、returns dedup ✅、PBO 修復 ✅、診斷 ✅、score-tilt 測試 ✅
 
 **不做：** 不降門檻、不量化多樣化為分數、不限制方向。
+
+
+以上診斷和測試都是針對 revenue ratio 這一個因子。如果之後找到 PE momentum 或 margin 方向的因子，可能有完全不同的 Q5 表現、monotonicity、sector 特性。**應優先做對所有未來因子都有效的結構性改進，而非只 debug 當前因子的 Validator 結果。**
 
 ## 參考
 
