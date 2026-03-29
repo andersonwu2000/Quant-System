@@ -48,10 +48,10 @@ N=1 cluster（113 clone 是 dedup 修復前累積的）。**暫時狀態** — r
 | 1 | **Construction 改進**：top-15 EW → top-40 score-tilt | **最高** | 直接解決 vs_ew_universe（降 variance drag + 提高 TC） |
 | 2 | evaluate.py 加 L5b/L5c gate | 高 | 早期篩選，減少 Validator 浪費時間 |
 | 3 | evaluate.py 加 novelty indicator | 高 | 引導 agent 探索新方向 |
-| 4 | program.md 更新（新數據可用 + TC 概念） | 高 | 事實告知，不限制方向 |
+| 4 | program.md 更新（可用數據 + TC 概念） | 高 | 事實告知，不限制方向 |
 | 5 | watchdog PBO fallback → DSR | 中 | |
 
-**已完成：** 新數據 ✅、returns dedup ✅、PBO 修復 ✅、診斷 ✅、score-tilt 測試（獨立腳本）✅、vs_ew gross 修復 ✅
+**已完成：** 數據擴充 ✅、returns dedup ✅、PBO 修復 ✅、診斷 ✅、score-tilt 測試（獨立腳本）✅、vs_ew gross 修復 ✅
 
 **Validator 重跑結果（gross 修復後）**：仍 16/17。策略 gross ≈ 20-25%，EW gross = 26.82%。差距 ~5% 來自 top-15 的 variance drag + TC 損耗 — 確認是 construction 問題，非 bug。
 
