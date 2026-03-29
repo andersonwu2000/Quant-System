@@ -72,7 +72,7 @@ def main():
             log(f"ALERT: evaluate.py checksum changed! was={eval_checksum[:16]}, now={current_eval[:16]}")
 
         # 4. unexpected files
-        expected = {"factor.py", "results.tsv", "run.log", ".git", ".gitignore", "__pycache__", "reports"}
+        expected = {"factor.py", "results.tsv", "run.log", ".git", ".gitignore", "__pycache__", "reports", ".claude"}
         actual = {p.name for p in WORK_DIR.iterdir()} if WORK_DIR.exists() else set()
         unexpected = actual - expected
         if unexpected:
