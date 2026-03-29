@@ -183,12 +183,18 @@ class VectorizedPBOBacktest:
                 _mean = _np.mean(all_vals)
                 _std = _np.std(all_vals)
                 if _std > 1e-10:
-                    z = {s: max((values[s] - _mean) / _std, 0.01) for s in selected}
+                    z = {s: max((values[s] - _mean) / _std, 0.0) for s in selected}
                 else:
                     z = {s: 1.0 for s in selected}
                 z_total = sum(z.values())
-                for s in selected:
-                    weight_matrix.loc[date, s] = z[s] / z_total
+                if z_total > 0:
+                    for s in selected:
+                        weight_matrix.loc[date, s] = z[s] / z_total
+                else:
+                    # All z-scores clipped to 0 → fall back to equal weight
+                    w = 1.0 / len(selected)
+                    for s in selected:
+                        weight_matrix.loc[date, s] = w
             else:  # equal
                 w = 1.0 / len(selected)
                 for s in selected:

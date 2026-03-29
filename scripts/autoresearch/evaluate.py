@@ -732,7 +732,9 @@ def evaluate() -> dict:
             ranked_q = sorted(common_q, key=lambda s: values[s], reverse=True)
             q_means = []
             for qi in range(5):
-                members = ranked_q[qi * n_q:(qi + 1) * n_q]
+                start_idx = qi * n_q
+                end_idx = (qi + 1) * n_q if qi < 4 else len(ranked_q)  # Q5 takes all remaining
+                members = ranked_q[start_idx:end_idx]
                 q_means.append(float(np.mean([fwd_20d[s] for s in members])))
             ew_mean = float(np.mean([fwd_20d[s] for s in common_q]))
             q1_excess_list.append(q_means[0] - ew_mean)  # top quintile excess
