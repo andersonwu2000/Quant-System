@@ -121,16 +121,17 @@ async def trigger_job(
         except Exception as e:
             return JobTriggerResponse(job=job_name, status="failed", message=str(e))
 
-    elif job_name == "revenue_rebalance":
+    elif job_name in ("revenue_rebalance", "pipeline"):
         try:
             from src.core.config import get_config
-            from src.scheduler.jobs import monthly_revenue_rebalance
+            from src.scheduler.jobs import execute_pipeline
             config = get_config()
-            await monthly_revenue_rebalance(config)
-            return JobTriggerResponse(job=job_name, status="completed", message="Revenue rebalance executed")
+            result = await execute_pipeline(config)
+            return JobTriggerResponse(job="pipeline", status=result.status,
+                                     message=f"Pipeline executed: {result.n_trades} trades")
         except Exception as e:
-            return JobTriggerResponse(job=job_name, status="failed", message=str(e))
+            return JobTriggerResponse(job="pipeline", status="failed", message=str(e))
 
     else:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail=f"Unknown job: {job_name}. Available: revenue_update, revenue_rebalance")
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_name}. Available: revenue_update, pipeline")
