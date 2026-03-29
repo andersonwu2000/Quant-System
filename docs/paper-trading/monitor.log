@@ -1,0 +1,6 @@
+[2026-03-29 17:56:43] [INFO] Paper Trading Monitor started (interval=60s)
+[2026-03-29 17:56:43] [INFO] Log: D:\Finance\docs\paper-trading\monitor.log
+[2026-03-29 17:56:47] [INFO] NAV= 1,000,000 | Cash= 50.0% | Pos= 1 | API:DOWN
+[2026-03-29 17:56:47] [INFO]   FIRST CHECK — no previous snapshot
+[2026-03-29 17:56:47] [PIPELINE]   Pipeline: status=completed, trades=1, time=?
+[2026-03-29 17:56:47] [ALERT]   API server not responding at localhost:8000

@@ -600,6 +600,9 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     # P2: Write completion record
     _write_pipeline_record(run_id, status="completed", strategy=strategy.name(), n_trades=n_trades)
 
+    # P3: Write human-readable daily report
+    _write_daily_report(state.portfolio, strategy.name(), n_trades, target_weights)
+
     return PipelineResult(status="ok", n_trades=n_trades, strategy_name=strategy.name())
 
 
@@ -626,6 +629,82 @@ def _save_nav_snapshot(portfolio: "Portfolio") -> None:
         logger.info("NAV snapshot saved: %s (NAV=%s)", today, snap["nav"])
     except Exception:
         logger.debug("NAV snapshot save failed", exc_info=True)
+
+
+def _write_daily_report(
+    portfolio: "Portfolio",
+    strategy_name: str,
+    n_trades: int,
+    target_weights: dict[str, float],
+) -> None:
+    """P3: Write human-readable daily report to docs/paper-trading/daily/."""
+    report_dir = Path("docs/paper-trading/daily")
+    report_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    path = report_dir / f"{today}.md"
+
+    nav = float(portfolio.nav)
+    cash = float(portfolio.cash)
+    n_pos = len(portfolio.positions)
+    cash_pct = cash / nav * 100 if nav > 0 else 0
+
+    # NAV history for return calc
+    snap_dir = Path("data/paper_trading/snapshots")
+    prev_nav = nav  # fallback
+    snaps = sorted(snap_dir.glob("*.json")) if snap_dir.exists() else []
+    if len(snaps) >= 2:
+        try:
+            prev = json.loads(snaps[-2].read_text(encoding="utf-8"))
+            prev_nav = prev.get("nav", nav)
+        except Exception:
+            pass
+    daily_ret = (nav / prev_nav - 1) * 100 if prev_nav > 0 else 0
+
+    # First snapshot for cumulative return
+    first_nav = nav
+    if snaps:
+        try:
+            first = json.loads(snaps[0].read_text(encoding="utf-8"))
+            first_nav = first.get("nav", nav)
+        except Exception:
+            pass
+    cum_ret = (nav / first_nav - 1) * 100 if first_nav > 0 else 0
+
+    lines = [
+        f"# Paper Trading Daily Report — {today}",
+        "",
+        f"**Strategy**: {strategy_name}",
+        f"**Trades today**: {n_trades}",
+        "",
+        "## Portfolio",
+        "",
+        f"| Metric | Value |",
+        f"|--------|-------|",
+        f"| NAV | {nav:,.0f} |",
+        f"| Cash | {cash:,.0f} ({cash_pct:.1f}%) |",
+        f"| Positions | {n_pos} |",
+        f"| Daily Return | {daily_ret:+.2f}% |",
+        f"| Cumulative Return | {cum_ret:+.2f}% |",
+        "",
+        "## Holdings",
+        "",
+        "| Symbol | Qty | Price | Value | Weight |",
+        "|--------|----:|------:|------:|-------:|",
+    ]
+
+    for sym, pos in sorted(portfolio.positions.items(), key=lambda x: -float(x[1].market_price * x[1].quantity)):
+        mv = float(pos.quantity * pos.market_price)
+        w = mv / nav * 100 if nav > 0 else 0
+        target = target_weights.get(sym, 0) * 100
+        lines.append(f"| {sym} | {float(pos.quantity):.0f} | {float(pos.market_price):,.1f} | {mv:,.0f} | {w:.1f}% (target {target:.1f}%) |")
+
+    lines.extend(["", f"---", f"*Generated at {datetime.now().strftime('%H:%M:%S')}*"])
+
+    try:
+        path.write_text("\n".join(lines), encoding="utf-8")
+        logger.info("Daily report written: %s", path)
+    except Exception:
+        logger.debug("Daily report write failed", exc_info=True)
 
 
 def _reconcile(
