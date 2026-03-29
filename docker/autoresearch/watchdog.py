@@ -145,24 +145,78 @@ def _process_pending():
     if not markers:
         return
 
-    # Pre-filter: returns dedup BEFORE expensive Validator (~9 min saved per clone)
-    first_novel = None
-    skipped = 0
-    for marker_path in markers:
-        ret_ok, ret_corr, ret_with = _check_returns_dedup(marker_path.stem)
-        if not ret_ok:
-            log(f"Validator: SKIPPED {marker_path.name} (returns clone corr={ret_corr:.3f} with {ret_with})")
-            marker_path.unlink()
-            skipped += 1
+    # Pre-filter: returns dedup BEFORE expensive Validator
+    # Among clone groups (corr > 0.85), keep the one with highest ICIR, discard rest.
+    import json as _j_pre
+
+    novel: list[Path] = []
+    clone_groups: dict[str, list[tuple[Path, float]]] = {}  # ref_stem → [(path, icir)]
+
+    for mp in markers:
+        ret_ok, ret_corr, ret_with = _check_returns_dedup(mp.stem)
+        if ret_ok:
+            novel.append(mp)
         else:
-            first_novel = marker_path
-            break
-    if skipped > 0:
-        log(f"Validator: skipped {skipped} clone(s) via returns dedup, {len(markers) - skipped} remaining")
-    if first_novel is None:
+            # Read ICIR from marker to pick best clone
+            try:
+                m = _j_pre.loads(mp.read_text(encoding="utf-8"))
+                icir_vals = m.get("results", {}).get("icir_by_horizon", {})
+                median_icir = float(sorted(abs(v) for v in icir_vals.values())[len(icir_vals)//2]) if icir_vals else 0
+            except Exception:
+                median_icir = 0
+            clone_groups.setdefault(ret_with, []).append((mp, median_icir))
+
+    # For each clone group: keep best ICIR, delete rest
+    skipped = 0
+    promoted = 0
+    for ref_stem, clones in clone_groups.items():
+        clones.sort(key=lambda x: -x[1])  # best ICIR first
+        best_path, best_icir = clones[0]
+
+        # Check if the best clone is better than the existing reference
+        ref_path = WATCHDOG_DATA / "factor_returns" / f"{ref_stem}.parquet"
+        # Read ref's ICIR from metadata if available
+        meta_path = WATCHDOG_DATA / "factor_returns" / "metadata.json"
+        ref_icir = 0.0
+        if meta_path.exists():
+            try:
+                meta = _j_pre.loads(meta_path.read_text(encoding="utf-8"))
+                ref_icir = abs(meta.get(ref_stem, {}).get("best_icir", 0))
+            except Exception:
+                pass
+
+        if best_icir > ref_icir and best_icir > 0:
+            # Best clone has higher ICIR than reference — keep it as novel
+            log(f"Validator: PROMOTED {best_path.name} (ICIR {best_icir:.3f} > ref {ref_icir:.3f})")
+            novel.append(best_path)
+            promoted += 1
+            # Delete the rest
+            for cp, _ in clones[1:]:
+                cp.unlink()
+                skipped += 1
+        else:
+            # Reference is already the best — skip all clones
+            for cp, _ in clones:
+                cp.unlink()
+                skipped += 1
+
+    if skipped > 0 or promoted > 0:
+        log(f"Validator: dedup {skipped} clone(s) removed, {promoted} promoted, {len(novel)} novel to validate")
+
+    if not novel:
         return
 
-    marker_path = first_novel
+    # Sort novel by ICIR descending — validate best first
+    def _get_icir(mp: Path) -> float:
+        try:
+            m = _j_pre.loads(mp.read_text(encoding="utf-8"))
+            vals = m.get("results", {}).get("icir_by_horizon", {})
+            return float(sorted(abs(v) for v in vals.values())[len(vals)//2]) if vals else 0
+        except Exception:
+            return 0
+
+    novel.sort(key=_get_icir, reverse=True)
+    marker_path = novel[0]
     try:
         marker = _json.loads(marker_path.read_text(encoding="utf-8"))
         results = marker["results"]
