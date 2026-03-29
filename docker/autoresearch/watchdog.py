@@ -145,8 +145,24 @@ def _process_pending():
     if not markers:
         return
 
-    # Process one at a time — validate all pending markers (results.tsv may use bucketed scores)
-    marker_path = markers[0]
+    # Pre-filter: returns dedup BEFORE expensive Validator (~9 min saved per clone)
+    first_novel = None
+    skipped = 0
+    for marker_path in markers:
+        ret_ok, ret_corr, ret_with = _check_returns_dedup(marker_path.stem)
+        if not ret_ok:
+            log(f"Validator: SKIPPED {marker_path.name} (returns clone corr={ret_corr:.3f} with {ret_with})")
+            marker_path.unlink()
+            skipped += 1
+        else:
+            first_novel = marker_path
+            break
+    if skipped > 0:
+        log(f"Validator: skipped {skipped} clone(s) via returns dedup, {len(markers) - skipped} remaining")
+    if first_novel is None:
+        return
+
+    marker_path = first_novel
     try:
         marker = _json.loads(marker_path.read_text(encoding="utf-8"))
         results = marker["results"]
@@ -157,16 +173,9 @@ def _process_pending():
         validator_report = _run_background_validator(results, factor_code)
 
         if validator_report and validator_report.get("deployed"):
-            # Gate 1: Portfolio returns dedup (catches same-stock-selection clones)
-            ret_dedup_ok, ret_dedup_corr, ret_dedup_with = _check_returns_dedup(marker_path.stem)
-            if not ret_dedup_ok:
-                log(f"Validator: BLOCKED by returns dedup (corr={ret_dedup_corr:.3f} with {ret_dedup_with})")
-                validator_report["deployed"] = False
-                # Still move to processed (don't reprocess)
-                marker_path.unlink()
-                return
+            # Returns dedup already passed in pre-filter above
 
-            # Gate 2: Factor-Level PBO must be <= 0.70 (if available)
+            # Gate: Factor-Level PBO must be <= 0.70 (if available)
             pbo_path = WATCHDOG_DATA / "factor_pbo.json"
             factor_pbo_ok = True
             factor_pbo_val = None
