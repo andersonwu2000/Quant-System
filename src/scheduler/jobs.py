@@ -208,32 +208,73 @@ def _save_selection_log_legacy(weights: dict[str, float]) -> None:
     logger.info("Selection log saved: %s", path)
 
 
-def _save_trade_log(trades: list[Any], strategy_name: str) -> None:
-    """記錄每次 rebalance 的交易結果（含 run_id）。"""
+def _save_trade_log(
+    trades: list[Any],
+    strategy_name: str,
+    signal_prices: dict[str, Any] | None = None,
+) -> None:
+    """記錄每次 rebalance 的交易結果（含 run_id + 滑價追蹤）。
+
+    signal_prices: 策略計算時的價格（最新收盤價）。
+    fill_price vs signal_price 的差距 = implementation shortfall。
+    """
     out_dir = Path("data/paper_trading/trades")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     today = datetime.now().strftime("%Y-%m-%d_%H%M")
+    trade_records = []
+    total_shortfall_bps = 0.0
+    n_with_prices = 0
+
+    for t in trades:
+        sym = str(getattr(t, "symbol", getattr(getattr(t, "instrument", None), "symbol", "?")))
+        fill_price = float(getattr(t, "price", 0))
+        sig_price = float(signal_prices.get(sym, 0)) if signal_prices else 0
+        side = str(getattr(t, "side", ""))
+        commission = float(getattr(t, "commission", 0))
+        qty = float(getattr(t, "quantity", 0))
+
+        # Implementation shortfall: (fill - signal) / signal × 10000 bps
+        shortfall_bps = 0.0
+        if sig_price > 0 and fill_price > 0:
+            if "BUY" in side.upper():
+                shortfall_bps = (fill_price - sig_price) / sig_price * 10000
+            else:
+                shortfall_bps = (sig_price - fill_price) / sig_price * 10000
+            total_shortfall_bps += shortfall_bps
+            n_with_prices += 1
+
+        trade_records.append({
+            "symbol": sym,
+            "side": side,
+            "quantity": str(getattr(t, "quantity", "")),
+            "fill_price": f"{fill_price:.4f}",
+            "signal_price": f"{sig_price:.4f}" if sig_price > 0 else "",
+            "shortfall_bps": round(shortfall_bps, 2),
+            "commission": f"{commission:.2f}",
+            "notional": f"{fill_price * qty:.0f}" if fill_price > 0 else "",
+        })
+
+    avg_shortfall = total_shortfall_bps / n_with_prices if n_with_prices > 0 else 0.0
+    total_commission = sum(float(r["commission"]) for r in trade_records)
+
     log = {
         "date": today,
-        "run_id": _today_run_id(),  # P3: 關聯 selection → trade → reconciliation
+        "run_id": _today_run_id(),
         "strategy": strategy_name,
         "n_trades": len(trades),
-        "trades": [
-            {
-                "symbol": str(getattr(t, "symbol", getattr(getattr(t, "instrument", None), "symbol", "?"))),
-                "side": str(getattr(t, "side", "")),
-                "quantity": str(getattr(t, "quantity", "")),
-                "price": str(getattr(t, "price", "")),
-            }
-            for t in trades
-        ],
+        "avg_shortfall_bps": round(avg_shortfall, 2),
+        "total_commission": round(total_commission, 2),
+        "trades": trade_records,
     }
 
     path = out_dir / f"{today}.json"
     with open(path, "w") as f:
         json.dump(log, f, indent=2, ensure_ascii=False)
-    logger.info("Trade log saved: %s (%d trades)", path, len(trades))
+    logger.info(
+        "Trade log saved: %s (%d trades, avg shortfall=%.1f bps, commission=%.0f)",
+        path, len(trades), avg_shortfall, total_commission,
+    )
 
 
 # ── Phase S: 統一交易管線 ─────────────────────────────────────
@@ -476,7 +517,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             fractional_shares=config.fractional_shares,
         )
         if trades:
-            _save_trade_log(trades, strategy.name())
+            _save_trade_log(trades, strategy.name(), signal_prices=prices)
 
     n_trades = len(trades) if trades else 0
     n_targets = len(target_weights)
