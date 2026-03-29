@@ -229,6 +229,8 @@ def _load_all_data(universe: list[str]) -> dict:
     pe_ratios: dict[str, float] = {}
     pb_ratios: dict[str, float] = {}
     roe_values: dict[str, float] = {}
+    per_history: dict[str, pd.DataFrame] = {}  # daily PER/PBR/dividend_yield
+    margin_data: dict[str, pd.DataFrame] = {}  # daily margin purchase/short sale
 
     market_dir = PROJECT_ROOT / "data" / "market"
     fund_dir = PROJECT_ROOT / "data" / "fundamental"
@@ -275,6 +277,32 @@ def _load_all_data(universe: list[str]) -> dict:
                 df["date"] = pd.to_datetime(df["date"])
                 institutional[sym] = df.sort_values("date")
 
+        # PER history (daily PER/PBR/dividend_yield)
+        per_path = fund_dir / f"{sym}_per.parquet"
+        if not per_path.exists():
+            per_path = fund_dir / f"{bare}_per.parquet"
+        if per_path.exists():
+            try:
+                df = pd.read_parquet(per_path)
+                if not df.empty and "PER" in df.columns:
+                    df["date"] = pd.to_datetime(df["date"])
+                    per_history[sym] = df.sort_values("date")
+            except Exception:
+                pass
+
+        # Margin data (daily margin purchase/short sale balances)
+        margin_path = fund_dir / f"{sym}_margin.parquet"
+        if not margin_path.exists():
+            margin_path = fund_dir / f"{bare}_margin.parquet"
+        if margin_path.exists():
+            try:
+                df = pd.read_parquet(margin_path)
+                if not df.empty:
+                    df["date"] = pd.to_datetime(df["date"])
+                    margin_data[sym] = df.sort_values("date")
+            except Exception:
+                pass
+
         # Financial metrics (PE, PB, ROE)
         fin_path = fund_dir / f"{sym}_financial_statement.parquet"
         if not fin_path.exists():
@@ -294,12 +322,15 @@ def _load_all_data(universe: list[str]) -> dict:
                 pass
 
     print(f"  Loaded: {len(bars)} bars, {len(revenue)} revenue, "
-          f"{len(institutional)} institutional, {len(pe_ratios)} PE ratios")
+          f"{len(institutional)} institutional, {len(per_history)} PER history, "
+          f"{len(margin_data)} margin, {len(pe_ratios)} PE ratios")
 
     _data_cache = {
         "bars": bars,
         "revenue": revenue,
         "institutional": institutional,
+        "per_history": per_history,  # data["per_history"][sym] → DataFrame[date, PER, PBR, dividend_yield]
+        "margin": margin_data,       # data["margin"][sym] → DataFrame[date, MarginPurchaseTodayBalance, ShortSaleTodayBalance, ...]
         "pe": pe_ratios,
         "pb": pb_ratios,
         "roe": roe_values,
@@ -354,12 +385,11 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
     - bars: truncated to as_of (no future prices)
     - revenue: truncated to as_of - 40 days (publication delay)
     - institutional: truncated to as_of
-    - pe/pb/roe: passed as-is (point-in-time snapshots)
+    - per_history: truncated to as_of (daily PER/PBR)
+    - margin: truncated to as_of (daily margin balances)
+    - pe/pb/roe: passed as-is (point-in-time snapshots, backward compat)
     """
     cutoff = as_of - pd.DateOffset(days=REVENUE_DELAY_DAYS)
-    # Use slicing without .copy() for bars (largest data) — safe because
-    # factor.py receives a slice view and any mutation raises SettingWithCopyWarning.
-    # Revenue/institutional keep .copy() as they use boolean indexing (always copies).
     masked = {
         "bars": {
             sym: df.loc[:as_of]
@@ -372,6 +402,14 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
         "institutional": {
             sym: df[df["date"] <= as_of]
             for sym, df in data["institutional"].items()
+        },
+        "per_history": {
+            sym: df[df["date"] <= as_of]
+            for sym, df in data.get("per_history", {}).items()
+        },
+        "margin": {
+            sym: df[df["date"] <= as_of]
+            for sym, df in data.get("margin", {}).items()
         },
         "pe": data["pe"],
         "pb": data["pb"],
