@@ -267,17 +267,48 @@ fitness = sqrt(returns_proxy / effective_turnover) × median_icir
 
 問題：agent 改的是 factor.py（信號），不是 portfolio construction。告訴它「要營利」但不給營利的反饋 = 空話。
 
-解法分兩層：
-1. **代碼層（強制）**：evaluate.py 加 L5b excess_return gate → top quintile 月報酬必須 > universe 月報酬。Agent 看到 L5b fail → 知道「IC 高但選股不賺錢」→ 自然調整方向。**不是文字引導，是反饋信號。**
-2. **文字層（引導）**：program.md 告訴 agent「L5 通過不代表策略能賺錢，因為 top-N 等權的 Transfer Coefficient 很低。嘗試產生更 concentrated 的信號 — 大的正值和大的負值同時存在的因子比全部微正的因子更有機會盈利。」
+解法：**evaluate.py 加 L5b excess_return gate** → top quintile 月報酬必須 > universe 月報酬。Agent 看到 L5b fail → 知道「IC 高但選股不賺錢」→ 自然調整方向。**不是文字引導，是反饋信號。**
 
 **目標 B：找多樣化的因子**
 
-問題：如果只有 revenue 能營利，強推多樣化是浪費。但目前 revenue clone 也不能營利（vs_ew_universe 全輸），所以探索新方向的機會成本為零。
+多樣化和營利不矛盾 — 即使 revenue 是最強方向，仍應尋找其他方向的營利可能。Agent 本來就應該在各領域深入探索。
 
-解法分兩層：
-1. **代碼層（強制）**：returns dedup（已做）擋住 clone → agent 被迫探索新方向。不是「鼓勵多樣化」，是「禁止重複」。
-2. **文字層（引導）**：program.md 明確告訴 agent「revenue ratio 方向已飽和（110 個 L5，全部被 returns dedup 攔截）。新數據 per_history 和 margin 可用。嘗試 PE momentum、margin sentiment 等全新維度。」
+解法：
+1. **代碼層（強制）**：returns dedup（已做）擋住 clone。excess_return gate 讓 revenue clone 看到 fail → 自然嘗試新方向。
+2. **反饋信號**：evaluate.py 輸出加入 **novelty indicator**（bucketed correlation with existing factors）→ agent 看到哪些方向是真正新的。
+
+### Novelty indicator 設計
+
+Agent 目前只在 L3 **失敗時**看到相關性。通過時不知道自己有多新穎。加 bucketed novelty：
+
+| 標籤 | max corr with existing | Agent 學到什麼 |
+|------|:----------------------:|---------------|
+| `novelty: high` | < 0.20 | 全新方向，值得深挖 |
+| `novelty: moderate` | 0.20 - 0.40 | 部分新穎 |
+| `novelty: low` | 0.40 - 0.50 | 接近 clone 邊界 |
+| _(L3 fail)_ | > 0.50 | 已有類似因子 |
+
+好處：
+- Agent 看到 `novelty: high` → 自然往新方向深入（正向回饋）
+- 不洩漏精確 correlation 或因子庫組成
+- 和現有 bucketed ICIR（none/weak/moderate/strong）一致
+- 不限制任何方向 — revenue 變體如果通過 returns dedup 且 novelty: high 仍能探索
+
+風險：
+- Agent 為了 novelty: high 產隨機噪音？→ L1/L2 擋（需要 IC 信號）
+- Agent game novelty metric？→ IC series corr < 0.20 但 returns corr > 0.85 仍被 returns dedup 擋
+
+### 關於 program.md 的原則
+
+**不在 program.md 說 revenue 飽和。** 理由：
+1. Revenue 方向仍有潛力 — revenue × momentum 交互項、sector-neutral revenue 等可能產出真正不同的選股
+2. 如果有 excess_return gate，agent 自然會看到「純 revenue ratio 都 fail L5b」→ 不需要文字限制
+3. Returns dedup 只擋「選股相同的 clone」，不擋「同樣用 revenue 但選出不同股票的新做法」
+4. 文字限制可能阻止 agent 發現 revenue 類中 TC 更高的信號結構
+
+**program.md 只做兩件事：**
+1. 告訴 agent 新數據可用（per_history, margin）
+2. 提供 Transfer Coefficient 的概念（「concentrated signal > diffuse signal」）— 不限制方向，只引導信號結構
 
 ### 潛在風險
 
@@ -285,32 +316,31 @@ fitness = sqrt(returns_proxy / effective_turnover) × median_icir
 |------|------|------|
 | Agent 為了多樣化產低品質因子 | L1/L2 擋掉，不進 factor_returns | ✅ 已有 |
 | 低品質因子僥倖到 L3 | 貢獻 PBO 新 cluster — **這是好事** | ✅ L3 門檻已合理 |
-| Agent game diversity（造假不相關） | IC series corr < 0.50 但 returns corr > 0.85 | ✅ returns dedup 擋 |
-| 目標 A 和 B 矛盾 | 只有 revenue 營利但被要求多樣化 | ⚠️ 目前兩者都不營利，無矛盾 |
-| Goodhart 定律 | agent 優化 excess_return gate 而非真 alpha | ⚠️ 可能，但比優化 IC 更接近真目標 |
-| excess_return gate 太嚴 | 合理因子被擋 | ⚠️ 門檻設 > 0 即可，不要求大幅超越 |
+| Agent game novelty（造假低相關） | IC series corr < 0.20 但 returns corr > 0.85 | ✅ returns dedup 擋 |
+| Goodhart 定律（優化 excess_return gate） | 可能，但比優化 IC 更接近真目標 | ⚠️ 可接受 |
+| excess_return gate 太嚴 | 合理因子被擋 | ⚠️ 門檻設 > 0 即可 |
 
 ### 實作順序
 
-1. **evaluate.py 加 L5b excess_return gate**（代碼強制，給 agent 營利反饋）
-2. **program.md 更新**（文字引導，revenue 飽和 + 新數據 + 信號 concentration 建議）
-3. **觀察 1-2 個 research cycle**（看 agent 是否自然轉向）
-4. **如果仍然只產 revenue** → 考慮 L3 加 portfolio returns dedup（更早擋住）
+1. **evaluate.py 加 L5b excess_return gate**（營利的反饋信號）
+2. **evaluate.py 輸出加 novelty indicator**（多樣化的反饋信號）
+3. **program.md 更新**（新數據 + TC 概念，不限制方向）
+4. **觀察 1-2 個 research cycle**
 
 ### 不做的事
 
+- **不在 program.md 說 revenue 飽和**（阻止 agent 繼續尋找 revenue 類更高盈利可能）
 - 不把「多樣化」直接量化為分數加入 fitness（會被 game）
 - 不強制「每 N 個實驗必須換方向」（限制創造力）
 - 不降低 L2 ICIR 門檻來讓弱因子通過（降低品質不是多樣化）
 
 **原則：**
 
-- 代碼層面的強制（gate）比文字引導更可靠
-- 但代碼層面的強制必須基於合理的評估指標（excess_return 是合理的）
-- 文字引導提供方向但不是強制
-- 不為了 PBO 而造假因子 — 多樣化是自然探索的結果，不是目標
-- 承認 revenue ratio 是目前唯一有信號的方向，不假裝分散
-- paper trading 是終極驗證
+- 多樣化和營利不矛盾 — 即使 revenue 是最強方向，仍應探索其他方向
+- 代碼層面的反饋信號（excess_return gate + novelty indicator）比文字引導更可靠
+- 不限制任何方向 — 讓 gate 和反饋信號自然引導 agent 行為
+- 不為了 PBO 而造假因子 — 多樣化是自然探索的結果
+- Paper trading 是終極驗證
 
 ## 參考
 
