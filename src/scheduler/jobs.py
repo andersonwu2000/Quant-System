@@ -370,6 +370,13 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
 
     # 1. 數據更新（失敗則中止，不用舊數據交易）
     if config.pipeline_data_update:
+        # 1a. 價格數據增量更新（所有策略都需要）
+        logger.info("Updating price data...")
+        price_ok = await _async_price_update()
+        if not price_ok:
+            logger.warning("Price data update failed — continuing with cached data")
+
+        # 1b. 營收數據更新（營收策略需要）
         revenue_strategies = {"revenue_momentum", "revenue_momentum_hedged", "trust_follow"}
         if strategy.name() in revenue_strategies:
             logger.info("Updating revenue data for %s...", strategy.name())
@@ -626,6 +633,70 @@ def _record_backtest_comparison(
         logger.info("Backtest comparison record: %s", path)
     except Exception:
         logger.warning("Failed to save backtest comparison", exc_info=True)
+
+
+async def _async_price_update() -> bool:
+    """增量更新價格數據：讀現有 parquet 最後日期，下載之後的數據，append。"""
+    import asyncio
+
+    def _do_price_update() -> bool:
+        import pandas as pd
+        import yfinance as yf
+        market_dir = Path("data/market")
+        if not market_dir.exists():
+            return False
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        updated = 0
+        failed = 0
+
+        for parquet_path in sorted(market_dir.glob("*_1d.parquet")):
+            try:
+                existing = pd.read_parquet(parquet_path)
+                if existing.empty:
+                    continue
+
+                last_date = existing.index.max()
+                # If already up to date (within 3 days), skip
+                days_behind = (pd.Timestamp(today) - pd.Timestamp(last_date)).days
+                if days_behind <= 1:
+                    continue
+
+                sym = parquet_path.stem.replace("_1d", "")
+                start = (pd.Timestamp(last_date) + pd.DateOffset(days=1)).strftime("%Y-%m-%d")
+                df = yf.Ticker(sym).history(start=start, end=today, auto_adjust=True)
+
+                if df is None or df.empty:
+                    continue
+
+                df.columns = [c.lower() for c in df.columns]
+                if df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
+                cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+                df = df[cols]
+                df = df[(df[["open", "high", "low", "close"]] > 0).all(axis=1)]
+
+                if df.empty:
+                    continue
+
+                combined = pd.concat([existing, df])
+                combined = combined[~combined.index.duplicated(keep="last")]
+                combined = combined.sort_index()
+                combined.to_parquet(parquet_path)
+                updated += 1
+
+            except Exception:
+                failed += 1
+                continue
+
+        logger.info("Price update: %d updated, %d failed", updated, failed)
+        return True
+
+    try:
+        return await asyncio.to_thread(_do_price_update)
+    except Exception:
+        logger.exception("Price update failed")
+        return False
 
 
 async def _async_revenue_update() -> bool:
