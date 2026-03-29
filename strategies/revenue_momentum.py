@@ -33,15 +33,18 @@ logger = logging.getLogger(__name__)
 # ── 營收預載快取 ───────────────────────────────────────────────────
 
 _revenue_cache: dict[str, pd.DataFrame] | None = None
+_revenue_cache_time: float = 0.0
+_REVENUE_CACHE_TTL = 3600 * 6  # 6 hours — refresh during long-running paper trading
 
 
 def _preload_revenue(fund_dir: str = "data/fundamental") -> dict[str, pd.DataFrame]:
-    """一次性預載所有營收 parquet 到記憶體。
+    """預載所有營收 parquet 到記憶體。6 小時 TTL 自動刷新。
 
     回傳 dict: symbol → DataFrame[date, revenue, yoy_growth]
     """
-    global _revenue_cache
-    if _revenue_cache is not None:
+    import time as _time
+    global _revenue_cache, _revenue_cache_time
+    if _revenue_cache is not None and (_time.time() - _revenue_cache_time) < _REVENUE_CACHE_TTL:
         return _revenue_cache
 
     cache: dict[str, pd.DataFrame] = {}
@@ -72,6 +75,7 @@ def _preload_revenue(fund_dir: str = "data/fundamental") -> dict[str, pd.DataFra
 
     logger.info("Preloaded revenue data: %d symbols", len(cache))
     _revenue_cache = cache
+    _revenue_cache_time = _time.time()
     return cache
 
 
@@ -132,7 +136,7 @@ class RevenueMomentumStrategy(Strategy):
         min_volume_lots: int = 300,
         max_weight: float = 0.10,
         weight_method: str = "signal",  # "equal" | "signal" | "risk_parity"
-        enable_regime_hedge: bool = True,  # 空頭偵測 + 倉位調整
+        enable_regime_hedge: bool = False,  # disabled: 0050 not in feed → always "bull" (dead code)
         bear_position_scale: float = 0.30,  # 空頭時持倉比例
         sideways_position_scale: float = 0.60,  # 盤整時持倉比例
         market_proxy: str = "0050.TW",  # 市場代理標的

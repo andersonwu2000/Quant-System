@@ -41,7 +41,7 @@ class TrustFollowStrategy(Strategy):
         trust_days: int = 10,
         min_volume_lots: int = 300,
         position_limit: float = 0.15,
-        enable_regime_hedge: bool = True,
+        enable_regime_hedge: bool = False,  # disabled: 0050 not in feed → dead code
         bear_position_scale: float = 0.30,
         market_proxy: str = "0050.TW",
     ):

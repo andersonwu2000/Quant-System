@@ -154,25 +154,12 @@ def build_from_research_factor(
             candidates.sort(key=lambda x: x[1], reverse=True)
             selected = candidates[:top_n]
 
-            # Phase AA 4.1: inverse-vol weighting
-            # rank(signal) / volatility — 高信號低波動股拿更多權重
-            import numpy as _np
+            # Equal-weight (DeMiguel 2009: 15 stocks, equal-weight beats estimated weights)
+            # Phase AA 4.1 tested inverse-vol → PBO worsened 0.702→0.910. Reverted.
             n_sel = len(selected)
             raw_weights: dict[str, float] = {}
-            for rank_i, (sym, val) in enumerate(selected):
-                # rank: 最高信號 = n_sel, 最低 = 1
-                rank_score = n_sel - rank_i
-                # 20 天年化波動率，下限 5%
-                try:
-                    b = _all_bars.get(sym) if _needs_data else ctx.bars(sym, lookback=30)
-                    if b is not None and len(b) >= 10:
-                        daily_rets = b["close"].pct_change().dropna().values[-20:]
-                        vol = max(float(_np.std(daily_rets) * _np.sqrt(252)), 0.05)
-                    else:
-                        vol = 0.20  # fallback
-                except Exception:
-                    vol = 0.20
-                raw_weights[sym] = rank_score / vol
+            for sym, val in selected:
+                raw_weights[sym] = 1.0
 
             # normalize to sum = 0.95, cap at max_weight
             total_raw = sum(raw_weights.values())
