@@ -119,15 +119,18 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 | **L3a** | dedup corr ≤ 0.50 | Core 200 | IC-series 與已知因子相關性 | 因子是 clone |
 | **L3b** | positive_years ≥ 4/6.5 | Core 200 | IS 年度穩定性 | regime 依賴 |
 | **L4** | fitness ≥ 3.0 | Core 200 | WorldQuant BRAIN 公式 | 綜合不足 |
-| **L5** | OOS IC 方向一致 | Core 200 | IS 和 OOS 的 IC 同號 | 過擬合 IS |
-| **L5** | OOS ICIR 衰退 ≤ 60% | Core 200 | OOS \|ICIR\| ≥ IS \|ICIR\| × 0.40 | 過擬合 IS |
-| **L5** | OOS 正向月 ≥ 50% | Core 200 | 至少半數 OOS 月份 IC > 0 | 不穩定 |
+| **L5a** | OOS IC 方向一致 | Core 200 | IS 和 OOS 的 IC 同號 | 過擬合 IS |
+| **L5a** | OOS ICIR 衰退 ≤ 60% | Core 200 | OOS \|ICIR\| ≥ IS \|ICIR\| × 0.40 | 過擬合 IS |
+| **L5a** | OOS 正向月 ≥ 50% | Core 200 | 至少半數 OOS 月份 IC > 0 | 不穩定 |
+| **L5b** | Top quintile > universe | Core 200 | IS top quintile 月報酬 > universe 平均（pass/fail） | IC 高但 portfolio 不賺錢 |
+| **L5c** | 分位單調性 | Core 200 | abs(Spearman(quintile_ranks, quintile_returns)) > 0.5（pass/fail） | 信號只在中間有效 |
 | **Stage 2** | large ICIR(20d)（參考） | Large 865+ | 全市場驗證，不硬擋，記錄於報告 | — |
 
 **防過擬合設計：**
 - L2 使用 median |ICIR| across 4 horizons（Method D），不取最佳也不固定單一 horizon，消除 selection bias 且不歧視長期因子
-- L5 只向 agent 回報 pass/fail，不洩漏 OOS 具體數值（P-01）
+- L5a/L5b/L5c 只向 agent 回報 pass/fail，不洩漏具體數值（P-01）
 - eval_server 回傳 bucketed ICIR（none/weak/moderate/strong），agent 無法做梯度式優化
+- Novelty indicator 回傳 bucketed corr（high/moderate/low），不洩漏精確 correlation
 - Thresholdout 加 Laplace 噪音降低每次 L5 查詢的資訊洩漏
 - 最終驗證靠 StrategyValidator + paper trading
 
@@ -148,7 +151,7 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 |:--:|------|------|:----:|:----:|
 | 1 | evaluate.py L3 | IC series correlation | > 0.50 擋 | 即時 |
 | 2 | watchdog pre-filter | Portfolio returns correlation | > 0.85 擋 | 秒級 |
-| 3 | watchdog Validator | 17 項策略級驗證（含 vs_ew_universe） | 全通過才部署 | ~9 min |
+| 3 | watchdog Validator | 17 項策略級驗證（vs_ew_universe 改為 walk-forward） | 全通過才部署 | ~9 min |
 | 4 | watchdog PBO | Factor-Level PBO（Bailey CSCV） | > 0.70 擋 | 分鐘級 |
 
 **Clone 群處理（Layer 2 細節）：**

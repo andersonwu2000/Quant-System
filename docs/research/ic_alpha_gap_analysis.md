@@ -40,7 +40,24 @@ N=1 cluster（暫時狀態，dedup 修復前累積的 clone）。已有 3 層過
 | 2 | vs_ew_universe 改 walk-forward（≥50% windows positive） | ✅ validator.py |
 | 3 | L5b profitability + L5c monotonicity gate | ✅ evaluate.py |
 | 4 | Novelty indicator（bucketed corr） | ✅ evaluate.py output |
-| 5 | program.md 更新（評估維度 + 可用數據） | ⏳ 等確認 gate 運作後 |
+| 5 | program.md 更新（評估維度 + 可用數據） | ✅ |
+
+## Code Review（2026-03-30）
+
+44 tests passed。沒有 CRITICAL bug。2 個 ⚠️ 待改善：
+
+| 項目 | 判定 | 說明 |
+|------|:----:|------|
+| L5b profitability | ✅ | top quintile excess vs universe mean，pass/fail only |
+| L5c monotonicity | ⚠️ | `spearmanr(range(5), q_means[::-1])` — 反向因子（低值=好）會 fail。建議 `abs(_mono) > 0.5`。目前不影響（L2 的 abs(ICIR) 已過濾反向因子） |
+| Novelty indicator | ✅ | bucketed by max_corr：high < 0.20 / moderate < 0.40 / low |
+| Construction score-tilt | ✅ | z-score 在 top-40 內算（非全 universe）。TC 略低於理論 0.45，但遠好於 equal-weight 0.10 |
+| vs_ew_universe WF | ⚠️ | 用全期間平均年化成本分配到每個 WF window。某年交易多/少時不精確。MEDIUM — 偏差方向不確定 |
+| `_get_ew_annual` | ✅ | 停牌股 edge case 可接受 |
+
+**後續改善（不阻塞部署）：**
+- L5c 加 `abs()` 處理反向因子
+- WF benchmark 改用 per-window 成本（需從每年的 trades 提取）
 
 **不做：** 不降門檻、不改為 soft fail、不量化多樣化為分數、不限制方向。
 
