@@ -59,6 +59,7 @@ FORWARD_HORIZONS = [5, 10, 20, 60]  # Forward return horizons (trading days)
 # L1-L4 gate thresholds (from legacy factor_evaluator.py)
 MIN_IC_L1 = 0.02              # L1: minimum |IC_20d| — fast reject
 MIN_ICIR_L2 = 0.50            # L2: minimum ICIR_20d (industry standard "good" threshold)
+MAX_ICIR_L2 = 1.00            # L2: maximum ICIR_20d — above this is suspicious (data issue or overfit)
 MAX_CORRELATION = 0.50         # L3: max IC-series correlation with known factors
 MIN_POSITIVE_YEARS = 4         # L3: minimum years with positive mean IC (IS=6.5yr)
 MIN_FITNESS = 3.0              # L4: minimum WorldQuant BRAIN fitness
@@ -729,6 +730,15 @@ def evaluate() -> dict:
             elapsed=elapsed,
         )
 
+    # ICIR upper bound: > 1.0 in 200-stock universe is suspicious (data issue or IS overfit)
+    if abs(icir_20d) > MAX_ICIR_L2:
+        return _make_result(
+            level="L2", failure=f"|ICIR_20d|={abs(icir_20d):.4f} > {MAX_ICIR_L2} (suspicious)",
+            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+            elapsed=elapsed,
+        )
+
     if abs(max_corr) > MAX_CORRELATION:
         # Phase AF: check replacement eligibility before rejecting
         match_count = _get_match_count(corr_with)
@@ -1068,8 +1078,12 @@ def main() -> None:
 def _store_factor_returns(results: dict) -> None:
     """Store equal-weight top-15 daily returns for Factor-Level PBO (Phase AB).
 
-    Stores for ALL factors (including failures) — Bailey requires N to include
-    failed trials. Uses VectorizedPBOBacktest for fast computation (~5-10s).
+    Only called for L3+ factors (caller filters at line ~1050).
+    L1/L2 factors have IC < 0.02 — their top-15 portfolios are random noise,
+    not meaningful strategies. Including them inflates n_independent (each noise
+    portfolio is uncorrelated → own cluster → N↑) and makes PBO artificially low.
+    Bailey (2014) "failed trials" = strategies with signal that failed OOS,
+    not strategies with no signal at all.
     """
     try:
         from src.backtest.vectorized import VectorizedPBOBacktest
