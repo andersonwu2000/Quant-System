@@ -145,6 +145,8 @@ class ValidationReport:
     backtest_result: BacktestResult | None = None
     walkforward_results: list[dict[str, Any]] = field(default_factory=list)
     error: str = ""
+    actual_is_start: str = ""  # V8 截斷後的實際 IS 起始日
+    actual_is_end: str = ""    # V8 截斷後的實際 IS 結束日（可能 != 傳入的 end）
 
     @property
     def passed(self) -> bool:
@@ -227,6 +229,9 @@ class StrategyValidator:
                 end, cfg.oos_start,
             )
             end = (pd.Timestamp(cfg.oos_start) - pd.DateOffset(days=1)).strftime("%Y-%m-%d")
+
+        report.actual_is_start = start
+        report.actual_is_end = end
 
         # 10. Selection bias check（前置：universe 夠大嗎？）
         report.checks.append(CheckResult(

@@ -156,28 +156,26 @@ Phase AA 曾報告 no-trade zone 改善了 +1.3% CAGR，但這個數字是用舊
 
 **注意**：建議 #2 的理由不再是「Phase M 證明 hedge 虧錢」（該結論已被推翻 — hedge 從未觸發）。理由改為「hedge 是死代碼，開著沒意義」。如果修復 0050 進 feed 後，hedge 的效果需要重新驗證。
 
-### 短期（開盤後一週）
+### 可執行的改進計畫
 
-| # | 項目 | 工作量 | 理由 |
-|---|------|:------:|------|
-| 3 | AD1 增量數據更新 | ~100 行 | paper trading 前置 |
-| 4 | ~~PaperDeployer 手動跑通~~ | — | ✅ **已完成** — 10 項單元測試 + 2 次手動 E2E 通過 |
-| 5 | AA 4.7 Lot size awareness | ~20 行 | 5% 權重實際可能是 7% |
-| 6 | **CAGR 不一致（未解決）** | 需排查 | ⚠️ 同期間 2018-2025 BacktestEngine annual_return=2.21% vs Validator CAGR=12.83%。原解釋「不同時間範圍」不成立。可能原因：universe 大小（1067 vs 200/884）、策略篩選在不同 universe 選不同股票、Validator 的 BacktestEngine 配置差異 |
+| # | 項目 | 改什麼 | 工作量 | 狀態 |
+|---|------|--------|:------:|:----:|
+| 3 | AD1 增量數據更新 | 新增 `src/data/refresh.py` | ~100 行 | ⏳ 開盤後 |
+| 4 | ~~PaperDeployer 手動跑通~~ | — | — | ✅ 已完成 |
+| 5 | AA 4.7 Lot size awareness | `strategy_builder.py` + `revenue_momentum.py` 加整張 rounding | ~20 行 | ⏳ |
+| 6a | Validator report 標註實際 IS 期間 | `validator.py` validate() 在 report 中記錄截斷後的 start/end | ~5 行 | 🔧 現在做 |
+| 6b | Validator report 標註 universe 大小 | 已有 universe_size check，確認和實際一致 | 0 行 | ✅ 已有 |
 
-### 中期（研究週期後）
+#### #6a 詳細計畫：Validator 標註實際 IS 期間
 
-| # | 項目 | 理由 |
-|---|------|------|
-| 7 | 測試 max_holdings=8 vs 15 vs 20 | FinLab 發現 8 檔 MDD 降 40% |
-| 8 | 重跑 no-trade zone 驗證 | 舊數字 +1.3% 是用有 bug 的代碼跑的，需要用修正後的代碼確認 |
-| 9 | 統一因子評估和策略評估的邏輯 | 目前測的是兩個不同的東西 |
-| 10 | **修復 0050 進 feed 後重新測試 regime hedge** | hedge 功能存在但從未被驗證 |
+**問題**：V8 fix 靜默截斷 `end` 到 `oos_start - 1`，外部不知道 Validator 實際跑了什麼期間。導致 CAGR 12.83%（IS only）被誤以為是全期間結果。
 
-### 問題 8 的深層問題
+**改法**：validate() 截斷後把實際 start/end 寫進 report：
 
-autoresearch 驗證的是「因子有沒有 IC」，但部署的是「策略有沒有 alpha」。中間的轉換（篩選條件 + 權重方式 + regime + 換倉頻率）可能改善也可能毀掉因子的 alpha。
+```python
+# validator.py validate() 中，V8 截斷後加：
+report.actual_is_start = start
+report.actual_is_end = end  # 截斷後的值
+```
 
-**理想方案**：autoresearch 的 evaluate.py 應該直接跑策略級別的回測（和 Validator 一樣），而不是只看因子的 IC。但這會大幅增加 evaluate.py 的計算量（從 30 秒 → 5 分鐘）。
-
-**務實方案**：接受「因子 IC 是必要條件，策略 alpha 是充分條件」。因子通過 L5 後，再用 Validator 驗證完整策略。**目前的設計已經是這樣** — 只是兩層評估的假設不一致（等權 vs signal_weight vs inverse-vol）需要統一。
+**檔案**：`src/backtest/validator.py`（加 2 行）+ `ValidationReport` dataclass 加 2 個欄位
