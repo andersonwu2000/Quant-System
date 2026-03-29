@@ -11,6 +11,7 @@ Checks every 60 seconds:
 """
 
 import hashlib
+import json
 import time
 from datetime import datetime
 from pathlib import Path
