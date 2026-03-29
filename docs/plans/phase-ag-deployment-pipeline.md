@@ -285,8 +285,20 @@ Paper Trading (SimBroker)               Micro Live (SinopacBroker)
 | `smart_order` 零股撮合 | ✅ | 3 分鐘間隔 |
 | SinopacBroker 零股下單 | ⚠️ | 需 CA 憑證後驗證 |
 
+**滑價控制措施**：
+
+零股滑價主因是 bid-ask spread（非 market impact），和整張不同。現有的 TWAP 拆單和 ADV cap 對零股無效（量太小）。適用的措施：
+
+| 措施 | 做法 | 效果 |
+|------|------|------|
+| 限價單 | SinopacBroker 用 LMT 不用 MKT | 避免被 spread 吃掉 |
+| 中間價掛單 | (bid + ask) / 2 | 減少半個 spread |
+| 避開開收盤 | 排程 10:00-12:00 執行 | 避開 spread 最大的時段 |
+| 提高 slippage 估計 | paper trading 用 15 bps（整張用 5） | NAV 追蹤更保守 |
+
+**實際影響**：月頻 + 50K TWD + 12 次/年，年化 spread 成本 ≈ 50K × 0.02% × 12 ≈ 120 元。微額驗證階段滑價不重要，目的是驗證管線。
+
 **注意事項**：
-- 零股滑價 10-20 bps（高於整張 ~5 bps），微額驗證可接受
 - 50K TWD / 15 支 ≈ 每支 3,333 元 ≈ 幾十股，足以驗證
 - 月頻策略 → 每月一次交易，手續費影響小
 
