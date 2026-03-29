@@ -110,7 +110,7 @@ Explore broadly across these dimensions before going deep on any one:
 Known dead ends — don't waste time:
 
 - **Pure price reversal (< 5 days)** — too noisy, slippage eats alpha
-- **Financial statement time series** — `data["pe"]/["pb"]/["roe"]` only have latest values, not history
+- **`data["pe"]/["pb"]/["roe"]` are latest-only snapshots** — use `data["per_history"]` for time series (PER/PBR/dividend_yield daily since 2019)
 - **Single-stock patterns** — must work cross-sectionally across 50+ stocks
 - **Calendar effects** — too weak and well-arbitraged
 - **Exact clones** — the dedup check will catch `corr > 0.50` with known factors
