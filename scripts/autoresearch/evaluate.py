@@ -955,7 +955,7 @@ def evaluate() -> dict:
 
     # ── L5c: Monotonicity gate (quintile returns should be monotonic, pass/fail only) ──
     avg_mono = float(np.mean(mono_list)) if mono_list else 0.0
-    l5c_pass = avg_mono > 0.5
+    l5c_pass = abs(avg_mono) > 0.5  # abs: reverse factors (low=good) also valid
     print(f"  L5c monotonicity: {'PASS' if l5c_pass else 'FAIL'}")
     if not l5c_pass:
         return _make_result(
