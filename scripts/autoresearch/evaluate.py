@@ -1045,8 +1045,9 @@ def main() -> None:
     for h, icir in results["icir_by_horizon"].items():
         print(f"icir_{h}:          {icir:.4f}")
 
-    # Phase AB: store daily returns for Factor-Level PBO (all factors, not just L5 pass)
-    if results.get("level") not in ("L0",):  # L0 = complexity fail, no factor values
+    # Phase AB: store daily returns for Factor-Level PBO
+    # AB-4 fix: only L3+ factors (L1/L2 have no signal, their returns are noise that inflates n_independent)
+    if results.get("level") in ("L3", "L4", "L5"):
         _store_factor_returns(results)
 
     # Phase AF: append to learnings.jsonl
