@@ -221,8 +221,12 @@ class SinopacBroker(BrokerAdapter):
             if is_odd_lot:
                 try:
                     sj_order.stock_order_lot = sj.constant.StockOrderLot.IntradayOdd
-                except AttributeError:
-                    pass
+                except (AttributeError, ValueError):
+                    # Newer shioaji versions use different API for odd lots
+                    try:
+                        sj_order.order_lot = sj.constant.StockOrderLot.IntradayOdd
+                    except (AttributeError, ValueError):
+                        pass  # simulation mode doesn't need lot type
 
             try:
                 # LT-3: LIVE mode forces blocking to get valid broker ID

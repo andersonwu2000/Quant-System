@@ -372,8 +372,8 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     from src.strategy.base import Context
     from src.strategy.registry import resolve_strategy
 
-    # T1 + P6: 市場時段檢查（用台灣時間 UTC+8，不依賴系統時區）
-    if config.mode in ("paper", "live"):
+    # T1 + P6: 市場時段檢查（live mode only — paper mode 模擬成交不需要）
+    if config.mode == "live":
         from datetime import timedelta as _td, timezone as _tz
         _tw_tz = _tz(_td(hours=8))
         now = datetime.now(_tw_tz)

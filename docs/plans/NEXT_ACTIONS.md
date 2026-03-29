@@ -127,12 +127,17 @@ Agent 目前只在 revenue ratio 空間。以下是 FinLab 驗證過的台股因
 
 ### 評估改進
 
-| # | 項目 | 說明 | 優先級 |
-|---|------|------|:------:|
-| 4E | **行業中性化 IC 診斷** | demean factor values by industry，IC 下降 → 因子只是在挑產業 | 高 |
-| 4F | **IC 趨勢回歸** | `linregress(ic_series)` slope < 0 → 因子衰退。記錄到 output | 高 |
-| 4G | **Rebalance 對齊營收公告日** | 月 10 日前公告 → 公告後才 rebalance | 中 |
-| 4H | **Size neutralization** | 用 market_value 做 neutralize，確保非 small-cap bias | 中 |
+| # | 項目 | 說明 | 狀態 |
+|---|------|------|:----:|
+| 4E | **行業中性化 IC 診斷** | demean by industry prefix → ic_source: stock_alpha/mixed/industry_beta | ✅ 2026-03-30 |
+| 4F | **IC 趨勢回歸** | `linregress(ic_series)` → ic_trend: stable/improving/declining | ✅ 2026-03-30 |
+| 4G | **L5b profitability gate** | top quintile excess > universe mean（pass/fail） | ✅ 2026-03-30 |
+| 4H | **L5c monotonicity gate** | Patton & Timmermann (2010) bootstrap MR test, p < 0.05 | ✅ 2026-03-30 |
+| 4I | **Novelty indicator** | bucketed max_corr: high/moderate/low | ✅ 2026-03-30 |
+| 4J | **Construction: top-40 score-tilt** | TC 0.10→0.45，z-score 加權 | ✅ 2026-03-30 |
+| 4K | **vs_ew_universe walk-forward** | ≥50% WF windows positive excess | ✅ 2026-03-30 |
+| 4L | Rebalance 對齊營收公告日 | 月 10 日前公告 → 公告後才 rebalance | 中，⏳ |
+| 4M | Size neutralization | 用 market_value 做 neutralize，確保非 small-cap bias | 中，⏳ |
 
 ## Phase 5：90 天後（決策點）
 
@@ -171,10 +176,11 @@ Config → Strategy(hedged, max_holdings=10) → on_bar(10 targets)
 
 | 提議 | 為什麼不做 |
 |------|-----------|
-| 新的 Phase | 功能已足夠。問題是 alpha 不是功能 |
+| 新的 Phase（除 AH 前端） | 功能已足夠。問題是 alpha 不是功能 |
 | 多市場擴展 | 先證明台股有 alpha |
-| 更複雜的組合優化 | DeMiguel：equal-weight 就好 |
-| 更多 Validator checks | 16 項已夠多 |
+| 更複雜的組合優化 | score-tilt 已改善 TC，再複雜不值得 |
+| 整合 FinLab SDK | 數據已有等價（Yahoo+FinMind），回測不如我們嚴謹 |
+| PBO fallback DSR | 已有 3 層過擬合防護，過渡期短 |
 
 ---
 
