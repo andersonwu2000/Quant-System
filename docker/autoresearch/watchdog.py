@@ -420,24 +420,24 @@ def _compute_factor_level_pbo():
         if len(returns_matrix) < 120:
             return
 
-        # Phase AB Phase 3: Independent hypothesis clustering
+        # Phase AB Phase 3 + AB-4 Step 3: Independent hypothesis clustering
         # Factors with returns correlation > 0.50 are the same "direction"
-        # Keep median factor per cluster (not IS-best, to avoid selection bias)
+        # AB-4: hierarchical clustering (captures transitive correlations)
         corr_matrix = returns_matrix.corr()
-        used = set()
+        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.spatial.distance import squareform
+
+        dist_matrix = (1 - corr_matrix.abs()).clip(lower=0)
+        np.fill_diagonal(dist_matrix.values, 0)
+        condensed = squareform(dist_matrix, checks=False)
+        Z = linkage(condensed, method='average')
+        labels = fcluster(Z, t=0.50, criterion='distance')  # corr > 0.50 = same cluster
+
         clusters: list[list[str]] = []
-        for col in corr_matrix.columns:
-            if col in used:
-                continue
-            cluster = [col]
-            used.add(col)
-            for other in corr_matrix.columns:
-                if other in used:
-                    continue
-                if abs(corr_matrix.loc[col, other]) > 0.50:
-                    cluster.append(other)
-                    used.add(other)
-            clusters.append(cluster)
+        label_to_members: dict[int, list[str]] = {}
+        for col, label in zip(corr_matrix.columns, labels):
+            label_to_members.setdefault(int(label), []).append(col)
+        clusters = list(label_to_members.values())
 
         # Pick median factor per cluster (avoid IS selection bias)
         # Using IS-best would bias PBO downward (optimistic = dangerous)
