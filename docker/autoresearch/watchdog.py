@@ -536,7 +536,7 @@ def _compute_factor_level_pbo():
         from scipy.cluster.hierarchy import linkage, fcluster
         from scipy.spatial.distance import squareform
 
-        dist_matrix = (1 - corr_matrix.abs()).clip(lower=0)
+        dist_matrix = (1 - corr_matrix.abs()).clip(lower=0).copy()
         np.fill_diagonal(dist_matrix.values, 0)
         condensed = squareform(dist_matrix, checks=False)
         Z = linkage(condensed, method='average')
