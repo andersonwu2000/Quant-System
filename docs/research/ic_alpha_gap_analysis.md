@@ -59,21 +59,35 @@
 | **Top quintile excess vs EW** | **+1.34%/20d** | **Q5 打敗大盤** |
 | Sector concentration | Semi 1/15, Fin 1/15 | **不是產業曝險，跨產業選股** |
 
-**關鍵發現：Top quintile（~40 支）打敗大盤，但 top-15 等權不行。問題在 portfolio construction（TC 損耗），不是因子無效。**
+**關鍵發現：Top quintile 打敗大盤 +1.34%/20d，sector 分散（13/15 非半導體）。因子有效。**
 
-這改變了優先級：
-- **Score-tilt 從「中」升為「高」** — 因子有效但 top-15 等權的 TC 太低，改建構方式可能直接解決 vs_ew_universe
-- **L5b excess_return gate 的門檻要用 quintile 而非 top-15** — top-15 可能 fail 但 top quintile pass，gate 不該擋住這種因子
+### Score-tilt 測試結果（22 個季度 2020-2025）
+
+| 方法 | vs EW 大盤 | Sharpe (ann) |
+|------|:----------:|:------------:|
+| Universe EW (benchmark) | — | 2.51 |
+| **Top-15 EW (現在)** | **+1.41%** | **3.00** |
+| Top-40 EW (quintile) | +1.31% | 3.16 |
+| Score-tilt (z-score weighted) | +1.44% | 3.21 |
+| **Top-40 tilt (factor weighted)** | **+1.49%** | **3.33** |
+
+**意外發現：所有建構方式（含 top-15 EW）都贏大盤。** Top-40 tilt 的 Sharpe 最高（3.33 vs 3.00，+11%），但 excess return 差距小（+0.08%）。
+
+**這意味著 Validator 的 vs_ew_universe 不通過可能不是因子或建構問題，而是 Validator 回測期間 / 配置差異。** 需要進一步排查 Validator 和此診斷的差異（IS 截斷、cost model、lot size 等）。
+
+### 優先級調整
+
+Score-tilt 改善有限（+0.08% excess, +11% Sharpe）。**真正的問題不在建構方式，而在 Validator 為什麼和簡化測試結果不同。**
 
 ## 待做
 
 | # | 項目 | 優先級 | 備註 |
 |---|------|:------:|------|
-| 1 | evaluate.py portfolio construction 改為 top quintile（~40 支） | **高** | TC 0.10 → 0.25+，直接影響 vs_ew_universe |
-| 2 | evaluate.py 加 L5b excess_return gate（用 quintile） | **高** | 給 agent 營利反饋 |
+| 1 | **排查 Validator vs 診斷的差異** | **高** | 診斷顯示 top-15 EW +1.41% 贏大盤，但 Validator 16/17。找出差異原因 |
+| 2 | evaluate.py 加 L5b excess_return gate | **高** | 給 agent 營利反饋（用 quintile 基準） |
 | 3 | evaluate.py 加 novelty indicator（bucketed corr） | **高** | 給 agent 多樣化反饋 |
 | 4 | program.md 更新（新數據 + TC 概念，不限制方向） | 高 | |
-| 5 | 測試 score-tilt（TC 0.10 → 0.45） | 高 | 在回測中比較 top-15 等權 vs score-tilt |
+| 5 | evaluate.py construction 改為 top quintile 或 score-tilt | 中 | Score-tilt Sharpe +11% 但 excess 差距小 |
 | 6 | watchdog PBO fallback 到 DSR | 中 | |
 | 7 | Cross-Market Validation（韓/日） | 低 | |
 
@@ -82,6 +96,7 @@
 - [x] Returns dedup 擋 clone ✅ 2026-03-29
 - [x] PBO read-only bug 修復 ✅ 2026-03-30
 - [x] 診斷分析（dispersion + quintile + sector）✅ 2026-03-30
+- [x] Score-tilt 測試（top-40 tilt Sharpe 3.33 vs top-15 EW 3.00）✅ 2026-03-30
 
 **不做：** 不降低 vs_ew_universe 門檻、不把多樣化量化為分數、不限制 agent 探索方向。
 
