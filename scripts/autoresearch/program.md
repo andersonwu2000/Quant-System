@@ -62,11 +62,14 @@ Repeat until the human interrupts you:
 
 ## Evaluation Pipeline (black box)
 
-Your factor goes through multiple gates. You see:
+Your factor is evaluated on two dimensions: **profitability** (does the top group actually outperform the market?) and **novelty** (how different is it from existing factors?). Both are shown in results.
+
+You see:
 - `level`: how far it got (L0 → L1 → L2 → L3 → L4 → L5)
-- `passed`: True if it cleared all gates including OOS holdout
+- `passed`: True if it cleared all gates
 - `composite_score`: overall quality metric
-- `best_icir`: best Information Coefficient Information Ratio
+- `best_icir`: signal quality (ICIR) — this is the minimum bar, not the goal
+- `novelty`: high / moderate / low — how different from existing factor library
 
 **What causes failure at each level:**
 - **L0**: factor.py too many lines (keep it under 80)
@@ -74,7 +77,10 @@ Your factor goes through multiple gates. You see:
 - **L2**: signal exists but unstable — try smoothing or different lookback windows
 - **L3**: either a clone of a known factor (try something genuinely new) or not stable across years
 - **L4**: overall quality insufficient
-- **L5**: does not generalize out-of-sample — try a fundamentally different signal, not a tweak
+- **L5**: three sub-checks, all pass/fail:
+  - **L5a**: does not generalize out-of-sample
+  - **L5b**: top quintile does not outperform market average (high ICIR ≠ profitable portfolio)
+  - **L5c**: quintile returns are not monotonic (signal works in middle but not at top)
 
 ## Available Data
 
