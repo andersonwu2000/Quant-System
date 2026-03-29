@@ -537,7 +537,7 @@ File handle 依賴 GC 關閉。影響極小。
 
 | 問題 | 根因 | 修復 |
 |------|------|------|
-| **6 小時空白** | credentials `:ro` mount → Claude Code 無法 refresh token → 401 crash-loop | credentials 改 `:rw` |
+| **6 小時空白** | credentials `:ro` mount → Claude Code 無法 refresh token → 401 crash-loop | 曾改 `:rw`，後因安全風險改回 `:ro` + host 端 loop.ps1 每 30 分鐘定期刷新 token |
 | **crash-loop 無 backoff** | loop.ps1 10 秒固定重啟 | 加遞增 backoff（< 30 秒 session → 60×N 秒等待，max 300） |
 | **`.claude/session-env` 權限** | credentials mount 改變目錄 ownership | Dockerfile.agent 預建目錄 + chown |
 
@@ -564,7 +564,18 @@ File handle 依賴 GC 關閉。影響極小。
 | **`_process_pending` 比較 bucketed score crash** | results.tsv 存 bucket 字串，`float()` 失敗 | 移除比較，全部送 Validator |
 | **未授權檔案無清理** | 只 warning 不刪 | 加 `p.unlink()` 自動清理 |
 
-### 10.5 文件更新
+### 10.5 安全強化（agent 行為審計後）
+
+| 風險 | 修復前 | 修復後 |
+|------|--------|--------|
+| **`git reset --hard`** | agent 可用，摧毀 work/ | git wrapper (symlink) 攔截 `reset --hard` 和 `clean -f`，返回 exit 1 |
+| **`git clean -fd`** | 同上 | 同上 |
+| **credentials 可讀改** | `:rw` mount，agent 能讀改 token | 改回 `:ro`，agent 無法寫入 |
+| **token 過期** | container 無法 refresh → crash-loop | loop.ps1 背景每 30 分鐘檢查 token 有效期，< 60 分鐘時 host 端觸發 `claude --version` refresh |
+| **agent 能跑 python3** | 可寫腳本繞限制（fetch.py 事件） | watchdog 自動清理 work/ 未授權檔案 + eval_server hash check 拒絕未修改的 evaluate |
+| **agent 能讀 parquet** | 1102 個 data/market/ parquet 可讀 | 設計如此（factor.py 需要讀取價量數據），program.md 禁止直接讀，靠 Docker 隔離 + watchdog 監控 |
+
+### 10.6 文件更新
 
 - `docs/claude/EXPERIMENT_STANDARDS.md`：L0=80 行、L2=0.50 固定 20d、§3.1 autoresearch 模式、§3.5 watchdog 報告流程
 - `scripts/autoresearch/program.md`：near-miss 門檻更新
