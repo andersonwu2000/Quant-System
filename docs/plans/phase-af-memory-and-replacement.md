@@ -527,13 +527,50 @@ File handle 依賴 GC 關閉。影響極小。
 
 | 嚴重度 | 數量 | 行動 |
 |:------:|:----:|------|
-| HIGH | 1 | AF-H1：host 模式限定，Docker 安全。建議後續改為 bucket |
-| MEDIUM | 3 | 不阻塞，後續改善 |
-| LOW | 1 | 清理即可 |
+| HIGH | 1 | AF-H1：✅ 已修（bucket 化） |
+| MEDIUM | 3 | ✅ 全部已修（AF-M1 docstring 提取、AF-M2 microsecond、AF-M3 常量抽取） |
+| LOW | 1 | ✅ 已修（with 語句） |
 
-**整體品質：好。** 核心邏輯（替換、多樣性、saturation、learnings）正確。3 個審批條件全部滿足。`/evaluate` 主動改為 bucket 模式超出計畫要求。baseline_ic_series 讀寫分離是端到端測試的正確修正。
+## 10. 運行修正（2026-03-29 研究期間發現）
 
-## 10. 參考
+### 10.1 基礎設施修正
+
+| 問題 | 根因 | 修復 |
+|------|------|------|
+| **6 小時空白** | credentials `:ro` mount → Claude Code 無法 refresh token → 401 crash-loop | credentials 改 `:rw` |
+| **crash-loop 無 backoff** | loop.ps1 10 秒固定重啟 | 加遞增 backoff（< 30 秒 session → 60×N 秒等待，max 300） |
+| **`.claude/session-env` 權限** | credentials mount 改變目錄 ownership | Dockerfile.agent 預建目錄 + chown |
+
+### 10.2 方法論修正（FACTOR_METHODOLOGY_AUDIT_20260329）
+
+| 問題 | 根因 | 修復 |
+|------|------|------|
+| **#8 Horizon selection bias** | L2/fitness 用 max-across-4-horizons ICIR | 固定用 20d ICIR（Harvey & Liu 2015） |
+| **ICIR 門檻 0.15 太低** | 舊週期 L5 pass rate 44.7% | 提高至 0.50（業界 "good" 標準） |
+| **替換邏輯用 `best_icir`** | 和 L2 gate 不一致 | 改用 `icir_20d`（含比較、存儲、bucket） |
+
+### 10.3 數據完整性修正
+
+| 問題 | 根因 | 修復 |
+|------|------|------|
+| **22 條 learnings 含精確 ICIR** | rebuild 前產生 | 全部轉為 bucket |
+| **work/ 有 fetch.py/fetch.ipynb** | agent 違反 program.md 建檔 | 手動清理 + watchdog 自動刪除未授權檔案 |
+| **agent 不 commit** | prompt 要求不可靠 | eval_server hash check：unchanged → 拒絕 evaluate |
+
+### 10.4 watchdog 修正
+
+| 問題 | 根因 | 修復 |
+|------|------|------|
+| **`_process_pending` 比較 bucketed score crash** | results.tsv 存 bucket 字串，`float()` 失敗 | 移除比較，全部送 Validator |
+| **未授權檔案無清理** | 只 warning 不刪 | 加 `p.unlink()` 自動清理 |
+
+### 10.5 文件更新
+
+- `docs/claude/EXPERIMENT_STANDARDS.md`：L0=80 行、L2=0.50 固定 20d、§3.1 autoresearch 模式、§3.5 watchdog 報告流程
+- `scripts/autoresearch/program.md`：near-miss 門檻更新
+- `docs/reviews/FACTOR_METHODOLOGY_AUDIT_20260329.md`：#8/#9/#10 狀態更新
+
+## 11. 參考
 
 - Wang et al. (2026). FactorMiner. arXiv:2602.14670 — 替換條件 Eq.11, 1.3x ICIR, 一對一限制
 - WorldQuant BRAIN IQC — PNL corr < 0.7, Sharpe 10% 提升
