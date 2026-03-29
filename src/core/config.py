@@ -96,7 +96,7 @@ class TradingConfig(BaseSettings):
     # 統一交易管線（Phase S）
     active_strategy: str = "revenue_momentum_hedged"
     active_strategy_params: str = ""  # JSON string, e.g. '{"max_holdings": 10}'
-    trading_pipeline_cron: str = "30 8 11 * *"
+    trading_pipeline_cron: str = "3 9 11 * *"  # 09:03 — after market open (09:00)
     pipeline_data_update: bool = True
     # 收盤後自動對帳（paper/live mode）
     reconcile_cron: str = "30 14 * * 1-5"   # 台股收盤後 14:30，平日
