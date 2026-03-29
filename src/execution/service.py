@@ -269,10 +269,12 @@ class ExecutionService:
             # LT-9: check broker connection before each order (live mode)
             if not self._fallback_mode and hasattr(self._broker, 'is_connected'):
                 if not self._broker.is_connected():
-                    logger.critical("Broker disconnected mid-execution — aborting remaining %d orders",
-                                    len(orders) - len(broker_trades))
-                    order.status = OrderStatus.REJECTED
-                    order.reject_reason = "Broker disconnected"
+                    # Reject this and all remaining orders
+                    remaining = orders[orders.index(order):]
+                    for r in remaining:
+                        r.status = OrderStatus.REJECTED
+                        r.reject_reason = "Broker disconnected"
+                    logger.critical("Broker disconnected — rejected %d remaining orders", len(remaining))
                     break
             self._oms.submit(order)
             self._broker.submit_order(order)

@@ -409,8 +409,8 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         import json as _json
         _params = _json.loads(config.active_strategy_params) if config.active_strategy_params else None
         strategy = resolve_strategy(config.active_strategy, _params)
-    except ValueError as e:
-        return PipelineResult(status="error", error=f"Unknown strategy: {e}")
+    except (ValueError, _json.JSONDecodeError) as e:
+        return PipelineResult(status="error", error=f"Strategy resolution failed: {e}")
 
     # 1. 數據更新（失敗則中止，不用舊數據交易）
     if config.pipeline_data_update:
@@ -533,6 +533,10 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         )
         if trades:
             _save_trade_log(trades, strategy.name(), signal_prices=prices)
+        # nav_sod + persistence inside lock (prevent race with realtime monitor)
+        state.portfolio.nav_sod = state.portfolio.nav
+        from src.api.state import save_portfolio
+        save_portfolio(state.portfolio)
 
     n_trades = len(trades) if trades else 0
     n_targets = len(target_weights)
@@ -591,11 +595,6 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
 
     # P1: 主動存 NAV snapshot（不依賴 asyncio task 的時間窗口）
     _save_nav_snapshot(state.portfolio)
-
-    # P1b: 更新 nav_sod（再平衡後持倉變了，基準要重設）+ 持久化
-    state.portfolio.nav_sod = state.portfolio.nav
-    from src.api.state import save_portfolio
-    save_portfolio(state.portfolio)
 
     # P2: Write completion record
     _write_pipeline_record(run_id, status="completed", strategy=strategy.name(), n_trades=n_trades)
