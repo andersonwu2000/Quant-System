@@ -1,0 +1,2152 @@
+[
+  {
+    "passed": false,
+    "n_passed": 13,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+15.93%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "1.134",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+19.30%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "20%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "100%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "1.000",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "99.9%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-0.855",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": true,
+        "value": "+3.30%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.854",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "+1.34%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.471",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.394",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-1.95%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-52wk-high",
+    "name": "52wk_high",
+    "elapsed": 475.4
+  },
+  {
+    "passed": false,
+    "n_passed": 11,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+7.36%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.710",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+22.51%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "27%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.982",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "98.2%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.450",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-5.27%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.690",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-3.57%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "0.613",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.507",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-1.56%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-ad-line-63d",
+    "name": "ad_line_63d",
+    "elapsed": 422.2
+  },
+  {
+    "passed": false,
+    "n_passed": 13,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+9.82%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.713",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+25.36%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "18%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.982",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "98.3%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.900",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-2.81%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.492",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-10.68%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "2.158",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.361",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.21%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-dual-norm-combo",
+    "name": "dual_norm_combo",
+    "elapsed": 422.0
+  },
+  {
+    "passed": false,
+    "n_passed": 13,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+10.93%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.703",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+23.77%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "20%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "100%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.980",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "98.4%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-0.649",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-1.70%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.480",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "+4.69%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.480",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.326",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.64%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-efficiency-ratio-126d",
+    "name": "efficiency_ratio_126d",
+    "elapsed": 430.4
+  },
+  {
+    "passed": false,
+    "n_passed": 12,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+11.05%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.706",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+25.50%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "16%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "100%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.980",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "98.0%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-0.968",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-1.58%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.520",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "+2.80%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.292",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.334",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.62%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-efficiency-ratio-252d",
+    "name": "efficiency_ratio_252d",
+    "elapsed": 498.2
+  },
+  {
+    "passed": false,
+    "n_passed": 9,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+6.96%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.533",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": false,
+        "value": "+40.84%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "25%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.942",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "93.4%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.774",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-5.67%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.712",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-12.66%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.419",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.403",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.31%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-liquidity-cond-stage2pass",
+    "name": "liquidity_cond_stage2pass",
+    "elapsed": 508.0
+  },
+  {
+    "passed": false,
+    "n_passed": 13,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+12.31%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.889",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+22.46%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "14%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "80%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.996",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "99.7%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.613",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-0.32%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.478",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-2.46%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.636",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.384",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.14%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-ma150-fraction-63d",
+    "name": "ma150_fraction_63d",
+    "elapsed": 493.0
+  },
+  {
+    "passed": false,
+    "n_passed": 12,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+11.00%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.828",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+23.43%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "15%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "80%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.993",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "99.4%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.869",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-1.63%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.868",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-2.61%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.397",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.404",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.11%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-ma200-fraction-63d",
+    "name": "ma200_fraction_63d",
+    "elapsed": 454.2
+  },
+  {
+    "passed": false,
+    "n_passed": 9,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+7.71%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.610",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+30.89%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "31%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": false,
+        "value": "40%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.964",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "95.8%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.240",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-4.92%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.906",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-7.13%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "0.978",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.423",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.07%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-obv-mom-regime",
+    "name": "obv_mom_regime",
+    "elapsed": 482.4
+  },
+  {
+    "passed": false,
+    "n_passed": 13,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+9.65%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.700",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+26.65%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "19%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "80%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.981",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "97.4%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.482",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-2.98%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.260",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-4.55%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "2.205",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.341",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.23%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-obv-revaccel-combo",
+    "name": "obv_revaccel_combo",
+    "elapsed": 531.3
+  },
+  {
+    "passed": false,
+    "n_passed": 12,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+9.18%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.700",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+28.09%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "26%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.980",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "97.7%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.149",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-3.45%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.858",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-5.07%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.344",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.364",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.16%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-obv-slope",
+    "name": "obv_slope",
+    "elapsed": 492.1
+  },
+  {
+    "passed": false,
+    "n_passed": 11,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+10.75%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.775",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+22.49%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "23%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": false,
+        "value": "40%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.989",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "98.7%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.885",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-1.88%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.586",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-5.51%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.099",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.302",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.20%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-price-trend",
+    "name": "price_trend",
+    "elapsed": 522.6
+  },
+  {
+    "passed": false,
+    "n_passed": 9,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+6.85%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.539",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+33.43%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "17%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.943",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "94.3%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.228",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-5.78%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.548",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-15.49%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": false,
+        "value": "-0.818",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.349",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.19%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-rev-inconsistency",
+    "name": "rev_inconsistency",
+    "elapsed": 495.8
+  },
+  {
+    "passed": false,
+    "n_passed": 13,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+9.78%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.719",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+26.66%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "19%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.981",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "98.2%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.890",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-2.85%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.288",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-9.27%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "2.573",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.378",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.24%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-rev-weighted-zscore",
+    "name": "rev_weighted_zscore",
+    "elapsed": 468.7
+  },
+  {
+    "passed": false,
+    "n_passed": 11,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+8.55%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.637",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+29.26%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "20%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.969",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "97.0%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.995",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-4.08%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.796",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-7.80%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "2.187",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.367",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.24%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-rev-zscore",
+    "name": "rev_zscore",
+    "elapsed": 443.5
+  },
+  {
+    "passed": false,
+    "n_passed": 10,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+6.38%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.530",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+24.09%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "21%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.940",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "93.8%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.995",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-6.26%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.822",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-16.79%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.566",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.369",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.07%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-rev-zscore-3m",
+    "name": "rev_zscore_3m",
+    "elapsed": 441.4
+  },
+  {
+    "passed": false,
+    "n_passed": 9,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+7.78%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.599",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+25.91%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "18%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": false,
+        "value": "40%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.960",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "95.7%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.810",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-4.85%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.610",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-8.48%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.958",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.352",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.18%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-revenue-accel-v1",
+    "name": "revenue_accel_v1",
+    "elapsed": 432.9
+  },
+  {
+    "passed": false,
+    "n_passed": 12,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+10.84%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.763",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+24.97%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "16%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.986",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "98.7%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.754",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-1.79%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.922",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-5.11%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "2.429",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.363",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.30%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-revenue-accel-v2",
+    "name": "revenue_accel_v2",
+    "elapsed": 464.3
+  },
+  {
+    "passed": false,
+    "n_passed": 13,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+14.20%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.947",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+25.09%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "14%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "80%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.997",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "99.6%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.879",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": true,
+        "value": "+1.57%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.802",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-1.44%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "2.767",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.330",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.33%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-revwz-200ma",
+    "name": "revwz_200ma",
+    "elapsed": 479.9
+  },
+  {
+    "passed": false,
+    "n_passed": 14,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+14.44%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.955",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+24.95%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "14%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "80%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.998",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "99.7%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.752",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": true,
+        "value": "+1.81%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.124",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-2.19%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "2.887",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.319",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.32%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-revwz-mafrac-combo",
+    "name": "revwz_mafrac_combo",
+    "elapsed": 495.5
+  },
+  {
+    "passed": false,
+    "n_passed": 11,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+5.31%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.387",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+33.21%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "23%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "60%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.872",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "86.9%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.547",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-7.32%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.332",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-6.15%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.533",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.263",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.77%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-robust-revz",
+    "name": "robust_revz",
+    "elapsed": 493.7
+  },
+  {
+    "passed": false,
+    "n_passed": 11,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+8.90%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.698",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+24.73%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "25%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "100%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.978",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "97.7%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.383",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-3.73%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.772",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-0.96%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "2.121",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.380",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.07%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-single-month-zscore",
+    "name": "single_month_zscore",
+    "elapsed": 446.1
+  },
+  {
+    "passed": false,
+    "n_passed": 12,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+8.07%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.544",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+23.02%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "34%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "80%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.945",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "94.8%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.272",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-4.56%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.474",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-8.87%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.349",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.242",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.49%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-tsi-25-13",
+    "name": "tsi_25_13",
+    "elapsed": 484.4
+  },
+  {
+    "passed": false,
+    "n_passed": 14,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+13.87%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "0.933",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+23.22%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "28%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "80%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.997",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "99.7%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-0.860",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": true,
+        "value": "+1.24%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": true,
+        "value": "0.234",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-6.58%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.604",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.373",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.16%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-vwap-position-63d",
+    "name": "vwap_position_63d",
+    "elapsed": 455.7
+  },
+  {
+    "passed": false,
+    "n_passed": 10,
+    "n_total": 15,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+7.42%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.579",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+25.03%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "25%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": true,
+        "value": "80%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.957",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "96.3%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "-1.904",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-5.21%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "0.758",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-6.36%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": true,
+        "value": "1.719",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.392",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.20%",
+        "threshold": ">= -5.00%"
+      }
+    },
+    "error": "",
+    "tag": "factor-weekly-obv-52w",
+    "name": "weekly_obv_52w",
+    "elapsed": 465.0
+  }
+]

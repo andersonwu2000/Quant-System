@@ -1,0 +1,254 @@
+[
+  {
+    "name": "revaccel_4m8m_amihud_ma100",
+    "commit": "baa56af",
+    "n_passed": 5,
+    "n_total": 15,
+    "passed": false,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+0.00%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.000",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+0.00%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": false,
+        "value": "100%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": false,
+        "value": "0%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.000",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": false,
+        "value": "0.0%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "N/A (error)",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-12.63%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "1.000",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "+0.00%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": false,
+        "value": "N/A (error)",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": false,
+        "value": "1.000",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "0.00%",
+        "threshold": ">= -5.00%"
+      }
+    }
+  },
+  {
+    "name": "revaccel_amihud_ma100",
+    "commit": "f0ffc12",
+    "n_passed": 5,
+    "n_total": 15,
+    "passed": false,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+0.00%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.000",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+0.00%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": false,
+        "value": "100%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": false,
+        "value": "0%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.000",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": false,
+        "value": "0.0%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "N/A (error)",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-12.63%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "1.000",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "+0.00%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": false,
+        "value": "N/A (error)",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": false,
+        "value": "1.000",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "0.00%",
+        "threshold": ">= -5.00%"
+      }
+    }
+  },
+  {
+    "name": "revwz_amihud_ma110",
+    "commit": "b570811",
+    "n_passed": 5,
+    "n_total": 15,
+    "passed": false,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "150",
+        "threshold": ">= 50"
+      },
+      "cagr": {
+        "passed": false,
+        "value": "+0.00%",
+        "threshold": ">= +8.00%"
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.000",
+        "threshold": ">= 0.700"
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+0.00%",
+        "threshold": "<= 40%"
+      },
+      "annual_cost_ratio": {
+        "passed": false,
+        "value": "100%",
+        "threshold": "< 50% of gross"
+      },
+      "walkforward_positive_ratio": {
+        "passed": false,
+        "value": "0%",
+        "threshold": ">= 60%"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.000",
+        "threshold": "N/A (single trial)"
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": false,
+        "value": "0.0%",
+        "threshold": ">= 80%"
+      },
+      "oos_sharpe": {
+        "passed": false,
+        "value": "N/A (error)",
+        "threshold": ">= 0.300"
+      },
+      "vs_0050_excess": {
+        "passed": false,
+        "value": "-12.63%",
+        "threshold": ">= +0.00%"
+      },
+      "pbo": {
+        "passed": false,
+        "value": "1.000",
+        "threshold": "<= 0.500"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "+0.00%",
+        "threshold": ">= -30%"
+      },
+      "recent_period_sharpe": {
+        "passed": false,
+        "value": "N/A (error)",
+        "threshold": ">= 0.000"
+      },
+      "market_correlation": {
+        "passed": false,
+        "value": "1.000",
+        "threshold": "|corr| <= 0.90"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "0.00%",
+        "threshold": ">= -5.00%"
+      }
+    }
+  }
+]

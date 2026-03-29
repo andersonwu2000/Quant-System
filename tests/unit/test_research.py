@@ -145,7 +145,7 @@ class TestComputeForwardReturns:
 
 class TestComputeIC:
     def _make_ic_inputs(self) -> tuple[pd.DataFrame, pd.DataFrame]:
-        data = _make_multi_stock_data(5, n_bars=300)
+        data = _make_multi_stock_data(35, n_bars=300)
         fv = compute_factor_values(data, "rsi")
         fwd = compute_forward_returns(data, horizon=5, dates=list(fv.index))
         return fv, fwd
@@ -173,9 +173,9 @@ class TestComputeIC:
     def test_perfect_correlation(self):
         """Perfect forward knowledge should give high IC."""
         dates = pd.bdate_range("2023-01-03", periods=10)
-        symbols = ["A", "B", "C", "D"]
+        symbols = [f"S{i}" for i in range(35)]
         rng = np.random.default_rng(0)
-        fv = pd.DataFrame(rng.standard_normal((10, 4)), index=dates, columns=symbols)
+        fv = pd.DataFrame(rng.standard_normal((10, 35)), index=dates, columns=symbols)
         # Forward returns = same rank order as factor
         fwd = fv.copy()
         result = compute_ic(fv, fwd, method="rank")

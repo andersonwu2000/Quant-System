@@ -1380,7 +1380,7 @@ def compute_ic(
     common_dates = factor_values.index.intersection(forward_returns.index)
     common_symbols = factor_values.columns.intersection(forward_returns.columns)
 
-    if len(common_dates) == 0 or len(common_symbols) < 3:
+    if len(common_dates) == 0 or len(common_symbols) < 30:
         return ICResult(factor_name="", ic_mean=0, ic_std=0, icir=0)
 
     ic_values: list[float] = []
@@ -1390,7 +1390,7 @@ def compute_ic(
         fv = factor_values.loc[dt, common_symbols].dropna()
         fr = forward_returns.loc[dt, common_symbols].dropna()
         common = fv.index.intersection(fr.index)
-        if len(common) < 3:
+        if len(common) < 30:
             continue
 
         if method == "rank":

@@ -22,14 +22,18 @@ $bestScore = 0
 $bestFactor = "N/A"
 $total = 0; $keepN = 0; $discardN = 0; $crashN = 0; $l5N = 0; $l0N = 0
 
-$resultsFile = "$ScriptDir\results.tsv"
+# Docker mode: read from work/ (current cycle); fallback to host results.tsv (legacy)
+$dockerResults = "D:\Finance\docker\autoresearch\work\results.tsv"
+$resultsFile = if (Test-Path $dockerResults) { $dockerResults } else { "$ScriptDir\results.tsv" }
 if (Test-Path $resultsFile) {
     $lines = Get-Content $resultsFile -Encoding UTF8 | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne "" -and -not $_.StartsWith("#") }
     $total = $lines.Count
     foreach ($line in $lines) {
         $cols = $line -split "`t"
         if ($cols.Count -ge 6) {
-            $score = [double]$cols[1]
+            $scoreRaw = $cols[1]
+            $score = 0.0
+            try { $score = [double]$scoreRaw } catch { $score = 0.0 }
             $icir = $cols[2]
             $level = $cols[3]
             $st = $cols[4]
@@ -40,7 +44,13 @@ if (Test-Path $resultsFile) {
             if ($level -eq "L5") { $l5N++ }
             if ($level -eq "L0") { $l0N++ }
             if ($score -gt $bestScore) { $bestScore = $score; $bestFactor = $desc }
-            $results += [PSCustomObject]@{ Score=$score; ICIR=$icir; Level=$level; St=$st; Desc=$desc }
+            # For bucketed scores, track best by bucket rank
+            if ($score -eq 0 -and $scoreRaw -match "high|medium|low") {
+                $bucketRank = @{"high"=3;"medium"=2;"low"=1;"none"=0}
+                $rank = if ($bucketRank.ContainsKey($scoreRaw)) { $bucketRank[$scoreRaw] } else { 0 }
+                if ($rank -gt $bestScore) { $bestScore = $rank; $bestFactor = "$desc (score=$scoreRaw)" }
+            }
+            $results += [PSCustomObject]@{ Score=$scoreRaw; ICIR=$icir; Level=$level; St=$st; Desc=$desc }
         }
     }
 }
