@@ -410,7 +410,11 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     # 3. 執行策略
     target_weights = strategy.on_bar(ctx)
     if not target_weights:
-        logger.info("Strategy %s returned empty weights", strategy.name())
+        logger.warning(
+            "Strategy %s returned empty weights (universe=%d symbols, date=%s). "
+            "Possible causes: no stocks pass filters, revenue data stale, or data feed issue.",
+            strategy.name(), len(universe), ctx.now().strftime("%Y-%m-%d") if ctx.now() else "unknown",
+        )
         return PipelineResult(status="no_weights", strategy_name=strategy.name())
 
     logger.info("Strategy %s: %d targets", strategy.name(), len(target_weights))
@@ -468,7 +472,15 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             _save_trade_log(trades, strategy.name())
 
     n_trades = len(trades) if trades else 0
-    logger.info("Pipeline done: %d trades, NAV=%s", n_trades, state.portfolio.nav)
+    n_targets = len(target_weights)
+    logger.info("Pipeline done: %d trades (of %d targets), NAV=%s", n_trades, n_targets, state.portfolio.nav)
+    if n_trades < n_targets:
+        skipped = n_targets - n_trades
+        logger.warning(
+            "Pipeline: %d/%d targets skipped (likely stock price > per-stock allocation, "
+            "or missing price data). Consider reducing max_holdings or increasing capital.",
+            skipped, n_targets,
+        )
 
     # 5. T3: 自動對帳 — 比對策略目標 vs 實際持倉
     deviations = _reconcile(target_weights, state.portfolio)
@@ -516,6 +528,11 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
 
     # P1: 主動存 NAV snapshot（不依賴 asyncio task 的時間窗口）
     _save_nav_snapshot(state.portfolio)
+
+    # P1b: 更新 nav_sod（再平衡後持倉變了，基準要重設）+ 持久化
+    state.portfolio.nav_sod = state.portfolio.nav
+    from src.api.state import save_portfolio
+    save_portfolio(state.portfolio)
 
     # P2: Write completion record
     _write_pipeline_record(run_id, status="completed", strategy=strategy.name(), n_trades=n_trades)

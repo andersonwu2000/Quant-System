@@ -15,9 +15,12 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from decimal import Decimal
+
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from src.api.auth import verify_ws_token
+from src.core.models import Portfolio
 from src.api.middleware import AuditMiddleware
 from src.api.routes import admin, allocation, alpha, auth, auto_alpha, backtest, data, execution, orders, portfolio, risk, scanner, scheduler_routes, strategies, strategy_center, system
 from src.api.ws import ws_manager
@@ -76,10 +79,12 @@ def create_app() -> FastAPI:
                 state.portfolio = persisted
                 logger.info("Restored persisted portfolio on startup")
             else:
-                # No persisted state — save current state immediately
+                # No persisted state — create with config initial cash and save
                 from src.api.state import save_portfolio
+                initial_cash = Decimal(str(config.backtest_initial_cash))
+                state.portfolio = Portfolio(cash=initial_cash, initial_cash=initial_cash)
                 save_portfolio(state.portfolio)
-                logger.info("No persisted portfolio found, saved initial state")
+                logger.info("No persisted portfolio, created with initial_cash=%s", initial_cash)
 
         _seed_admin(config)
 
