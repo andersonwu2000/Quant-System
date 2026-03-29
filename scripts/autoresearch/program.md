@@ -84,15 +84,10 @@ data["revenue"][symbol]         # pd.DataFrame: date, revenue, yoy_growth (month
 data["institutional"][symbol]   # pd.DataFrame: date, trust_net, foreign_net, dealer_net (daily)
 data["per_history"][symbol]     # pd.DataFrame: date, PER, PBR, dividend_yield (daily since 2019)
 data["margin"][symbol]          # pd.DataFrame: date, MarginPurchaseTodayBalance, ShortSaleTodayBalance, ... (daily)
-data["pe"][symbol]              # float: latest PE ratio (backward compat)
-data["pb"][symbol]              # float: latest PB ratio (backward compat)
-data["roe"][symbol]             # float: latest ROE % (backward compat)
+data["pe"][symbol]              # float: latest PE ratio
+data["pb"][symbol]              # float: latest PB ratio
+data["roe"][symbol]             # float: latest ROE %
 ```
-
-**NEW DATA:** `per_history` and `margin` provide DAILY time series:
-- **per_history**: PE momentum, PB mean reversion, dividend yield change, value-momentum composites
-- **margin**: short squeeze (rising short balance), margin sentiment (margin/short ratio change)
-- These are genuinely NEW dimensions — explore them before making more revenue variants
 
 ## Factor Dimensions to Explore
 
