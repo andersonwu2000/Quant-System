@@ -581,7 +581,7 @@ def _compute_factor_level_pbo():
             try:
                 df = pd.read_parquet(p)
                 if "returns" in df.columns and len(df) > 20:
-                    daily_returns_dict[p.stem] = df["returns"]
+                    daily_returns_dict[p.stem] = df["returns"].copy()  # ensure writable (parquet mmap)
             except Exception:
                 continue
 
