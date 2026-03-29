@@ -325,18 +325,31 @@ Phase AG 在整體架構中的位置：
   Phase 2       乾淨研究週期（autoresearch 跑實驗）
     │
     ▼
-第一優先 → Phase AG（本計畫）
+最高優先 → Phase AB-4（PBO 正確性修正）         ← AG 的 BLOCKING 前置
+    │  1. factor_returns 只存 L3+（消除噪音源）
+    │  2. hierarchical clustering（修正 n_independent）
+    │  3. 清理舊 L1/L2 parquet + 重算 PBO
+    │  不修 → PBO=0.0 不可信 → AG 所有部署決策無根據
+    │
+    ▼
+第一優先 → Phase AG 前置驗證
+    │  1. PaperDeployer API 驗證能跑
+    │  2. 手動端到端流程跑通 3 次
+    │  3. Validator 職責確認（watchdog 唯一驗證）
+    │
+    ▼
+第二優先 → Phase AG（本計畫）
     │  打通 autoresearch → paper trading
     │  不做這個，研究成果無法驗證
     │
     ▼
-第二優先 → Phase AA-2（組合最佳化接入）
+第三優先 → Phase AA-2（組合最佳化接入）
     │  signal_weight → inverse-vol / cost-aware construction
     │  改善 paper trading 實際表現
     │  但可先用簡單權重驗證因子本身
     │
     ▼
-第三優先 → Phase N + CA 憑證（Live Trading）
+第四優先 → Phase N + CA 憑證（Live Trading）
     │  需外部條件（永豐 CA 憑證）
     │  Paper trading 驗證成功後才有意義
     │
