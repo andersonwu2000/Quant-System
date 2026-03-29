@@ -49,7 +49,14 @@ N=1 cluster（113 clone），CSCV 無意義。替代驗證：Permutation ✅、D
 | 4 | program.md 加 TC 概念 | 高 | 文字引導 |
 | 5 | watchdog PBO fallback → DSR | 中 | |
 
-**已完成：** 新數據 ✅、returns dedup ✅、PBO 修復 ✅、診斷 ✅、score-tilt 測試 ✅、vs_ew gross 修復 ✅
+**已完成：**
+- [x] 新數據（per_history 472, margin 220）
+- [x] Returns dedup 擋 clone
+- [x] PBO read-only 修復
+- [x] 診斷分析（dispersion + quintile + sector）
+- [x] Score-tilt 測試（獨立腳本，未整合到 evaluate.py）
+- [x] vs_ew_universe gross 修復（代碼已部署）
+- [ ] **重跑 Validator 確認 gross 修復後的結果** ← 下一步
 
 **不做：** 不降 vs_ew_universe 門檻、不改為 soft fail、不量化多樣化為分數、不限制方向。
 
