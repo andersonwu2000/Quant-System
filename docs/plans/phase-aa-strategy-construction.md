@@ -411,3 +411,45 @@ Bailey 的 CSCV 原意：N = 研究者實際測試過的所有配置。我們的
 - 現有 PBO 作為 `construction_sensitivity` 仍有參考價值
 
 **記錄為 Phase 3 長期改進。**
+
+---
+
+## 9. 廣義滑價防範審計（2026-03-29）
+
+### 現有措施
+
+| 層 | 措施 | 位置 | 狀態 |
+|---|------|------|:----:|
+| 執行 | sqrt market impact model | SimBroker | ✅ 回測用 |
+| 執行 | 零股額外滑點 +10 bps | SimBroker | ✅ |
+| 執行 | TWAP 拆單 | smart_order.py | ✅ 整張用 |
+| 引擎 | ADV 10% volume cap | engine.py | ✅ |
+| 引擎 | lot size 取整 / 零股模式 | engine.py | ✅ |
+| 回測 | T+1 open 成交延遲 | engine.py | ✅ |
+| 因子 | 流動性篩選 300 張 | strategy_builder | ✅ |
+| 組合 | no-trade zone 1.5%/3% | strategy_builder | ✅ 4.2 已採用 |
+| 組合 | 非對稱成本（賣出門檻 > 買入） | strategy_builder | ✅ 4.6 已採用 |
+| 評估 | OOS decay factor 0.42x | config.py | ✅ |
+
+### 缺失
+
+| # | 缺失 | 影響 | 修復 | 優先級 |
+|---|------|------|------|:------:|
+| 1 | **construction.py turnover_penalty 是死代碼** | strategy_builder 不傳 current_weights，turnover_penalty 無效 | Phase AA-2：接入 construction.py | P1 |
+| 2 | **SinopacBroker 預設限價/市價未確認** | 實盤可能用市價單吃掉 spread | CA 憑證後驗證，預設改 LMT | P1 |
+| 3 | **成交確認無超時** | 零股撮合 3-5 分鐘，SinopacBroker 可能 hang | 加 timeout + partial fill 處理 | P2 |
+| 4 | **無實盤 vs 回測滑價追蹤** | 不知道模型是否準確 | 實盤後記錄 fill price vs signal price，計算 implementation shortfall | P2 |
+| 5 | **無流動性風控規則** | risk engine 沒有「今日量太低不交易」 | 加 min_daily_volume 風控規則 | P3 |
+| 6 | **月頻全換倉仍存在** | no-trade zone 緩解但非根治。strategy_builder 每月重算 top-15，成員大幅變動時仍全換 | Phase AA-2：信號驅動 rebalance（4.8） | P3 |
+
+### Phase AA-2 實施優先級
+
+```
+Phase AA-2（AG 之後）：
+  P1: 接入 construction.py（傳 current_weights，啟用 turnover_penalty）
+  P1: SinopacBroker 確認限價單預設 + 中間價掛單
+  P2: 實盤 implementation shortfall 追蹤
+  P2: 零股成交超時處理
+  P3: 流動性風控規則
+  P3: 信號驅動 rebalance
+```
