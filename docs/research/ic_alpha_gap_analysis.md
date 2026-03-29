@@ -1,119 +1,57 @@
 # IC-Alpha Gap 分析
 
 **日期**：2026-03-30
-**觸發**：110 個 L5 因子全部 Validator 16/17（vs_ew_universe 失敗）
 
 ---
 
 ## 問題
 
-因子能正確排名股票（IC/ICIR 通過 L5），但 top-15 等權跑輸 200 支等權。
+110 個 L5 因子全部 Validator 16/17（vs_ew_universe 失敗）。因子能排名但 top-15 等權跑輸大盤。
 
-**根因**：Transfer Coefficient 損耗。Grinold 基本法則 `E(R) = TC × IC × √BR × σ`，top-15 等權的 TC ≈ 0.10（MSCI 2019 實測）。ICIR 0.30 × TC 0.10 = 有效 ICIR 0.03 — 不可能打敗任何 benchmark。
+根因：TC 損耗。`E(R) = TC × IC × √BR × σ`，top-15 等權 TC ≈ 0.10（MSCI 2019）。等權 benchmark 有 +2.5-4%/年內建 premium。
 
-**等權 benchmark 的內建 premium**：size +1.5-2.5%、rebalancing +0.5-1.0%、value +0.5%，合計 +2.5-4.0%/年。Top-15 要先 cover 這個才能打平。DeMiguel (2009)：等權 1/N 在 14 種最佳化中無一被一致性超越。
+## 診斷（revenue ratio，22 季度 2020-2025）
 
-## PBO 不可算
+- Dispersion 10.6%（充足）、Sector 13/15 非半導體（不是產業曝險）
+- **Q5 excess vs EW: +1.34%/20d** — top quintile 打敗大盤，因子有效
+- Monotonicity 0.50 — 頂端有效但中間噪音
+- Score-tilt Sharpe +11%（3.33 vs 3.00），但 excess 差距小（+0.08%）
+- **所有建構方式（含 top-15 EW）都贏大盤** — Validator 不通過原因待查
 
-只有 1 個 independent cluster（revenue ratio 113 個 clone）。Bailey CSCV 在 N=1 時無意義。
+注意：以上僅針對 revenue ratio。其他因子可能有不同特性。
 
-**替代驗證堆疊**（通過 1-4 有合理信心可小規模部署）：
+## PBO
 
-| Level | 方法 | 我們的狀態 |
-|:-----:|------|:----------:|
-| 1 | Permutation Test p < 0.10 | ✅ |
-| 2 | DSR with correct K | ⚠️ K 需校準 |
-| 3 | Walk-Forward Efficiency > 0.5 | ⚠️ 有 WF 沒算 WFE |
-| 4 | OOS/IS Sharpe > 0.4 | ✅ |
-| 5 | Cross-Market Validation | ❌ |
-| 6 | Paper Trading 3+ months | ⏳ 3/30 啟動 |
+N=1 cluster（113 clone），CSCV 無意義。替代：Permutation ✅、DSR ⚠️（K 需校準）、WFE ⚠️、OOS decay ✅、Paper Trading ⏳。
 
-## Agent 優化目標
+## Agent 反饋信號
 
-現狀：agent 優化 IC/ICIR（L5），不知道 portfolio 不賺錢。110 個 L5 "keep" → 以為方向正確 → 繼續產 clone。
+| 信號 | 做什麼 | 引導行為 |
+|------|--------|---------|
+| L5b excess_return | top quintile > universe | 營利 |
+| L5c monotonicity | 分位單調性 > 0.5 | 頂端有效 |
+| novelty indicator | bucketed corr | 多樣化 |
 
-**雙重目標**（不矛盾）：
-
-- **A. 營利**：evaluate.py 加 excess_return gate → agent 看到 fail 才知道要調整
-- **B. 多樣化**：evaluate.py 加 novelty indicator → agent 看到新方向的正向回饋
-
-**三個反饋信號（代碼層，比文字引導可靠）：**
-
-| 信號 | 做什麼 | 引導什麼行為 |
-|------|--------|------------|
-| L5b excess_return | top quintile 月報酬 > universe 月報酬 | 找真正能盈利的因子 |
-| L5c monotonicity | 分位報酬單調性 Spearman > 0.5 | 信號在頂端有效不只是中間 |
-| novelty indicator | bucketed corr: high/moderate/low | 往新方向深入探索 |
-
-**不在 program.md 說 revenue 飽和** — revenue 方向仍有潛力（sector-neutral revenue、revenue × momentum 交互項）。excess_return gate 會自然過濾無效變體。
-
-## 診斷結果（2026-03-30，22 個季度 2020-2025）
-
-| 診斷 | 結果 | 意義 |
-|------|------|------|
-| Cross-section dispersion | **10.6%** 月標準差 | 充足（> 10%），市場有空間 |
-| Q5 (top) 20d return | **+4.47%** | 最高分位 |
-| Q1 (bottom) 20d return | +2.79% | 最低分位 |
-| Q5-Q1 spread | **+1.68%/20d** | 有 spread |
-| Monotonicity (Spearman) | **0.50** | 中等 — 中間分位噪音大，但頂端有效 |
-| **Top quintile excess vs EW** | **+1.34%/20d** | **Q5 打敗大盤** |
-| Sector concentration | Semi 1/15, Fin 1/15 | **不是產業曝險，跨產業選股** |
-
-**關鍵發現：Top quintile 打敗大盤 +1.34%/20d，sector 分散（13/15 非半導體）。因子有效。**
-
-### Score-tilt 測試結果（22 個季度 2020-2025）
-
-| 方法 | vs EW 大盤 | Sharpe (ann) |
-|------|:----------:|:------------:|
-| Universe EW (benchmark) | — | 2.51 |
-| **Top-15 EW (現在)** | **+1.41%** | **3.00** |
-| Top-40 EW (quintile) | +1.31% | 3.16 |
-| Score-tilt (z-score weighted) | +1.44% | 3.21 |
-| **Top-40 tilt (factor weighted)** | **+1.49%** | **3.33** |
-
-**意外發現：所有建構方式（含 top-15 EW）都贏大盤。** Top-40 tilt 的 Sharpe 最高（3.33 vs 3.00，+11%），但 excess return 差距小（+0.08%）。
-
-**這意味著 Validator 的 vs_ew_universe 不通過可能不是因子或建構問題，而是 Validator 回測期間 / 配置差異。** 需要進一步排查 Validator 和此診斷的差異（IS 截斷、cost model、lot size 等）。
-
-### 優先級原則
-
-以上診斷和測試都是針對 revenue ratio 這一個因子。如果之後找到 PE momentum 或 margin 方向的因子，可能有完全不同的 Q5 表現、monotonicity、sector 特性。**應優先做對所有未來因子都有效的結構性改進，而非只 debug 當前因子的 Validator 結果。**
+不在 program.md 限制方向。代碼 gate 比文字引導可靠。
 
 ## 待做
 
-### 結構性改進（對所有未來因子有效）
+**結構性（所有因子受益）：**
 
-| # | 項目 | 優先級 | 備註 |
-|---|------|:------:|------|
-| 1 | evaluate.py 加 L5b excess_return gate | **高** | 給 agent 營利反饋（用 quintile 基準） |
-| 2 | evaluate.py 加 novelty indicator（bucketed corr） | **高** | 給 agent 多樣化反饋 |
-| 3 | program.md 更新（新數據 + TC 概念，不限制方向） | **高** | |
-| 4 | evaluate.py construction 改為 top quintile 或 score-tilt | 高 | Score-tilt Sharpe +11%，對所有因子提升 TC |
-| 5 | watchdog PBO fallback 到 DSR | 中 | |
+| # | 項目 | 優先級 |
+|---|------|:------:|
+| 1 | evaluate.py 加 L5b/L5c gate | **高** |
+| 2 | evaluate.py 加 novelty indicator | **高** |
+| 3 | program.md 加 TC 概念 | **高** |
+| 4 | evaluate.py construction → quintile/score-tilt | 高 |
+| 5 | watchdog PBO fallback → DSR | 中 |
 
-### Factor-specific（只針對當前因子）
+**Factor-specific：** Validator 差異排查（中）、Cross-Market（低）
 
-| # | 項目 | 優先級 | 備註 |
-|---|------|:------:|------|
-| 6 | 排查 Validator vs 診斷的差異 | 中 | 可能揭示系統性 bug，但結論不一定適用其他因子 |
-| 7 | Cross-Market Validation（韓/日） | 低 | |
+**已完成：** 新數據 ✅、returns dedup ✅、PBO 修復 ✅、診斷 ✅、score-tilt 測試 ✅
 
-**已完成：**
-- [x] 新數據（per_history 472 支, margin 220 支）✅ 2026-03-30
-- [x] Returns dedup 擋 clone ✅ 2026-03-29
-- [x] PBO read-only bug 修復 ✅ 2026-03-30
-- [x] 診斷分析（dispersion + quintile + sector）✅ 2026-03-30
-- [x] Score-tilt 測試（top-40 tilt Sharpe 3.33 vs top-15 EW 3.00）✅ 2026-03-30
-
-**不做：** 不降低 vs_ew_universe 門檻、不把多樣化量化為分數、不限制 agent 探索方向。
+**不做：** 不降門檻、不量化多樣化為分數、不限制方向。
 
 ## 參考
 
-- Bailey & López de Prado (2014). Deflated Sharpe Ratio / PBO. *JCAM*, *JPS*.
-- Clarke, de Silva & Thorley (2002). Portfolio Constraints and the Fundamental Law. *FAJ*.
-- DeMiguel, Garlappi & Uppal (2009). Optimal vs. Naive Diversification. *RFS*.
-- Harvey, Liu & Zhu (2016). ...and the Cross-Section of Expected Returns. *RFS*.
-- MSCI (2019). Portfolio-Weighting Schemes and Factor Exposures.
-- S&P Global / Solactive (2018). Equal-Weight Indexing.
-- AQR (2023). Fact, Fiction and Factor Investing. *JPM*.
-- Qian, Sorensen & Hua (2007). Information Horizon. *JPM*.
+Bailey (2014) PBO/DSR、Clarke (2002) TC、DeMiguel (2009) 1/N、Harvey (2016) multiple testing、MSCI (2019) TC 實測、AQR (2023) fact/fiction。
