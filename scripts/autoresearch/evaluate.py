@@ -916,9 +916,21 @@ def evaluate() -> dict:
             elapsed=elapsed,
         )
 
+    # Saturation check — BEFORE corr check, but only if corr is meaningful (> 0.20)
+    # Prevents false saturation blocks on genuinely new directions with weak correlation
+    if corr_with and abs(max_corr) > 0.20:
+        match_count = _get_match_count(corr_with)
+        if match_count >= SATURATION_MATCH_LIMIT:
+            return _make_result(
+                level="L3", failure=f"direction saturated: {match_count} variants for {corr_with}",
+                ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+                icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+                max_correlation=max_corr, correlated_with=corr_with,
+                elapsed=elapsed,
+            )
+
     if abs(max_corr) > MAX_CORRELATION:
         # Phase AF: check replacement eligibility before rejecting
-        match_count = _get_match_count(corr_with)
         factor_icirs = _load_factor_icirs()
         correlated_icir = abs(factor_icirs.get(corr_with, 0.0))
         replacement_count = _get_replacement_count()
@@ -935,14 +947,6 @@ def evaluate() -> dict:
             is_replacement_candidate = True
             replacement_target = corr_with
             print(f"  L3: replacement candidate (median_ICIR {median_icir:.4f} >= {REPLACEMENT_ICIR_MULTIPLIER}x {correlated_icir:.4f})")
-        elif match_count >= SATURATION_MATCH_LIMIT:
-            return _make_result(
-                level="L3", failure=f"direction saturated: {match_count} variants for {corr_with}",
-                ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
-                icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
-                max_correlation=max_corr, correlated_with=corr_with,
-                elapsed=elapsed,
-            )
         else:
             return _make_result(
                 level="L3", failure=f"corr={max_corr:.3f} with {corr_with} > {MAX_CORRELATION}",
