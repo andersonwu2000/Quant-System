@@ -153,18 +153,18 @@ def evaluate():
     level = _extract(stdout, "level:") or "UNKNOWN"
     passed = _extract(stdout, "passed:") == "True"
 
-    # Bucket ICIR to prevent agent from building IS→OOS regression model.
-    # Precise ICIR + L5 pass/fail = partial Thresholdout bypass over many experiments.
-    best_icir = 0.0
+    # Bucket ICIR_20d (fixed horizon, consistent with L2 gate — Fix #8).
+    # Using best_icir (max across horizons) would confuse agent: "strong" but L2 fail.
+    icir_20d = 0.0
     try:
-        best_icir = float(_extract(stdout, "best_icir:"))
+        icir_20d = abs(float(_extract(stdout, "icir_20d:")))
     except (ValueError, TypeError):
         pass
-    if best_icir >= ICIR_THRESHOLDS[0]:
+    if icir_20d >= ICIR_THRESHOLDS[0]:
         icir_bucket = "strong"
-    elif best_icir >= ICIR_THRESHOLDS[1]:
+    elif icir_20d >= ICIR_THRESHOLDS[1]:
         icir_bucket = "moderate"
-    elif best_icir >= ICIR_THRESHOLDS[2]:
+    elif icir_20d >= ICIR_THRESHOLDS[2]:
         icir_bucket = "weak"
     else:
         icir_bucket = "none"
