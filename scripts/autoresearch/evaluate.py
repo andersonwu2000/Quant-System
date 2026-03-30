@@ -216,10 +216,20 @@ def _load_universe(large: bool = False) -> list[str]:
 
 
 def _load_all_data(universe: list[str]) -> dict:
-    """Load all available data for the universe. Cached after first call."""
+    """Load all available data for the universe via DataCatalog.
+
+    Uses DataCatalog for path resolution and reading, but preserves the exact
+    same output dict format (data["bars"][sym], data["revenue"][sym], etc.)
+    so all downstream code is unaffected.
+
+    Cached after first call.
+    """
     global _data_cache
     if _data_cache is not None:
         return _data_cache
+
+    from src.data.data_catalog import DataCatalog
+    catalog = DataCatalog(str(PROJECT_ROOT / "data"))
 
     print(f"Loading data for {len(universe)} symbols...")
 
@@ -229,90 +239,61 @@ def _load_all_data(universe: list[str]) -> dict:
     pe_ratios: dict[str, float] = {}
     pb_ratios: dict[str, float] = {}
     roe_values: dict[str, float] = {}
-    per_history: dict[str, pd.DataFrame] = {}  # daily PER/PBR/dividend_yield
-    market_cap: dict[str, float] = {}  # D3: latest market cap (close × shares_issued)
-    margin_data: dict[str, pd.DataFrame] = {}  # daily margin purchase/short sale
-
-    market_dir = PROJECT_ROOT / "data" / "market"
-    fund_dir = PROJECT_ROOT / "data" / "fundamental"
+    per_history: dict[str, pd.DataFrame] = {}
+    market_cap: dict[str, float] = {}
+    margin_data: dict[str, pd.DataFrame] = {}
 
     for sym in universe:
-        bare = sym.replace(".TW", "").replace(".TWO", "")
+        # Market data (OHLCV)
+        df = catalog.get("price", sym)
+        if not df.empty and "close" in df.columns:
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+            df.index = pd.to_datetime(df.index.date)  # normalize to date-only
+            df = df[~df.index.duplicated(keep="first")]
+            df["close"] = df["close"].where(df["close"] > 0)
+            if df["close"].isna().sum() / len(df) <= 0.10:
+                bars[sym] = df
 
-        # Market data (OHLCV) — try multiple naming conventions
-        for pattern in [f"{sym}_1d.parquet", f"{sym}.parquet", f"finmind_{bare}.parquet"]:
-            path = market_dir / pattern
-            if path.exists():
-                df = pd.read_parquet(path)
-                if "date" in df.columns:
-                    df["date"] = pd.to_datetime(df["date"])
-                    df = df.set_index("date").sort_index()
-                if not isinstance(df.index, pd.DatetimeIndex):
-                    df.index = pd.to_datetime(df.index)
-                df.index = pd.to_datetime(df.index.date)  # normalize to date-only
-                df = df[~df.index.duplicated(keep="first")]
-                if not df.empty and "close" in df.columns:
-                    # Replace zero/negative close with NaN, skip if >10% bad
-                    df["close"] = df["close"].where(df["close"] > 0)
-                    if df["close"].isna().sum() / len(df) <= 0.10:
-                        bars[sym] = df
-                break
-
-        # Revenue (try sym first, then bare)
-        rev_path = fund_dir / f"{sym}_revenue.parquet"
-        if not rev_path.exists():
-            rev_path = fund_dir / f"{bare}_revenue.parquet"
-        if rev_path.exists():
-            df = pd.read_parquet(rev_path)
-            if not df.empty and "revenue" in df.columns:
+        # Revenue
+        df = catalog.get("revenue", sym)
+        if not df.empty and "revenue" in df.columns:
+            if "date" in df.columns:
                 df["date"] = pd.to_datetime(df["date"])
                 revenue[sym] = df.sort_values("date")
 
         # Institutional
-        inst_path = fund_dir / f"{sym}_institutional.parquet"
-        if not inst_path.exists():
-            inst_path = fund_dir / f"{bare}_institutional.parquet"
-        if inst_path.exists():
-            df = pd.read_parquet(inst_path)
-            if not df.empty:
-                df["date"] = pd.to_datetime(df["date"])
-                institutional[sym] = df.sort_values("date")
+        df = catalog.get("institutional", sym)
+        if not df.empty and "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+            institutional[sym] = df.sort_values("date")
 
         # PER history (daily PER/PBR/dividend_yield)
-        per_path = fund_dir / f"{sym}_per.parquet"
-        if not per_path.exists():
-            per_path = fund_dir / f"{bare}_per.parquet"
-        if per_path.exists():
-            try:
-                df = pd.read_parquet(per_path)
-                if not df.empty and "PER" in df.columns:
-                    df["date"] = pd.to_datetime(df["date"])
-                    per_history[sym] = df.sort_values("date")
-            except Exception:
-                pass
+        try:
+            df = catalog.get("per", sym)
+            if not df.empty and "PER" in df.columns and "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                per_history[sym] = df.sort_values("date")
+        except Exception:
+            pass
 
-        # Margin data (daily margin purchase/short sale balances)
-        margin_path = fund_dir / f"{sym}_margin.parquet"
-        if not margin_path.exists():
-            margin_path = fund_dir / f"{bare}_margin.parquet"
-        if margin_path.exists():
-            try:
-                df = pd.read_parquet(margin_path)
-                if not df.empty:
-                    df["date"] = pd.to_datetime(df["date"])
-                    margin_data[sym] = df.sort_values("date")
-            except Exception:
-                pass
+        # Margin data
+        try:
+            df = catalog.get("margin", sym)
+            if not df.empty and "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                margin_data[sym] = df.sort_values("date")
+        except Exception:
+            pass
 
         # D3: Market cap (close × shares_issued)
-        sh_path = fund_dir / f"{sym}_shareholding.parquet"
-        if not sh_path.exists():
-            sh_path = fund_dir / f"{bare}_shareholding.parquet"
-        if sh_path.exists() and sym in bars:
+        if sym in bars:
             try:
-                sh_df = pd.read_parquet(sh_path)
+                sh_df = catalog.get("shareholding", sym)
                 if not sh_df.empty and "NumberOfSharesIssued" in sh_df.columns:
-                    shares = float(sh_df.sort_values("date").iloc[-1]["NumberOfSharesIssued"])
+                    if "date" in sh_df.columns:
+                        sh_df = sh_df.sort_values("date")
+                    shares = float(sh_df.iloc[-1]["NumberOfSharesIssued"])
                     last_close = float(bars[sym]["close"].iloc[-1])
                     if shares > 0 and last_close > 0:
                         market_cap[sym] = last_close * shares
@@ -320,22 +301,18 @@ def _load_all_data(universe: list[str]) -> dict:
                 pass
 
         # Financial metrics (PE, PB, ROE)
-        fin_path = fund_dir / f"{sym}_financial_statement.parquet"
-        if not fin_path.exists():
-            fin_path = fund_dir / f"{bare}_financial_statement.parquet"
-        if fin_path.exists():
-            try:
-                df = pd.read_parquet(fin_path)
-                if not df.empty:
-                    latest = df.iloc[-1]
-                    if "pe_ratio" in df.columns:
-                        pe_ratios[sym] = float(latest.get("pe_ratio", 0) or 0)
-                    if "pb_ratio" in df.columns:
-                        pb_ratios[sym] = float(latest.get("pb_ratio", 0) or 0)
-                    if "roe" in df.columns:
-                        roe_values[sym] = float(latest.get("roe", 0) or 0)
-            except Exception:
-                pass
+        try:
+            df = catalog.get("financial_statement", sym)
+            if not df.empty:
+                latest = df.iloc[-1]
+                if "pe_ratio" in df.columns:
+                    pe_ratios[sym] = float(latest.get("pe_ratio", 0) or 0)
+                if "pb_ratio" in df.columns:
+                    pb_ratios[sym] = float(latest.get("pb_ratio", 0) or 0)
+                if "roe" in df.columns:
+                    roe_values[sym] = float(latest.get("roe", 0) or 0)
+        except Exception:
+            pass
 
     print(f"  Loaded: {len(bars)} bars, {len(revenue)} revenue, "
           f"{len(institutional)} institutional, {len(per_history)} PER history, "
@@ -346,7 +323,7 @@ def _load_all_data(universe: list[str]) -> dict:
         "revenue": revenue,
         "institutional": institutional,
         "per_history": per_history,  # data["per_history"][sym] → DataFrame[date, PER, PBR, dividend_yield]
-        "margin": margin_data,       # data["margin"][sym] → DataFrame[date, MarginPurchaseTodayBalance, ShortSaleTodayBalance, ...]
+        "margin": margin_data,       # data["margin"][sym] → DataFrame[date, ...]
         "pe": pe_ratios,
         "pb": pb_ratios,
         "roe": roe_values,

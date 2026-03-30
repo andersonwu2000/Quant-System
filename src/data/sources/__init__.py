@@ -33,6 +33,10 @@ def create_feed(source: str, universe: list[str], **kwargs: object) -> DataFeed:
 
         token = str(kwargs.get("token", ""))
         return FinMindFeed(universe, token=token)
+    elif source == "catalog":
+        from src.data.sources.catalog_feed import CatalogFeed
+
+        return CatalogFeed(universe)
     elif source == "shioaji":
         from src.data.sources.shioaji_feed import ShioajiFeed
 
@@ -40,7 +44,7 @@ def create_feed(source: str, universe: list[str], **kwargs: object) -> DataFeed:
         return ShioajiFeed(api=api, universe=universe)
     else:
         raise ValueError(
-            f"Unknown data source: {source}. Available: yahoo, finmind, shioaji"
+            f"Unknown data source: {source}. Available: yahoo, finmind, catalog, shioaji"
         )
 
 

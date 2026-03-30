@@ -1,7 +1,7 @@
 # 系統現況報告
 
-> **更新**: 2026-03-29
-> **版本**: v15.0
+> **更新**: 2026-03-31
+> **版本**: v16.0
 
 ---
 
@@ -9,17 +9,18 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python | 153 檔 / 35,870 LOC |
-| 測試 | 114 檔 / 25,870 LOC / **1,544** test functions |
+| 後端 Python | 161 檔 / 38,200+ LOC |
+| 測試 | 116 檔 / 26,200+ LOC / **1,700+** test functions |
 | CI | 9 jobs（lint + mypy + test + web + e2e + android + release） |
 | API 端點 | 117（16 路由模組） |
 | 因子 | 83（66 技術 + 17 基本面） |
 | 策略 | 13（11 standalone + alpha + multi_asset） |
 | 最佳化方法 | 14 |
 | 風控規則 | 12 |
-| 數據源 | 4（Yahoo / FinMind / FRED / Shioaji） |
-| 本地 parquet | 895 支台股價格 + 408 基本面檔 |
-| Autoresearch | 233 實驗, 25 tagged 因子, best ICIR 0.95 |
+| 數據源 | 5（Yahoo / FinMind / FRED / Shioaji / TWSE+TPEX OpenAPI） |
+| 本地 parquet | 1,099 支台股價格 + 3,407 基本面檔（12 種數據集） |
+| 數據平台 | DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine |
+| Autoresearch | 974 實驗, 297 L5 passes, 2 independent directions |
 
 ---
 
@@ -89,7 +90,7 @@
 | `src/alpha/` | 31 | 6,663 | Alpha Pipeline + Auto-Alpha（9 子模組）+ FilterStrategy |
 | `src/backtest/` | 13 | 5,448 | Engine + Validator(16項) + PBO(CSCV) + WF + 向量化(Z1) |
 | `src/strategy/` | 19 | 4,689 | 83 因子（tech+fundamental+kakushadze）+ optimizer + registry |
-| `src/data/` | 15 | 2,752 | 4 數據源 + 品質檢查 + LocalMarketData |
+| `src/data/` | 22 | 4,100+ | 5 數據源 + DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
 | `src/execution/` | 14 | 2,666 | SimBroker + Sinopac + TWAP + OMS + 零股分流 |
 | `src/portfolio/` | 4 | 1,596 | 14 最佳化方法 + 風險模型(GARCH/PCA) + 幣別對沖 |
 | `src/core/` | 7 | 1,215 | 統一模型 + Config + Logging + TradingCalendar + TradingPipeline |
