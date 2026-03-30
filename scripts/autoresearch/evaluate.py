@@ -200,17 +200,14 @@ def _load_universe(large: bool = False) -> list[str]:
         ]
         if syms:
             return syms
-    # Fallback: scan all parquet files in data/market/
-    market_dir = PROJECT_ROOT / "data" / "market"
-    if market_dir.exists():
-        syms = []
-        for p in market_dir.glob("finmind_*.parquet"):
-            bare = p.stem.replace("finmind_", "")
-            syms.append(f"{bare}.TW")
+    # Fallback: scan all price parquet files via DataCatalog
+    from src.data.data_catalog import DataCatalog
+    catalog = DataCatalog(str(PROJECT_ROOT / "data"))
+    syms = catalog.available_symbols("price")
+    if syms:
         if large and len(syms) > 100:
             return sorted(syms)
         if not large and len(syms) > 50:
-            # Use top 200 by filename as rough proxy if universe.txt missing
             return sorted(syms)[:200]
     raise FileNotFoundError(f"Universe file not found: {path}. Run universe builder first.")
 
