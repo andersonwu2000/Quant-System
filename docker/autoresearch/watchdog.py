@@ -192,9 +192,9 @@ def _process_pending():
             for cp, _ in clones:
                 cp.unlink()
                 skipped += 1
-        elif best_icir > ref_icir:
-            # Best clone has higher ICIR than reference — keep it as novel
-            log(f"Validator: PROMOTED {best_path.name} (ICIR {best_icir:.3f} > ref {ref_icir:.3f})")
+        elif best_icir >= 1.3 * ref_icir:
+            # Best clone has significantly higher ICIR — promote (consistent with L3 replacement 1.3× threshold)
+            log(f"Validator: PROMOTED {best_path.name} (ICIR {best_icir:.3f} >= 1.3x ref {ref_icir:.3f})")
             novel.append(best_path)
             promoted += 1
             # Delete the rest
