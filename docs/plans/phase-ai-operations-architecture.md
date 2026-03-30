@@ -236,71 +236,58 @@ StrategyManager
 
 ---
 
-## 6. 執行計畫（按依賴排序）
+## 6. 執行計畫（審批修正版）
 
-### Phase 1：交易原子性 + Crash Recovery（P0）
+> 參考：NautilusTrader 的 crash-only 設計 — startup 和 recovery 共用同一個 code path。
+> Paper mode 用 SimBroker（同步撮合），不存在「下單後、成交前崩潰」場景。
+> Intent log + trade ledger 留到 live trading（SinopacBroker async callback）前做。
 
-解決「下單後崩潰 = 倉位不一致」這個最危險的問題。
+### Phase 1：基礎韌性 + 交易日感知（本週，P0）
 
-| 步驟 | 內容 | 檔案 | 預估 |
-|------|------|------|------|
-| 1a | Intent log（下單前寫入意圖） | `src/execution/intent_log.py` | 1h |
-| 1b | Trade ledger（逐筆 append-only） | `src/execution/trade_ledger.py` | 1h |
-| 1c | 重啟時 ledger 重播恢復 | 修改 `src/api/state.py` | 2h |
-| 1d | SIGTERM handler（關機前存狀態） | 修改 `src/api/app.py` | 30m |
-| 1e | Docker API healthcheck | 修改 `docker-compose.yml` | 15m |
-| 1f | 測試：模擬崩潰 + 恢復 | 新增測試 | 1h |
+| 步驟 | 內容 | 檔案 |
+|------|------|------|
+| 1a | SIGTERM handler（關機前存 portfolio + 取消掛單） | 修改 `src/api/app.py` |
+| 1b | Docker API healthcheck（`GET /system/health`） | 修改 `docker-compose.yml` |
+| 1c | `execute_pipeline` 開頭加交易日檢查 | 修改 `src/scheduler/jobs.py` |
+| 1d | SchedulerService 加 TradingDayFilter | 修改 `src/scheduler/__init__.py` |
+| 1e | 每日數據刷新排程（TWSE 快照 + Yahoo 增量） | 修改 `src/scheduler/__init__.py` |
 
-### Phase 2：DAG + 交易日曆 + 數據自動化（P0）
+### Phase 2：Heartbeat + 通知分級 + 日報（下週，P1）
 
-解決「每天要手動操作」和「非交易日浪費資源」的問題。
+| 步驟 | 內容 | 檔案 |
+|------|------|------|
+| 2a | HeartbeatMonitor（開盤前/交易後/收盤後 Discord ping） | `src/scheduler/heartbeat.py` |
+| 2b | 通知分級（P0 緊急 → P3 調試） | 修改 `src/notifications/` |
+| 2c | 每日摘要報告（Discord：NAV、trades、drift） | 修改 `src/scheduler/jobs.py` |
+| 2d | Ops API endpoints（`/ops/daily-summary`、`/ops/positions`） | `src/api/routes/ops.py` |
 
-| 步驟 | 內容 | 檔案 | 預估 |
-|------|------|------|------|
-| 2a | `daily_trading_dag()` 統一入口 | `src/scheduler/dag.py` | 2h |
-| 2b | 每日數據刷新步驟（TWSE+Yahoo） | `src/scheduler/dag.py` | 1h |
-| 2c | TradingDayFilter | `src/scheduler/__init__.py` | 30m |
-| 2d | 靈活再平衡頻率 config | `src/core/config.py` | 30m |
-| 2e | Holiday 動態更新 | `src/core/calendar.py` | 1h |
-| 2f | 替換 SchedulerService 為 DAG | `src/scheduler/__init__.py` | 1h |
+### Phase 3：Live Trading 準備（live 啟動前，P1）
 
-### Phase 3：Heartbeat + 通知分級（P1）
+| 步驟 | 內容 | 檔案 |
+|------|------|------|
+| 3a | Intent log（下單前寫入意圖）— SinopacBroker async 需要 | `src/execution/intent_log.py` |
+| 3b | Trade ledger（逐筆 append-only 成交記錄） | `src/execution/trade_ledger.py` |
+| 3c | 重啟時 ledger 重播恢復 | 修改 `src/api/state.py` |
+| 3d | 掛單持久化（G4，pending orders → SQLite） | `src/execution/order_book.py` |
 
-解決「系統掛了不知道」和「通知太吵/太少」的問題。
+### Phase 4：Autoresearch 同步（P2）
 
-| 步驟 | 內容 | 檔案 | 預估 |
-|------|------|------|------|
-| 3a | HeartbeatMonitor | `src/scheduler/heartbeat.py` | 1h |
-| 3b | 通知分級（P0~P3） | 修改 `src/notifications/` | 1h |
-| 3c | 每日摘要報告（Discord） | `src/scheduler/dag.py` | 1h |
-| 3d | Ops API endpoints | `src/api/routes/ops.py` | 2h |
+| 步驟 | 內容 | 檔案 |
+|------|------|------|
+| 4a | Docker volume mount 對齊新目錄結構 | `docker/autoresearch/docker-compose.yml` |
+| 4b | 容器內數據驗證 | 驗證腳本 |
 
-### Phase 4：策略生命週期管理（P1）
+### ~~Phase 5：策略生命週期管理~~ → 已由 Phase AG 完成
 
-解決「新因子從發現到上線需要人工操作」的問題。
+PaperDeployer + DeployedExecutor + 多 portfolio 隔離（main + auto×3）+ 5% NAV cap + 3% DD kill switch 均在 Phase AG 實作完成，不在此重複。
 
-| 步驟 | 內容 | 檔案 | 預估 |
-|------|------|------|------|
-| 4a | StrategyManager（多策略編排） | `src/scheduler/strategy_manager.py` | 3h |
-| 4b | 多 portfolio 隔離（main + auto×3） | 修改 `src/api/state.py` | 2h |
-| 4c | 自動部署審批流程（通知 → 確認） | 修改 `src/alpha/auto/paper_deployer.py` | 2h |
-| 4d | 策略比較週報 | `src/reconciliation/strategy_report.py` | 1h |
-
-### Phase 5：Autoresearch 同步 + Docker（P2）
-
-| 步驟 | 內容 | 檔案 | 預估 |
-|------|------|------|------|
-| 5a | Docker volume mount 對齊 | `docker/autoresearch/docker-compose.yml` | 30m |
-| 5b | 容器內數據驗證 | 驗證腳本 | 30m |
-| 5c | Deploy queue 路徑更新 | `src/alpha/auto/deployed_executor.py` | 30m |
-
-### Phase 6：使用者介面強化（P2，可選）
+### Phase 5：使用者介面強化（P2，可選）
 
 | 步驟 | 內容 | 備註 |
 |------|------|------|
-| 6a | Discord Bot（/status, /rebalance） | 比 Web 更方便的日常操作 |
-| 6b | Web Dashboard Ops 頁面 | 系統狀態一覽 |
-| 6c | Mobile Push 通知 | P0 告警推播 |
+| 5a | Discord Bot（/status, /rebalance） | 比 Web 更方便的日常操作 |
+| 5b | Web Dashboard Ops 頁面 | 系統狀態一覽 |
+| 5c | Mobile Push 通知 | P0 告警推播 |
 
 ---
 
@@ -308,11 +295,14 @@ StrategyManager
 
 | 項目 | 原因 |
 |------|------|
-| Prefect / Dagster / Airflow | 單人系統，自寫 DAG 夠用 |
+| 自寫 DAG engine | `execute_pipeline` 內部已是 DAG-like 流程，不需另建 |
+| Prefect / Dagster / Airflow | 單人系統，APScheduler + cron 足夠 |
+| Paper mode 的 intent log | SimBroker 是同步撮合，pipeline 重跑即可恢復 |
 | Kubernetes | 單機部署 |
 | 分散式 portfolio lock | 單進程，asyncio.Lock 足夠 |
 | 完整 GUI 交易台 | Web Dashboard 有基本頁面，不做 Bloomberg 級別 |
 | HFT 級 tick engine | 台股日頻策略不需要 |
+| StrategyManager 重寫 | Phase AG 已完成策略生命週期管理 |
 
 ---
 
@@ -320,9 +310,10 @@ StrategyManager
 
 1. **無人值守** — 正常情況下不需要人工操作，系統自己跑
 2. **異常通知** — 只在出問題時打擾你，不發廢通知
-3. **崩潰安全** — 任何時刻斷電都能正確恢復
+3. **Crash-only design** — startup 和 recovery 共用同一個 code path（參考 NautilusTrader）。Paper mode 重跑 pipeline 即恢復；live mode 靠 trade ledger 重播
 4. **一鍵查看** — 一個指令/一次點擊看到系統全貌
 5. **漸進上線** — paper 30 天 → 人工審核 → live，不自動用真錢
+6. **最小改動** — 不重寫已有的 SchedulerService/PaperDeployer，只在必要處加邏輯
 
 ---
 
@@ -336,3 +327,119 @@ StrategyManager
 | 因子發現→paper trading 延遲 | < 1 天（審批後） |
 | 系統掛死到發現 | < 15 分鐘（heartbeat） |
 | 策略上線到退役全流程 | 自動化（除 live 升級需人工） |
+
+---
+
+## 10. 嚴格審批（2026-03-31）
+
+### 判定：設計方向正確，但有 4 個結構性問題。Phase 1 可以開始，Phase 2-6 需修正。
+
+---
+
+### 問題 1（CRITICAL）：Phase 4 和 Phase AG 大量重複
+
+§2 策略生命週期和 §6 Phase 4 的內容——多策略並行、StrategyManager、部署審批、策略比較——**幾乎完全是 Phase AG 已實作的東西**。
+
+已有：
+- `PaperDeployer`（deploy/stop/kill/update_nav）✅
+- `DeployedStrategyExecutor`（獨立 NAV 追蹤）✅
+- `SchedulerService` 已註冊 `deployed_strategies` cron job（每月 12 日）✅
+- 多 portfolio 隔離（main + auto×3, 5% NAV cap, 3% DD kill switch）✅
+
+**如果 Phase AI Phase 4 重新設計這些，會和 Phase AG 代碼衝突。**
+
+**修正**：刪除 Phase 4（§6 Phase 4）。策略生命週期管理是 Phase AG 的範圍，不應在此重複。§2 可以保留作為架構概覽，但 §6 的實作步驟 4a-4d 應刪除。
+
+---
+
+### 問題 2（HIGH）：Phase 1 的 Crash Recovery 設計過度
+
+§3.1 提出 intent log + trade ledger + 重播恢復，但：
+
+1. **台股月頻策略每月交易 1 次**，pipeline 從 weights → SimBroker → apply_trades → save_portfolio 是**同步的**（不是 async callback）。同步流程中間崩潰 = 整個 pipeline 失敗 → 重跑即可
+2. **Paper trading 用 SimBroker**（記憶體撮合），沒有「下單後、成交前崩潰」的場景
+3. **真正需要 ledger 的是 live trading 用 SinopacBroker**（async callback），但 live 還沒啟動
+
+現有的 `_save_trade_log()`（jobs.py:205）已經在成交後寫 JSON，`save_portfolio()` 在 pipeline 結束時寫 JSON。這已經涵蓋了「portfolio JSON 過時」的場景（pipeline 重跑會重新計算）。
+
+**修正**：Phase 1 縮減為：
+- 1d：SIGTERM handler（有價值，<30 分鐘）
+- 1e：Docker healthcheck（有價值，<15 分鐘）
+- 1a-1c：intent log + ledger → 降為 Phase 3（live trading 啟動前做）
+
+---
+
+### 問題 3（HIGH）：DAG Scheduler 是過度設計
+
+§6 Phase 2 提出寫 `src/scheduler/dag.py` 取代現有 `SchedulerService`。但：
+
+1. 現有 `SchedulerService` 用 APScheduler cron 已能完成所有排程需求（pipeline cron + reconcile cron + deployed_strategies cron）
+2. `execute_pipeline` 內部已有 DAG-like 流程：refresh → quality gate → strategy → broker → reconcile → save
+3. 自寫 DAG engine 等於重造 Prefect/Dagster — §7 自己說了不用這些工具，但又要自寫一個
+
+**真正需要的只是**：
+- 交易日過濾（已有 `is_trading_day`，只是沒在 scheduler 層檢查）
+- heartbeat（Phase 3，值得做）
+- 非交易日不觸發（SchedulerService 加一行 `if not is_trading_day: return`）
+
+**修正**：刪除 Phase 2 的 DAG 設計。改為：
+- 2a：`execute_pipeline` 開頭加交易日檢查（5 行）
+- 2c：TradingDayFilter 加到 SchedulerService（10 行）
+- 其他不變
+
+---
+
+### 問題 4（MEDIUM）：工作量預估不可信
+
+| 步驟 | 預估 | 評估 |
+|------|------|------|
+| 1a Intent log | 1h | ⚠️ 需要定義 schema + 序列化 + 測試 → 3-4h |
+| 1c Ledger 重播 | 2h | ⚠️ 需要處理 partial replay + idempotency → 1-2 天 |
+| 2a DAG | 2h | ❌ 自寫 DAG engine → 1-2 週（如果認真做） |
+| 4a StrategyManager | 3h | ❌ 多策略編排 → 1 週+（Phase AG 花了更多） |
+
+歷史教訓（LESSONS #22）：「代碼完成 ≠ 功能正常」。計畫總共預估 ~20 小時，但實際至少 3-4 週。
+
+**修正**：不給小時數。按 Phase 排期，每個 Phase 1-2 週。
+
+---
+
+### 做得好的部分
+
+1. **§1.2 每日運營流程圖**清晰完整——這正是系統需要的全景
+2. **§2.2 自動 vs 人工**的分界正確——live trading 必須人工確認
+3. **§4.3 通知分級**設計合理——P0~P3 分層避免通知疲勞
+4. **§5 數據自動化排程**和 Phase AD 一致
+5. **§7 不做的事**全部正確——不引入 K8s、Airflow、HFT engine
+6. **§8 設計原則**5 條全部合理
+
+---
+
+### 修正後的執行計畫
+
+```
+Phase 1（本週）：
+  1d  SIGTERM handler（關機前存 portfolio）
+  1e  Docker API healthcheck
+  2a  execute_pipeline 加交易日檢查
+  2c  SchedulerService 加 TradingDayFilter
+
+Phase 2（下週）：
+  3a  HeartbeatMonitor（15 分鐘無心跳 → Discord 告警）
+  3b  通知分級（P0~P3）
+  3c  每日摘要報告
+
+Phase 3（live trading 啟動前）：
+  1a-1c  Intent log + trade ledger + 重播（SinopacBroker 需要）
+  G4     掛單持久化（IMPROVEMENT_PLAN 的 G4）
+
+```
+
+### 前置條件
+
+| 條件 | 狀態 |
+|------|:----:|
+| Phase AD 數據平台 | ✅ Phase 1-3 完成 |
+| Phase S 統一管線 | ✅ |
+| Phase AG 策略生命週期 | ✅ Steps 1-6 完成 |
+| 1810 tests passing | ✅ |
