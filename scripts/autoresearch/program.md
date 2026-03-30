@@ -69,7 +69,7 @@ You see:
 - `passed`: True if it cleared all gates
 - `composite_score`: overall quality metric
 - `best_icir`: signal quality (ICIR) — this is the minimum bar, not the goal
-- `novelty`: high / moderate / low — how different from existing factor library
+- `novelty`: high / not_high — based on portfolio returns overlap with existing factors (not just signal similarity)
 
 **What causes failure at each level:**
 - **L0**: factor.py too many lines (keep it under 80)
