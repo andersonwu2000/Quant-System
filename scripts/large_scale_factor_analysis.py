@@ -43,11 +43,18 @@ def compute_forward_returns_union(
     return pd.DataFrame(col_results)
 
 
-def load_all_parquet(market_dir: str = "data/market", min_bars: int = 500) -> dict[str, pd.DataFrame]:
+def load_all_parquet(market_dir: str | None = None, min_bars: int = 500) -> dict[str, pd.DataFrame]:
     """載入所有本地 parquet，過濾掉資料不足的標的。"""
+    from src.data.registry import REGISTRY
     data: dict[str, pd.DataFrame] = {}
-    p = Path(market_dir)
-    files = sorted(p.glob("*_1d.parquet"))
+    if market_dir:
+        dirs = [Path(market_dir)]
+    else:
+        dirs = list(REGISTRY["price"].source_dirs)
+    files = []
+    for p in dirs:
+        if p.exists():
+            files.extend(sorted(p.glob("*_1d.parquet")))
     skipped = 0
     for f in files:
         symbol = f.stem.replace("_1d", "")

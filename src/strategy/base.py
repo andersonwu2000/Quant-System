@@ -116,11 +116,10 @@ class Context:
             DataFrame with columns [date, revenue, yoy_growth]，
             截止到 now() - 40 天。空時回傳空 DataFrame。
         """
-        from pathlib import Path
-        fund_dir = Path("data/fundamental")
-        rev_path = fund_dir / f"{symbol}_revenue.parquet"
+        from src.data.registry import parquet_path as _ppath
+        rev_path = _ppath(symbol, "revenue")
         if not rev_path.exists() and not symbol.endswith(".TW"):
-            rev_path = fund_dir / f"{symbol}.TW_revenue.parquet"  # C-06: bare symbol fallback
+            rev_path = _ppath(f"{symbol}.TW", "revenue")
         if not rev_path.exists():
             return pd.DataFrame()
         try:

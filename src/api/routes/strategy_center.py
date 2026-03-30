@@ -24,12 +24,13 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.auth import verify_api_key, require_role
+from src.data.registry import parquet_path as _ppath, REGISTRY
+from src.data.data_catalog import get_catalog
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/strategy", tags=["strategy-center"])
 
 SELECTIONS_DIR = Path("data/paper_trading/selections")
-MARKET_DIR = Path("data/market")
 
 
 # ── Selection endpoints ──────────────────────────────────────────
@@ -90,7 +91,7 @@ async def get_regime(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
         reason: 觸發原因
     """
     try:
-        proxy_path = MARKET_DIR / "0050.TW_1d.parquet"
+        proxy_path = _ppath("0050.TW", "price")
         if not proxy_path.exists():
             return {"regime": "unknown", "reason": "No 0050.TW data", "indicators": {}}
 
@@ -253,10 +254,10 @@ async def _do_rebalance(state: Any, config: Any) -> dict[str, Any]:
         # Universe: from portfolio positions or market data
         universe = list(state.portfolio.positions.keys())
         if not universe:
+            cat = get_catalog()
             universe = sorted(
-                p.stem.replace("_1d", "")
-                for p in MARKET_DIR.glob("*.TW_1d.parquet")
-                if not p.stem.startswith("00")
+                s for s in cat.available_symbols("price")
+                if ".TW" in s and not s.startswith("00")
             )[:200]  # limit for speed
 
         feed = create_feed(config.data_source, universe)
@@ -365,26 +366,23 @@ async def get_strategy_info(api_key: str = Depends(verify_api_key)) -> dict[str,
 @router.get("/data-status")
 async def get_data_status(api_key: str = Depends(verify_api_key)) -> dict[str, Any]:
     """營收/法人數據更新狀態。"""
-    from pathlib import Path
-
-    fund_dir = Path("data/fundamental")
-    market_dir = Path("data/market")
-
-    revenue_count = len(list(fund_dir.glob("*_revenue.parquet"))) if fund_dir.exists() else 0
-    institutional_count = len(list(fund_dir.glob("*_institutional.parquet"))) if fund_dir.exists() else 0
-    market_count = len(list(market_dir.glob("*.TW_1d.parquet"))) if market_dir.exists() else 0
+    cat = get_catalog()
+    revenue_syms = cat.available_symbols("revenue")
+    revenue_count = len(revenue_syms)
+    institutional_syms = cat.available_symbols("institutional")
+    institutional_count = len(institutional_syms)
+    market_syms = cat.available_symbols("price")
+    market_count = len([s for s in market_syms if ".TW" in s])
 
     # Latest revenue date
     latest_revenue_date = None
-    if fund_dir.exists():
-        sample_files = sorted(fund_dir.glob("*_revenue.parquet"))[:1]
-        if sample_files:
-            try:
-                df = pd.read_parquet(sample_files[0])
-                if not df.empty and "date" in df.columns:
-                    latest_revenue_date = str(pd.to_datetime(df["date"]).max().date())
-            except Exception:
-                pass
+    if revenue_syms:
+        try:
+            df = cat.get("revenue", revenue_syms[0])
+            if not df.empty and "date" in df.columns:
+                latest_revenue_date = str(pd.to_datetime(df["date"]).max().date())
+        except Exception:
+            pass
 
     return {
         "market_symbols": market_count,

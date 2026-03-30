@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-MARKET_DIR = Path("data/market")
+MARKET_DIR = Path("data/yahoo")
 
 
 def download_symbol(symbol: str, start: str, end: str) -> int:

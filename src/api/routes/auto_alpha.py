@@ -405,19 +405,24 @@ async def run_now(
 
             data: dict[str, Any] = {}
 
-            # 1. Load from local parquet cache (data/market/*.parquet)
+            # 1. Load from local parquet cache (all source dirs)
             from pathlib import Path
-            cache_dir = str(Path("data/market").resolve())
-            if os.path.isdir(cache_dir):
-                import pandas as pd
-                for f in os.listdir(cache_dir):
+            from src.data.registry import REGISTRY as _REG
+            import pandas as pd
+            _price_ds = _REG["price"]
+            for _src_dir in _price_ds.source_dirs:
+                _sd = str(_src_dir.resolve())
+                if not os.path.isdir(_sd):
+                    continue
+                for f in os.listdir(_sd):
                     if f.endswith("_1d.parquet") and not f.startswith("TEST"):
                         sym = f.replace("_1d.parquet", "")
-                        # Strip finmind_ prefix to get clean symbol
                         if sym.startswith("finmind_"):
                             sym = sym[len("finmind_"):]
+                        if sym in data:
+                            continue
                         try:
-                            df = pd.read_parquet(os.path.join(cache_dir, f))
+                            df = pd.read_parquet(os.path.join(_sd, f))
                             if not isinstance(df.index, pd.DatetimeIndex):
                                 df.index = pd.to_datetime(df.index)
                             if len(df) >= cfg.lookback:
@@ -750,44 +755,28 @@ async def submit_factor(
         from src.backtest.validator import StrategyValidator, ValidationConfig
 
         strategy = build_from_research_factor(factor_name=clean_name, top_n=15)
-        market_dir = Path("data/market")
 
-        # Scan universe — support multiple parquet naming conventions
+        # Scan universe via DataCatalog
         import pandas as pd
-        universe_set: set[str] = set()
-        if market_dir.exists():
-            for p in market_dir.glob("*.parquet"):
-                stem = p.stem
-                # finmind_{code}.parquet → {code}.TW
-                if stem.startswith("finmind_"):
-                    code = stem.replace("finmind_", "")
-                    if code.isdigit() and not code.startswith("00"):
-                        universe_set.add(f"{code}.TW")
-                # {sym}_1d.parquet → {sym}
-                elif stem.endswith("_1d") and ".TW" in stem:
-                    sym = stem.replace("_1d", "")
-                    if not sym.startswith("00"):
-                        universe_set.add(sym)
-                # {sym}.TW.parquet → {sym}.TW
-                elif ".TW" in stem and not stem.startswith("00"):
-                    universe_set.add(stem)
-        universe = sorted(universe_set)
+        from src.data.data_catalog import get_catalog as _get_cat
+        _cat = _get_cat()
+        universe = sorted(
+            s for s in _cat.available_symbols("price")
+            if ".TW" in s and not s.startswith("00")
+        )
 
         # 過濾太短的
+        from src.data.registry import parquet_path as _pp
         good_universe = []
         for sym in universe[:200]:  # cap for speed
-            bare = sym.replace(".TW", "").replace(".TWO", "")
-            # Try multiple naming patterns
-            for pattern in [f"{sym}.parquet", f"{sym}_1d.parquet", f"finmind_{bare}.parquet"]:
-                path = market_dir / pattern
-                if path.exists():
-                    try:
-                        df = pd.read_parquet(path)
-                        if len(df) >= 500:
-                            good_universe.append(sym)
-                    except Exception:
-                        pass
-                    break
+            path = _pp(sym, "price")
+            if path.exists():
+                try:
+                    df = pd.read_parquet(path)
+                    if len(df) >= 500:
+                        good_universe.append(sym)
+                except Exception:
+                    pass
 
         config = ValidationConfig(
             min_cagr=0.08, min_sharpe=0.7, max_drawdown=0.40,

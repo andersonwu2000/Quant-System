@@ -657,17 +657,10 @@ class StrategyValidator:
     def _load_0050(self, start: str, end: str) -> pd.DataFrame | None:
         """Load 0050.TW bars: local parquet first, Yahoo fallback."""
         from pathlib import Path
+        from src.data.registry import parquet_path as _ppath
 
-        market_dir = Path(__file__).resolve().parent.parent.parent / "data" / "market"
-        # Try multiple naming conventions
-        candidates = [
-            market_dir / "0050.TW_1d.parquet",
-            market_dir / "0050.TW.parquet",
-            market_dir / "finmind_0050.parquet",
-        ]
-        for local_path in candidates:
-            if not local_path.exists():
-                continue
+        local_path = _ppath("0050.TW", "price")
+        if local_path.exists():
             try:
                 df = pd.read_parquet(local_path)
                 if "date" in df.columns:
@@ -677,7 +670,7 @@ class StrategyValidator:
                 if len(sliced) >= 20:
                     return sliced
             except Exception:
-                continue
+                pass
 
         try:
             from src.data.sources.yahoo import YahooFeed
@@ -705,16 +698,9 @@ class StrategyValidator:
 
         try:
             from src.backtest.vectorized import VectorizedPBOBacktest
-            import os as _os
-            from pathlib import Path
-
-            project_root = Path(_os.environ.get("PROJECT_ROOT",
-                                str(Path(__file__).resolve().parent.parent.parent)))
 
             vbt = VectorizedPBOBacktest(
                 universe=universe[:150], start=start, end=end,
-                data_dir=str(project_root / "data" / "market"),
-                fund_dir=str(project_root / "data" / "fundamental"),
             )
 
             # Permutation: shuffle the stock-to-factor-value mapping with a FIXED
@@ -1086,35 +1072,28 @@ class StrategyValidator:
     def _get_ew_annual(self, universe: list[str], start: str, end: str) -> float | None:
         """Get equal-weight universe annual return for a specific period."""
         from pathlib import Path
-        import os as _os
+        from src.data.registry import parquet_path as _ppath
 
         try:
-            project_root = Path(_os.environ.get("PROJECT_ROOT",
-                                str(Path(__file__).resolve().parent.parent.parent)))
-            market_dir = project_root / "data" / "market"
-
             all_returns: list[pd.Series] = []
             for sym in universe:
-                bare = sym.replace(".TW", "").replace(".TWO", "")
-                for pattern in [f"{sym}_1d.parquet", f"{sym}.parquet", f"finmind_{bare}.parquet"]:
-                    path = market_dir / pattern
-                    if not path.exists():
-                        continue
-                    try:
-                        df = pd.read_parquet(path)
-                        if "date" in df.columns:
-                            df["date"] = pd.to_datetime(df["date"])
-                            df = df.set_index("date").sort_index()
-                        if "close" in df.columns:
-                            sliced = df.loc[start:end]["close"]
-                            sliced = sliced.where(sliced > 0)
-                            if len(sliced.dropna()) > 20:
-                                rets = sliced.ffill().pct_change().dropna()
-                                rets = rets.replace([np.inf, -np.inf], 0.0)
-                                all_returns.append(rets)
-                    except Exception:
-                        pass
-                    break
+                path = _ppath(sym, "price")
+                if not path.exists():
+                    continue
+                try:
+                    df = pd.read_parquet(path)
+                    if "date" in df.columns:
+                        df["date"] = pd.to_datetime(df["date"])
+                        df = df.set_index("date").sort_index()
+                    if "close" in df.columns:
+                        sliced = df.loc[start:end]["close"]
+                        sliced = sliced.where(sliced > 0)
+                        if len(sliced.dropna()) > 20:
+                            rets = sliced.ffill().pct_change().dropna()
+                            rets = rets.replace([np.inf, -np.inf], 0.0)
+                            all_returns.append(rets)
+                except Exception:
+                    pass
 
             if len(all_returns) < 20:
                 return None
@@ -1144,36 +1123,29 @@ class StrategyValidator:
         Cost efficiency is tested separately by annual_cost_ratio check.
         """
         from pathlib import Path
-        import os as _os
+        from src.data.registry import parquet_path as _ppath
 
         try:
-            project_root = Path(_os.environ.get("PROJECT_ROOT",
-                                str(Path(__file__).resolve().parent.parent.parent)))
-            market_dir = project_root / "data" / "market"
-
             # Load daily returns for all universe stocks
             all_returns: list[pd.Series] = []
             for sym in universe:
-                bare = sym.replace(".TW", "").replace(".TWO", "")
-                for pattern in [f"{sym}_1d.parquet", f"{sym}.parquet", f"finmind_{bare}.parquet"]:
-                    path = market_dir / pattern
-                    if not path.exists():
-                        continue
-                    try:
-                        df = pd.read_parquet(path)
-                        if "date" in df.columns:
-                            df["date"] = pd.to_datetime(df["date"])
-                            df = df.set_index("date").sort_index()
-                        if "close" in df.columns:
-                            sliced = df.loc[start:end]["close"]
-                            sliced = sliced.where(sliced > 0)  # zero close → NaN
-                            if len(sliced.dropna()) > 20:
-                                rets = sliced.ffill().pct_change().dropna()
-                                rets = rets.replace([np.inf, -np.inf], 0.0)
-                                all_returns.append(rets)
-                    except Exception:
-                        pass
-                    break
+                path = _ppath(sym, "price")
+                if not path.exists():
+                    continue
+                try:
+                    df = pd.read_parquet(path)
+                    if "date" in df.columns:
+                        df["date"] = pd.to_datetime(df["date"])
+                        df = df.set_index("date").sort_index()
+                    if "close" in df.columns:
+                        sliced = df.loc[start:end]["close"]
+                        sliced = sliced.where(sliced > 0)  # zero close → NaN
+                        if len(sliced.dropna()) > 20:
+                            rets = sliced.ffill().pct_change().dropna()
+                            rets = rets.replace([np.inf, -np.inf], 0.0)
+                            all_returns.append(rets)
+                except Exception:
+                    pass
 
             if len(all_returns) < 20:
                 logger.warning("EW benchmark: only %d stocks loaded", len(all_returns))

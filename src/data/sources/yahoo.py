@@ -260,7 +260,7 @@ class YahooFeed(DataFeed):
         end: str,
     ) -> pd.DataFrame:
         """從 Yahoo Finance 下載股利數據（優先使用本地快取）。"""
-        cached = self._store.load(symbol, "dividends")
+        cached = self._load_local(symbol, "dividends")
         if cached is not None:
             logger.info("Dividend cache hit for %s", symbol)
             return cached
@@ -286,7 +286,7 @@ class YahooFeed(DataFeed):
         # Convert Series to DataFrame for parquet caching and consistent type
         div_df: pd.DataFrame = divs.to_frame(name="dividend")
 
-        self._store.save(symbol, "dividends", div_df)
+        self._save_local(symbol, "dividends", div_df)
         return div_df
 
     def get_universe(self) -> list[str]:

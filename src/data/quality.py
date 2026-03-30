@@ -139,17 +139,25 @@ def check_bars(df: pd.DataFrame, symbol: str = "") -> QualityResult:
 # ── 除權息精確比對 ─────────────────────────────────────────────────
 
 
-def load_dividend_dates(symbol: str, data_dir: str = "data/market") -> set[str]:
+def load_dividend_dates(symbol: str, data_dir: str | None = None) -> set[str]:
     """從本地 Parquet 讀取已下載的除權息日期。
 
     嘗試兩種來源：
     1. YahooFeed 存的 {symbol}_dividends.parquet
     2. FinMind 存的 finmind_{symbol}_dividends.parquet
     """
-    candidates = [
-        Path(data_dir) / f"{symbol}_dividends.parquet",
-        Path(data_dir) / f"finmind_{symbol}_dividends.parquet",
-    ]
+    from src.data.registry import REGISTRY
+    if data_dir is None:
+        # Search across all price source dirs for dividend files
+        candidates = []
+        for d in REGISTRY["price"].source_dirs:
+            candidates.append(d / f"{symbol}_dividends.parquet")
+            candidates.append(d / f"finmind_{symbol}_dividends.parquet")
+    else:
+        candidates = [
+            Path(data_dir) / f"{symbol}_dividends.parquet",
+            Path(data_dir) / f"finmind_{symbol}_dividends.parquet",
+        ]
     for p in candidates:
         if not p.exists():
             continue

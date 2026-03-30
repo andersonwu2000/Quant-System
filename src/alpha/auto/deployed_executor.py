@@ -115,20 +115,26 @@ def _execute_single(strategy_info) -> tuple[dict[str, float], float]:
     )
 
     # Load market data
-    market_dir = Path("data/market")
+    from src.data.registry import REGISTRY
+    ds = REGISTRY["price"]
     universe = []
     bars_dict = {}
-    for p in sorted(market_dir.glob("*_1d.parquet"))[:200]:
-        sym = p.stem.replace("_1d", "")
-        if sym.startswith("00"):
+    seen_syms: set[str] = set()
+    for source_dir in ds.source_dirs:
+        if not source_dir.exists():
             continue
-        try:
-            df = pd.read_parquet(p)
-            if len(df) >= 500:
-                universe.append(sym)
-                bars_dict[sym] = df
-        except Exception:
-            pass
+        for p in sorted(source_dir.glob(f"*_{ds.suffix}.parquet"))[:200]:
+            sym = p.stem.replace(f"_{ds.suffix}", "")
+            if sym.startswith("00") or sym in seen_syms:
+                continue
+            seen_syms.add(sym)
+            try:
+                df = pd.read_parquet(p)
+                if len(df) >= 500:
+                    universe.append(sym)
+                    bars_dict[sym] = df
+            except Exception:
+                pass
 
     if len(universe) < 50:
         raise ValueError(f"Insufficient universe: {len(universe)} < 50")

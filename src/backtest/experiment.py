@@ -217,7 +217,7 @@ def preload_data(
     symbols: list[str],
     start: str = "2019-01-01",
     end: str = "2025-12-31",
-    data_dir: str = "data/market",
+    data_dir: str | None = None,
 ) -> str:
     """Pre-download market data to a local pickle file.
 
@@ -239,6 +239,10 @@ def preload_data(
     import time
 
     from src.data.sources.yahoo import YahooFeed
+
+    if data_dir is None:
+        from src.data.registry import REGISTRY
+        data_dir = str(REGISTRY["price"].source_dirs[0])
 
     os.makedirs(data_dir, exist_ok=True)
     pkl_path = os.path.join(data_dir, "experiment_data.pkl")

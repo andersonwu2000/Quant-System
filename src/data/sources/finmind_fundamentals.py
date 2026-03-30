@@ -50,16 +50,34 @@ class FinMindFundamentals(FundamentalsProvider):
 
     @staticmethod
     def _read_local_parquet(symbol: str, suffix: str) -> pd.DataFrame | None:
-        """Try to read from data/fundamental/{symbol}_{suffix}.parquet."""
+        """Try to read from registry source dirs for the dataset."""
+        from src.data.registry import REGISTRY
         tw_sym = ensure_tw_suffix(symbol)
-        path = Path("data/fundamental") / f"{tw_sym}_{suffix}.parquet"
-        if path.exists():
-            try:
-                df = pd.read_parquet(path)
-                if not df.empty:
-                    return df
-            except Exception:
-                pass
+        # Map suffix to dataset name for registry lookup
+        _suffix_to_ds = {v.suffix: k for k, v in REGISTRY.items()}
+        ds_name = _suffix_to_ds.get(suffix)
+        if ds_name is not None:
+            ds = REGISTRY[ds_name]
+            for d in ds.source_dirs:
+                path = d / f"{tw_sym}_{suffix}.parquet"
+                if path.exists():
+                    try:
+                        df = pd.read_parquet(path)
+                        if not df.empty:
+                            return df
+                    except Exception:
+                        pass
+        else:
+            # Fallback: search finmind dir
+            from src.data.registry import FINMIND_DIR
+            path = FINMIND_DIR / f"{tw_sym}_{suffix}.parquet"
+            if path.exists():
+                try:
+                    df = pd.read_parquet(path)
+                    if not df.empty:
+                        return df
+                except Exception:
+                    pass
         return None
 
     def get_financials(self, symbol: str, date: str | None = None) -> dict[str, float]:

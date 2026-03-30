@@ -48,12 +48,17 @@ def _preload_revenue(fund_dir: str = "data/fundamental") -> dict[str, pd.DataFra
         return _revenue_cache
 
     cache: dict[str, pd.DataFrame] = {}
-    fund_path = Path(fund_dir)
-    if not fund_path.exists():
+    from src.data.registry import REGISTRY
+    _rev_ds = REGISTRY["revenue"]
+    all_revenue_files: list[Path] = []
+    for _sd in _rev_ds.source_dirs:
+        if _sd.exists():
+            all_revenue_files.extend(_sd.glob("*_revenue.parquet"))
+    if not all_revenue_files:
         _revenue_cache = cache
         return cache
 
-    for p in sorted(fund_path.glob("*_revenue.parquet")):
+    for p in sorted(all_revenue_files):
         sym = p.stem.replace("_revenue", "")
         try:
             df = pd.read_parquet(p)

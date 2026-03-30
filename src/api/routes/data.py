@@ -108,19 +108,29 @@ async def get_cache_status(
     api_key: str = Depends(verify_api_key),
 ) -> CacheStatusResponse:
     """Query local parquet cache status."""
-    from pathlib import Path
+    from src.data.data_catalog import get_catalog
+    from src.data.registry import REGISTRY
 
-    market_dir = Path("data/market")
-    fund_dir = Path("data/fundamental")
+    cat = get_catalog()
 
-    market_files = list(market_dir.glob("*.parquet")) if market_dir.exists() else []
-    fund_files = list(fund_dir.glob("*.parquet")) if fund_dir.exists() else []
+    # Count market files across all source dirs
+    price_ds = REGISTRY["price"]
+    market_files = []
+    for d in price_ds.source_dirs:
+        if d.exists():
+            market_files.extend(d.glob("*.parquet"))
 
-    symbols = sorted(set(
-        f.stem.replace("_1d", "").replace("finmind_", "")
-        for f in market_files
-        if f.stem.endswith("_1d")
-    ))
+    # Count fundamental files across all source dirs
+    fund_files = []
+    for ds_name in ("revenue", "financial_statement", "per"):
+        ds = REGISTRY.get(ds_name)
+        if ds is None:
+            continue
+        for d in ds.source_dirs:
+            if d.exists():
+                fund_files.extend(d.glob(f"*_{ds.suffix}.parquet"))
+
+    symbols = sorted(cat.available_symbols("price"))
 
     return CacheStatusResponse(
         market_files=len(market_files),

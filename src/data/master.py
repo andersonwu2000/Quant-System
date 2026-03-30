@@ -188,7 +188,7 @@ class SecuritiesMaster:
             result = conn.execute(sa.select(sa.func.count()).select_from(securities_table))
             return result.scalar() or 0
 
-    def sync_from_parquet(self, market_dir: str = "data/market") -> int:
+    def sync_from_parquet(self, market_dir: str | None = None) -> int:
         """Discover symbols from existing parquet files and populate the master.
 
         This is a bootstrap method — creates entries for all symbols found locally.
@@ -196,16 +196,26 @@ class SecuritiesMaster:
         enriched from TWSE/FinMind.
         """
         from src.data.sources.finmind_common import strip_tw_suffix
+        from src.data.registry import REGISTRY
 
-        market_path = Path(market_dir)
-        if not market_path.exists():
-            return 0
+        ds = REGISTRY["price"]
+        if market_dir is not None:
+            search_dirs = [Path(market_dir)]
+        else:
+            search_dirs = list(ds.source_dirs)
 
         securities = []
-        for p in sorted(market_path.glob("*_1d.parquet")):
-            sym = p.stem.replace("_1d", "")
-            bare = strip_tw_suffix(sym)
-            securities.append(Security(symbol=sym, bare_id=bare))
+        seen: set[str] = set()
+        for market_path in search_dirs:
+            if not market_path.exists():
+                continue
+            for p in sorted(market_path.glob(f"*_{ds.suffix}.parquet")):
+                sym = p.stem.replace(f"_{ds.suffix}", "")
+                if sym in seen:
+                    continue
+                seen.add(sym)
+                bare = strip_tw_suffix(sym)
+                securities.append(Security(symbol=sym, bare_id=bare))
 
         if not securities:
             return 0

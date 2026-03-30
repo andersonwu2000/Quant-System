@@ -78,11 +78,22 @@ def _make_revenue_parquet(path: Path, symbol: str, n_months: int = 48,
     df.to_parquet(path / f"{symbol}_revenue.parquet", index=False)
 
 
+def _patch_revenue_registry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Patch registry so revenue source_dirs points to tmp_path."""
+    from dataclasses import replace
+    from src.data.registry import REGISTRY
+    patched_revenue = replace(REGISTRY["revenue"], source_dirs=(tmp_path,))
+    patched = {**REGISTRY, "revenue": patched_revenue}
+    monkeypatch.setattr("src.data.registry.REGISTRY", patched)
+    for mod in ALL_MODULES:
+        if hasattr(mod, "_rev_cache"):
+            mod._rev_cache.clear()
+
+
 @pytest.fixture()
 def fund_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Create temp FUND_DIR with sample data and patch all modules."""
-    for mod in ALL_MODULES:
-        monkeypatch.setattr(mod, "FUND_DIR", tmp_path)
+    """Create temp dir with sample data and patch registry to point there."""
+    _patch_revenue_registry(monkeypatch, tmp_path)
     _make_revenue_parquet(tmp_path, "AAPL", n_months=48)
     _make_revenue_parquet(tmp_path, "MSFT", n_months=48)
     return tmp_path
@@ -112,8 +123,7 @@ class TestLookAheadBias:
 
     def test_recent_data_excluded(self, tmp_path: Path, monkeypatch):
         """Data only within 40 days → should return empty (not enough history)."""
-        for mod in ALL_MODULES:
-            monkeypatch.setattr(mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
 
         # Create data only in last 30 days
         dates = pd.date_range("2023-06-01", periods=5, freq="7D")
@@ -142,8 +152,7 @@ class TestInsufficientData:
     @pytest.mark.parametrize("func,min_m", list(zip(ALL_FUNCS, ALL_MIN_MONTHS)),
                              ids=[f.__name__ for f in ALL_FUNCS])
     def test_too_few_months(self, tmp_path: Path, monkeypatch, func, min_m):
-        for mod in ALL_MODULES:
-            monkeypatch.setattr(mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
 
         # Create only 3 months of data, way before the cutoff
         dates = pd.date_range("2020-01-01", periods=3, freq="MS")
@@ -155,8 +164,7 @@ class TestInsufficientData:
 
     @pytest.mark.parametrize("func", ALL_FUNCS, ids=[f.__name__ for f in ALL_FUNCS])
     def test_missing_file(self, tmp_path: Path, monkeypatch, func):
-        for mod in ALL_MODULES:
-            monkeypatch.setattr(mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
         result = func(["NOFILE"], pd.Timestamp("2023-06-15"))
         assert result == {}
 
@@ -166,16 +174,14 @@ class TestEmptyDataFrame:
 
     @pytest.mark.parametrize("func", ALL_FUNCS, ids=[f.__name__ for f in ALL_FUNCS])
     def test_empty_df(self, tmp_path: Path, monkeypatch, func):
-        for mod in ALL_MODULES:
-            monkeypatch.setattr(mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
         df = pd.DataFrame({"date": [], "revenue": []})
         df.to_parquet(tmp_path / "EMPTY_revenue.parquet", index=False)
         assert func(["EMPTY"], pd.Timestamp("2023-06-15")) == {}
 
     @pytest.mark.parametrize("func", ALL_FUNCS, ids=[f.__name__ for f in ALL_FUNCS])
     def test_missing_column(self, tmp_path: Path, monkeypatch, func):
-        for mod in ALL_MODULES:
-            monkeypatch.setattr(mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
         df = pd.DataFrame({"date": pd.date_range("2020-01-01", periods=48, freq="MS"),
                            "other_col": range(48)})
         df.to_parquet(tmp_path / "NOCOL_revenue.parquet", index=False)
@@ -187,8 +193,7 @@ class TestZeroNegativeRevenue:
 
     @pytest.mark.parametrize("func", ALL_FUNCS, ids=[f.__name__ for f in ALL_FUNCS])
     def test_all_zero_revenue(self, tmp_path: Path, monkeypatch, func):
-        for mod in ALL_MODULES:
-            monkeypatch.setattr(mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
         dates = pd.date_range("2020-01-01", periods=48, freq="MS")
         df = pd.DataFrame({"date": dates, "revenue": [0.0] * 48})
         df.to_parquet(tmp_path / "ZERO_revenue.parquet", index=False)
@@ -198,8 +203,7 @@ class TestZeroNegativeRevenue:
 
     @pytest.mark.parametrize("func", ALL_FUNCS, ids=[f.__name__ for f in ALL_FUNCS])
     def test_negative_revenue(self, tmp_path: Path, monkeypatch, func):
-        for mod in ALL_MODULES:
-            monkeypatch.setattr(mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
         dates = pd.date_range("2020-01-01", periods=48, freq="MS")
         df = pd.DataFrame({"date": dates, "revenue": [-1e8] * 48})
         df.to_parquet(tmp_path / "NEG_revenue.parquet", index=False)
@@ -233,7 +237,7 @@ class TestRev2ndDerivativeSpecific:
 
     def test_constant_growth_yields_near_zero(self, tmp_path: Path, monkeypatch):
         """Constant YoY → 2nd derivative ≈ 0."""
-        monkeypatch.setattr(self._mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
         dates = pd.date_range("2020-01-01", periods=48, freq="MS")
         base = 1e8
         revenues = [base * (1.10 ** (i / 12)) for i in range(48)]
@@ -246,7 +250,7 @@ class TestRev2ndDerivativeSpecific:
 
     def test_accelerating_growth_positive(self, tmp_path: Path, monkeypatch):
         """Accelerating YoY → positive 2nd derivative."""
-        monkeypatch.setattr(self._mod, "FUND_DIR", tmp_path)
+        _patch_revenue_registry(monkeypatch, tmp_path)
         dates = pd.date_range("2020-01-01", periods=48, freq="MS")
         revenues = []
         for i in range(48):

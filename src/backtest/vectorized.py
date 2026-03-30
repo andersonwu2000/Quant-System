@@ -41,17 +41,17 @@ class VectorizedPBOBacktest:
         universe: list[str],
         start: str,
         end: str,
-        data_dir: str | Path = "data/market",
-        fund_dir: str | Path = "data/fundamental",
+        data_dir: str | Path | None = None,
+        fund_dir: str | Path | None = None,
     ):
         self.universe = universe
         self.start = start
         self.end = end
         t0 = time.time()
         self._price_matrix, self._volume_matrix = self._build_market_matrices(
-            universe, start, end, Path(data_dir)
+            universe, start, end, data_dir,
         )
-        self._revenue = self._load_revenue(universe, Path(fund_dir))
+        self._revenue = self._load_revenue(universe, fund_dir)
         self._returns = self._price_matrix.ffill().pct_change().replace([np.inf, -np.inf], 0.0)
         logger.info(
             "VectorizedPBO: loaded %d stocks × %d days in %.1fs",
@@ -62,18 +62,28 @@ class VectorizedPBOBacktest:
 
     @staticmethod
     def _build_market_matrices(
-        universe: list[str], start: str, end: str, data_dir: Path,
+        universe: list[str], start: str, end: str,
+        data_dir: str | Path | None = None,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Build (T × N) price and volume matrices from parquet files."""
+        from src.data.registry import parquet_path as _ppath
+
         prices: dict[str, pd.Series] = {}
         volumes: dict[str, pd.Series] = {}
 
         for sym in universe:
-            bare = sym.replace(".TW", "").replace(".TWO", "")
-            for pattern in [f"{sym}_1d.parquet", f"{sym}.parquet", f"finmind_{bare}.parquet"]:
-                path = data_dir / pattern
-                if not path.exists():
-                    continue
+            path = _ppath(sym, "price") if data_dir is None else None
+            if data_dir is not None:
+                bare = sym.replace(".TW", "").replace(".TWO", "")
+                _dd = Path(data_dir)
+                for pattern in [f"{sym}_1d.parquet", f"{sym}.parquet", f"finmind_{bare}.parquet"]:
+                    path = _dd / pattern
+                    if path.exists():
+                        break
+                else:
+                    path = None
+            if path is None or not path.exists():
+                continue
                 try:
                     df = pd.read_parquet(path)
                     if "date" in df.columns:
@@ -101,14 +111,29 @@ class VectorizedPBOBacktest:
         return price_matrix, volume_matrix
 
     @staticmethod
-    def _load_revenue(universe: list[str], fund_dir: Path) -> dict[str, pd.DataFrame]:
+    def _load_revenue(
+        universe: list[str], fund_dir: str | Path | None = None,
+    ) -> dict[str, pd.DataFrame]:
         """Load revenue data for all symbols."""
+        from src.data.registry import parquet_path as _ppath
+
         revenue: dict[str, pd.DataFrame] = {}
         for sym in universe:
-            bare = sym.replace(".TW", "").replace(".TWO", "")
-            for name in [f"{sym}_revenue.parquet", f"{bare}_revenue.parquet"]:
-                path = fund_dir / name
+            if fund_dir is None:
+                path = _ppath(sym, "revenue")
                 if not path.exists():
+                    continue
+            else:
+                bare = sym.replace(".TW", "").replace(".TWO", "")
+                _fd = Path(fund_dir)
+                path = None
+                for name in [f"{sym}_revenue.parquet", f"{bare}_revenue.parquet"]:
+                    path = _fd / name
+                    if path.exists():
+                        break
+                else:
+                    path = None
+                if path is None or not path.exists():
                     continue
                 try:
                     df = pd.read_parquet(path)

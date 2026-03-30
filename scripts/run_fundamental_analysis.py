@@ -17,8 +17,16 @@ from scipy import stats
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-FUND_DIR = Path("data/fundamental")
-MARKET_DIR = Path("data/market")
+from src.data.registry import REGISTRY, parquet_path as _ppath
+
+def _glob_dataset(dataset: str, pattern: str) -> list[Path]:
+    """Glob across all source dirs for a dataset."""
+    ds = REGISTRY[dataset]
+    result: list[Path] = []
+    for d in ds.source_dirs:
+        if d.exists():
+            result.extend(d.glob(pattern))
+    return result
 OUT_CSV = "docs/dev/test/fundamental_factor_analysis.csv"
 
 
@@ -28,7 +36,7 @@ OUT_CSV = "docs/dev/test/fundamental_factor_analysis.csv"
 def load_price_panel() -> pd.DataFrame:
     """讀取所有本地 parquet 價格數據，構建 close 面板。"""
     symbols = []
-    for p in MARKET_DIR.glob("*_1d.parquet"):
+    for p in _glob_dataset("price", "*_1d.parquet"):
         sym = p.stem.replace("_1d", "")
         if sym.startswith("finmind_"):
             sym = sym[len("finmind_"):]
@@ -73,7 +81,7 @@ def build_per_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
         "pe_ratio": {}, "pb_ratio": {}, "dividend_yield": {},
     }
     for sym in symbols:
-        p = FUND_DIR / f"{sym}_per.parquet"
+        p = _ppath(sym, "per")
         if not p.exists():
             continue
         df = pd.read_parquet(p)
@@ -104,7 +112,7 @@ def build_revenue_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     momentum_data: dict[str, pd.Series] = {}
 
     for sym in symbols:
-        p = FUND_DIR / f"{sym}_revenue.parquet"
+        p = _ppath(sym, "revenue")
         if not p.exists():
             continue
         df = pd.read_parquet(p)
@@ -143,7 +151,7 @@ def build_institutional_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     trust_data: dict[str, pd.Series] = {}
 
     for sym in symbols:
-        p = FUND_DIR / f"{sym}_institutional.parquet"
+        p = _ppath(sym, "institutional")
         if not p.exists():
             continue
         df = pd.read_parquet(p)
@@ -186,7 +194,7 @@ def build_margin_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     """從融資融券 parquet 建構 margin_change 面板。"""
     data: dict[str, pd.Series] = {}
     for sym in symbols:
-        p = FUND_DIR / f"{sym}_margin.parquet"
+        p = _ppath(sym, "margin")
         if not p.exists():
             continue
         df = pd.read_parquet(p)
@@ -208,7 +216,7 @@ def build_shareholding_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     """從董監持股 parquet 建構 director_change 面板。"""
     data: dict[str, pd.Series] = {}
     for sym in symbols:
-        p = FUND_DIR / f"{sym}_shareholding.parquet"
+        p = _ppath(sym, "shareholding")
         if not p.exists():
             continue
         df = pd.read_parquet(p)
@@ -232,7 +240,7 @@ def build_revenue_advanced_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     new_high_data: dict[str, pd.Series] = {}
 
     for sym in symbols:
-        p = FUND_DIR / f"{sym}_revenue.parquet"
+        p = _ppath(sym, "revenue")
         if not p.exists():
             continue
         df = pd.read_parquet(p)
@@ -268,7 +276,7 @@ def build_trust_cumulative_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     """從法人買賣超建構 trust_10d_cumulative 面板。"""
     data: dict[str, pd.Series] = {}
     for sym in symbols:
-        p = FUND_DIR / f"{sym}_institutional.parquet"
+        p = _ppath(sym, "institutional")
         if not p.exists():
             continue
         df = pd.read_parquet(p)
@@ -294,7 +302,7 @@ def build_trust_cumulative_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
 def _load_volume_panel() -> pd.DataFrame | None:
     """讀取成交量面板。"""
     all_vol = {}
-    for p in MARKET_DIR.glob("*_1d.parquet"):
+    for p in _glob_dataset("price", "*_1d.parquet"):
         sym = p.stem.replace("_1d", "")
         if sym.startswith("finmind_"):
             sym = sym[len("finmind_"):]
@@ -320,7 +328,7 @@ def build_daytrading_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
     """從當沖 parquet 建構 daytrading_ratio 面板。"""
     data: dict[str, pd.Series] = {}
     for sym in symbols:
-        p = FUND_DIR / f"{sym}_daytrading.parquet"
+        p = _ppath(sym, "daytrading")
         if not p.exists():
             continue
         df = pd.read_parquet(p)
@@ -330,7 +338,7 @@ def build_daytrading_panel(symbols: list[str]) -> dict[str, pd.DataFrame]:
         df = df.set_index("date").sort_index()
         vol = pd.to_numeric(df["Volume"], errors="coerce").fillna(0)
         # Need total volume from price data
-        price_p = MARKET_DIR / f"{sym}_1d.parquet"
+        price_p = _ppath(sym, "price")
         if not price_p.exists():
             continue
         price_df = pd.read_parquet(price_p)

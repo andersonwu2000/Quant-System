@@ -169,23 +169,14 @@ async def monthly_revenue_update(max_retries: int = 1) -> bool:
 
 
 def _get_tw_universe_fallback() -> list[str]:
-    """從 data/market/ 建立台股 universe（排除 ETF 00xx）。(R10.4)"""
-    from pathlib import Path
+    """從所有來源目錄建立台股 universe（排除 ETF 00xx）。(R10.4)"""
+    from src.data.data_catalog import get_catalog
 
-    market_dir = Path("data/market")
-    if not market_dir.exists():
-        logger.error("data/market/ directory not found")
-        return []
-    def _clean_sym(stem: str) -> str:
-        s = stem.replace("_1d", "")
-        if s.startswith("finmind_"):
-            s = s[len("finmind_"):]
-        return s
-    universe = sorted({
-        _clean_sym(p.stem)
-        for p in market_dir.glob("*_1d.parquet")
-        if ".TW" in p.stem and not p.stem.replace("finmind_", "").startswith("00")
-    })
+    catalog = get_catalog()
+    all_syms = catalog.available_symbols("price")
+    # Exclude ETFs (00xx)
+    bare_filter = lambda s: not s.replace(".TW", "").replace(".TWO", "").startswith("00")
+    universe = sorted(s for s in all_syms if ".TW" in s and bare_filter(s))
     return universe
 
 
@@ -530,6 +521,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             slippage_bps=config.default_slippage_bps,
             price_limit_pct=0.10,  # Taiwan ±10% limit
             partial_fill=True,     # simulate odd-lot partial fills
+            check_odd_lot_session=True,  # reject odd-lot orders outside 09:10-13:30
         )
         _broker = SimBroker(_sim_config)
         # Build current_bars: try real-time first, fall back to latest parquet bar
@@ -896,78 +888,8 @@ def _record_backtest_comparison(
         logger.warning("Failed to save backtest comparison", exc_info=True)
 
 
-async def _async_price_update() -> bool:
-    """增量更新價格數據：讀現有 parquet 最後日期，下載之後的數據，append。"""
-    import asyncio
-
-    def _do_price_update() -> bool:
-        import pandas as pd
-        import yfinance as yf
-        market_dir = Path("data/market")
-        if not market_dir.exists():
-            return False
-
-        today = datetime.now().strftime("%Y-%m-%d")
-        updated = 0
-        failed = 0
-
-        for parquet_path in sorted(market_dir.glob("*_1d.parquet")):
-            try:
-                existing = pd.read_parquet(parquet_path)
-                if existing.empty:
-                    continue
-
-                last_date = existing.index.max()
-                # If already up to date (within 3 days), skip
-                days_behind = (pd.Timestamp(today) - pd.Timestamp(last_date)).days
-                if days_behind <= 1:
-                    continue
-
-                sym = parquet_path.stem.replace("_1d", "")
-                start = (pd.Timestamp(last_date) + pd.DateOffset(days=1)).strftime("%Y-%m-%d")
-                df = yf.Ticker(sym).history(start=start, end=today, auto_adjust=True)
-
-                if df is None or df.empty:
-                    continue
-
-                df.columns = [c.lower() for c in df.columns]
-                if df.index.tz is not None:
-                    df.index = df.index.tz_localize(None)
-                cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
-                df = df[cols]
-                df = df[(df[["open", "high", "low", "close"]] > 0).all(axis=1)]
-
-                if df.empty:
-                    continue
-
-                combined = pd.concat([existing, df])
-                combined = combined[~combined.index.duplicated(keep="last")]
-                combined = combined.sort_index()
-                combined.to_parquet(parquet_path)
-                updated += 1
-
-            except Exception:
-                failed += 1
-                continue
-
-        logger.info("Price update: %d updated, %d failed", updated, failed)
-        return True
-
-    try:
-        return await asyncio.to_thread(_do_price_update)
-    except Exception:
-        logger.exception("Price update failed")
-        return False
-
-
-async def _async_revenue_update() -> bool:
-    """非同步包裝 monthly_revenue_update。"""
-    try:
-        result = await monthly_revenue_update()
-        return result  # monthly_revenue_update 回傳 bool
-    except Exception:
-        logger.exception("Revenue update failed")
-        return False
+# _async_price_update and _async_revenue_update removed — replaced by
+# refresh engine (src.data.refresh) integrated in execute_pipeline()
 
 
 def _save_selection_log(weights: dict[str, float], strategy_name: str = "") -> None:

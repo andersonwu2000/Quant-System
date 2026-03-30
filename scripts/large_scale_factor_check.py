@@ -17,13 +17,17 @@ from scipy.stats import spearmanr
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-MARKET_DIR = Path("data/market")
-FUND_DIR = Path("data/fundamental")
+from src.data.registry import REGISTRY, parquet_path as _ppath
 
 
 def load_data():
     data = {}
-    for p in sorted(MARKET_DIR.glob("*_1d.parquet")):
+    _price_ds = REGISTRY["price"]
+    _all_price_files = []
+    for _sd in _price_ds.source_dirs:
+        if _sd.exists():
+            _all_price_files.extend(_sd.glob("*_1d.parquet"))
+    for p in sorted(_all_price_files):
         sym = p.stem.replace("_1d", "")
         if sym.startswith("finmind_"):
             sym = sym[len("finmind_"):]
@@ -45,7 +49,12 @@ def load_data():
 
 def load_revenue():
     cache = {}
-    for p in sorted(FUND_DIR.glob("*_revenue.parquet")):
+    _rev_ds = REGISTRY["revenue"]
+    _all_rev_files = []
+    for _sd in _rev_ds.source_dirs:
+        if _sd.exists():
+            _all_rev_files.extend(_sd.glob("*_revenue.parquet"))
+    for p in sorted(_all_rev_files):
         sym = p.stem.replace("_revenue", "")
         try:
             df = pd.read_parquet(p)

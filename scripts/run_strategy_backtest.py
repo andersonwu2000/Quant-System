@@ -23,11 +23,8 @@ from src.alpha.filter_strategy import revenue_momentum_filter, trust_follow_filt
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# 台股活躍標的 — data/market/ 中可用的
-MARKET_DIR = Path("data/market")
-
-
-FUND_DIR = Path("data/fundamental")
+from src.data.registry import REGISTRY, parquet_path as _ppath
+from src.data.data_catalog import get_catalog
 
 
 def discover_universe(require_fundamentals: bool = True) -> list[str]:
@@ -37,17 +34,11 @@ def discover_universe(require_fundamentals: bool = True) -> list[str]:
         require_fundamentals: 若 True，只回傳同時有本地營收 parquet 的股票。
             避免回測中觸發 FinMind API 呼叫。
     """
-    market_symbols = set()
-    if MARKET_DIR.exists():
-        for f in sorted(MARKET_DIR.glob("*_1d.parquet")):
-            sym = f.stem.replace("_1d", "")
-            if sym.startswith("finmind_"):
-                sym = sym[len("finmind_"):]
-            if ".TW" in sym:
-                market_symbols.add(sym)
+    cat = get_catalog()
+    market_symbols = set(s for s in cat.available_symbols("price") if ".TW" in s)
 
     if not market_symbols:
-        logger.warning("data/market/ 無 .TW.parquet，使用預設 TW50")
+        logger.warning("No .TW price data found, using default TW50")
         market_symbols = {
             "2330.TW", "2317.TW", "2454.TW", "2303.TW", "2308.TW",
             "2881.TW", "2882.TW", "2886.TW", "2891.TW", "1301.TW",
@@ -55,11 +46,9 @@ def discover_universe(require_fundamentals: bool = True) -> list[str]:
             "2412.TW", "2379.TW", "2603.TW", "5871.TW", "2880.TW",
         }
 
-    if require_fundamentals and FUND_DIR.exists():
-        fund_symbols = {
-            f.stem.replace("_revenue", "")
-            for f in FUND_DIR.glob("*_revenue.parquet")
-        }
+    revenue_syms = set(cat.available_symbols("revenue"))
+    if require_fundamentals and revenue_syms:
+        fund_symbols = revenue_syms
         filtered = sorted(market_symbols & fund_symbols)
         # 確保 0050.TW 在 universe 中（空頭偵測需要大盤 proxy）
         if "0050.TW" in market_symbols and "0050.TW" not in filtered:

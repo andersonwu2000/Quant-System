@@ -121,7 +121,8 @@ def load_benchmark_nav() -> float | None:
     """Load 0050.TW latest price for benchmark comparison."""
     try:
         import pandas as pd
-        path = Path("data/market/0050.TW_1d.parquet")
+        from src.data.registry import parquet_path as _ppath
+        path = _ppath("0050.TW", "price")
         if path.exists():
             df = pd.read_parquet(path)
             return float(df["close"].iloc[-1])
