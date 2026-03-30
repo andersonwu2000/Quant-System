@@ -117,7 +117,9 @@ def weights_to_orders(
             continue
 
         # 計算需要交易的數量
-        inst = (instruments or {}).get(symbol, Instrument(symbol=symbol))
+        # Set lot_size based on market (台股=1000) so SimBroker correctly identifies odd lots
+        _default_lot = 1000 if (symbol.endswith(".TW") or symbol.endswith(".TWO")) else 1
+        inst = (instruments or {}).get(symbol, Instrument(symbol=symbol, lot_size=_default_lot))
         multiplier = inst.multiplier if inst.multiplier > 0 else Decimal("1")
         target_value = Decimal(str(diff_w)) * nav
         # 考慮合約乘數：每口合約的名義價值 = price × multiplier
