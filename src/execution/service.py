@@ -265,12 +265,12 @@ class ExecutionService:
         broker_trades: list[Trade] = []
         ts = timestamp or datetime.now(timezone.utc)
 
-        for order in orders:
+        for i, order in enumerate(orders):
             # LT-9: check broker connection before each order (live mode)
             if not self._fallback_mode and hasattr(self._broker, 'is_connected'):
                 if not self._broker.is_connected():
                     # Reject this and all remaining orders
-                    remaining = orders[orders.index(order):]
+                    remaining = orders[i:]
                     for r in remaining:
                         r.status = OrderStatus.REJECTED
                         r.reject_reason = "Broker disconnected"

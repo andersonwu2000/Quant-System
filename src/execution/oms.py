@@ -105,20 +105,27 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
                 if trade.side == Side.BUY:
                     portfolio.positions[symbol] = Position(
                         instrument=Instrument(symbol=symbol),
-                        quantity=trade.quantity,
+                        quantity=effective_qty,
                         avg_cost=trade.price,
                         market_price=trade.price,
+                    )
+                elif trade.side == Side.SELL:
+                    logger.critical(
+                        "SELL for %s but no position exists — cash updated, trade lost. "
+                        "Possible order state inconsistency.",
+                        symbol,
                     )
 
         portfolio.as_of = trades[-1].timestamp if trades else portfolio.as_of
 
-    # Persist portfolio state for crash recovery (paper/live mode)
-    try:
-        from src.core.config import get_config
-        if get_config().mode in ("paper", "live"):
-            from src.api.state import save_portfolio
-            save_portfolio(portfolio)
-    except Exception:
-        pass  # backtest mode or missing API dependencies — skip persistence
+        # Persist portfolio state for crash recovery (paper/live mode)
+        # Inside lock to prevent concurrent reads seeing partial state
+        try:
+            from src.core.config import get_config
+            if get_config().mode in ("paper", "live"):
+                from src.api.state import save_portfolio
+                save_portfolio(portfolio)
+        except Exception:
+            pass  # backtest mode or missing API dependencies — skip persistence
 
     return portfolio
