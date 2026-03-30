@@ -13,11 +13,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.quality import check_bars, QualityStatus
+from src.data.registry import parquet_path as _parquet_path
 
 logger = logging.getLogger(__name__)
-
-MARKET_DIR = Path("data/market")
 
 # ── Thresholds ───────────────────────────────────────────────────────
 
@@ -62,6 +60,39 @@ class GateResult:
         return " | ".join(parts)
 
 
+def _read_last_date_fast(path: Path) -> date | None:
+    """Read last_date from parquet metadata without loading the full file.
+
+    Falls back to reading the file if metadata is missing (pre-Phase-AD files).
+    """
+    import pyarrow.parquet as pq
+
+    try:
+        meta = pq.read_metadata(path)
+        schema_meta = meta.schema.to_arrow_schema().metadata or {}
+        last_date_bytes = schema_meta.get(b"last_date")
+        if last_date_bytes:
+            return date.fromisoformat(last_date_bytes.decode())
+    except Exception:
+        pass
+
+    # Fallback: read only the index to get max date
+    try:
+        df = pd.read_parquet(path, columns=[])  # reads index only (0 columns, N rows)
+        if len(df) == 0:
+            return None
+        idx = df.index
+        if not isinstance(idx, pd.DatetimeIndex):
+            # Need to read at least one column to find dates
+            df = pd.read_parquet(path)
+            if len(df) == 0:
+                return None
+            idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
+        return idx.max().date()
+    except Exception:
+        return None
+
+
 def _is_recent_trading_day(d: date, reference: date, max_gap: int = MAX_STALE_TRADING_DAYS) -> bool:
     """Check if d is within max_gap calendar days of reference (simple heuristic)."""
     return (reference - d).days <= max_gap + 2  # +2 for weekends
@@ -93,8 +124,7 @@ def pre_trade_quality_gate(
     # ── L1: Completeness — all symbols have a price parquet ──────────
     missing_symbols = []
     for sym in universe:
-        safe = sym.replace("/", "_").replace("\\", "_").replace("..", "_")
-        path = MARKET_DIR / f"{safe}_1d.parquet"
+        path = _parquet_path(sym, "price")
         if not path.exists():
             missing_symbols.append(sym)
 
@@ -118,17 +148,13 @@ def pre_trade_quality_gate(
     for sym in universe:
         if sym in missing_symbols:
             continue
-        safe = sym.replace("/", "_").replace("\\", "_").replace("..", "_")
-        path = MARKET_DIR / f"{safe}_1d.parquet"
+        path = _parquet_path(sym, "price")
         try:
-            df = pd.read_parquet(path)
-            if df.empty:
+            # Try fast path: read last_date from parquet metadata (set by _atomic_write)
+            last = _read_last_date_fast(path)
+            if last is None:
                 stale_symbols.append(sym)
                 continue
-            idx = df.index
-            if not isinstance(idx, pd.DatetimeIndex):
-                idx = pd.to_datetime(idx)
-            last = idx.max().date()
             if freshest is None or last > freshest:
                 freshest = last
             if not _is_recent_trading_day(last, reference_date):
@@ -158,8 +184,7 @@ def pre_trade_quality_gate(
     for sym in universe:
         if sym in missing_symbols or sym in stale_symbols:
             continue
-        safe = sym.replace("/", "_").replace("\\", "_").replace("..", "_")
-        path = MARKET_DIR / f"{safe}_1d.parquet"
+        path = _parquet_path(sym, "price")
         try:
             df = pd.read_parquet(path)
             if df.empty or len(df) < 2:
@@ -207,8 +232,7 @@ def pre_trade_quality_gate(
     for sym in universe:
         if sym in missing_symbols or sym in stale_symbols or sym in anomalous_symbols:
             continue
-        safe = sym.replace("/", "_").replace("\\", "_").replace("..", "_")
-        path = MARKET_DIR / f"{safe}_1d.parquet"
+        path = _parquet_path(sym, "price")
         try:
             df = pd.read_parquet(path)
             if len(df) < 2:

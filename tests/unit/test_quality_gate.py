@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from src.data.quality_gate import (
     CheckResult,
     _is_recent_trading_day,
 )
+from src.data.registry import REGISTRY
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -40,6 +42,13 @@ def _setup_universe(tmp_path: Path, symbols: list[str], days: int = 5, start: st
         df.to_parquet(path)
 
 
+def _patch_registry(monkeypatch, tmp_path):
+    """Patch registry so price source_dirs points to tmp_path."""
+    patched_price = replace(REGISTRY["price"], source_dirs=(tmp_path,))
+    patched = {**REGISTRY, "price": patched_price}
+    monkeypatch.setattr("src.data.registry.REGISTRY", patched)
+
+
 # ── Unit tests ───────────────────────────────────────────────────────
 
 class TestIsRecentTradingDay:
@@ -64,13 +73,13 @@ class TestPreTradeQualityGate:
         assert "Empty universe" in result.blocking
 
     def test_all_missing_blocks(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("src.data.quality_gate.MARKET_DIR", tmp_path)
+        _patch_registry(monkeypatch, tmp_path)
         result = pre_trade_quality_gate(["FAKE1.TW", "FAKE2.TW"])
         assert not result.passed
         assert any("L1" in b for b in result.blocking)
 
     def test_all_fresh_passes(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("src.data.quality_gate.MARKET_DIR", tmp_path)
+        _patch_registry(monkeypatch, tmp_path)
         symbols = ["A.TW", "B.TW", "C.TW"]
         _setup_universe(tmp_path, symbols)
         result = pre_trade_quality_gate(symbols, reference_date=date(2026, 3, 28))
@@ -79,7 +88,7 @@ class TestPreTradeQualityGate:
         assert result.universe_size == 3
 
     def test_stale_data_blocks(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("src.data.quality_gate.MARKET_DIR", tmp_path)
+        _patch_registry(monkeypatch, tmp_path)
         symbols = ["A.TW", "B.TW"]
         # Data from January — very stale relative to March reference
         _setup_universe(tmp_path, symbols, days=5, start="2026-01-05")
@@ -88,7 +97,7 @@ class TestPreTradeQualityGate:
         assert any("L2" in b for b in result.blocking)
 
     def test_partial_missing_passes_under_threshold(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("src.data.quality_gate.MARKET_DIR", tmp_path)
+        _patch_registry(monkeypatch, tmp_path)
         # 20 symbols, 1 missing = 5% = at threshold
         symbols = [f"S{i}.TW" for i in range(20)]
         _setup_universe(tmp_path, symbols[:19])  # 19 exist, 1 missing
@@ -98,7 +107,7 @@ class TestPreTradeQualityGate:
         assert l1.passed
 
     def test_sanity_detects_limit_up(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("src.data.quality_gate.MARKET_DIR", tmp_path)
+        _patch_registry(monkeypatch, tmp_path)
         symbols = ["A.TW"]
         df = _make_ohlcv(5, "2026-03-24")
         # Make last bar have a 15% jump (exceeds 11% limit)
@@ -110,7 +119,7 @@ class TestPreTradeQualityGate:
         assert "A.TW" in l3.affected_symbols
 
     def test_consistency_warning_only(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("src.data.quality_gate.MARKET_DIR", tmp_path)
+        _patch_registry(monkeypatch, tmp_path)
         symbols = ["A.TW"]
         df = _make_ohlcv(5, "2026-03-24")
         # Make last bar open wildly different from prev close

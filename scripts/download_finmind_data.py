@@ -38,8 +38,8 @@ TW50_SYMBOLS = [
     "5876", "5880", "6505",
 ]
 
-FUND_DIR = Path("data/fundamental")
-MARKET_DIR = Path("data/market")
+FUND_DIR = Path("data/finmind")
+MARKET_DIR = Path("data/finmind")
 
 # FinMind 免費 600 req/hr → ~0.6s/req 安全間隔
 REQUEST_DELAY = 0.7
@@ -241,16 +241,20 @@ def main() -> None:
     if args.symbols:
         symbols = args.symbols
     elif args.symbols_from_market:
-        discovered = sorted({
-            p.stem.split(".TW")[0]
-            for p in MARKET_DIR.glob("*.parquet")
-            if ".TW" in p.stem
-        })
+        # Search all source directories for price parquets
+        search_dirs = [Path("data/yahoo"), Path("data/finmind"), Path("data/twse"),
+                       Path("data/market")]  # legacy fallback
+        discovered: set[str] = set()
+        for d in search_dirs:
+            if d.exists():
+                for p in d.glob("*_1d.parquet"):
+                    if ".TW" in p.stem:
+                        discovered.add(p.stem.split(".TW")[0])
         if not discovered:
-            logger.error("data/market/ 中找不到 *.TW.parquet 檔案")
+            logger.error("找不到任何 *.TW_1d.parquet 檔案")
             sys.exit(1)
-        symbols = discovered
-        logger.info("從 data/market/ 發現 %d 支台股: %s ...", len(symbols), symbols[:5])
+        symbols = sorted(discovered)
+        logger.info("發現 %d 支台股: %s ...", len(symbols), symbols[:5])
     else:
         symbols = TW50_SYMBOLS
     symbols = [strip_tw_suffix(s) for s in symbols]

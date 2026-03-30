@@ -2,12 +2,23 @@
 
 Central registry of what data exists, where it lives, how often it refreshes,
 and what PIT delay to apply. Used by refresh engine, quality gate, and CLI.
+
+Storage is organized by source:
+  data/yahoo/     — Yahoo Finance
+  data/finmind/   — FinMind API
+  data/twse/      — TWSE/TPEX OpenAPI
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# ── Source directories ───────────────────────────────────────────────
+
+YAHOO_DIR = Path("data/yahoo")
+FINMIND_DIR = Path("data/finmind")
+TWSE_DIR = Path("data/twse")
 
 # ── Dataset definition ───────────────────────────────────────────────
 
@@ -16,7 +27,7 @@ class DatasetDef:
     """Metadata for a single dataset type."""
     name: str                       # "price", "revenue", "institutional", ...
     suffix: str                     # parquet filename suffix
-    storage_dir: Path               # "data/market" or "data/fundamental"
+    source_dirs: tuple[Path, ...]   # directories to search, in priority order
     frequency: str                  # "daily", "weekly", "monthly", "quarterly", "event"
     finmind_method: str             # FinMind DataLoader method name
     pit_delay_days: int = 0         # PIT delay for look-ahead bias prevention
@@ -26,16 +37,13 @@ class DatasetDef:
     yahoo_available: bool = False   # whether Yahoo Finance can provide this data
 
 
-MARKET_DIR = Path("data/market")
-FUND_DIR = Path("data/fundamental")
-
 # ── Registry ─────────────────────────────────────────────────────────
 
 REGISTRY: dict[str, DatasetDef] = {
     "price": DatasetDef(
         name="price",
         suffix="1d",
-        storage_dir=MARKET_DIR,
+        source_dirs=(TWSE_DIR, YAHOO_DIR, FINMIND_DIR),
         frequency="daily",
         finmind_method="taiwan_stock_daily",
         pit_delay_days=0,
@@ -47,7 +55,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "revenue": DatasetDef(
         name="revenue",
         suffix="revenue",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="monthly",
         finmind_method="taiwan_stock_month_revenue",
         pit_delay_days=40,
@@ -58,10 +66,10 @@ REGISTRY: dict[str, DatasetDef] = {
     "financial_statement": DatasetDef(
         name="financial_statement",
         suffix="financial_statement",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="quarterly",
         finmind_method="taiwan_stock_financial_statement",
-        pit_delay_days=90,  # conservative: Q1 deadline 5/15 = ~45d, but use 90 for safety
+        pit_delay_days=90,
         min_coverage=0.40,
         refresh_cron="0 8 16 5,8,11 *",
         description="Income statement (EPS, ROE, revenue, etc.)",
@@ -69,7 +77,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "cash_flows": DatasetDef(
         name="cash_flows",
         suffix="cash_flows",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="quarterly",
         finmind_method="taiwan_stock_cash_flows_statement",
         pit_delay_days=90,
@@ -80,7 +88,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "balance_sheet": DatasetDef(
         name="balance_sheet",
         suffix="balance_sheet",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="quarterly",
         finmind_method="taiwan_stock_balance_sheet",
         pit_delay_days=90,
@@ -91,7 +99,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "per": DatasetDef(
         name="per",
         suffix="per",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="daily",
         finmind_method="taiwan_stock_per_pbr",
         pit_delay_days=0,
@@ -102,7 +110,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "institutional": DatasetDef(
         name="institutional",
         suffix="institutional",
-        storage_dir=FUND_DIR,
+        source_dirs=(TWSE_DIR, FINMIND_DIR),
         frequency="daily",
         finmind_method="taiwan_stock_institutional_investors",
         pit_delay_days=0,
@@ -113,7 +121,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "margin": DatasetDef(
         name="margin",
         suffix="margin",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="daily",
         finmind_method="taiwan_stock_margin_purchase_short_sale",
         pit_delay_days=0,
@@ -124,7 +132,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "securities_lending": DatasetDef(
         name="securities_lending",
         suffix="securities_lending",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="daily",
         finmind_method="taiwan_stock_securities_lending",
         pit_delay_days=0,
@@ -135,7 +143,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "shareholding": DatasetDef(
         name="shareholding",
         suffix="shareholding",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="weekly",
         finmind_method="taiwan_stock_shareholding",
         pit_delay_days=0,
@@ -146,7 +154,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "day_trading": DatasetDef(
         name="day_trading",
         suffix="daytrading",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="daily",
         finmind_method="taiwan_stock_day_trading",
         pit_delay_days=0,
@@ -156,7 +164,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "dividend": DatasetDef(
         name="dividend",
         suffix="dividend",
-        storage_dir=FUND_DIR,
+        source_dirs=(FINMIND_DIR,),
         frequency="event",
         finmind_method="taiwan_stock_dividend",
         pit_delay_days=0,
@@ -177,8 +185,58 @@ def list_datasets() -> list[DatasetDef]:
     return list(REGISTRY.values())
 
 
-def parquet_path(symbol: str, dataset: str) -> Path:
-    """Get the parquet file path for a symbol+dataset combination."""
+def parquet_path(symbol: str, dataset: str, source: str | None = None) -> Path:
+    """Get the parquet file path for a symbol+dataset.
+
+    If source is specified, returns path in that source dir.
+    Otherwise returns the first existing file across source_dirs priority,
+    or the primary (first) source dir if no file exists yet.
+    """
     ds = REGISTRY[dataset]
     safe = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
-    return ds.storage_dir / f"{safe}_{ds.suffix}.parquet"
+    filename = f"{safe}_{ds.suffix}.parquet"
+
+    if source:
+        source_dir = _source_name_to_dir(source)
+        return source_dir / filename
+
+    # Search by priority
+    for d in ds.source_dirs:
+        p = d / filename
+        if p.exists():
+            return p
+
+    # Not found anywhere — return primary source dir
+    return ds.source_dirs[0] / filename
+
+
+def write_path(symbol: str, dataset: str, source: str) -> Path:
+    """Get the write path for a specific source. Always deterministic."""
+    ds = REGISTRY[dataset]
+    safe = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
+    source_dir = _source_name_to_dir(source)
+    source_dir.mkdir(parents=True, exist_ok=True)
+    return source_dir / f"{safe}_{ds.suffix}.parquet"
+
+
+def all_source_paths(symbol: str, dataset: str) -> list[tuple[str, Path]]:
+    """Get all possible paths across sources for a symbol+dataset.
+
+    Returns list of (source_name, path) tuples.
+    """
+    ds = REGISTRY[dataset]
+    safe = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
+    filename = f"{safe}_{ds.suffix}.parquet"
+    result = []
+    for d in ds.source_dirs:
+        source_name = _dir_to_source_name(d)
+        result.append((source_name, d / filename))
+    return result
+
+
+def _source_name_to_dir(source: str) -> Path:
+    return {"yahoo": YAHOO_DIR, "finmind": FINMIND_DIR, "twse": TWSE_DIR}[source]
+
+
+def _dir_to_source_name(d: Path) -> str:
+    return {YAHOO_DIR: "yahoo", FINMIND_DIR: "finmind", TWSE_DIR: "twse"}.get(d, "unknown")

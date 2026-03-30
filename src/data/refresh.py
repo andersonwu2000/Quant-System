@@ -12,100 +12,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Literal
 
 import pandas as pd
 
+from src.data.registry import REGISTRY, parquet_path as _registry_parquet_path, write_path as _registry_write_path, YAHOO_DIR, FINMIND_DIR
+
 logger = logging.getLogger(__name__)
-
-# ── Dataset definitions ──────────────────────────────────────────────
-
-MARKET_DIR = Path("data/market")
-FUND_DIR = Path("data/fundamental")
-
-DatasetName = Literal[
-    "price", "revenue", "per", "institutional", "margin",
-    "shareholding", "day_trading", "dividend",
-    "cash_flows", "balance_sheet", "securities_lending",
-    "financial_statement",
-]
-
-# Maps dataset name → (parquet suffix, output dir, provider method, frequency)
-DATASET_META: dict[str, dict] = {
-    "price": {
-        "suffix": "1d",
-        "dir": MARKET_DIR,
-        "finmind_method": "taiwan_stock_daily",
-        "yahoo": True,
-        "freq": "daily",
-    },
-    "revenue": {
-        "suffix": "revenue",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_month_revenue",
-        "freq": "monthly",
-    },
-    "per": {
-        "suffix": "per",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_per_pbr",
-        "freq": "daily",
-    },
-    "institutional": {
-        "suffix": "institutional",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_institutional_investors",
-        "freq": "daily",
-    },
-    "margin": {
-        "suffix": "margin",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_margin_purchase_short_sale",
-        "freq": "daily",
-    },
-    "shareholding": {
-        "suffix": "shareholding",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_shareholding",
-        "freq": "weekly",
-    },
-    "day_trading": {
-        "suffix": "daytrading",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_day_trading",
-        "freq": "daily",
-    },
-    "dividend": {
-        "suffix": "dividend",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_dividend",
-        "freq": "event",
-    },
-    "cash_flows": {
-        "suffix": "cash_flows",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_cash_flows_statement",
-        "freq": "quarterly",
-    },
-    "balance_sheet": {
-        "suffix": "balance_sheet",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_balance_sheet",
-        "freq": "quarterly",
-    },
-    "securities_lending": {
-        "suffix": "securities_lending",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_securities_lending",
-        "freq": "daily",
-    },
-    "financial_statement": {
-        "suffix": "financial_statement",
-        "dir": FUND_DIR,
-        "finmind_method": "taiwan_stock_financial_statement",
-        "freq": "quarterly",
-    },
-}
 
 
 @dataclass
@@ -123,7 +35,7 @@ class RefreshReport:
 
     @property
     def ok(self) -> bool:
-        return not self.error and self.failed.__len__() < self.total_symbols * 0.5
+        return not self.error and len(self.failed) < self.total_symbols * 0.5
 
     def summary(self) -> str:
         parts = [f"[{self.dataset}]"]
@@ -148,9 +60,13 @@ def _max_acceptable_age(freq: str) -> int:
 
 
 def _parquet_path(symbol: str, dataset: str) -> Path:
-    meta = DATASET_META[dataset]
-    safe_sym = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
-    return meta["dir"] / f"{safe_sym}_{meta['suffix']}.parquet"
+    """Read path — searches source dirs in priority order."""
+    return _registry_parquet_path(symbol, dataset)
+
+
+def _write_parquet_path(symbol: str, dataset: str, source: str) -> Path:
+    """Write path — always goes to specific source dir."""
+    return _registry_write_path(symbol, dataset, source)
 
 
 def _read_existing(path: Path) -> pd.DataFrame | None:
@@ -307,7 +223,7 @@ def _refresh_symbol_price(symbol: str, existing: pd.DataFrame | None, today: str
     else:
         combined = new_df.sort_index()
 
-    path = _parquet_path(symbol, "price")
+    path = _write_parquet_path(symbol, "price", source=provider)
     _atomic_write(combined, path, source=provider, dataset="price")
     return len(new_df), provider
 
@@ -318,8 +234,8 @@ def _refresh_symbol_fundamental(
     """Refresh a single symbol's fundamental data. Returns (new_rows, provider_used)."""
     from src.data.sources.finmind_common import strip_tw_suffix
 
-    meta = DATASET_META[dataset]
-    max_age = _max_acceptable_age(meta["freq"])
+    ds = REGISTRY[dataset]
+    max_age = _max_acceptable_age(ds.frequency)
 
     if existing is not None:
         last = _last_date(existing)
@@ -331,7 +247,7 @@ def _refresh_symbol_fundamental(
         start = "2015-01-01"
 
     bare = strip_tw_suffix(symbol)
-    raw = _fetch_finmind(bare, meta["finmind_method"], start, today)
+    raw = _fetch_finmind(bare, ds.finmind_method, start, today)
     if raw is None or (isinstance(raw, pd.DataFrame) and raw.empty):
         return 0, ""
 
@@ -353,7 +269,7 @@ def _refresh_symbol_fundamental(
     else:
         combined = raw
 
-    path = _parquet_path(symbol, dataset)
+    path = _write_parquet_path(symbol, dataset, source="finmind")
     _atomic_write(combined, path, source="finmind", dataset=dataset)
     return len(raw), "finmind"
 
@@ -367,10 +283,10 @@ def refresh_dataset_sync(
 
     If symbols is None, discovers from existing parquet files in data/market/.
     """
-    if dataset not in DATASET_META:
+    if dataset not in REGISTRY:
         return RefreshReport(dataset=dataset, error=f"Unknown dataset: {dataset}")
 
-    meta = DATASET_META[dataset]
+    ds = REGISTRY[dataset]
     start_time = time.monotonic()
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -380,7 +296,9 @@ def refresh_dataset_sync(
     if not symbols:
         return RefreshReport(dataset=dataset, error="No symbols to refresh")
 
-    meta["dir"].mkdir(parents=True, exist_ok=True)
+    # Ensure all source dirs exist
+    for d in ds.source_dirs:
+        d.mkdir(parents=True, exist_ok=True)
     report = RefreshReport(dataset=dataset, total_symbols=len(symbols))
     provider_counts: dict[str, int] = {}
 
@@ -392,7 +310,7 @@ def refresh_dataset_sync(
             if dataset == "price":
                 new_rows, provider = _refresh_symbol_price(sym, existing, today)
             else:
-                new_rows, provider = _refresh_symbol_fundamental(sym, existing, today)
+                new_rows, provider = _refresh_symbol_fundamental(sym, dataset, existing, today)
 
             if new_rows > 0:
                 report.updated += 1
@@ -418,14 +336,18 @@ def refresh_dataset_sync(
 
 
 def _discover_symbols() -> list[str]:
-    """Discover symbols from existing parquet files in data/market/."""
-    if not MARKET_DIR.exists():
+    """Discover symbols from existing price parquet files across all sources."""
+    ds = REGISTRY.get("price")
+    if ds is None:
         return []
-    symbols = []
-    for p in sorted(MARKET_DIR.glob("*_1d.parquet")):
-        sym = p.stem.replace("_1d", "")
-        symbols.append(sym)
-    return symbols
+    seen: set[str] = set()
+    for source_dir in ds.source_dirs:
+        if not source_dir.exists():
+            continue
+        for p in source_dir.glob("*_1d.parquet"):
+            sym = p.stem.replace("_1d", "")
+            seen.add(sym)
+    return sorted(seen)
 
 
 # ── Async wrapper ────────────────────────────────────────────────────

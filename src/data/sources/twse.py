@@ -33,14 +33,20 @@ def _throttle() -> None:
     _last_request_time = time.monotonic()
 
 
-def _safe_float(val: str | Any) -> float:
-    """Convert string to float, handling commas and dashes."""
+def _safe_float(val: str | Any, allow_nan: bool = False) -> float:
+    """Convert string to float, handling commas and dashes.
+
+    Args:
+        allow_nan: If True, return NaN for missing/invalid values (use for
+                   fields where 0.0 is a legitimate value, e.g. net buy/sell).
+                   If False, return 0.0 (use for OHLCV where 0 means invalid).
+    """
     if val is None or val == "" or val == "--" or val == "---":
-        return 0.0
+        return float("nan") if allow_nan else 0.0
     try:
         return float(str(val).replace(",", ""))
     except (ValueError, TypeError):
-        return 0.0
+        return float("nan") if allow_nan else 0.0
 
 
 # ── TWSE (上市) ──────────────────────────────────────────────────────
@@ -226,10 +232,10 @@ def fetch_twse_institutional(trade_date: date | None = None) -> pd.DataFrame:
             if not code or not code[0].isdigit():
                 continue
 
-            foreign_net = _safe_float(record[4])
-            trust_net = _safe_float(record[10])
-            dealer_net = _safe_float(record[11])
-            total_net = _safe_float(record[18])
+            foreign_net = _safe_float(record[4], allow_nan=True)
+            trust_net = _safe_float(record[10], allow_nan=True)
+            dealer_net = _safe_float(record[11], allow_nan=True)
+            total_net = _safe_float(record[18], allow_nan=True)
 
             rows.append({
                 "symbol": f"{code}.TW",

@@ -16,8 +16,8 @@ from src.data.refresh import (
     _normalize_ohlcv,
     _parquet_path,
     _read_existing,
-    DATASET_META,
 )
+from src.data.registry import REGISTRY
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -103,11 +103,14 @@ class TestNormalizeOhlcv:
 class TestParquetPath:
     def test_price_dataset(self):
         p = _parquet_path("2330.TW", "price")
-        assert p == Path("data/market/2330.TW_1d.parquet")
+        # Primary source for price is twse (or yahoo/finmind if file exists there)
+        assert p.name == "2330.TW_1d.parquet"
+        assert p.parent.name in ("twse", "yahoo", "finmind")
 
     def test_fundamental_dataset(self):
         p = _parquet_path("2330.TW", "revenue")
-        assert p == Path("data/fundamental/2330.TW_revenue.parquet")
+        assert p.name == "2330.TW_revenue.parquet"
+        assert p.parent.name == "finmind"
 
 
 class TestReadExisting:
@@ -145,13 +148,13 @@ class TestRefreshReport:
         assert "+100 rows" in s
 
 
-class TestDatasetMeta:
-    def test_all_datasets_have_required_keys(self):
-        for name, meta in DATASET_META.items():
-            assert "suffix" in meta, f"{name} missing suffix"
-            assert "dir" in meta, f"{name} missing dir"
-            assert "finmind_method" in meta, f"{name} missing finmind_method"
-            assert "freq" in meta, f"{name} missing freq"
+class TestDatasetRegistry:
+    def test_all_datasets_have_required_fields(self):
+        for name, ds in REGISTRY.items():
+            assert ds.suffix, f"{name} missing suffix"
+            assert ds.source_dirs, f"{name} missing source_dirs"
+            assert ds.finmind_method, f"{name} missing finmind_method"
+            assert ds.frequency, f"{name} missing frequency"
 
 
 class TestRefreshDatasetSync:
@@ -169,18 +172,19 @@ class TestRefreshDatasetSync:
     @patch("src.data.refresh._fetch_yahoo")
     @patch("src.data.refresh._discover_symbols")
     def test_skips_fresh_symbols(self, mock_discover, mock_yahoo, tmp_path, monkeypatch):
+        from dataclasses import replace
         from datetime import datetime, timedelta
         # Setup: create a parquet with last bar = today (definitely fresh)
         today = datetime.now().strftime("%Y-%m-%d")
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         df = pd.DataFrame(
             {"open": [100], "high": [105], "low": [95], "close": [102], "volume": [1000.0]},
             index=pd.DatetimeIndex([today]),
         )
         sym = "TEST.TW"
-        monkeypatch.setattr("src.data.refresh.MARKET_DIR", tmp_path)
-        monkeypatch.setattr("src.data.refresh.DATASET_META",
-                            {**DATASET_META, "price": {**DATASET_META["price"], "dir": tmp_path}})
+        patched_price = replace(REGISTRY["price"], source_dirs=(tmp_path,))
+        patched_registry = {**REGISTRY, "price": patched_price}
+        monkeypatch.setattr("src.data.refresh.REGISTRY", patched_registry)
+        monkeypatch.setattr("src.data.registry.REGISTRY", patched_registry)
         path = tmp_path / f"{sym}_1d.parquet"
         df.to_parquet(path)
 

@@ -3,8 +3,8 @@
 All consumers (backtest, paper trading, autoresearch) read data through this.
 No in-memory cache — reads from parquet on every call (local-first principle).
 
-Replaces the scattered parquet reading throughout the codebase.
-Migration is gradual: each module switches independently.
+Data is stored by source (data/yahoo/, data/finmind/, data/twse/).
+DataCatalog searches source directories in priority order defined by Registry.
 """
 
 from __future__ import annotations
@@ -15,19 +15,17 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.registry import REGISTRY, DatasetDef
+from src.data.registry import REGISTRY, DatasetDef, parquet_path as _registry_parquet_path
 from src.data.schemas import pit_filter
 
 logger = logging.getLogger(__name__)
-
-MARKET_DIR = Path("data/market")
-FUND_DIR = Path("data/fundamental")
 
 
 class DataCatalog:
     """Unified data access layer.
 
     No in-memory cache. Reads parquet from disk on each call.
+    Searches source directories in priority order (e.g. twse → yahoo → finmind).
     PIT filtering applied when pit_date is specified.
     """
 
@@ -35,12 +33,12 @@ class DataCatalog:
         self._base = Path(base_dir)
 
     def _resolve_path(self, dataset: str, symbol: str) -> Path:
-        """Get the parquet file path for a symbol+dataset."""
-        ds = REGISTRY.get(dataset)
-        if ds is None:
-            raise KeyError(f"Unknown dataset: {dataset}")
-        safe = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
-        return ds.storage_dir / f"{safe}_{ds.suffix}.parquet"
+        """Get the parquet file path for a symbol+dataset.
+
+        Searches source_dirs in priority order, returns first existing file.
+        Falls back to primary source dir if nothing found.
+        """
+        return _registry_parquet_path(symbol, dataset)
 
     def get(
         self,
@@ -75,8 +73,10 @@ class DataCatalog:
         if df.empty:
             return df
 
-        # Normalize index to DatetimeIndex if possible
+        # If no date info available, return as-is (no date filtering possible)
         if not isinstance(df.index, pd.DatetimeIndex) and "date" not in df.columns:
+            if start or end or pit_date:
+                logger.warning("Cannot apply date/PIT filter to %s/%s: no date column or DatetimeIndex", dataset, symbol)
             return df
 
         # Apply date range filter
@@ -180,31 +180,41 @@ class DataCatalog:
         return pd.DataFrame(series_dict)
 
     def available_symbols(self, dataset: str = "price") -> list[str]:
-        """List symbols that have data for a given dataset."""
+        """List symbols that have data for a given dataset (across all sources)."""
         ds = REGISTRY.get(dataset)
         if ds is None:
             return []
         suffix = f"_{ds.suffix}.parquet"
-        if not ds.storage_dir.exists():
-            return []
-        symbols = []
-        for p in sorted(ds.storage_dir.glob(f"*{suffix}")):
-            sym = p.stem.replace(f"_{ds.suffix}", "")
-            symbols.append(sym)
-        return symbols
+        seen: set[str] = set()
+        for source_dir in ds.source_dirs:
+            if not source_dir.exists():
+                continue
+            for p in source_dir.glob(f"*{suffix}"):
+                sym = p.stem.replace(f"_{ds.suffix}", "")
+                seen.add(sym)
+        return sorted(seen)
 
     def available_datasets(self) -> list[str]:
         """List all registered dataset names."""
         return list(REGISTRY.keys())
 
     def coverage(self, dataset: str) -> dict:
-        """Get coverage stats for a dataset."""
+        """Get coverage stats for a dataset (across all sources)."""
         ds = REGISTRY.get(dataset)
         if ds is None:
             return {"error": f"Unknown dataset: {dataset}"}
 
         symbols = self.available_symbols(dataset)
         total_universe = len(self.available_symbols("price"))
+
+        # Per-source breakdown
+        per_source: dict[str, int] = {}
+        suffix = f"_{ds.suffix}.parquet"
+        for source_dir in ds.source_dirs:
+            if source_dir.exists():
+                count = len(list(source_dir.glob(f"*{suffix}")))
+                source_name = source_dir.name  # "yahoo", "finmind", "twse"
+                per_source[source_name] = count
 
         return {
             "dataset": dataset,
@@ -213,6 +223,7 @@ class DataCatalog:
             "coverage_ratio": len(symbols) / total_universe if total_universe > 0 else 0,
             "min_coverage": ds.min_coverage,
             "meets_threshold": (len(symbols) / total_universe >= ds.min_coverage) if total_universe > 0 else False,
+            "per_source": per_source,
         }
 
 

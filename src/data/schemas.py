@@ -47,11 +47,7 @@ def validate_ohlcv(df: pd.DataFrame, symbol: str = "") -> None:
     if df.empty:
         raise ValueError(f"[{name}] Empty DataFrame")
 
-    # Check columns (may be in index or columns)
-    if isinstance(df.index, pd.DatetimeIndex):
-        _assert_columns(df, {"open", "high", "low", "close", "volume"}, name)
-    else:
-        _assert_columns(df, {"open", "high", "low", "close", "volume"}, name)
+    _assert_columns(df, {"open", "high", "low", "close", "volume"}, name)
 
     _assert_positive(df, ["open", "high", "low", "close"], name)
     _assert_positive(df, ["volume"], name, allow_zero=True)
@@ -154,18 +150,6 @@ def conservative_announcement_date(report_date: date, quarter: str) -> date:
     month, day = QUARTERLY_DEADLINES[quarter]
     year = report_date.year + (1 if quarter == "Q4" else 0)
     return date(year, month, day)
-
-
-def quarter_from_date(d: date) -> str:
-    """Determine fiscal quarter from a report date."""
-    if d.month <= 3:
-        return "Q4"  # Q4 of previous year
-    elif d.month <= 6:
-        return "Q1"
-    elif d.month <= 9:
-        return "Q2"
-    else:
-        return "Q3"
 
 
 def pit_filter(

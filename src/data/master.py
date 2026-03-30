@@ -93,9 +93,10 @@ class SecuritiesMaster:
                 conn.execute(securities_table.insert().values(**row))
 
     def upsert_many(self, securities: list[Security]) -> int:
-        """Bulk upsert. Returns count of inserted/updated."""
+        """Bulk upsert using INSERT OR REPLACE. Returns count of inserted/updated."""
         now = datetime.now().isoformat()
-        count = 0
+        if not securities:
+            return 0
         with self._engine.begin() as conn:
             for sec in securities:
                 row = {
@@ -111,21 +112,17 @@ class SecuritiesMaster:
                     "lot_size": sec.lot_size,
                     "last_updated": now,
                 }
-                existing = conn.execute(
-                    sa.select(securities_table.c.symbol).where(
-                        securities_table.c.symbol == sec.symbol
-                    )
-                ).fetchone()
-                if existing:
-                    conn.execute(
-                        securities_table.update()
-                        .where(securities_table.c.symbol == sec.symbol)
-                        .values(**row)
-                    )
-                else:
-                    conn.execute(securities_table.insert().values(**row))
-                count += 1
-        return count
+                conn.execute(
+                    sa.text(
+                        "INSERT OR REPLACE INTO securities "
+                        "(symbol, bare_id, name, exchange, industry_code, industry_name, "
+                        "listed_date, delisted_date, status, lot_size, last_updated) "
+                        "VALUES (:symbol, :bare_id, :name, :exchange, :industry_code, "
+                        ":industry_name, :listed_date, :delisted_date, :status, :lot_size, :last_updated)"
+                    ),
+                    row,
+                )
+        return len(securities)
 
     def get(self, symbol: str) -> Security | None:
         """Get a single security by symbol."""

@@ -41,14 +41,13 @@ def cmd_status(args: argparse.Namespace) -> None:
             continue
 
         ds = REGISTRY[ds_name]
-        data_dir = ds.storage_dir
         suffix = ds.suffix
 
-        if not data_dir.exists():
-            print(f"{ds_name:<22} {'0':>6} {'N/A':>12} {'N/A':>12} {'0':>8}")
-            continue
-
-        files = list(data_dir.glob(f"*_{suffix}.parquet"))
+        # Collect files from all source dirs
+        files = []
+        for source_dir in ds.source_dirs:
+            if source_dir.exists():
+                files.extend(source_dir.glob(f"*_{suffix}.parquet"))
         count = len(files)
         if count == 0:
             print(f"{ds_name:<22} {'0':>6} {'N/A':>12} {'N/A':>12} {'0':>8}")
@@ -89,10 +88,11 @@ def cmd_status(args: argparse.Namespace) -> None:
 
 def cmd_refresh(args: argparse.Namespace) -> None:
     """Refresh one or all datasets."""
-    from src.data.refresh import refresh_dataset_sync, DATASET_META
+    from src.data.refresh import refresh_dataset_sync
+    from src.data.registry import REGISTRY
 
     if args.dataset == "all":
-        datasets = list(DATASET_META.keys())
+        datasets = list(REGISTRY.keys())
     else:
         datasets = [args.dataset]
 
