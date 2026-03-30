@@ -109,7 +109,9 @@ class RiskEngine:
                     if market and sym in market.prices:
                         price = market.prices[sym]
                     else:
-                        price = Decimal("0")
+                        # H1: skip order with no price (was 0 → bypassed all limits)
+                        logger.warning("Risk: skipping %s %s — no price available", order.side.value, sym)
+                        continue
                 notional = order.quantity * price
                 if order.side == Side.BUY:
                     projected.cash -= notional

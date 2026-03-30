@@ -68,9 +68,15 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
         for trade in trades:
             symbol = trade.symbol
 
-            # H-04: SELL cap without mutating original trade
+            # C4 fix: check position exists BEFORE updating cash for SELL
             effective_qty = trade.quantity
-            if trade.side == Side.SELL and symbol in portfolio.positions:
+            if trade.side == Side.SELL:
+                if symbol not in portfolio.positions:
+                    logger.critical(
+                        "SELL for %s but no position exists — trade SKIPPED (no cash change).",
+                        symbol,
+                    )
+                    continue
                 pos_qty = portfolio.positions[symbol].quantity
                 if trade.quantity > pos_qty:
                     logger.warning(
@@ -110,12 +116,7 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
                         avg_cost=trade.price,
                         market_price=trade.price,
                     )
-                elif trade.side == Side.SELL:
-                    logger.critical(
-                        "SELL for %s but no position exists — cash updated, trade lost. "
-                        "Possible order state inconsistency.",
-                        symbol,
-                    )
+                # SELL without position: already caught above (continue), should never reach here
 
         portfolio.as_of = trades[-1].timestamp if trades else portfolio.as_of
 
@@ -126,7 +127,7 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
             if get_config().mode in ("paper", "live"):
                 from src.api.state import save_portfolio
                 save_portfolio(portfolio)
-        except Exception:
-            pass  # backtest mode or missing API dependencies — skip persistence
+        except Exception as _pe:
+            logger.error("Portfolio persistence failed: %s", _pe)  # H4: was silent
 
     return portfolio

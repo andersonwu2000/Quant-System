@@ -317,7 +317,8 @@ def _process_pending():
         else:
             failed_dir = pending_dir / "failed"
             failed_dir.mkdir(exist_ok=True)
-        marker_path.rename(failed_dir / marker_path.name)
+            if marker_path.exists():
+                marker_path.rename(failed_dir / marker_path.name)
 
 
 def _queue_for_deployment(results: dict, validator_report: dict, factor_code: str) -> None:
