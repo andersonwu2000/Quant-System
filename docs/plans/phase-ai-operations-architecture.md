@@ -313,7 +313,7 @@ PaperDeployer + DeployedExecutor + 多 portfolio 隔離（main + auto×3）+ 5% 
 3. **Crash-only design** — startup 和 recovery 共用同一個 code path（參考 NautilusTrader）。Paper mode 重跑 pipeline 即恢復；live mode 靠 trade ledger 重播
 4. **一鍵查看** — 一個指令/一次點擊看到系統全貌
 5. **漸進上線** — paper 30 天 → 人工審核 → live，不自動用真錢
-6. **最小改動** — 不重寫已有的 SchedulerService/PaperDeployer，只在必要處加邏輯
+6. **結果導向** — 如果重寫能達到更好的最終效果，就重寫。不為了保留舊代碼而妥協設計
 
 ---
 
