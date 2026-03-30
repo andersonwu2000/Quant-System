@@ -412,21 +412,30 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     except (ValueError, _json.JSONDecodeError) as e:
         return PipelineResult(status="error", error=f"Strategy resolution failed: {e}")
 
-    # 1. 數據更新（失敗則中止，不用舊數據交易）
-    if config.pipeline_data_update:
-        # 1a. 價格數據增量更新（所有策略都需要）
-        logger.info("Updating price data...")
-        price_ok = await _async_price_update()
-        if not price_ok:
-            logger.warning("Price data update failed — continuing with cached data")
+    # 1. 數據更新 + 品質閘門
+    # 先取 universe（refresh 和 quality gate 都需要）
+    universe = _get_tw_universe_fallback()
+    if not universe:
+        universe = list(state.portfolio.positions.keys())
+    if not universe:
+        return PipelineResult(status="error", strategy_name=strategy.name(), error="Empty universe")
 
-        # 1b. 營收數據更新（營收策略需要）
+    if config.pipeline_data_update:
+        from src.data.refresh import refresh_all_trading_data
+
+        # 1a. 決定需要更新的數據集
+        datasets_to_refresh = ["price"]
         revenue_strategies = {"revenue_momentum", "revenue_momentum_hedged", "trust_follow"}
         if strategy.name() in revenue_strategies:
-            logger.info("Updating revenue data for %s...", strategy.name())
-            ok = await _async_revenue_update()
-            if not ok:
-                msg = "Revenue data update failed — pipeline aborted"
+            datasets_to_refresh.append("revenue")
+
+        # 1b. 增量更新
+        logger.info("Refreshing datasets: %s", datasets_to_refresh)
+        reports = await refresh_all_trading_data(symbols=universe, datasets=datasets_to_refresh)
+        for r in reports:
+            logger.info("Refresh: %s", r.summary())
+            if not r.ok:
+                msg = f"Data refresh failed: {r.summary()}"
                 logger.error(msg)
                 if notifier.is_configured():
                     try:
@@ -435,18 +444,22 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                         pass
                 return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
 
-    # #5: 數據更新後建立新 feed（不用可能快取舊 parquet 的 feed）
-    # create_feed 在下面呼叫，確保用更新後的數據
+    # 1c. Pre-trade quality gate (always runs, even if data update is off)
+    from src.data.quality_gate import pre_trade_quality_gate
+    gate = pre_trade_quality_gate(universe)
+    if not gate.passed:
+        msg = f"Quality gate BLOCKED: {'; '.join(gate.blocking)}"
+        logger.error(msg)
+        if notifier.is_configured():
+            try:
+                await notifier.send("🚫 Quality Gate BLOCKED", msg)
+            except Exception:
+                pass
+        return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
+    if gate.warnings:
+        logger.warning("Quality gate warnings: %s", gate.warnings)
 
-    # 2. 建立 Context
-    # 策略需要全市場 universe 才能掃描和發現新標的（不只是現有持倉）
-    # 例如 revenue_momentum 需要掃描 800+ 支再篩選 15 支
-    universe = _get_tw_universe_fallback()
-    if not universe:
-        # Fallback: 至少用現有持倉
-        universe = list(state.portfolio.positions.keys())
-    if not universe:
-        return PipelineResult(status="error", strategy_name=strategy.name(), error="Empty universe")
+    # 2. 建立 Context（數據更新後建立 feed，確保用最新數據）
 
     feed = create_feed(config.data_source, universe)
     fundamentals = create_fundamentals(config.data_source)
