@@ -975,17 +975,6 @@ def evaluate() -> dict:
         except Exception:
             pass
 
-    if _sat_triggered and _sat_corr_with:
-        match_count = _get_match_count(_sat_corr_with)
-        if match_count >= SATURATION_MATCH_LIMIT:
-            return _make_result(
-                level="L3", failure=f"direction saturated: {match_count} variants for {_sat_corr_with}",
-                ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
-                icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
-                max_correlation=max_corr, correlated_with=corr_with,
-                elapsed=elapsed,
-            )
-
     if abs(max_corr) > MAX_CORRELATION:
         # Phase AF: check replacement eligibility before rejecting
         factor_icirs = _load_factor_icirs()
@@ -1020,6 +1009,18 @@ def evaluate() -> dict:
         else:
             return _make_result(
                 level="L3", failure=f"corr={max_corr:.3f} with {corr_with} > {MAX_CORRELATION}",
+                ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+                icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+                max_correlation=max_corr, correlated_with=corr_with,
+                elapsed=elapsed,
+            )
+
+    # Saturation check AFTER replacement logic — replacement candidates bypass saturation
+    if _sat_triggered and _sat_corr_with and not is_replacement_candidate:
+        match_count = _get_match_count(_sat_corr_with)
+        if match_count >= SATURATION_MATCH_LIMIT:
+            return _make_result(
+                level="L3", failure=f"direction saturated: {match_count} variants for {_sat_corr_with}",
                 ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
                 icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
                 max_correlation=max_corr, correlated_with=corr_with,
