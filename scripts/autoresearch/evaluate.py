@@ -1318,10 +1318,11 @@ def main() -> None:
     print(f"fitness:          {results['fitness']:.2f}")
     print(f"avg_turnover:     {results['avg_turnover']:.4f}")
     print(f"positive_years:   {results['positive_years']}/{results['total_years']}")
-    # H-002: binary novelty (high or not) — prevents gradient optimization via noise
+    # Novelty: based on IC series correlation (note: portfolio returns may be much higher)
+    # IC corr measures signal similarity; returns corr measures stock selection overlap
     _abs_corr = abs(results['max_correlation'])
     print(f"novelty:          {'high' if _abs_corr < 0.20 else 'not_high'}")
-    print(f"max_correlation:  {results['max_correlation']:.3f} ({results['correlated_with']})")
+    print(f"ic_corr:          {results['max_correlation']:.3f} ({results['correlated_with']}) [signal similarity, not stock overlap]")
     print(f"ic_trend:         {results.get('ic_trend', 'unknown')}")
     print(f"ic_source:        {results.get('ic_source', 'unknown')}")
     print(f"large_icir_20d:   {results['large_icir_20d']:.4f}")
@@ -1473,7 +1474,7 @@ def _write_learning(results: dict) -> None:
             "passed": results.get("passed", False),
             "icir": icir_bucket,
             "failure": results.get("failure", ""),
-            "max_correlation": round(results.get("max_correlation", 0), 3),
+            "ic_corr": round(results.get("max_correlation", 0), 3),
             "correlated_with": results.get("correlated_with", ""),
         }
         if results.get("replaced"):
