@@ -64,8 +64,8 @@ class TestTwSuffixHandling:
 
 class TestColumnMapping:
     @patch("src.data.sources.finmind.FinMindFeed._get_dataloader")
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.load", return_value=None)
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.save")
+    @patch("src.data.sources.finmind.FinMindFeed._load_local", return_value=None)
+    @patch("src.data.sources.finmind.FinMindFeed._save_local")
     def test_finmind_columns_to_standard_ohlcv(
         self, mock_save, mock_load_cache, mock_dl
     ):
@@ -86,8 +86,8 @@ class TestColumnMapping:
         assert df["volume"].iloc[0] == 1_000_000
 
     @patch("src.data.sources.finmind.FinMindFeed._get_dataloader")
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.load", return_value=None)
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.save")
+    @patch("src.data.sources.finmind.FinMindFeed._load_local", return_value=None)
+    @patch("src.data.sources.finmind.FinMindFeed._save_local")
     def test_index_is_datetimeindex(
         self, mock_save, mock_load_cache, mock_dl
     ):
@@ -107,8 +107,8 @@ class TestColumnMapping:
 
 class TestEmptyResponse:
     @patch("src.data.sources.finmind.FinMindFeed._get_dataloader")
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.load", return_value=None)
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.save")
+    @patch("src.data.sources.finmind.FinMindFeed._load_local", return_value=None)
+    @patch("src.data.sources.finmind.FinMindFeed._save_local")
     def test_empty_response_returns_empty_df(
         self, mock_save, mock_load_cache, mock_dl
     ):
@@ -123,8 +123,8 @@ class TestEmptyResponse:
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
 
     @patch("src.data.sources.finmind.FinMindFeed._get_dataloader")
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.load", return_value=None)
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.save")
+    @patch("src.data.sources.finmind.FinMindFeed._load_local", return_value=None)
+    @patch("src.data.sources.finmind.FinMindFeed._save_local")
     def test_empty_response_latest_price_is_zero(
         self, mock_save, mock_load_cache, mock_dl
     ):
@@ -141,8 +141,8 @@ class TestEmptyResponse:
 
 class TestCache:
     @patch("src.data.sources.finmind.FinMindFeed._get_dataloader")
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.load", return_value=None)
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.save")
+    @patch("src.data.sources.finmind.FinMindFeed._load_local", return_value=None)
+    @patch("src.data.sources.finmind.FinMindFeed._save_local")
     def test_cache_hit_skips_api_call(
         self, mock_save, mock_load_cache, mock_dl
     ):
@@ -176,8 +176,8 @@ class TestUniverse:
         assert "6510.TWO" in universe
 
     @patch("src.data.sources.finmind.FinMindFeed._get_dataloader")
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.load", return_value=None)
-    @patch("src.data.sources.parquet_cache.ParquetDiskCache.save")
+    @patch("src.data.sources.finmind.FinMindFeed._load_local", return_value=None)
+    @patch("src.data.sources.finmind.FinMindFeed._save_local")
     def test_bare_id_sent_to_api(
         self, mock_save, mock_load_cache, mock_dl
     ):

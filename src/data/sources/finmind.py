@@ -18,7 +18,7 @@ from cachetools import LRUCache
 from src.data.feed import DataFeed
 from src.data.quality import check_bars
 from src.data.sources.finmind_common import ensure_tw_suffix, get_dataloader, strip_tw_suffix
-from src.data.sources.parquet_cache import ParquetDiskCache
+from src.data.registry import FINMIND_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,8 @@ class FinMindFeed(DataFeed):
 
             cache_size = get_config().data_cache_size
         self._cache: LRUCache[str, pd.DataFrame] = LRUCache(maxsize=cache_size)
-        self._disk_cache = ParquetDiskCache(prefix="finmind_")
+        self._data_dir = FINMIND_DIR
+        self._data_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_dataloader(self) -> Any:
         """Get cached FinMind DataLoader instance."""
@@ -104,7 +105,7 @@ class FinMindFeed(DataFeed):
     ) -> pd.DataFrame:
         """從 FinMind 下載數據（優先使用本地 Parquet 快取）。"""
         # 嘗試從磁碟快取讀取
-        cached = self._disk_cache.load(symbol, freq)
+        cached = self._load_local(symbol, freq)
         if cached is not None:
             logger.info("Cache hit for %s (freq=%s)", symbol, freq)
             return cached
@@ -163,9 +164,36 @@ class FinMindFeed(DataFeed):
         df = df.dropna()
 
         # 寫入磁碟快取
-        self._disk_cache.save(symbol, freq, df)
+        self._save_local(symbol, freq, df)
 
         return df
+
+    def _local_path(self, symbol: str, freq: str) -> "Path":
+        from pathlib import Path
+        safe = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
+        return self._data_dir / f"{safe}_{freq}.parquet"
+
+    def _load_local(self, symbol: str, freq: str) -> pd.DataFrame | None:
+        p = self._local_path(symbol, freq)
+        if not p.exists():
+            return None
+        try:
+            df = pd.read_parquet(p)
+            if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+            if not df.empty and isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
+                df.index = df.index.tz_convert("UTC").tz_localize(None)
+            return df
+        except Exception:
+            return None
+
+    def _save_local(self, symbol: str, freq: str, df: pd.DataFrame) -> None:
+        if df.empty:
+            return
+        try:
+            df.to_parquet(self._local_path(symbol, freq))
+        except Exception as e:
+            logger.warning("Failed to save %s: %s", symbol, e)
 
     def get_latest_price(self, symbol: str) -> Decimal:
         symbol = ensure_tw_suffix(symbol)

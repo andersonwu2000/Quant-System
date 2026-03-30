@@ -14,7 +14,7 @@ from cachetools import LRUCache
 
 from src.data.feed import DataFeed
 from src.data.quality import check_bars
-from src.data.sources.parquet_cache import ParquetDiskCache
+from src.data.registry import YAHOO_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,8 @@ class YahooFeed(DataFeed):
             from src.core.config import get_config
             cache_size = get_config().data_cache_size
         self._cache: LRUCache[str, pd.DataFrame] = LRUCache(maxsize=cache_size)
-        self._store = ParquetDiskCache()  # data/market/ 永久存儲
+        self._data_dir = YAHOO_DIR
+        self._data_dir.mkdir(parents=True, exist_ok=True)
 
     def get_bars(
         self,
@@ -91,7 +92,7 @@ class YahooFeed(DataFeed):
     ) -> pd.DataFrame:
         """從 Yahoo Finance 下載數據（優先使用本地快取）。"""
         # 嘗試從本地快取讀取
-        cached = self._store.load(symbol, freq)
+        cached = self._load_local(symbol, freq)
         if cached is not None and not cached.empty:
             # 檢查快取是否涵蓋請求的日期範圍
             covers_start = start is None or cached.index.min() <= pd.Timestamp(start)
@@ -169,10 +170,38 @@ class YahooFeed(DataFeed):
             df = df[(df[price_cols] > 0).all(axis=1)]
 
         # 寫入快取
-        self._store.save(symbol, freq, df)
+        self._save_local(symbol, freq, df)
 
         result_df: pd.DataFrame = df
         return result_df
+
+    def _local_path(self, symbol: str, freq: str) -> "Path":
+        from pathlib import Path
+        safe = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
+        return self._data_dir / f"{safe}_{freq}.parquet"
+
+    def _load_local(self, symbol: str, freq: str) -> pd.DataFrame | None:
+        p = self._local_path(symbol, freq)
+        if not p.exists():
+            return None
+        try:
+            df = pd.read_parquet(p)
+            if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+            if not df.empty and isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
+                df.index = df.index.tz_convert("UTC").tz_localize(None)
+            return df
+        except Exception:
+            return None
+
+    def _save_local(self, symbol: str, freq: str, df: pd.DataFrame) -> None:
+        if df.empty:
+            return
+        p = self._local_path(symbol, freq)
+        try:
+            df.to_parquet(p)
+        except Exception as e:
+            logger.warning("Failed to save %s: %s", symbol, e)
 
     def get_latest_price(self, symbol: str) -> Decimal:
         df = self.get_bars(symbol)
