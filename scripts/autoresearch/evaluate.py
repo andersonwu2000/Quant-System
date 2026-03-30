@@ -1318,11 +1318,48 @@ def main() -> None:
     print(f"fitness:          {results['fitness']:.2f}")
     print(f"avg_turnover:     {results['avg_turnover']:.4f}")
     print(f"positive_years:   {results['positive_years']}/{results['total_years']}")
-    # Novelty: based on IC series correlation (note: portfolio returns may be much higher)
-    # IC corr measures signal similarity; returns corr measures stock selection overlap
-    _abs_corr = abs(results['max_correlation'])
-    print(f"novelty:          {'high' if _abs_corr < 0.20 else 'not_high'}")
-    print(f"ic_corr:          {results['max_correlation']:.3f} ({results['correlated_with']}) [signal similarity, not stock overlap]")
+    # Novelty: compute returns correlation against existing factor_returns (portfolio-level)
+    _returns_corr = 0.0
+    _returns_corr_with = ""
+    try:
+        from src.backtest.vectorized import VectorizedPBOBacktest
+        from factor import compute_factor as _cf_novelty
+        _vbt = VectorizedPBOBacktest(
+            universe=[s for s in bars if s in universe],
+            start=EVAL_START, end=IS_END,
+            data_dir=str(PROJECT_ROOT / "data" / "market"),
+            fund_dir=str(PROJECT_ROOT / "data" / "fundamental"),
+        )
+        _my_rets = _vbt.run_variant(_cf_novelty, top_n=40, weight_mode="score_tilt")
+        if _my_rets is not None and len(_my_rets) > 50:
+            _my_rets = _my_rets.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+            _ret_dir = Path("/app/watchdog_data/factor_returns")
+            if not _ret_dir.exists():
+                _ret_dir = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "factor_returns"
+            for _p in sorted(_ret_dir.glob("*.parquet"))[-30:]:
+                try:
+                    _existing = pd.read_parquet(_p)
+                    if "returns" in _existing.columns and len(_existing) > 50:
+                        _e = _existing["returns"].copy()
+                        _min = min(len(_my_rets), len(_e))
+                        _c = float(_my_rets.iloc[:_min].corr(_e.iloc[:_min]))
+                        if abs(_c) > abs(_returns_corr):
+                            _returns_corr = _c
+                            _returns_corr_with = _p.stem
+                except Exception:
+                    continue
+    except Exception:
+        pass  # fallback to IC corr if returns corr unavailable
+
+    if abs(_returns_corr) > 0.10:
+        _novelty = "high" if abs(_returns_corr) < 0.50 else "not_high"
+        print(f"novelty:          {_novelty}")
+        print(f"returns_corr:     {_returns_corr:.3f} [portfolio-level stock overlap]")
+    else:
+        # No factor_returns to compare — fallback to IC corr
+        _abs_corr = abs(results['max_correlation'])
+        print(f"novelty:          {'high' if _abs_corr < 0.20 else 'not_high'}")
+        print(f"ic_corr:          {results['max_correlation']:.3f} ({results['correlated_with']}) [no returns data, using signal corr]")
     print(f"ic_trend:         {results.get('ic_trend', 'unknown')}")
     print(f"ic_source:        {results.get('ic_source', 'unknown')}")
     print(f"large_icir_20d:   {results['large_icir_20d']:.4f}")
