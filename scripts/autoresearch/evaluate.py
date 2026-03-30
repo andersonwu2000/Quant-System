@@ -1727,7 +1727,7 @@ def _write_report(results: dict, validator_report: dict) -> None:
             f"| Positive Years | {results['positive_years']}/{results['total_years']} |\n"
             f"| Turnover | {results['avg_turnover']} |\n"
             f"| Large-scale ICIR | {results['large_icir_20d']} |\n"
-            f"| Max Correlation | {results['max_correlation']} ({results['correlated_with']}) |\n\n"
+            f"| IC Series Corr | {results['max_correlation']} ({results['correlated_with']}) [signal, not portfolio] |\n\n"
             f"## Validator Results ({n_p}/{n_t})\n\n"
             f"| Check | Result | Value | Threshold |\n"
             f"|-------|--------|-------|----------|\n"
