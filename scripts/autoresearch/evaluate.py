@@ -841,7 +841,8 @@ def evaluate() -> dict:
 
     # Fix #8 → D: use median |ICIR| across horizons (no selection bias, no horizon discrimination)
     icir_20d = icir_by_horizon.get("20d", 0.0)
-    horizon_icirs = [abs(v) for v in icir_by_horizon.values() if v != 0]
+    # Include ALL horizons (0 = no data at that horizon, counts as weakness)
+    horizon_icirs = [abs(v) for v in icir_by_horizon.values()]
     median_icir = float(np.median(horizon_icirs)) if horizon_icirs else 0.0
     returns_proxy = abs(ic_20d) * 10000
     effective_turnover = max(avg_turnover, 0.125)
@@ -875,7 +876,9 @@ def evaluate() -> dict:
             # Neutralize: demean by industry prefix
             _ind_groups: dict[str, list[float]] = {}
             for s, v in _vals.items():
-                prefix = s[:2] if s[0].isdigit() else s[:4]
+                # Taiwan stock code: first 2 digits = industry (skip ETFs "00xx")
+                _bare = s.replace(".TW", "").replace(".TWO", "")
+                prefix = _bare[:2] if len(_bare) >= 2 and _bare[0].isdigit() and _bare[:2] != "00" else "other"
                 _ind_groups.setdefault(prefix, []).append(v)
             _ind_means = {p: np.mean(vs) for p, vs in _ind_groups.items()}
             _n_vals = {s: v - _ind_means.get(s[:2] if s[0].isdigit() else s[:4], 0) for s, v in _vals.items()}
@@ -984,9 +987,16 @@ def evaluate() -> dict:
         # H-003: check replacement chain depth (prevent indirect drift)
         _chain_depth = 0
         _check_name = corr_with
-        _ics_raw = _load_dedup_ic_series()
+        # Read raw JSON (not _load_dedup_ic_series which strips "replaced" field)
+        _raw_json = {}
+        try:
+            _rp = _dedup_read_path()
+            if _rp.exists():
+                _raw_json = json.loads(_rp.read_text(encoding="utf-8"))
+        except Exception:
+            pass
         for _ in range(10):  # max 10 hops
-            _entry = _ics_raw.get(_check_name)
+            _entry = _raw_json.get(_check_name)
             if isinstance(_entry, dict) and "replaced" in _entry:
                 _chain_depth += 1
                 _check_name = _entry["replaced"]
@@ -1108,7 +1118,10 @@ def evaluate() -> dict:
     # Add Laplace noise to comparisons to preserve holdout validity.
     # Deterministic checks become noisy: agent gets ~0.7 bits per query instead of 1.0.
     l5_query_n = _increment_l5_query_count()
-    rng_l5 = np.random.default_rng(hash((ic_20d, best_icir, l5_query_n)) % (2**31))
+    # Include factor code hash in seed — agent cannot predict noise without knowing seed
+    import hashlib as _hl
+    _factor_hash = int(_hl.sha256(open(Path(__file__).parent / "factor.py", "rb").read()).hexdigest()[:8], 16)
+    rng_l5 = np.random.default_rng(hash((ic_20d, best_icir, l5_query_n, _factor_hash)) % (2**31))
     noise = lambda: float(rng_l5.laplace(0, THRESHOLDOUT_NOISE_SCALE))
 
     l5_failure = False
