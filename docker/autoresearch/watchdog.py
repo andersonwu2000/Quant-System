@@ -494,11 +494,11 @@ def _write_background_report(results: dict, validator_report: dict, factor_code:
     vr = validator_report
     n_p, n_t = vr["n_passed"], vr["n_total"]
 
-    # Check existing reports for superseded factor
-    _existing_reports = sorted(report_dir.glob("*.md"))
+    # Show replacement info only if factor actually replaced another (from evaluate.py results)
     _supersedes = ""
-    if _existing_reports:
-        _supersedes = f"\n> Supersedes: `{_existing_reports[-1].name}`"
+    _replaced = results.get("replaced")
+    if _replaced:
+        _supersedes = f"\n> Replaces: {_replaced}"
 
     _max_corr = results.get('max_correlation', 0)
     _corr_with = results.get('correlated_with', '')
