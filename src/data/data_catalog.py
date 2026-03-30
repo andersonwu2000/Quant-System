@@ -79,14 +79,22 @@ class DataCatalog:
             ratio = pd.Series(1.0, index=common)
             ratio[mask] = adj_close[mask] / raw_close[mask]
 
+            # Forward-fill: apply last known ratio to dates beyond adj coverage.
+            # Without this, there's a fake price jump at the adj/raw boundary.
+            post_adj = df.index[df.index > common.max()] if len(common) > 0 else pd.Index([])
+            last_ratio = float(ratio.iloc[-1]) if len(ratio) > 0 else 1.0
+
             # Apply ratio to OHLC (volume stays unchanged)
             df = df.copy()
             for col in ["open", "high", "low", "close"]:
                 if col in df.columns:
                     df.loc[common, col] = df.loc[common, col] * ratio
+                    if len(post_adj) > 0 and abs(last_ratio - 1.0) > 0.001:
+                        df.loc[post_adj, col] = df.loc[post_adj, col] * last_ratio
 
-            logger.debug("Applied adj_close for %s: %d/%d dates adjusted",
-                        symbol, len(common), len(df))
+            n_ffill = len(post_adj) if abs(last_ratio - 1.0) > 0.001 else 0
+            logger.debug("Applied adj_close for %s: %d/%d dates adjusted, %d forward-filled (ratio=%.4f)",
+                        symbol, len(common), len(df), n_ffill, last_ratio)
 
         except Exception:
             logger.debug("Failed to apply adj_close for %s", symbol, exc_info=True)

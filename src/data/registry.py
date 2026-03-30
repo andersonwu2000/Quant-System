@@ -208,10 +208,11 @@ def parquet_path(symbol: str, dataset: str, source: str | None = None) -> Path:
         source_dir = _source_name_to_dir(source)
         return source_dir / filename
 
-    # Search by priority
+    # Search by priority — skip corrupt/empty files (< 100 bytes)
+    MIN_FILE_SIZE = 100
     for d in ds.source_dirs:
         p = d / filename
-        if p.exists():
+        if p.exists() and p.stat().st_size >= MIN_FILE_SIZE:
             return p
 
     # Not found anywhere — return primary source dir
