@@ -826,7 +826,7 @@ def evaluate() -> dict:
     best_horizon = ""
     for h in FORWARD_HORIZONS:
         ics = ic_by_horizon[h]
-        if len(ics) >= 5:
+        if len(ics) >= 20:
             ic_mean = float(np.mean(ics))
             ic_std = float(np.std(ics, ddof=1))
             icir = ic_mean / ic_std if ic_std > 0 else 0.0
@@ -883,7 +883,11 @@ def evaluate() -> dict:
                 prefix = _bare[:2] if len(_bare) >= 2 and _bare[0].isdigit() and _bare[:2] != "00" else "other"
                 _ind_groups.setdefault(prefix, []).append(v)
             _ind_means = {p: np.mean(vs) for p, vs in _ind_groups.items()}
-            _n_vals = {s: v - _ind_means.get(s[:2] if s[0].isdigit() else s[:4], 0) for s, v in _vals.items()}
+            _n_vals = {}
+            for s, v in _vals.items():
+                _b = s.replace(".TW", "").replace(".TWO", "")
+                _pfx = _b[:2] if len(_b) >= 2 and _b[0].isdigit() and _b[:2] != "00" else "other"
+                _n_vals[s] = v - _ind_means.get(_pfx, 0)
             _nic = _compute_ic(_n_vals, _fwd)
             if _nic is not None:
                 _neutral_ics.append(_nic)

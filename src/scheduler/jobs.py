@@ -673,8 +673,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     # P1: 主動存 NAV snapshot（不依賴 asyncio task 的時間窗口）
     _save_nav_snapshot(state.portfolio)
 
-    # P2: Write completion record
-    _write_pipeline_record(run_id, status="completed", strategy=strategy.name(), n_trades=n_trades)
+    # P2: completion record written by outer execute_pipeline (avoid duplicate)
 
     # P3: Write human-readable daily report
     _write_daily_report(state.portfolio, strategy.name(), n_trades, target_weights)
@@ -737,17 +736,14 @@ def _write_daily_report(
                 prev_nav = _prev_nav
         except Exception:
             pass
-    daily_ret = (nav / prev_nav - 1) * 100 if prev_nav > 0 and prev_nav != nav else 0
+    daily_ret = (nav / prev_nav - 1) * 100 if prev_nav > 0 else 0
 
-    # Cumulative return: always use initial_cash (not first snapshot — may be from different config)
-    initial_cash = float(portfolio.cash) + sum(
-        float(p.market_value) for p in portfolio.positions.values()
-    ) if not hasattr(portfolio, '_initial_cash_for_report') else nav
+    # Cumulative return: use configured initial cash
     try:
         from src.core.config import get_config
         initial_cash = get_config().backtest_initial_cash
     except Exception:
-        pass
+        initial_cash = nav  # fallback: assume starting from current NAV
     cum_ret = (nav / initial_cash - 1) * 100 if initial_cash > 0 else 0
 
     lines = [

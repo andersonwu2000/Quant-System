@@ -12,16 +12,12 @@ Self-contained, no network access, uses synthetic data.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import numpy as np
 import pandas as pd
 import pytest
-
-# Force backtest mode so tests don't write to paper trading portfolio_state.json
-os.environ["QUANT_MODE"] = "backtest"
 
 from src.core.models import (
     AssetClass,

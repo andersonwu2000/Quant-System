@@ -33,7 +33,7 @@ def _reset_state():
             env="dev",
             api_key=API_KEY,
             jwt_secret="test-secret-for-integration",
-            database_url="sqlite:///test.db",
+            database_url="sqlite:///:memory:",
         )
     )
 
@@ -486,7 +486,7 @@ def multi_key_config():
                 TRADER_KEY: "trader",
             },
             jwt_secret="test-secret-for-integration",
-            database_url="sqlite:///test.db",
+            database_url="sqlite:///:memory:",
         )
     )
     yield
@@ -607,13 +607,14 @@ class TestPasswordLogin:
     """Username + password 登入測試。"""
 
     @pytest.fixture(autouse=True)
-    def _setup_users_table(self):
+    def _setup_users_table(self, tmp_path):
         """建立 users 表並插入測試使用者。"""
         from src.data.store import _create_engine, users_table
         from src.api.password import hash_password
         from src.data.user_store import UserStore, override_user_store
 
-        engine = _create_engine("sqlite:///test.db")
+        db_path = tmp_path / "test_jwt.db"
+        engine = _create_engine(f"sqlite:///{db_path}")
         # 只建立 users 表（其他表由 _reset_state 處理）
         users_table.create(engine, checkfirst=True)
 
@@ -672,12 +673,13 @@ class TestAdminUsers:
     """Admin 使用者管理 API 測試。"""
 
     @pytest.fixture(autouse=True)
-    def _setup_users_table(self):
+    def _setup_users_table(self, tmp_path):
         """建立 users 表。"""
         from src.data.store import _create_engine, users_table
         from src.data.user_store import UserStore, override_user_store
 
-        engine = _create_engine("sqlite:///test.db")
+        db_path = tmp_path / "test_admin.db"
+        engine = _create_engine(f"sqlite:///{db_path}")
         users_table.create(engine, checkfirst=True)
         with engine.begin() as conn:
             conn.execute(users_table.delete())
@@ -695,7 +697,7 @@ class TestAdminUsers:
                 env="dev", api_key=API_KEY,
                 api_key_roles={"viewer-k": "viewer"},
                 jwt_secret="test-secret-for-integration",
-                database_url="sqlite:///test.db",
+                database_url="sqlite:///:memory:",
             )
         )
         resp = await client.get("/api/v1/admin/users", headers={"X-API-Key": "viewer-k"})

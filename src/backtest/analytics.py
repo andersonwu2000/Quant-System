@@ -325,7 +325,7 @@ def compute_analytics(
     max_drawdown = float(abs(drawdown.min()))
 
     # Calmar Ratio
-    calmar = annual_return / max_drawdown if max_drawdown > 0 else 0.0
+    calmar = annual_return / max_drawdown if max_drawdown > 0 else float("inf") if annual_return > 0 else 0.0
 
     # 最大回撤持續天數
     dd_duration = _max_drawdown_duration(drawdown)
@@ -421,7 +421,7 @@ def _trade_stats(trades: list[Trade]) -> tuple[float, float]:
             open_positions.setdefault(symbol, []).append(float(t.price))
         elif t.side.value == "SELL" and symbol in open_positions and open_positions[symbol]:
             buy_price = open_positions[symbol].pop(0)
-            pnl = (float(t.price) - buy_price) * float(t.quantity)
+            pnl = (float(t.price) - buy_price) * float(t.quantity) - float(t.commission)
             pnls.append(pnl)
 
     if not pnls:

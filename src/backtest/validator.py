@@ -799,7 +799,10 @@ class StrategyValidator:
             rets = result.daily_returns
             if rets is None or len(rets) < 20:
                 return -1.0  # fail-closed: insufficient data
-            sorted_rets = sorted(rets.dropna().values)
+            clean_rets = rets.dropna().values
+            if len(clean_rets) == 0:
+                return -1.0  # fail-closed: all NaN
+            sorted_rets = sorted(clean_rets)
             n_tail = max(int(len(sorted_rets) * alpha), 1)
             return float(np.mean(sorted_rets[:n_tail]))
         except Exception:

@@ -43,7 +43,7 @@ def verify_api_key(
             payload = jwt.decode(token, config.jwt_secret, algorithms=["HS256"])
             # 撤銷檢查：token 的 iat 必須 >= user 的 token_valid_after
             username = payload.get("sub", "")
-            if username:
+            if username and username != "api_key_user":
                 from src.data.user_store import get_user_store
                 user = get_user_store().get_by_username(username)
                 if user:

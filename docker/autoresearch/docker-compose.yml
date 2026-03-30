@@ -20,6 +20,7 @@ services:
       - ${CLAUDE_CREDENTIALS:-C:/Users/ander/.claude/.credentials.json}:/home/researcher/.claude/.credentials.json:ro
     environment:
       - EVAL_URL=http://evaluator:5000/evaluate
+      - CLAUDE_MODEL=claude-sonnet-4-6
     entrypoint: ["sleep", "infinity"]  # loop.ps1 uses docker exec
 
   # Evaluator: Flask HTTP service wrapping evaluate.py (agent CANNOT see this)

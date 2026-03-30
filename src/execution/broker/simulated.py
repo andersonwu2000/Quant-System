@@ -79,10 +79,12 @@ class SimBroker:
         # sqrt model: base + coeff * sqrt(qty / adv)
         if adv > 0:
             participation = float(order_qty) / float(adv)
-            impact_bps = self.config.base_slippage_bps + self.config.impact_coeff * (participation ** 0.5)
+            impact_bps = Decimal(str(
+                self.config.base_slippage_bps + self.config.impact_coeff * (participation ** 0.5)
+            ))
         else:
-            impact_bps = self.config.slippage_bps  # fallback to fixed bps
-        return close_price * Decimal(str(impact_bps)) / Decimal("10000")
+            impact_bps = Decimal(str(self.config.slippage_bps))  # fallback to fixed bps
+        return close_price * impact_bps / Decimal("10000")
 
     def execute(
         self,

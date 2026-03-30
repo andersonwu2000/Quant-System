@@ -70,6 +70,15 @@ class RiskEngine:
                 return decision
 
             if decision.modified_qty is not None:
+                if decision.modified_qty <= 0:
+                    logger.warning(
+                        "RISK REJECT [%s]: %s — modified_qty %s <= 0",
+                        rule.name, order.instrument.symbol, decision.modified_qty,
+                    )
+                    self._record_alert(rule.name, f"modified_qty {decision.modified_qty} <= 0", Severity.WARNING)
+                    return RiskDecision(approved=False, reason=f"modified_qty {decision.modified_qty} invalid")
+                if decision.modified_qty > order.quantity:
+                    decision.modified_qty = order.quantity  # cap: never increase
                 logger.info(
                     "RISK MODIFY [%s]: %s qty %s → %s",
                     rule.name,

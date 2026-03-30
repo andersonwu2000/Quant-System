@@ -28,6 +28,12 @@
 | [system/AA_AG_EXECUTION_GAP_AUDIT_20260329.md](system/AA_AG_EXECUTION_GAP_AUDIT_20260329.md) | Phase AA-AG execution status + strategy generation | regime hedge ✅ disabled, CAGR gap ✅ explained (3 causes), no-trade zone ✅ exists, cache TTL ✅ fixed |
 | [system/STALE_CONCLUSIONS_AUDIT_20260329.md](system/STALE_CONCLUSIONS_AUDIT_20260329.md) | Are Phase M/AA numbers still valid? | No. Old code had formula bugs. Numbers need re-run |
 
+## 2026-03-30 Update
+
+| Report | What it covers | Key findings |
+|--------|---------------|-------------|
+| [code-quality/BUG_HUNT_20260330.md](code-quality/BUG_HUNT_20260330.md) | Post-update bug scan: scheduler, oms, engine, evaluate, watchdog, risk | 4C+5H+9M → 2C verified not-bug, 2C+5H+8M fixed. 1M fixed prior session. **All resolved** |
+
 ## Archive
 
 Superseded reports moved to `archive/`. Historical reference only.

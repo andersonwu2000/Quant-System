@@ -32,7 +32,7 @@ def _reset_state():
             env="dev",
             api_key=API_KEY,
             jwt_secret="test-secret-alpha",
-            database_url="sqlite:///test.db",
+            database_url="sqlite:///:memory:",
         )
     )
 
