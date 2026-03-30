@@ -284,10 +284,13 @@ class StrategyValidator:
             return report
 
         # 8. Turnover + cost（兩邊都年化比較）
-        # V2 fix: 用 gross alpha（net + cost）作為分母，而非 net return
-        # Use trading days / 252 (consistent with analytics.py CAGR calculation)
-        n_years = max((len(result.nav_series) - 1) / 252, 0.5) if len(result.nav_series) > 1 \
-            else max((pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25, 0.5)
+        # Always use trading days / 252 (consistent with analytics.py CAGR)
+        if len(result.nav_series) > 1:
+            n_years = max((len(result.nav_series) - 1) / 252, 0.5)
+        else:
+            # Fallback: estimate trading days from calendar days (台股 ~252/365)
+            calendar_days = (pd.Timestamp(end) - pd.Timestamp(start)).days
+            n_years = max(calendar_days * 252 / 365 / 252, 0.5)
         annual_cost_rate = result.total_commission / cfg.initial_cash / n_years
         gross_alpha = result.annual_return + annual_cost_rate  # gross ≈ net + cost
         cost_ratio = annual_cost_rate / abs(gross_alpha) if gross_alpha > 0 else 1.0

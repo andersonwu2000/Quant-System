@@ -1051,6 +1051,7 @@ def evaluate() -> dict:
     oos_ic_by_month: dict[str, list[float]] = {}
 
     oos_q1_excess_list: list[float] = []  # C-001: OOS quintile profitability
+    oos_quintile_returns_matrix: list[list[float]] = []  # L5c OOS monotonicity
     if oos_sample:
         print(f"\n  L5 OOS validation: {len(oos_sample)} dates")
         for as_of in oos_sample:
@@ -1072,7 +1073,7 @@ def evaluate() -> dict:
                 oos_ics_20d.append(ic)
                 month_key = as_of.strftime("%Y-%m")
                 oos_ic_by_month.setdefault(month_key, []).append(ic)
-            # C-001: OOS quintile excess for L5b verification
+            # C-001: OOS quintile excess + monotonicity
             common_oos = sorted(set(values) & set(fwd))
             if len(common_oos) >= 50:
                 n_q_oos = len(common_oos) // 5
@@ -1081,6 +1082,14 @@ def evaluate() -> dict:
                 ew_oos = float(np.mean([fwd[s] for s in common_oos]))
                 q1_oos = float(np.mean([fwd[s] for s in q1_members]))
                 oos_q1_excess_list.append(q1_oos - ew_oos)
+                # OOS quintile means for L5c monotonicity
+                oos_q_means = []
+                for qi in range(5):
+                    si = qi * n_q_oos
+                    ei = (qi + 1) * n_q_oos if qi < 4 else len(ranked_oos)
+                    oos_q_means.append(float(np.mean([fwd[s] for s in ranked_oos[si:ei]])))
+                if len(oos_q_means) == 5:
+                    oos_quintile_returns_matrix.append(oos_q_means)
 
     oos_ic_mean = float(np.mean(oos_ics_20d)) if oos_ics_20d else 0.0
     oos_ic_std = float(np.std(oos_ics_20d, ddof=1)) if len(oos_ics_20d) > 1 else 1.0
@@ -1154,12 +1163,12 @@ def evaluate() -> dict:
         )
 
     # ── L5c: Monotonicity gate — Patton & Timmermann (2010) MR test (pass/fail only) ──
+    # Must pass in BOTH IS and OOS (consistent with L5b)
     l5c_pass = False
     if len(quintile_returns_matrix) < 20:
-        # C-002: insufficient data — explicit fail, not silent skip
-        print(f"  L5c monotonicity (MR test): FAIL (only {len(quintile_returns_matrix)} quintile dates, need 20)")
+        print(f"  L5c monotonicity (MR test): FAIL (only {len(quintile_returns_matrix)} IS quintile dates, need 20)")
         return _make_result(
-            level="L5", failure=f"L5c monotonicity: insufficient quintile data ({len(quintile_returns_matrix)} < 20)",
+            level="L5", failure=f"L5c monotonicity: insufficient IS quintile data ({len(quintile_returns_matrix)} < 20)",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             fitness=fitness, positive_years=positive_years, total_years=total_years,
@@ -1171,11 +1180,20 @@ def evaluate() -> dict:
     else:
         qr = np.array(quintile_returns_matrix)  # (T, 5), Q1=top .. Q5=bottom
         mr = _mr_test(qr, n_boot=1000, block_size=max(int(len(qr)**0.5), 5))
-        l5c_pass = mr["up_pval"] < 0.05 or mr["down_pval"] < 0.05
-    print(f"  L5c monotonicity (MR test): {'PASS' if l5c_pass else 'FAIL'}")
+        l5c_is_pass = mr["up_pval"] < 0.05 or mr["down_pval"] < 0.05
+        # OOS monotonicity (if enough data)
+        l5c_oos_pass = True  # default pass if insufficient OOS data
+        if len(oos_quintile_returns_matrix) >= 10:
+            qr_oos = np.array(oos_quintile_returns_matrix)
+            mr_oos = _mr_test(qr_oos, n_boot=1000, block_size=max(int(len(qr_oos)**0.5), 3))
+            l5c_oos_pass = mr_oos["up_pval"] < 0.10 or mr_oos["down_pval"] < 0.10  # relaxed for shorter OOS
+        l5c_pass = l5c_is_pass and l5c_oos_pass
+    _l5c_detail = "IS+OOS" if len(oos_quintile_returns_matrix) >= 10 else "IS only (OOS data insufficient)"
+    print(f"  L5c monotonicity (MR test): {'PASS' if l5c_pass else 'FAIL'} [{_l5c_detail}]")
     if not l5c_pass:
+        _which = "IS" if not l5c_is_pass else "OOS"
         return _make_result(
-            level="L5", failure="L5c monotonicity: Patton-Timmermann MR test p >= 0.05",
+            level="L5", failure=f"L5c monotonicity: MR test failed ({_which})",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             fitness=fitness, positive_years=positive_years, total_years=total_years,
