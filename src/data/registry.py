@@ -4,9 +4,10 @@ Central registry of what data exists, where it lives, how often it refreshes,
 and what PIT delay to apply. Used by refresh engine, quality gate, and CLI.
 
 Storage is organized by source:
-  data/yahoo/     — Yahoo Finance
-  data/finmind/   — FinMind API
-  data/twse/      — TWSE/TPEX OpenAPI
+  data/yahoo/     — Yahoo Finance (per-symbol parquet)
+  data/finmind/   — FinMind API (per-symbol parquet)
+  data/twse/      — TWSE/TPEX OpenAPI (per-symbol parquet)
+  data/finlab/    — FinLab (panel parquet: index=date, columns=all symbols)
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pathlib import Path
 YAHOO_DIR = Path("data/yahoo")
 FINMIND_DIR = Path("data/finmind")
 TWSE_DIR = Path("data/twse")
+FINLAB_DIR = Path("data/finlab")
 
 # ── Dataset definition ───────────────────────────────────────────────
 
@@ -27,7 +29,7 @@ class DatasetDef:
     """Metadata for a single dataset type."""
     name: str                       # "price", "revenue", "institutional", ...
     suffix: str                     # parquet filename suffix
-    source_dirs: tuple[Path, ...]   # directories to search, in priority order
+    source_dirs: tuple[Path, ...]   # per-symbol sources to search, in priority order
     frequency: str                  # "daily", "weekly", "monthly", "quarterly", "event"
     finmind_method: str             # FinMind DataLoader method name
     pit_delay_days: int = 0         # PIT delay for look-ahead bias prevention
@@ -35,6 +37,7 @@ class DatasetDef:
     refresh_cron: str = ""          # cron expression for auto-refresh
     description: str = ""
     yahoo_available: bool = False   # whether Yahoo Finance can provide this data
+    finlab_panel: str = ""          # path to FinLab panel parquet (e.g. "price/close.parquet")
 
 
 # ── Registry ─────────────────────────────────────────────────────────
@@ -51,6 +54,7 @@ REGISTRY: dict[str, DatasetDef] = {
         refresh_cron="0 8 * * 1-5",
         description="Daily OHLCV",
         yahoo_available=True,
+        finlab_panel="price/close.parquet",
     ),
     "revenue": DatasetDef(
         name="revenue",
@@ -62,6 +66,7 @@ REGISTRY: dict[str, DatasetDef] = {
         min_coverage=0.70,
         refresh_cron="0 8 11 * *",
         description="Monthly revenue",
+        finlab_panel="revenue/revenue.parquet",
     ),
     "financial_statement": DatasetDef(
         name="financial_statement",
@@ -106,6 +111,7 @@ REGISTRY: dict[str, DatasetDef] = {
         min_coverage=0.50,
         refresh_cron="0 8 * * 1-5",
         description="Daily PE/PB/dividend yield",
+        finlab_panel="valuation/per.parquet",
     ),
     "institutional": DatasetDef(
         name="institutional",
@@ -117,6 +123,7 @@ REGISTRY: dict[str, DatasetDef] = {
         min_coverage=0.80,
         refresh_cron="0 8 * * 1-5",
         description="Institutional investors (foreign/trust/dealer)",
+        finlab_panel="institutional/trust_net.parquet",
     ),
     "margin": DatasetDef(
         name="margin",
@@ -128,6 +135,7 @@ REGISTRY: dict[str, DatasetDef] = {
         min_coverage=0.50,
         refresh_cron="0 15 * * 1-5",
         description="Margin purchase / short sale balances",
+        finlab_panel="margin/margin_usage.parquet",
     ),
     "securities_lending": DatasetDef(
         name="securities_lending",

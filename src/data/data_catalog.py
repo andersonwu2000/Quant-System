@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.registry import REGISTRY, DatasetDef, parquet_path as _registry_parquet_path
+from src.data.registry import REGISTRY, DatasetDef, FINLAB_DIR, parquet_path as _registry_parquet_path
 from src.data.schemas import pit_filter
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,52 @@ class DataCatalog:
         """
         return _registry_parquet_path(symbol, dataset)
 
+    def _read_finlab_panel(self, dataset: str, symbol: str) -> pd.DataFrame | None:
+        """Read a single symbol from a FinLab panel parquet (fallback).
+
+        FinLab stores data as panel: index=date, columns=all_symbols.
+        We extract one column for the requested symbol.
+        """
+        ds = REGISTRY.get(dataset)
+        if ds is None or not ds.finlab_panel:
+            return None
+
+        panel_path = FINLAB_DIR / ds.finlab_panel
+        if not panel_path.exists():
+            return None
+
+        # Symbol in FinLab uses bare id (e.g. "2330" not "2330.TW")
+        bare = symbol.replace(".TW", "").replace(".TWO", "")
+
+        try:
+            panel = pd.read_parquet(panel_path)
+            if bare not in panel.columns:
+                return None
+            series = panel[bare].dropna()
+            if series.empty:
+                return None
+            # Convert to DataFrame with 'close' column (for price) or dataset-specific name
+            col_name = panel_path.stem  # "close", "revenue", "per", etc.
+            df = series.to_frame(name=col_name)
+            df.index.name = None
+            return df
+        except Exception:
+            logger.debug("Failed to read finlab panel %s for %s", panel_path, symbol)
+            return None
+
+    def _read_finlab_panel_full(self, dataset: str) -> pd.DataFrame:
+        """Read the full FinLab panel for a dataset. Returns panel DataFrame."""
+        ds = REGISTRY.get(dataset)
+        if ds is None or not ds.finlab_panel:
+            return pd.DataFrame()
+        panel_path = FINLAB_DIR / ds.finlab_panel
+        if not panel_path.exists():
+            return pd.DataFrame()
+        try:
+            return pd.read_parquet(panel_path)
+        except Exception:
+            return pd.DataFrame()
+
     def get(
         self,
         dataset: str,
@@ -62,13 +108,16 @@ class DataCatalog:
         """
         path = self._resolve_path(dataset, symbol)
         if not path.exists():
-            return pd.DataFrame()
-
-        try:
-            df = pd.read_parquet(path)
-        except Exception:
-            logger.debug("Failed to read %s", path)
-            return pd.DataFrame()
+            # Fallback: try FinLab panel
+            df = self._read_finlab_panel(dataset, symbol)
+            if df is None or df.empty:
+                return pd.DataFrame()
+        else:
+            try:
+                df = pd.read_parquet(path)
+            except Exception:
+                logger.debug("Failed to read %s", path)
+                return pd.DataFrame()
 
         if df.empty:
             return df
@@ -161,7 +210,35 @@ class DataCatalog:
         """Get panel data (index=date, columns=symbols) for a single field.
 
         Useful for factor computation across multiple symbols.
+        Prefers FinLab panel data when available (single read vs N reads).
         """
+        # Fast path: if FinLab panel exists, read it directly
+        ds = REGISTRY.get(dataset)
+        if ds and ds.finlab_panel:
+            panel = self._read_finlab_panel_full(dataset)
+            if not panel.empty:
+                # Filter date range
+                panel = panel[(panel.index >= pd.Timestamp(start)) & (panel.index <= pd.Timestamp(end))]
+                # Map symbols to bare ids
+                bare_map = {}
+                for sym in symbols:
+                    bare = sym.replace(".TW", "").replace(".TWO", "")
+                    if bare in panel.columns:
+                        bare_map[sym] = bare
+                if bare_map:
+                    result = panel[list(bare_map.values())]
+                    result.columns = [sym for sym, bare in bare_map.items()]
+                    # Also try per-symbol sources for symbols not in finlab
+                    missing = [s for s in symbols if s not in bare_map]
+                    if missing:
+                        for sym in missing:
+                            df = self.get(dataset, sym, start=start, end=end)
+                            if not df.empty and field in df.columns:
+                                if isinstance(df.index, pd.DatetimeIndex):
+                                    result[sym] = df[field]
+                    return result
+
+        # Fallback: per-symbol reads
         series_dict = {}
         for sym in symbols:
             df = self.get(dataset, sym, start=start, end=end)
@@ -180,18 +257,26 @@ class DataCatalog:
         return pd.DataFrame(series_dict)
 
     def available_symbols(self, dataset: str = "price") -> list[str]:
-        """List symbols that have data for a given dataset (across all sources)."""
+        """List symbols that have data for a given dataset (across all sources + finlab)."""
         ds = REGISTRY.get(dataset)
         if ds is None:
             return []
         suffix = f"_{ds.suffix}.parquet"
         seen: set[str] = set()
+        # Per-symbol sources
         for source_dir in ds.source_dirs:
             if not source_dir.exists():
                 continue
             for p in source_dir.glob(f"*{suffix}"):
                 sym = p.stem.replace(f"_{ds.suffix}", "")
                 seen.add(sym)
+        # FinLab panel (bare symbols → add .TW suffix)
+        if ds.finlab_panel:
+            panel = self._read_finlab_panel_full(dataset)
+            if not panel.empty:
+                for col in panel.columns:
+                    sym = f"{col}.TW" if not col.endswith((".TW", ".TWO")) else col
+                    seen.add(sym)
         return sorted(seen)
 
     def available_datasets(self) -> list[str]:
