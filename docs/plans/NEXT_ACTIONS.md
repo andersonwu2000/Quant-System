@@ -35,7 +35,7 @@
 
 | # | 項目 | 狀態 |
 |---|------|:----:|
-| ~~2.2~~ | ~~Paper mode SimBroker~~ | ✅ 2026-03-30 |
+| 2.2 | Paper mode 統一用 SimBroker | ✅ pipeline 用 SimBroker（漲跌停 ±10%、partial fill、sqrt impact）。ExecutionService 仍初始化 SinopacBroker 供 realtime monitor/quote 用，不衝突 |
 | 2.3 | 用 2× 成本重跑 Validator（全策略） | ⏳ |
 | 2.4 | AG 手動端到端第 3 次 | ⏳ |
 | 2.5 | 確認 paper trading 正常後準備微額實盤 | CA 憑證取得後 |
@@ -52,7 +52,7 @@
 |---|------|------|:------:|
 | D1 | 集保戶股權分散表 | TDCC API（FinMind 需付費） | **高** |
 | D2 | 處置股/注意股/全額交割 | 公開資訊觀測站 | **高** |
-| D3 | 市值（自算） | close × shares_outstanding | **高** |
+| D3 | ~~市值（自算）~~ | ~~close × shares_outstanding~~ | ✅ 2026-03-30（51 支 shareholding） |
 | D4 | 內部人持股+質押 | 公開資訊觀測站 | 中 |
 | D5 | 借券餘額 | FinMind | 中 |
 
@@ -70,9 +70,9 @@
 
 | 項目 | 嚴重度 |
 |------|:------:|
-| H-003 replacement chain attack | HIGH |
+| ~~H-003 replacement chain attack~~ | ~~HIGH~~ ✅ 2026-03-30（chain depth < 3） |
 | M-001 eval_server L5b/L5c parsing | MEDIUM |
-| M-002 PBO silent failure validation | MEDIUM |
+| ~~M-002 PBO silent failure validation~~ | ~~MEDIUM~~ ✅ 2026-03-30 |
 | L-001~004 atomicity + cleanup | LOW |
 
 ## Phase 5：90 天後
