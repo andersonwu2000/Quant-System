@@ -125,11 +125,31 @@ class DataCatalog:
             series = panel[bare].dropna()
             if series.empty:
                 return None
-            # Convert to DataFrame with 'close' column (for price) or dataset-specific name
+
             col_name = panel_path.stem  # "close", "revenue", "per", etc.
-            df = series.to_frame(name=col_name)
-            df.index.name = None
-            return df
+
+            # Match output format to what per-symbol parquets provide,
+            # so downstream code (evaluate.py, factors) works unchanged.
+            if dataset == "revenue":
+                # Per-symbol revenue has columns: [date, revenue, ...]
+                df = pd.DataFrame({"date": series.index, "revenue": series.values})
+                return df
+            elif dataset == "per":
+                # Per-symbol per has columns: [date, PER, PBR, ...]
+                df = pd.DataFrame({"date": series.index, "PER": series.values})
+                return df
+            elif dataset == "margin":
+                df = pd.DataFrame({"date": series.index, col_name: series.values})
+                return df
+            elif dataset == "price":
+                # Price: return as DatetimeIndex + column name
+                df = series.to_frame(name=col_name)
+                df.index.name = None
+                return df
+            else:
+                # Generic: include date column for compatibility
+                df = pd.DataFrame({"date": series.index, col_name: series.values})
+                return df
         except Exception:
             logger.debug("Failed to read finlab panel %s for %s", panel_path, symbol)
             return None
