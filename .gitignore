@@ -20,7 +20,19 @@ node_modules/
 apps/*/dist/
 apps/web/dist/
 bun.lockb
-/data/
+# data/ — parquet 數據已加入 git（研究可重現性）
+# 排除非必要的暫存檔
+data/paper_trading/portfolio_state_*.json
+data/paper_trading/pipeline_runs/archive/
+data/paper_trading/snapshots/
+data/paper_trading/trades/
+data/paper_trading/reconciliation/
+data/paper_trading/backtest_comparison/
+data/paper_trading/auto/
+data/alpha_research.log
+data/auto_alpha.json
+data/quant.db
+data/finmind/
 apps/android/local.properties
 
 apps/android/.gradle/
@@ -29,6 +41,5 @@ apps/android/build/
 apps/android/release-key.jks
 docs/dev/LOGIN_CREDENTIALS.md
 .cache/
-data/fundamental/
 scripts/autoresearch/work/
 docker/autoresearch/work/

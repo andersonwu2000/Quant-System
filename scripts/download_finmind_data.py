@@ -86,6 +86,21 @@ DATASETS = {
         "desc": "股利發放",
         "suffix": "dividend",
     },
+    "cash_flows": {
+        "method": "taiwan_stock_cash_flows_statement",
+        "desc": "現金流量表（營業/投資/融資現金流，季度）",
+        "suffix": "cash_flows",
+    },
+    "balance_sheet_detail": {
+        "method": "taiwan_stock_balance_sheet",
+        "desc": "資產負債表明細（資產/負債/權益，季度）",
+        "suffix": "balance_sheet",
+    },
+    "securities_lending": {
+        "method": "taiwan_stock_securities_lending",
+        "desc": "借券資訊（放空壓力/借券費率，日頻）",
+        "suffix": "securities_lending",
+    },
     "price": {
         "method": "taiwan_stock_daily",
         "desc": "日線 OHLCV（含已下市股票，修復倖存者偏差）",
