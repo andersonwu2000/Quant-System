@@ -1,4 +1,4 @@
-# Phase AE：排程系統升級 — 從 Cron 到交易日曆感知 DAG
+# Phase AI：排程系統升級 — 從 Cron 到交易日曆感知 DAG
 
 > 狀態：📋 設計完成，待開發
 > 前置：Phase AD（數據平台）✅、Phase S（Trading Pipeline）✅
