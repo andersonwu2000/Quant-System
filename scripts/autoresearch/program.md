@@ -90,9 +90,9 @@ data["revenue"][symbol]         # pd.DataFrame: date, revenue, yoy_growth (month
 data["institutional"][symbol]   # pd.DataFrame: date, trust_net, foreign_net, dealer_net (daily)
 data["per_history"][symbol]     # pd.DataFrame: date, PER, PBR, dividend_yield (daily since 2019)
 data["margin"][symbol]          # pd.DataFrame: date, MarginPurchaseTodayBalance, ShortSaleTodayBalance, ... (daily)
-data["pe"][symbol]              # float: latest PE ratio
-data["pb"][symbol]              # float: latest PB ratio
-data["roe"][symbol]             # float: latest ROE %
+data["pe"][symbol]              # DISABLED (look-ahead bias) — use per_history instead
+data["pb"][symbol]              # DISABLED — use per_history instead
+data["roe"][symbol]             # DISABLED — no time series available
 ```
 
 ## Factor Dimensions to Explore

@@ -428,9 +428,11 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
             sym: df[df["date"] <= as_of]
             for sym, df in data.get("margin", {}).items()
         },
-        "pe": data["pe"],
-        "pb": data["pb"],
-        "roe": data["roe"],
+        # pe/pb/roe are latest-only snapshots → look-ahead bias in historical IC calculation
+        # Use per_history (daily PER/PBR with date truncation) instead
+        "pe": {},
+        "pb": {},
+        "roe": {},
         "market_cap": data.get("market_cap", {}),
     }
     return masked
