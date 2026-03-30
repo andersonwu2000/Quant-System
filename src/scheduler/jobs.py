@@ -537,7 +537,9 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                         _prev = 0.0
                         try:
                             _pb = feed.get_bars(s, start=None, end=None)
-                            if _pb is not None and len(_pb) >= 1:
+                            if _pb is not None and len(_pb) >= 2:
+                                _prev = float(_pb["close"].iloc[-2])  # yesterday's close, not today's
+                            elif _pb is not None and len(_pb) >= 1:
                                 _prev = float(_pb["close"].iloc[-1])
                         except Exception:
                             pass
@@ -604,6 +606,10 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         )
         if trades:
             _save_trade_log(trades, strategy.name(), signal_prices=prices)
+        # #9: log rejected orders (SimBroker rejects missing current_bars)
+        if hasattr(_broker, 'rejected_log') and _broker.rejected_log:
+            for rej in _broker.rejected_log:
+                logger.warning("Order REJECTED: %s — %s", rej.instrument.symbol, rej.reject_reason)
         # nav_sod + persistence inside lock (prevent race with realtime monitor)
         state.portfolio.nav_sod = state.portfolio.nav
         from src.api.state import save_portfolio
