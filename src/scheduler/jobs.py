@@ -892,6 +892,43 @@ def _record_backtest_comparison(
 # refresh engine (src.data.refresh) integrated in execute_pipeline()
 
 
+async def execute_backtest_reconcile() -> dict[str, Any]:
+    """EOD: compare paper trading vs backtest expectation.
+
+    Runs after market close. Compares today's actual NAV change
+    against what the portfolio's holdings should have returned.
+    Alerts on drift > 50bps.
+    """
+    from src.reconciliation.daily import reconcile_date, save_reconciliation
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    try:
+        result = reconcile_date(today)
+        save_reconciliation(result)
+        logger.info("Backtest reconcile: %s", result.summary())
+
+        if result.status == "drift":
+            from src.core.config import get_config
+            from src.notifications.factory import create_notifier
+            config = get_config()
+            notifier = create_notifier(config)
+            if notifier.is_configured():
+                await notifier.send(
+                    "Backtest Reconcile DRIFT",
+                    result.summary() + "\n" + "\n".join(result.warnings),
+                )
+
+        return {
+            "status": result.status,
+            "return_diff_bps": round(result.return_diff_bps, 2),
+            "weight_drift_bps": round(result.weight_drift_bps, 2),
+        }
+    except Exception as exc:
+        logger.exception("Backtest reconcile failed")
+        return {"status": "error", "error": str(exc)}
+
+
 def _save_selection_log(weights: dict[str, float], strategy_name: str = "") -> None:
     """記錄選股結果（含 run_id 用於追溯）。"""
     out_dir = Path("data/paper_trading/selections")
