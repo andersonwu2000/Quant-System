@@ -105,7 +105,7 @@ DATASETS = {
         "method": "taiwan_stock_daily",
         "desc": "日線 OHLCV（含已下市股票，修復倖存者偏差）",
         "suffix": "1d",
-        "output_dir": "data/market",  # 存到 market/ 而非 fundamental/
+        "output_dir": "data/finmind",  # all FinMind data goes to data/finmind/
     },
 }
 
