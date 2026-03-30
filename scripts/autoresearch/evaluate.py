@@ -934,13 +934,52 @@ def evaluate() -> dict:
             elapsed=elapsed,
         )
 
-    # Saturation check — BEFORE corr check, but only if corr is meaningful (> 0.20)
-    # Prevents false saturation blocks on genuinely new directions with weak correlation
+    # Saturation check — uses BOTH IC series corr AND returns corr
+    # IC corr > 0.20 → direct saturation check (fast path)
+    # IC corr <= 0.20 → compute returns corr to catch hidden clones (slow path, +10s)
+    _sat_corr_with = corr_with
+    _sat_triggered = False
     if corr_with and abs(max_corr) > 0.20:
-        match_count = _get_match_count(corr_with)
+        _sat_triggered = True
+    elif corr_with:
+        # IC corr low but might be returns clone — compute returns corr
+        try:
+            from src.backtest.vectorized import VectorizedPBOBacktest
+            from factor import compute_factor as _cf_sat
+            _vbt_sat = VectorizedPBOBacktest(
+                universe=[s for s in universe if s in bars],
+                start=EVAL_START, end=IS_END,
+                data_dir=str(PROJECT_ROOT / "data" / "market"),
+                fund_dir=str(PROJECT_ROOT / "data" / "fundamental"),
+            )
+            _sat_rets = _vbt_sat.run_variant(_cf_sat, top_n=40, weight_mode="score_tilt")
+            if _sat_rets is not None and len(_sat_rets) > 50:
+                _sat_rets = _sat_rets.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+                _ret_dir = Path("/app/watchdog_data/factor_returns")
+                if not _ret_dir.exists():
+                    _ret_dir = PROJECT_ROOT / "docker" / "autoresearch" / "watchdog_data" / "factor_returns"
+                _sat_max_ret_corr = 0.0
+                for _p in sorted(_ret_dir.glob("*.parquet"))[-30:]:
+                    try:
+                        _e = pd.read_parquet(_p)
+                        if "returns" in _e.columns and len(_e) > 50:
+                            _min = min(len(_sat_rets), len(_e["returns"]))
+                            _c = float(_sat_rets.iloc[:_min].corr(_e["returns"].iloc[:_min]))
+                            if abs(_c) > abs(_sat_max_ret_corr):
+                                _sat_max_ret_corr = _c
+                    except Exception:
+                        continue
+                if abs(_sat_max_ret_corr) > 0.50:
+                    _sat_triggered = True
+                    print(f"  saturation: IC corr={max_corr:.3f} low but returns corr={_sat_max_ret_corr:.3f} high → clone detected")
+        except Exception:
+            pass
+
+    if _sat_triggered and _sat_corr_with:
+        match_count = _get_match_count(_sat_corr_with)
         if match_count >= SATURATION_MATCH_LIMIT:
             return _make_result(
-                level="L3", failure=f"direction saturated: {match_count} variants for {corr_with}",
+                level="L3", failure=f"direction saturated: {match_count} variants for {_sat_corr_with}",
                 ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
                 icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
                 max_correlation=max_corr, correlated_with=corr_with,
