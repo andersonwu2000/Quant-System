@@ -1505,6 +1505,8 @@ def _store_factor_returns(results: dict) -> None:
             ts = time.strftime("%Y%m%d_%H%M%S")
             path = returns_dir / f"{ts}.parquet"
             daily_rets.to_frame("returns").to_parquet(path)
+            # Store timestamp so pending marker uses same stem (watchdog returns dedup match)
+            results["_factor_returns_stem"] = ts
 
             # Update metadata
             meta_path = returns_dir / "metadata.json"
@@ -1612,12 +1614,14 @@ def _write_pending_marker(results: dict) -> None:
         # Strip OOS-related fields to prevent agent reading them from pending/*.json
         safe_results = {k: v for k, v in results.items()
                         if k not in ("oos_icir", "oos_positive_months", "oos_total_months")}
+        # Use same timestamp as factor_returns parquet so watchdog returns dedup can match
+        fr_stem = results.get("_factor_returns_stem", time.strftime("%Y%m%d_%H%M%S"))
         marker = {
             "results": safe_results,
             "factor_code": factor_code,
-            "timestamp": time.strftime("%Y%m%d_%H%M%S"),
+            "timestamp": fr_stem,
         }
-        marker_path = pending_dir / f"{marker['timestamp']}.json"
+        marker_path = pending_dir / f"{fr_stem}.json"
         marker_path.write_text(json.dumps(marker, indent=2, default=str), encoding="utf-8")
         print(f"pending_validation: {marker_path.name}")
     except Exception as e:
