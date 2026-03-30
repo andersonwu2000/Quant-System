@@ -12,7 +12,7 @@ from __future__ import annotations
 import threading
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 
@@ -187,7 +187,7 @@ class Portfolio:
     """
     positions: dict[str, Position] = field(default_factory=dict)  # key=symbol
     cash: Decimal = Decimal("1000000")
-    as_of: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    as_of: datetime = field(default_factory=lambda: datetime.now(timezone(timedelta(hours=8))))  # UTC+8 台北
     initial_cash: Decimal = Decimal("1000000")
     nav_sod: Decimal = Decimal("0")  # start-of-day NAV（回測引擎更新）
     pending_settlements: list[tuple[str, Decimal]] = field(default_factory=list)  # (settle_date_str, amount)
