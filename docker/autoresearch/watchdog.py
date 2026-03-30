@@ -494,10 +494,17 @@ def _write_background_report(results: dict, validator_report: dict, factor_code:
     vr = validator_report
     n_p, n_t = vr["n_passed"], vr["n_total"]
 
+    # Check existing reports for superseded factor
+    _existing_reports = sorted(report_dir.glob("*.md"))
+    _supersedes = ""
+    if _existing_reports:
+        _supersedes = f" | Supersedes: {_existing_reports[-1].stem[:15]}..."
+
     content = (
         f"# Factor Report: {name}\n\n"
         f"> Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"> Status: **DEPLOYED** | Validator: {n_p}/{n_t}\n\n"
+        f"> Status: **DEPLOYED** | Validator: {n_p}/{n_t}{_supersedes}\n"
+        f"> Correlated with: {results.get('correlated_with', 'none')} (corr={results.get('max_correlation', 0):.3f})\n\n"
         f"## Metrics\n\n"
         f"| Metric | Value |\n"
         f"|--------|-------|\n"
