@@ -26,9 +26,10 @@ logger = logging.getLogger(__name__)
 class CatalogFeed(DataFeed):
     """DataFeed that reads from the local DataCatalog (parquet files)."""
 
-    def __init__(self, universe: list[str], base_dir: str = "data"):
+    def __init__(self, universe: list[str], base_dir: str = "data", adjusted: bool = True):
         self._universe = list(universe)
         self._catalog = DataCatalog(base_dir)
+        self._adjusted = adjusted
 
     def get_bars(
         self,
@@ -37,11 +38,16 @@ class CatalogFeed(DataFeed):
         end: datetime | str | None = None,
         freq: str = "1d",
     ) -> pd.DataFrame:
-        """Get OHLCV bars from local parquet via DataCatalog."""
+        """Get OHLCV bars from local parquet via DataCatalog.
+
+        When adjusted=True (default), uses dividend-adjusted prices from FinLab.
+        Falls back to raw prices when adj data is unavailable for the date range.
+        """
         start_date = _to_date(start) if start else None
         end_date = _to_date(end) if end else None
 
-        df = self._catalog.get("price", symbol, start=start_date, end=end_date)
+        df = self._catalog.get("price", symbol, start=start_date, end=end_date,
+                               adjusted=self._adjusted)
         if df.empty:
             return df
 

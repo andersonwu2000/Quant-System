@@ -182,6 +182,23 @@ class SecuritiesMaster:
         """Quick list of active symbol strings."""
         return [s.symbol for s in self.list_active()]
 
+    def get_industry_map(self) -> dict[str, str]:
+        """Get symbol → industry_name mapping for all securities.
+
+        Used by factor neutralization. Returns empty string for unknown.
+        """
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(securities_table.c.symbol, securities_table.c.industry_name)
+            ).fetchall()
+            return {r.symbol: (r.industry_name or "") for r in rows}
+
+    def get_industries_at(self, as_of: date) -> dict[str, str]:
+        """PIT industry map — only includes securities active on given date."""
+        symbols = self.universe_at(as_of)
+        full_map = self.get_industry_map()
+        return {s: full_map.get(s, "") for s in symbols}
+
     def count(self) -> int:
         """Count all securities."""
         with self._engine.connect() as conn:

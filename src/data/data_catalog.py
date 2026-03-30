@@ -40,6 +40,59 @@ class DataCatalog:
         """
         return _registry_parquet_path(symbol, dataset)
 
+    def _apply_adj_close(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """Replace 'close' column with dividend-adjusted close from FinLab.
+
+        Strategy:
+        - Read adj_close panel from finlab for the symbol
+        - For dates where adj_close exists, replace close (and scale OHLV proportionally)
+        - For dates where adj_close is missing (e.g. post-2018), keep raw close
+        - This avoids artificial drops on ex-dividend dates in backtest
+        """
+        adj_panel_path = FINLAB_DIR / "price" / "adj_close.parquet"
+        if not adj_panel_path.exists():
+            return df  # no adj data available, return as-is
+
+        bare = symbol.replace(".TW", "").replace(".TWO", "")
+        try:
+            adj_panel = pd.read_parquet(adj_panel_path)
+            if bare not in adj_panel.columns:
+                return df  # no adj data for this symbol
+
+            adj_series = adj_panel[bare].dropna()
+            if adj_series.empty:
+                return df
+
+            # Align indices
+            if not isinstance(df.index, pd.DatetimeIndex):
+                return df
+
+            common = df.index.intersection(adj_series.index)
+            if len(common) == 0:
+                return df  # no overlap (e.g. all data is post-2018)
+
+            # Calculate adjustment ratio: adj_close / raw_close
+            raw_close = df.loc[common, "close"]
+            adj_close = adj_series[common]
+            # Avoid division by zero
+            mask = raw_close > 0
+            ratio = pd.Series(1.0, index=common)
+            ratio[mask] = adj_close[mask] / raw_close[mask]
+
+            # Apply ratio to OHLC (volume stays unchanged)
+            df = df.copy()
+            for col in ["open", "high", "low", "close"]:
+                if col in df.columns:
+                    df.loc[common, col] = df.loc[common, col] * ratio
+
+            logger.debug("Applied adj_close for %s: %d/%d dates adjusted",
+                        symbol, len(common), len(df))
+
+        except Exception:
+            logger.debug("Failed to apply adj_close for %s", symbol, exc_info=True)
+
+        return df
+
     def _read_finlab_panel(self, dataset: str, symbol: str) -> pd.DataFrame | None:
         """Read a single symbol from a FinLab panel parquet (fallback).
 
@@ -93,6 +146,7 @@ class DataCatalog:
         start: date | None = None,
         end: date | None = None,
         pit_date: date | None = None,
+        adjusted: bool = False,
     ) -> pd.DataFrame:
         """Get data for a single symbol.
 
@@ -102,6 +156,9 @@ class DataCatalog:
             start: Optional start date filter.
             end: Optional end date filter.
             pit_date: If set, only returns data available as of this date (PIT).
+            adjusted: If True and dataset="price", replace close with
+                      dividend-adjusted close from FinLab. Falls back to raw
+                      close when adj_close is unavailable for a date range.
 
         Returns:
             DataFrame (may be empty if file doesn't exist).
@@ -148,6 +205,10 @@ class DataCatalog:
             ds = REGISTRY.get(dataset)
             delay = ds.pit_delay_days if ds else 0
             df = pit_filter(df, pit_date, pit_delay_days=delay)
+
+        # Replace close with adj_close when requested
+        if adjusted and dataset == "price" and "close" in df.columns:
+            df = self._apply_adj_close(df, symbol)
 
         return df
 
