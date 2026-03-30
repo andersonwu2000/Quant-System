@@ -820,6 +820,43 @@ def _reconcile(
     return deviations
 
 
+async def update_portfolio_market_prices() -> None:
+    """Update portfolio positions' market_price from latest data.
+
+    Paper trading NAV is frozen between rebalances because market_price = fill_price.
+    This function reads latest close from parquet and updates market_price,
+    enabling correct daily_drawdown / kill_switch calculation.
+    """
+    from src.api.state import get_app_state, save_portfolio
+    from src.data.sources import create_feed
+    from decimal import Decimal
+
+    state = get_app_state()
+    if not state.portfolio.positions:
+        return
+
+    universe = list(state.portfolio.positions.keys())
+    feed = create_feed("yahoo", universe)
+    updated = 0
+
+    for sym, pos in state.portfolio.positions.items():
+        try:
+            bars = feed.get_bars(sym, start=None, end=None)
+            if bars is not None and len(bars) >= 1:
+                latest_close = Decimal(str(float(bars["close"].iloc[-1])))
+                if latest_close > 0:
+                    pos.market_price = latest_close
+                    updated += 1
+        except Exception:
+            continue
+
+    if updated > 0:
+        state.portfolio.nav_sod = state.portfolio.nav
+        save_portfolio(state.portfolio)
+        logger.info("Portfolio prices updated: %d/%d positions, NAV=%s",
+                    updated, len(state.portfolio.positions), state.portfolio.nav)
+
+
 def _record_backtest_comparison(
     strategy_name: str,
     paper_nav: float,
@@ -956,6 +993,9 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
     if config.mode not in ("paper", "live"):
         logger.debug("Daily reconcile skipped: mode=%s", config.mode)
         return {"status": "skipped", "reason": "not paper/live mode"}
+
+    # Update market prices before reconcile (fixes frozen NAV / kill switch)
+    await update_portfolio_market_prices()
 
     # 確認 broker 可用
     exec_svc = state.execution_service

@@ -103,8 +103,9 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
                     del portfolio.positions[symbol]
             else:
                 if trade.side == Side.BUY:
+                    _is_tw = symbol.endswith(".TW") or symbol.endswith(".TWO")
                     portfolio.positions[symbol] = Position(
-                        instrument=Instrument(symbol=symbol),
+                        instrument=Instrument(symbol=symbol, lot_size=1000 if _is_tw else 1, market="tw" if _is_tw else "us"),
                         quantity=effective_qty,
                         avg_cost=trade.price,
                         market_price=trade.price,
