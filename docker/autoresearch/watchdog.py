@@ -678,14 +678,28 @@ def _compute_factor_level_pbo():
         clusters = list(label_to_members.values())
 
         # Pick median factor per cluster (avoid IS selection bias)
-        # Using IS-best would bias PBO downward (optimistic = dangerous)
+        # Exclude replaced factors from being cluster representatives
+        _replaced_stems: set[str] = set()
+        try:
+            _bic = WATCHDOG_DATA / "baseline_ic_series.json"
+            if not _bic.exists():
+                _bic = Path(os.environ.get("PROJECT_ROOT", ".")) / "data" / "research" / "baseline_ic_series.json"
+            if _bic.exists():
+                _bic_data = json.loads(_bic.read_text(encoding="utf-8"))
+                for _v in _bic_data.values():
+                    if isinstance(_v, dict) and "replaced" in _v:
+                        _replaced_stems.add(_v["replaced"])
+        except Exception:
+            pass
+
         independent_factors: list[str] = []
         for cluster in clusters:
-            # M-003: rank by Sharpe (risk-adjusted) not raw mean return
+            active = [s for s in cluster if s not in _replaced_stems]
+            candidates = active if active else cluster
             def _sharpe(s):
                 std = returns_matrix[s].std()
                 return returns_matrix[s].mean() / std if std > 0 else 0
-            ranked = sorted(cluster, key=_sharpe)
+            ranked = sorted(candidates, key=_sharpe)
             independent_factors.append(ranked[len(ranked) // 2])
 
         n_raw = len(daily_returns_dict)
