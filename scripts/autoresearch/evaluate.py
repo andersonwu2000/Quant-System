@@ -1195,9 +1195,9 @@ def evaluate() -> dict:
         qr = np.array(quintile_returns_matrix)  # (T, 5), Q1=top .. Q5=bottom
         mr = _mr_test(qr, n_boot=1000, block_size=max(int(len(qr)**0.5), 5))
         l5c_is_pass = mr["up_pval"] < 0.05 or mr["down_pval"] < 0.05
-        # OOS monotonicity (if enough data)
-        l5c_oos_pass = True  # default pass if insufficient OOS data
-        if len(oos_quintile_returns_matrix) >= 10:
+        # OOS monotonicity — require minimum data, fail if insufficient
+        l5c_oos_pass = len(oos_quintile_returns_matrix) < 5  # pass only if truly no OOS data (< 5 dates)
+        if len(oos_quintile_returns_matrix) >= 5:
             qr_oos = np.array(oos_quintile_returns_matrix)
             mr_oos = _mr_test(qr_oos, n_boot=1000, block_size=max(int(len(qr_oos)**0.5), 3))
             l5c_oos_pass = mr_oos["up_pval"] < 0.10 or mr_oos["down_pval"] < 0.10  # relaxed for shorter OOS

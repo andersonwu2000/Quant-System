@@ -563,12 +563,10 @@ def _check_returns_dedup(current_stem: str) -> tuple[bool, float, str]:
     if not returns_dir.exists():
         return True, 0.0, ""
 
-    # Find current factor's returns
-    current_path = None
-    for p in returns_dir.glob("*.parquet"):
-        if current_stem in p.stem:
-            current_path = p
-            break
+    # Find current factor's returns (exact stem match to prevent false positives)
+    current_path = returns_dir / f"{current_stem}.parquet"
+    if not current_path.exists():
+        current_path = None
 
     if current_path is None:
         return True, 0.0, ""  # no returns stored yet, can't check
