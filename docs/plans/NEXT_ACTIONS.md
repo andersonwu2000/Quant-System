@@ -8,72 +8,87 @@
 
 22 項修復。詳見 git history。
 
-## Phase 1：開盤第一天（3/30）
+## Phase 1：開盤第一天（3/30）— ✅ 完成
 
 | # | 項目 | 狀態 |
 |---|------|:----:|
-| 1.1 | 啟動 API server | ✅ |
-| 1.2 | 09:03 自動觸發建倉（SimBroker + Yahoo 即時價格） | ⏳ cron job set |
-| 1.3 | 確認訂單和持倉 | ⏳ |
-| 1.4 | 確認 Discord 通知 | ⏳ |
+| 1.1 | Paper trading 建倉 09:03 | ✅ 9 筆零股，NAV=9989，SimBroker + Yahoo 即時價格 |
+| 1.2 | 定時監控 | ✅ 每小時自動檢查 |
 
-### 3/30 已完成的改進
+### 3/30 完成的全部改進
 
-| 項目 | 說明 |
-|------|------|
-| **Paper mode SimBroker** | 改用 SimBroker（和回測共用），含漲跌停 ±10%、partial fill、sqrt impact |
-| **即時價格** | Yahoo realtime 優先，parquet fallback，prev_close for limit check |
-| **IC-Alpha Gap 修復** | top-40 score-tilt construction、L5b OOS profitability、L5c MR test、novelty indicator、WF vs_ew_universe |
-| **Pipeline 審計** | 10 CRITICAL + 6 HIGH + 4 MEDIUM 修復（詳見 git history） |
-| **Agent 反饋** | profitability + novelty 雙目標、ic_trend、ic_source 診斷 |
-| **數據擴充** | per_history 472 支、margin 220 支 |
-| **Pipeline cron** | 08:30 → 09:03（開盤後） |
-| **Trading hours** | paper mode 不限時段（SimBroker 模擬） |
-| **Saturation** | corr > 0.20 才觸發（防誤擋新方向） |
+**Paper Trading:**
+- SimBroker 統一（漲跌停 ±10%、partial fill、sqrt impact、prev_close）
+- Yahoo realtime 價格（fallback parquet）
+- Instrument market="tw" + lot_size=1000（修正 odd lot detection）
+- daily reconcile 更新 market_price（修 kill switch 失效）
+- Portfolio as_of 用 UTC+8
+
+**IC-Alpha Gap:**
+- Construction: top-40 score-tilt（TC 0.10 → 0.45）
+- vs_ew_universe: walk-forward per-window（消除 regime bias）
+- L5b: IS + OOS profitability gate
+- L5c: Patton & Timmermann MR test（bootstrap 1000 次）
+- Novelty: returns correlation based（非 IC series）
+
+**Agent 反饋:**
+- profitability + novelty 雙目標
+- ic_trend（stable/improving/declining）
+- ic_source（stock_alpha/mixed/industry_beta）
+- returns_corr 顯示（非 IC series corr）
+
+**Pipeline 安全:**
+- 全系統審計：10 CRITICAL + 6 HIGH + 4 MEDIUM 修復
+- L2 median ICIR 包含 0 值 horizon
+- Replacement chain depth < 3
+- Thresholdout RNG 加 factor code hash
+- Saturation 用 returns corr（IC corr 低的 clone 不再繞過）
+- Saturation 在 replacement 之後（允許 1.3× 替換）
+- Returns dedup exact stem match
+- Clone group promotion 1.3× 統一門檻
+- Post-validation dedup 允許 1.3× 替換
+- pe/pb/roe disabled（look-ahead bias）
+- 行業 prefix 處理 ETF "00xx"
+- L5c OOS monotonicity 強制（≥ 5 dates）
 
 ## Phase 2：開盤第一週
 
 | # | 項目 | 狀態 |
 |---|------|:----:|
-| 2.2 | Paper mode 統一用 SimBroker | ✅ pipeline 用 SimBroker（漲跌停 ±10%、partial fill、sqrt impact）。ExecutionService 仍初始化 SinopacBroker 供 realtime monitor/quote 用，不衝突 |
 | 2.3 | 用 2× 成本重跑 Validator（全策略） | ⏳ |
 | 2.4 | AG 手動端到端第 3 次 | ⏳ |
 | 2.5 | 確認 paper trading 正常後準備微額實盤 | CA 憑證取得後 |
 
 ## Phase 3：前 30 天
 
-不寫新代碼。每日確認 NAV + Discord 通知。每週比對 paper vs 回測。
+不寫新代碼。每日確認 NAV。每週比對 paper vs 回測。
 
 ## Phase 4：30-90 天
 
-### 數據擴充（FinLab 借鑒）
+### 數據擴充
 
-| # | 數據 | 來源 | 優先級 |
-|---|------|------|:------:|
-| D1 | 集保戶股權分散表 | TDCC API（FinMind 需付費） | **高** |
-| D2 | 處置股/注意股/全額交割 | 公開資訊觀測站 | **高** |
-| D3 | ~~市值（自算）~~ | ~~close × shares_outstanding~~ | ✅ 2026-03-30（51 支 shareholding） |
-| D4 | 內部人持股+質押 | 公開資訊觀測站 | 中 |
-| D5 | 借券餘額 | FinMind | 中 |
+| # | 數據 | 來源 | 狀態 |
+|---|------|------|:----:|
+| D1 | 集保戶股權分散表 | TDCC API（FinMind 需付費） | ⏳ |
+| D2 | 處置股/注意股/全額交割 | 公開資訊觀測站 | ⏳ |
+| D3 | 市值 | close × shares_outstanding | ✅ 51 支 |
+| D4 | 內部人持股+質押 | 公開資訊觀測站 | ⏳ |
+| D5 | 借券餘額 | FinMind | ⏳ |
 
 ### 評估改進
 
 | # | 項目 | 狀態 |
 |---|------|:----:|
-| 4E | 行業中性化 IC 診斷 | ✅ 2026-03-30 |
-| 4F | IC 趨勢回歸 | ✅ 2026-03-30 |
-| 4G-4K | L5b/L5c/novelty/construction/WF | ✅ 2026-03-30 |
+| 4E-4K | IC 診斷 + L5b/L5c + novelty + construction + WF | ✅ |
 | 4L | Rebalance 對齊營收公告日 | ⏳ |
 | 4M | Size neutralization | ⏳ |
 
-### 審計剩餘
+### 剩餘
 
-| 項目 | 嚴重度 |
-|------|:------:|
-| ~~H-003 replacement chain attack~~ | ~~HIGH~~ ✅ 2026-03-30（chain depth < 3） |
-| M-001 eval_server L5b/L5c parsing | MEDIUM |
-| ~~M-002 PBO silent failure validation~~ | ~~MEDIUM~~ ✅ 2026-03-30 |
-| L-001~004 atomicity + cleanup | LOW |
+| 項目 | 嚴重度 | 狀態 |
+|------|:------:|:----:|
+| M-001 eval_server L5b/L5c parsing | MEDIUM | ⏳ |
+| L-001~004 atomicity + cleanup | LOW | ⏳ |
 
 ## Phase 5：90 天後
 
