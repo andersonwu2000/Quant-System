@@ -234,14 +234,30 @@ def _process_pending():
         validator_report = _run_background_validator(results, factor_code)
 
         if validator_report and validator_report.get("deployed"):
-            # Returns dedup — final check against ALL factor_returns (not just pending)
-            # Pre-filter catches most clones, but can miss if stem doesn't match
+            # Returns dedup — final check against ALL factor_returns
+            # Allow replacement if new ICIR > 1.3× reference (same as L3 replacement logic)
             ret_ok, ret_corr, ret_with = _check_returns_dedup(marker_path.stem)
             if not ret_ok:
-                log(f"Validator: BLOCKED by returns dedup post-validation (corr={ret_corr:.3f} with {ret_with})")
-                validator_report["deployed"] = False
-                marker_path.unlink()
-                return
+                # Check if this clone is significantly better than reference
+                new_icir = abs(results.get("best_icir", 0))
+                meta_path = WATCHDOG_DATA / "factor_returns" / "metadata.json"
+                ref_icir = 0.0
+                if meta_path.exists():
+                    try:
+                        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                        ref_icir = abs(meta.get(ret_with, {}).get("best_icir", 0))
+                    except Exception:
+                        pass
+                if ref_icir > 0 and new_icir >= 1.3 * ref_icir:
+                    log(f"Validator: returns clone ALLOWED (ICIR {new_icir:.3f} >= 1.3x ref {ref_icir:.3f}, corr={ret_corr:.3f})")
+                else:
+                    log(f"Validator: BLOCKED by returns dedup (corr={ret_corr:.3f} with {ret_with}, ICIR {new_icir:.3f} not > 1.3x ref {ref_icir:.3f})")
+                    validator_report["deployed"] = False
+                    marker_path.unlink()
+                    return
+            # Store returns corr for report
+            validator_report["_returns_corr"] = ret_corr
+            validator_report["_returns_corr_with"] = ret_with
 
             # Gate: Factor-Level PBO must be <= 0.70 (if available)
             # M-002: validate PBO file integrity — stale/corrupt PBO should not auto-pass
@@ -500,9 +516,10 @@ def _write_background_report(results: dict, validator_report: dict, factor_code:
     if _replaced:
         _supersedes = f"\n> Replaces: {_replaced}"
 
-    _max_corr = results.get('max_correlation', 0)
-    _corr_with = results.get('correlated_with', '')
-    _corr_line = f"\n> Nearest factor: {_corr_with} (corr={_max_corr:.3f})" if _corr_with and abs(_max_corr) > 0.10 else ""
+    # Show returns correlation (portfolio-level, from watchdog dedup) not IC series correlation
+    _ret_corr = validator_report.get("_returns_corr", 0)
+    _ret_with = validator_report.get("_returns_corr_with", "")
+    _corr_line = f"\n> Returns correlation: {_ret_with} (corr={_ret_corr:.3f})" if _ret_with and abs(_ret_corr) > 0.10 else ""
 
     content = (
         f"# Factor Report: {name}\n\n"
