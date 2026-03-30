@@ -724,27 +724,31 @@ def _write_daily_report(
     n_pos = len(portfolio.positions)
     cash_pct = cash / nav * 100 if nav > 0 else 0
 
-    # NAV history for return calc
+    # Daily return: compare with previous snapshot (same NAV scale only)
     snap_dir = Path("data/paper_trading/snapshots")
-    prev_nav = nav  # fallback
+    prev_nav = nav
     snaps = sorted(snap_dir.glob("*.json")) if snap_dir.exists() else []
     if len(snaps) >= 2:
         try:
             prev = json.loads(snaps[-2].read_text(encoding="utf-8"))
-            prev_nav = prev.get("nav", nav)
+            _prev_nav = prev.get("nav", 0)
+            # Sanity: only use if same order of magnitude (prevents stale 10M vs new 10K)
+            if _prev_nav > 0 and 0.1 < nav / _prev_nav < 10:
+                prev_nav = _prev_nav
         except Exception:
             pass
-    daily_ret = (nav / prev_nav - 1) * 100 if prev_nav > 0 else 0
+    daily_ret = (nav / prev_nav - 1) * 100 if prev_nav > 0 and prev_nav != nav else 0
 
-    # First snapshot for cumulative return
-    first_nav = nav
-    if snaps:
-        try:
-            first = json.loads(snaps[0].read_text(encoding="utf-8"))
-            first_nav = first.get("nav", nav)
-        except Exception:
-            pass
-    cum_ret = (nav / first_nav - 1) * 100 if first_nav > 0 else 0
+    # Cumulative return: always use initial_cash (not first snapshot — may be from different config)
+    initial_cash = float(portfolio.cash) + sum(
+        float(p.market_value) for p in portfolio.positions.values()
+    ) if not hasattr(portfolio, '_initial_cash_for_report') else nav
+    try:
+        from src.core.config import get_config
+        initial_cash = get_config().backtest_initial_cash
+    except Exception:
+        pass
+    cum_ret = (nav / initial_cash - 1) * 100 if initial_cash > 0 else 0
 
     lines = [
         f"# Paper Trading Daily Report — {today}",
