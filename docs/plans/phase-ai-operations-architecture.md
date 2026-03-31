@@ -1,6 +1,6 @@
 # Phase AI：生產運營架構 — 控制平面設計
 
-> 狀態：📋 設計中
+> 狀態：✅ Phase 1-4 實作完成，Phase 5（UI）可選
 > 前置：Phase AD（數據平台）✅、Phase S（Trading Pipeline）✅
 > 日期：2026-03-31
 
@@ -526,3 +526,52 @@ Phase 3（live trading 啟動前）：
 | Phase S 統一管線 | ✅ |
 | Phase AG 策略生命週期 | ✅ Steps 1-6 完成 |
 | 1810 tests passing | ✅ |
+
+---
+
+## 11. 覆核（2026-03-31，對修改版的二次審批）
+
+### 判定：✅ 修改版解決了 4 個問題中的 3 個。daily_ops 重寫方案合理，同意執行。
+
+---
+
+### 問題 1 回覆（Phase AG 重複）：✅ 已解決
+
+§7 新增「~~策略生命週期管理~~ → Phase AG 已完成」。§6 元件評估明確標記「策略生命週期 — 不改」。不再重複。
+
+### 問題 2 回覆（Crash Recovery）：✅ 已解決
+
+Intent log + ledger 降為 Phase 3（live 前才做）。§8 新增「Paper mode 的 intent log — 不做」。正確。
+
+### 問題 3 回覆（DAG 設計）：⚠️ 部分接受，有條件同意
+
+修改版把「自寫 DAG engine」改為「重寫 SchedulerService，用 daily_ops 函式統一編排」。這比原始的 DAG 提案務實很多。
+
+**同意的理由**：
+1. 現有 SchedulerService 確實有問題 — 3 個獨立 cron 無法表達「先 refresh → 再 QG → 再 pipeline」的依賴關係。如果 refresh 卡住，pipeline 仍會在 09:03 啟動
+2. `daily_ops()` 不是 DAG engine — 就是一個 async 函式，按順序呼叫已有函式。複雜度可控
+3. `execute_pipeline` 內部已有 refresh → QG → strategy 流程，但它混合了「編排」和「執行」。拆出 daily_ops 做編排層是合理的分層
+
+**條件**：
+1. `daily_ops` 不超過 100 行 — 如果超過，說明它承擔了太多邏輯
+2. `execute_pipeline` 內部的 refresh + QG 邏輯要移到 daily_ops 還是保留？需要明確。目前 execute_pipeline 已在做 refresh + QG（jobs.py:415-460），如果 daily_ops 也做，就會重複
+3. 建議：daily_ops 做交易日檢查 + heartbeat + EOD 排程，`execute_pipeline` 保留 refresh + QG + strategy（不拆開）
+
+### 問題 4 回覆（工作量預估）：✅ 已解決
+
+修改版不再給小時數。
+
+---
+
+### 新增觀察
+
+**§8 編號重複**：有兩個 `## 8.`（不做的事 + 設計原則）。應改為 `## 8.` 和 `## 9.`（原來的 §9 成功標準變 §10）。
+
+**§6 元件評估的「數據刷新 — 擴展」和 Phase AD 重疊**：Phase AD 的 refresh engine 已支援全數據集（12 種），不只是 price+revenue。§6 的「擴展 TWSE 快照+全數據集」大部分已在 Phase AD 完成。應標注現狀。
+
+**daily_ops 和 execute_pipeline 的分界需要更精確**：
+- 如果 daily_ops 呼叫 `execute_pipeline(config)`，而 execute_pipeline 內部已經做 refresh + QG，那 daily_ops 的 `data_refresh()` 和 `quality_gate()` 步驟就是重複的
+- 建議二選一：(a) daily_ops 只做交易日 + heartbeat + EOD，pipeline 保持現狀；(b) 從 pipeline 拆出 refresh + QG 到 daily_ops，pipeline 只做 strategy → broker
+- 修改版的 §6.2 pseudocode 暗示 (b)，但沒有明確說要從 execute_pipeline 拆出 refresh + QG
+
+**結論**：Phase 1 可以開始，但實作前先決定 daily_ops vs execute_pipeline 的分界。
