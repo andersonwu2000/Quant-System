@@ -141,11 +141,22 @@ class DataCatalog:
                 df["yoy_growth"] = df["revenue"].pct_change(periods=12) * 100
                 return df
             elif dataset == "per":
-                # Per-symbol per has columns: [date, PER, PBR, ...]
+                # Per-symbol per has columns: [date, PER, PBR, dividend_yield]
                 df = pd.DataFrame({"date": series.index, "PER": series.values})
+                # Also try to add PBR from valuation/pbr.parquet
+                pbr_path = FINLAB_DIR / "valuation" / "pbr.parquet"
+                if pbr_path.exists():
+                    try:
+                        pbr_panel = pd.read_parquet(pbr_path)
+                        if bare in pbr_panel.columns:
+                            pbr_series = pbr_panel[bare].dropna()
+                            pbr_df = pd.DataFrame({"date": pbr_series.index, "PBR": pbr_series.values})
+                            df = df.merge(pbr_df, on="date", how="left")
+                    except Exception:
+                        pass
                 return df
             elif dataset == "margin":
-                df = pd.DataFrame({"date": series.index, col_name: series.values})
+                df = pd.DataFrame({"date": series.index, "margin_usage": series.values})
                 return df
             elif dataset == "price":
                 # Price: return as DatetimeIndex + column name

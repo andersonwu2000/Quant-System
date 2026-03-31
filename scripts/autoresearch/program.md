@@ -85,15 +85,15 @@ You see:
 ## Available Data
 
 ```python
-data["bars"][symbol]            # pd.DataFrame: open, high, low, close, volume (daily)
-data["revenue"][symbol]         # pd.DataFrame: date, revenue, yoy_growth (monthly, 40d delayed)
-data["institutional"][symbol]   # pd.DataFrame: date, trust_net, foreign_net, dealer_net (daily)
-data["per_history"][symbol]     # pd.DataFrame: date, PER, PBR, dividend_yield (daily since 2019)
-data["margin"][symbol]          # pd.DataFrame: date, MarginPurchaseTodayBalance, ShortSaleTodayBalance, ... (daily)
+data["bars"][symbol]            # pd.DataFrame: open, high, low, close, volume (daily, 2007-2026)
+data["revenue"][symbol]         # pd.DataFrame: date, revenue, yoy_growth (monthly, 40d delayed, 2005-2018)
+data["institutional"][symbol]   # pd.DataFrame: date, foreign_net, trust_net, dealer_net, total_net (daily, 2012-2026)
+data["per_history"][symbol]     # pd.DataFrame: date, PER, PBR (daily, 2010-2018. NO dividend_yield)
+data["margin"][symbol]          # pd.DataFrame: date, margin_usage (daily, 2009-2018. 使用率 not 餘額)
 data["market_cap"][symbol]      # DISABLED (look-ahead bias) — use close × volume as size proxy
-data["pe"][symbol]              # DISABLED (look-ahead bias) — use per_history instead
-data["pb"][symbol]              # DISABLED — use per_history instead
-data["roe"][symbol]             # DISABLED — no time series available
+data["pe"][symbol]              # DISABLED (look-ahead bias)
+data["pb"][symbol]              # DISABLED
+data["roe"][symbol]             # DISABLED
 ```
 
 ## Factor Dimensions to Explore
