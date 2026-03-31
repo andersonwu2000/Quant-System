@@ -132,8 +132,13 @@ class DataCatalog:
             # Match output format to what per-symbol parquets provide,
             # so downstream code (evaluate.py, factors) works unchanged.
             if dataset == "revenue":
-                # Per-symbol revenue has columns: [date, revenue, ...]
+                # Per-symbol revenue has columns: [date, revenue, yoy_growth, ...]
+                # FinLab panel only has raw revenue — compute YoY growth
                 df = pd.DataFrame({"date": series.index, "revenue": series.values})
+                df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
+                df = df.sort_values("date")
+                # YoY: compare to same month last year (shift 12 months)
+                df["yoy_growth"] = df["revenue"].pct_change(periods=12) * 100
                 return df
             elif dataset == "per":
                 # Per-symbol per has columns: [date, PER, PBR, ...]
