@@ -139,6 +139,9 @@ class DataCatalog:
                 df = df.sort_values("date")
                 # YoY: compare to same month last year (shift 12 months)
                 df["yoy_growth"] = df["revenue"].pct_change(periods=12) * 100
+                # Clip extreme values (financial stocks can have near-zero base → inf)
+                df["yoy_growth"] = df["yoy_growth"].clip(-500, 5000)
+                df["yoy_growth"] = df["yoy_growth"].replace([float("inf"), float("-inf")], float("nan"))
                 return df
             elif dataset == "per":
                 # Per-symbol per has columns: [date, PER, PBR, dividend_yield]
@@ -159,8 +162,18 @@ class DataCatalog:
                 df = pd.DataFrame({"date": series.index, "margin_usage": series.values})
                 return df
             elif dataset == "price":
-                # Price: return as DatetimeIndex + column name
-                df = series.to_frame(name=col_name)
+                # Price: build full OHLCV from separate panel files
+                df = series.to_frame(name="close")
+                for extra_col, extra_file in [("open", "open.parquet"), ("high", "high.parquet"),
+                                               ("low", "low.parquet"), ("volume", "volume.parquet")]:
+                    extra_path = FINLAB_DIR / "price" / extra_file
+                    if extra_path.exists():
+                        try:
+                            extra_panel = pd.read_parquet(extra_path)
+                            if bare in extra_panel.columns:
+                                df[extra_col] = extra_panel[bare]
+                        except Exception:
+                            pass
                 df.index.name = None
                 return df
             else:
