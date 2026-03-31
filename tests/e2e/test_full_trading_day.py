@@ -87,6 +87,61 @@ class TestFullTradingDay:
             assert result["reconcile"]["status"] == "skipped"
 
 
+class TestAutoresearchCycle:
+    """E2E-3: Autoresearch factor → deploy queue → executor cycle."""
+
+    def test_deploy_queue_to_execution(self, tmp_path):
+        """Factor in deploy_queue → process_deploy_queue → execute_deployed_strategies."""
+        import json
+        from src.alpha.auto.paper_deployer import PaperDeployer
+        from src.alpha.auto.deployed_executor import process_deploy_queue
+
+        # Setup: create a deploy queue marker
+        queue_dir = tmp_path / "deploy_queue"
+        queue_dir.mkdir()
+        factor_code = '''
+def compute_factor(symbols, as_of, data):
+    return {s: 1.0 for s in symbols[:15]}
+'''
+        marker = {
+            "factor_code": factor_code,
+            "code_hash": "test123",
+            "timestamp": "20260401_test",
+        }
+        (queue_dir / "test.json").write_text(json.dumps(marker))
+
+        deployer = PaperDeployer(deploy_dir=str(tmp_path / "deploy"))
+
+        with patch("src.alpha.auto.deployed_executor.DEPLOY_QUEUE_DIR", queue_dir):
+            with patch("src.api.state.get_app_state") as mock_state:
+                mock_state.return_value.portfolio.nav = 10_000_000
+                names = process_deploy_queue(deployer)
+
+        assert len(names) >= 1 or len(list(queue_dir.glob("*.json"))) == 0, \
+            "Marker should be processed (deployed or moved to failed)"
+
+    def test_deployed_strategy_monthly_rebalance(self, tmp_path):
+        """Deployed strategy rebalances on first run, skips same month."""
+        import json
+        from datetime import datetime
+        from src.alpha.auto.deployed_executor import _should_rebalance, PAPER_TRADE_DIR
+
+        with patch("src.alpha.auto.deployed_executor.PAPER_TRADE_DIR", tmp_path):
+            # First run: should rebalance
+            assert _should_rebalance("test_strat") is True
+
+            # Record a trade
+            trade_dir = tmp_path / "test_strat"
+            trade_dir.mkdir()
+            today = datetime.now().strftime("%Y-%m-%d")
+            (trade_dir / f"{today}.json").write_text(json.dumps({
+                "date": today, "weights": {"2330.TW": 0.063}, "nav": 500000,
+            }))
+
+            # Same month: skip
+            assert _should_rebalance("test_strat") is False
+
+
 class TestPaperToLiveSwitch:
     """E2E-2: Verify mode switch changes reconciliation behavior."""
 

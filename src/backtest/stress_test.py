@@ -298,11 +298,36 @@ def run_historical_stress(
     results: dict[str, dict] = {}
     engine = BacktestEngine()
 
+    # Pre-check which symbols have data in each period
+    from src.data.data_catalog import get_catalog
+    catalog = get_catalog()
+
     for period in periods:
         logger.info("Historical stress: %s (%s to %s)", period.name, period.start, period.end)
         try:
+            # Filter universe to symbols with data in this period
+            period_universe = []
+            for sym in universe:
+                df = catalog.get("price", sym)
+                if df.empty or "close" not in df.columns:
+                    continue
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index)
+                period_data = df.loc[period.start:period.end]
+                if len(period_data) >= 20:  # at least 20 trading days
+                    period_universe.append(sym)
+
+            if len(period_universe) < 20:
+                results[period.name] = {
+                    "description": period.description,
+                    "error": f"Only {len(period_universe)} symbols with data in {period.start}~{period.end} (need 20)",
+                }
+                continue
+
+            logger.info("  %d/%d symbols have data for %s", len(period_universe), len(universe), period.name)
+
             config = BacktestConfig(
-                universe=universe,
+                universe=period_universe,
                 start=period.start,
                 end=period.end,
                 initial_cash=initial_cash,
@@ -463,6 +488,65 @@ def generate_stress_report(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
     return str(path)
+
+
+def run_correlation_stress(
+    universe: list[str],
+    start: str = "2018-01-01",
+    end: str = "2025-12-31",
+    window: int = 60,
+) -> dict[str, Any]:
+    """Analyze rolling pairwise correlation of universe.
+
+    Finds periods where correlation is highest (diversification fails).
+
+    Returns {peak_date, peak_corr, avg_corr, min_corr, corr_series}
+    """
+    from src.data.data_catalog import get_catalog
+
+    catalog = get_catalog()
+    returns_dict: dict[str, pd.Series] = {}
+    for sym in universe[:50]:  # cap at 50 for speed
+        df = catalog.get("price", sym)
+        if df.empty or "close" not in df.columns:
+            continue
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+        rets = df["close"].pct_change().dropna()
+        rets = rets.loc[start:end]
+        if len(rets) >= window:
+            returns_dict[sym] = rets
+
+    if len(returns_dict) < 10:
+        return {"error": f"Only {len(returns_dict)} symbols with returns data"}
+
+    ret_df = pd.DataFrame(returns_dict).dropna(how="all")
+
+    # Rolling average pairwise correlation
+    corr_series = []
+    dates = ret_df.index[window:]
+    for i in range(window, len(ret_df)):
+        win = ret_df.iloc[i - window:i]
+        corr_matrix = win.corr()
+        # Average off-diagonal correlation
+        n = len(corr_matrix)
+        if n < 2:
+            continue
+        avg_corr = (corr_matrix.values.sum() - n) / (n * (n - 1))
+        corr_series.append({"date": ret_df.index[i], "avg_corr": avg_corr})
+
+    if not corr_series:
+        return {"error": "Insufficient data for correlation analysis"}
+
+    corr_df = pd.DataFrame(corr_series).set_index("date")
+    peak_idx = corr_df["avg_corr"].idxmax()
+    return {
+        "peak_date": str(peak_idx.date()),
+        "peak_corr": float(corr_df["avg_corr"].max()),
+        "avg_corr": float(corr_df["avg_corr"].mean()),
+        "min_corr": float(corr_df["avg_corr"].min()),
+        "n_symbols": len(returns_dict),
+    }
 
 
 def _run_with_feed(

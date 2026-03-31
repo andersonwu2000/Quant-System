@@ -62,6 +62,172 @@ def step_2_5a_correlation(factor_name: str):
     return True, list(known_l5.keys())
 
 
+def step_2_5b_composite(factor_name: str, combine_with: list[str], universe: list[str]):
+    """Build rank composite with combinable L5 factors and test IC improvement."""
+    print("\n" + "=" * 70)
+    print("Step 2.5b: Multi-Factor Composite")
+    print("=" * 70)
+
+    if not combine_with:
+        print("  No factors to combine with — skipping")
+        return None
+
+    from pathlib import Path
+    import importlib.util
+    import numpy as np
+    import pandas as pd
+    from scipy.stats import spearmanr
+    from src.data.data_catalog import get_catalog
+
+    catalog = get_catalog()
+
+    # Load factor functions
+    factor_fns = {}
+    for name in [factor_name] + combine_with:
+        path = Path(f"src/strategy/factors/research/{name}.py")
+        if not path.exists():
+            # Try loading from run_full_factor_analysis
+            path = Path("scripts/run_full_factor_analysis.py")
+        try:
+            spec = importlib.util.spec_from_file_location(name, path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            fn = getattr(mod, "compute_factor", None) or getattr(mod, name, None)
+            if fn:
+                factor_fns[name] = fn
+        except Exception as e:
+            print(f"  WARNING: Cannot load {name}: {e}")
+
+    if len(factor_fns) < 2:
+        print(f"  Only {len(factor_fns)} factor(s) loaded — need >= 2 for composite")
+        return None
+
+    # Load data
+    data = {"bars": {}, "revenue": {}, "per_history": {}, "institutional": {}, "margin": {}, "pe": {}, "pb": {}, "roe": {}}
+    for sym in universe[:200]:
+        df = catalog.get("price", sym)
+        if not df.empty and "close" in df.columns:
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+            data["bars"][sym] = df
+        rev = catalog.get("revenue", sym)
+        if not rev.empty and "date" in rev.columns:
+            rev["date"] = pd.to_datetime(rev["date"])
+            data["revenue"][sym] = rev
+        try:
+            per = catalog.get("per", sym)
+            if not per.empty and "PER" in per.columns and "date" in per.columns:
+                per["date"] = pd.to_datetime(per["date"])
+                data["per_history"][sym] = per
+        except Exception:
+            pass
+
+    # Test IC of individual factors + composite on 10 sample dates
+    all_dates = set()
+    for df in data["bars"].values():
+        all_dates.update(df.index)
+    sorted_dates = sorted(all_dates)
+    monthly = [d for i, d in enumerate(sorted_dates) if i == 0 or d.month != sorted_dates[i - 1].month]
+    sample_dates = monthly[-30:]  # last 30 months
+
+    ic_results = {name: [] for name in list(factor_fns.keys()) + ["composite"]}
+
+    for as_of in sample_dates:
+        active = [s for s in universe if s in data["bars"] and as_of in data["bars"][s].index]
+        if len(active) < 30:
+            continue
+
+        # Mask data
+        cutoff = as_of - pd.DateOffset(days=40)
+        masked = {
+            "bars": {s: data["bars"][s].loc[:as_of] for s in active if s in data["bars"]},
+            "revenue": {s: df[df["date"] <= cutoff] for s, df in data["revenue"].items() if s in active},
+            "per_history": {s: df[df["date"] <= as_of] for s, df in data["per_history"].items() if s in active},
+            "institutional": {}, "margin": {}, "pe": {}, "pb": {}, "roe": {},
+        }
+
+        # Forward returns (20d)
+        fwd = {}
+        for sym in active:
+            b = data["bars"].get(sym)
+            if b is None or as_of not in b.index:
+                continue
+            future = b.index[b.index > as_of]
+            if len(future) < 20:
+                continue
+            p0 = float(b.loc[as_of, "close"])
+            p1 = float(b.loc[future[19], "close"])
+            if p0 > 0 and p1 > 0:
+                fwd[sym] = p1 / p0 - 1
+
+        # Compute each factor + composite rank
+        factor_vals = {}
+        for name, fn in factor_fns.items():
+            try:
+                vals = fn(active, as_of, masked)
+                vals = {k: v for k, v in (vals or {}).items() if isinstance(v, (int, float)) and np.isfinite(v)}
+                if len(vals) >= 20:
+                    factor_vals[name] = vals
+            except Exception:
+                pass
+
+        # Individual IC
+        for name, vals in factor_vals.items():
+            common = sorted(set(vals) & set(fwd))
+            if len(common) >= 20:
+                x = [vals[s] for s in common]
+                y = [fwd[s] for s in common]
+                ic, _ = spearmanr(x, y)
+                if np.isfinite(ic):
+                    ic_results[name].append(ic)
+
+        # Composite: equal-weight rank
+        if len(factor_vals) >= 2:
+            all_syms = set()
+            for vals in factor_vals.values():
+                all_syms.update(vals.keys())
+            common_all = sorted(all_syms & set(fwd))
+            if len(common_all) >= 20:
+                ranks = {}
+                for name, vals in factor_vals.items():
+                    sorted_syms = sorted([s for s in common_all if s in vals], key=lambda s: vals[s])
+                    ranks[name] = {s: i for i, s in enumerate(sorted_syms)}
+                composite_score = {}
+                for s in common_all:
+                    score = sum(ranks[name].get(s, 0) for name in ranks) / len(ranks)
+                    composite_score[s] = score
+                common_c = sorted(set(composite_score) & set(fwd))
+                if len(common_c) >= 20:
+                    x = [composite_score[s] for s in common_c]
+                    y = [fwd[s] for s in common_c]
+                    ic, _ = spearmanr(x, y)
+                    if np.isfinite(ic):
+                        ic_results["composite"].append(ic)
+
+    # Report
+    print(f"  Sample dates: {len(sample_dates)}")
+    composite_better = False
+    for name, ics in ic_results.items():
+        if len(ics) >= 5:
+            ic_mean = np.mean(ics)
+            ic_std = np.std(ics, ddof=1)
+            icir = ic_mean / ic_std if ic_std > 0 else 0
+            label = "**" if name == "composite" else "  "
+            print(f"  {label}{name:30s} IC={ic_mean:+.4f}  ICIR={icir:+.4f}  ({len(ics)} dates)")
+            if name == "composite" and icir > max(
+                (np.mean(v) / np.std(v, ddof=1) if len(v) >= 5 and np.std(v, ddof=1) > 0 else 0)
+                for k, v in ic_results.items() if k != "composite" and len(v) >= 5
+            ):
+                composite_better = True
+
+    if composite_better:
+        print("  → Composite ICIR > all singles — recommend composite strategy")
+    else:
+        print("  → Composite not better — use single factor or investigate weighting")
+
+    return composite_better
+
+
 def step_2_5c_validator(factor_name: str, universe: list[str]):
     """Run Validator 15-point with kill_switch=OFF."""
     print("\n" + "=" * 70)
@@ -172,6 +338,9 @@ def main():
 
     # 2.5a: Correlation
     combinable, combine_with = step_2_5a_correlation(factor_name)
+
+    # 2.5b: Multi-factor composite
+    composite_better = step_2_5b_composite(factor_name, combine_with, universe)
 
     # 2.5c: Validator
     report = step_2_5c_validator(factor_name, universe)
