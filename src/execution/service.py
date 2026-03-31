@@ -373,13 +373,15 @@ class ExecutionService:
         """True if broker connection failed and we fell back to PaperBroker."""
         return self._fallback_mode
 
-    def set_portfolio(self, portfolio: Any, loop: Any = None) -> None:
-        """設定 portfolio 和 event loop 供 async fill callback 使用。
+    def set_portfolio(self, portfolio: Any, loop: Any = None, mutation_lock: Any = None) -> None:
+        """設定 portfolio、event loop、mutation_lock 供 async fill callback 使用。
 
         必須在 app startup 時呼叫，否則 live mode 的成交回報無法更新 portfolio。
+        mutation_lock 應為 state.mutation_lock（asyncio.Lock），確保 fill 不和 rebalance 併發。
         """
         self._portfolio = portfolio
         self._event_loop = loop
+        self._mutation_lock = mutation_lock
 
     def _on_broker_fill(self, order: Order) -> None:
         """Broker 成交回報 callback（在 Shioaji 背景線程中呼叫）。
@@ -414,7 +416,15 @@ class ExecutionService:
 
         async def _apply() -> None:
             from src.execution.oms import apply_trades
-            apply_trades(portfolio, [trade])
+            # Acquire mutation_lock to prevent race with API rebalance.
+            # Without this, a fill arriving mid-rebalance could mutate portfolio
+            # while weights_to_orders is computing on stale data.
+            mutation_lock = getattr(self, '_mutation_lock', None)
+            if mutation_lock is not None:
+                async with mutation_lock:
+                    apply_trades(portfolio, [trade])
+            else:
+                apply_trades(portfolio, [trade])
             logger.info("Async fill applied: %s %s %s @ %s",
                        trade.side.value, trade.quantity, trade.symbol, trade.price)
 

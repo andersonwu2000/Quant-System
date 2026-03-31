@@ -38,7 +38,7 @@ class TestDailyReconcile:
         from src.scheduler.jobs import execute_daily_reconcile
 
         config = MagicMock()
-        config.mode = "paper"
+        config.mode = "live"
 
         mock_state = MagicMock()
         mock_state.execution_service.is_initialized = False
@@ -54,7 +54,7 @@ class TestDailyReconcile:
         from src.scheduler.jobs import execute_daily_reconcile
 
         config = MagicMock()
-        config.mode = "paper"
+        config.mode = "live"
         config.notify_provider = ""
         config.discord_webhook_url = ""
         config.line_notify_token = ""
@@ -88,7 +88,7 @@ class TestDailyReconcile:
         from src.scheduler.jobs import execute_daily_reconcile
 
         config = MagicMock()
-        config.mode = "paper"
+        config.mode = "live"
         config.notify_provider = "discord"
         config.discord_webhook_url = "https://discord.com/api/webhooks/test"
         config.line_notify_token = ""

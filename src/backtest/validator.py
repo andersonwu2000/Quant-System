@@ -241,14 +241,13 @@ class StrategyValidator:
             threshold=f">= {cfg.min_universe_size}",
         ))
 
-        # Pre-load shared feed (avoid re-reading parquets for each sub-backtest)
-        # Use extended range to cover OOS (2025) and recent period
-        logger.info("[Validator] Pre-loading data feed...")
+        # Pre-load shared feed from DataCatalog (local parquets, no Yahoo download).
+        # Covers IS + OOS + recent period in one load.
+        logger.info("[Validator] Pre-loading data feed from DataCatalog...")
         feed_end = max(end, cfg.oos_end, "2026-12-31")
-        bt_config = self._make_bt_config(universe, start, feed_end)
-        _pre_engine = BacktestEngine()
         try:
-            self._shared_feed, _, self._shared_fundamentals = _pre_engine._load_data(bt_config)
+            self._shared_feed = self._build_catalog_feed(universe, start, feed_end)
+            self._shared_fundamentals = None
         except Exception:
             self._shared_feed = None
             self._shared_fundamentals = None
@@ -508,6 +507,23 @@ class StrategyValidator:
 
     # ── 內部方法 ───────────────────────────────────────────────────
 
+    @staticmethod
+    def _build_catalog_feed(universe: list[str], start: str, end: str) -> "HistoricalFeed":
+        """Build HistoricalFeed from DataCatalog (local parquets, no Yahoo download)."""
+        from src.data.feed import HistoricalFeed
+        from src.data.data_catalog import get_catalog
+
+        catalog = get_catalog()
+        feed = HistoricalFeed()
+        for sym in universe:
+            df = catalog.get("price", sym)
+            if df.empty or "close" not in df.columns:
+                continue
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+            feed.load(sym, df)
+        return feed
+
     def _make_bt_config(self, universe: list[str], start: str, end: str) -> BacktestConfig:
         cfg = self.config
         # V7 fix: 使用 config 的 fractional_shares 設定，而非強制 True
@@ -655,26 +671,16 @@ class StrategyValidator:
             return 1.0
 
     def _load_0050(self, start: str, end: str) -> pd.DataFrame | None:
-        """Load 0050.TW bars: local parquet first, Yahoo fallback."""
-        from pathlib import Path
-        from src.data.registry import parquet_path as _ppath
-
-        local_path = _ppath("0050.TW", "price")
-        if local_path.exists():
-            try:
-                df = pd.read_parquet(local_path)
-                if "date" in df.columns:
-                    df["date"] = pd.to_datetime(df["date"])
-                    df = df.set_index("date").sort_index()
-                sliced = df.loc[start:end]  # type: ignore[misc]
-                if len(sliced) >= 20:
-                    return sliced
-            except Exception:
-                pass
-
+        """Load 0050.TW bars from DataCatalog (local parquets)."""
+        from src.data.data_catalog import get_catalog
         try:
-            from src.data.sources.yahoo import YahooFeed
-            return YahooFeed().get_bars("0050.TW", start=start, end=end)
+            df = get_catalog().get("price", "0050.TW")
+            if df.empty or "close" not in df.columns:
+                return None
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+            sliced = df.loc[start:end]
+            return sliced if len(sliced) >= 20 else None
         except Exception:
             return None
 
@@ -795,12 +801,12 @@ class StrategyValidator:
             return -1.0  # fail-closed
 
     def _run_oos(self, strategy: Strategy, universe: list[str], start: str, end: str) -> dict[str, Any]:
-        """OOS holdout 回測。"""
+        """OOS holdout 回測。Uses DataCatalog feed to avoid Yahoo download failures."""
         try:
             bt_config = self._make_bt_config(universe, start, end)
             engine = BacktestEngine()
-            # OOS: don't use shared feed (HistoricalFeed state may be stale from IS backtest)
-            r = engine.run(strategy, bt_config)
+            feed = self._build_catalog_feed(universe, start, end)
+            r = engine.run(strategy, bt_config, feed_override=feed)
             if r.nav_series is not None and len(r.nav_series) < 5:
                 return {"return": 0.0, "sharpe": 0.0,
                         "error": f"OOS {start}~{end}: only {len(r.nav_series)} days — data likely missing"}
@@ -1212,8 +1218,8 @@ class StrategyValidator:
             recent_start = (pd.Timestamp(end) - pd.Timedelta(days=calendar_days)).strftime("%Y-%m-%d")
             bt_config = self._make_bt_config(universe, recent_start, end)
             engine = BacktestEngine()
-            # Recent: don't use shared feed (date range differs from IS)
-            r = engine.run(strategy, bt_config)
+            feed = self._build_catalog_feed(universe, recent_start, end)
+            r = engine.run(strategy, bt_config, feed_override=feed)
             if r.nav_series is not None and len(r.nav_series) < 5:
                 return {"sharpe": 0.0, "start": recent_start, "end": end,
                         "error": f"Only {len(r.nav_series)} trading days — data likely missing"}

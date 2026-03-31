@@ -81,10 +81,11 @@ async def submit_alpha_research(
             from src.alpha.universe import UniverseConfig
             from src.alpha.construction import ConstructionConfig
             from src.alpha.neutralize import NeutralizeMethod
-            from src.data.sources import create_feed
+            from src.data.data_catalog import get_catalog
             from src.core.config import get_config
 
             config = get_config()
+            catalog = get_catalog()
 
             # 建立因子規格
             factor_specs = [
@@ -132,40 +133,28 @@ async def submit_alpha_research(
 
             update_progress(0)
 
-            # 平行下載數據（用 ThreadPoolExecutor 加速）
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            # Load data from local parquets
             import pandas as pd
-
-            feed = create_feed(
-                source=config.data_source,
-                universe=req.universe,
-                token=config.finmind_token if config.data_source == "finmind" else "",
-            )
 
             data: dict[str, Any] = {}
             done_count = 0
 
-            def _fetch(symbol: str) -> tuple[str, pd.DataFrame | None]:
+            for sym in req.universe:
                 try:
-                    bars = feed.get_bars(symbol, start=req.start, end=req.end)
-                    return (symbol, bars if not bars.empty else None)
+                    bars = catalog.get("price", sym)
+                    if not bars.empty:
+                        if not isinstance(bars.index, pd.DatetimeIndex):
+                            bars.index = pd.to_datetime(bars.index)
+                        if req.start:
+                            bars = bars[bars.index >= pd.Timestamp(req.start)]
+                        if req.end:
+                            bars = bars[bars.index <= pd.Timestamp(req.end)]
+                        if not bars.empty:
+                            data[sym] = bars
                 except Exception:
-                    logger.debug("Failed to fetch %s", symbol, exc_info=True)
-                    return (symbol, None)
-
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                futures = {pool.submit(_fetch, sym): sym for sym in req.universe}
-                for future in as_completed(futures, timeout=120):
-                    try:
-                        sym, bars = future.result(timeout=60)
-                    except Exception:
-                        done_count += 1
-                        update_progress(done_count)
-                        continue
-                    if bars is not None:
-                        data[sym] = bars
-                    done_count += 1
-                    update_progress(done_count)
+                    logger.debug("Failed to load %s", sym, exc_info=True)
+                done_count += 1
+                update_progress(done_count)
 
             if not data:
                 with state.alpha_lock:
@@ -356,10 +345,13 @@ async def get_market_regime(
     """Get current market regime classification."""
     try:
         from src.alpha.regime import classify_regimes
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
+        import pandas as pd
 
-        feed = YahooFeed()
-        bars = feed.get_bars(symbol)
+        catalog = get_catalog()
+        bars = catalog.get("price", symbol)
+        if not bars.empty and not isinstance(bars.index, pd.DatetimeIndex):
+            bars.index = pd.to_datetime(bars.index)
         if bars.empty:
             raise HTTPException(status_code=404, detail=f"No data for {symbol}")
 
@@ -404,14 +396,22 @@ async def analyze_turnover(
     try:
         from src.alpha.turnover import analyze_factor_turnover
         from src.strategy.research import compute_factor_values, compute_forward_returns, compute_ic
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
+        import pandas as pd
 
-        feed = YahooFeed(universe=req.symbols)
+        catalog = get_catalog()
         data = {}
         for sym in req.symbols:
-            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            bars = catalog.get("price", sym)
             if not bars.empty:
-                data[sym] = bars
+                if not isinstance(bars.index, pd.DatetimeIndex):
+                    bars.index = pd.to_datetime(bars.index)
+                if req.start:
+                    bars = bars[bars.index >= pd.Timestamp(req.start)]
+                if req.end:
+                    bars = bars[bars.index <= pd.Timestamp(req.end)]
+                if not bars.empty:
+                    data[sym] = bars
 
         fv = compute_factor_values(data, req.factor_name)
         fwd = compute_forward_returns(data, horizon=req.holding_period)
@@ -459,14 +459,22 @@ async def compute_ic_analysis(
     """Compute IC/ICIR for a factor."""
     try:
         from src.strategy.research import compute_factor_values, compute_forward_returns, compute_ic
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
+        import pandas as pd
 
-        feed = YahooFeed(universe=req.symbols)
+        catalog = get_catalog()
         data = {}
         for sym in req.symbols:
-            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            bars = catalog.get("price", sym)
             if not bars.empty:
-                data[sym] = bars
+                if not isinstance(bars.index, pd.DatetimeIndex):
+                    bars.index = pd.to_datetime(bars.index)
+                if req.start:
+                    bars = bars[bars.index >= pd.Timestamp(req.start)]
+                if req.end:
+                    bars = bars[bars.index <= pd.Timestamp(req.end)]
+                if not bars.empty:
+                    data[sym] = bars
 
         fv = compute_factor_values(data, req.factor_name)
         fwd = compute_forward_returns(data, horizon=req.horizon)
@@ -551,14 +559,22 @@ async def compute_factor_correlation(
     """Compute pairwise correlation matrix between factors."""
     try:
         from src.strategy.research import FACTOR_REGISTRY, compute_factor_values
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
+        import pandas as pd
 
-        feed = YahooFeed(universe=req.symbols)
+        catalog = get_catalog()
         data = {}
         for sym in req.symbols:
-            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            bars = catalog.get("price", sym)
             if not bars.empty:
-                data[sym] = bars
+                if not isinstance(bars.index, pd.DatetimeIndex):
+                    bars.index = pd.to_datetime(bars.index)
+                if req.start:
+                    bars = bars[bars.index >= pd.Timestamp(req.start)]
+                if req.end:
+                    bars = bars[bars.index <= pd.Timestamp(req.end)]
+                if not bars.empty:
+                    data[sym] = bars
 
         if len(data) < 5:
             raise HTTPException(status_code=400, detail="Need at least 5 symbols with data")
@@ -618,14 +634,22 @@ async def neutralize_factor(
     try:
         from src.strategy.research import compute_factor_values
         from src.alpha.neutralize import neutralize, NeutralizeMethod
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
+        import pandas as pd
 
-        feed = YahooFeed(universe=req.symbols)
+        catalog = get_catalog()
         data: dict[str, Any] = {}
         for sym in req.symbols:
-            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            bars = catalog.get("price", sym)
             if not bars.empty:
-                data[sym] = bars
+                if not isinstance(bars.index, pd.DatetimeIndex):
+                    bars.index = pd.to_datetime(bars.index)
+                if req.start:
+                    bars = bars[bars.index >= pd.Timestamp(req.start)]
+                if req.end:
+                    bars = bars[bars.index <= pd.Timestamp(req.end)]
+                if not bars.empty:
+                    data[sym] = bars
 
         fv = compute_factor_values(data, req.factor_name)
         if fv.empty:

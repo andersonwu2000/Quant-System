@@ -235,24 +235,16 @@ def run_stress_test(
     # First, load data once using the standard mechanism
     engine = BacktestEngine()
 
-    cfg = get_config()
-    source = cfg.data_source
-    source_kwargs: dict[str, object] = {}
-    if source == "finmind":
-        source_kwargs["token"] = cfg.finmind_token
+    # Load from DataCatalog (local parquets, no Yahoo download)
+    from src.data.data_catalog import get_catalog
+    catalog = get_catalog()
 
-    warmup_days = 400
-    warmup_start = (
-        pd.Timestamp(base_config.start) - pd.tseries.offsets.BDay(warmup_days)
-    ).strftime("%Y-%m-%d")
-
-    data_feed = create_feed(source, base_config.universe, **source_kwargs)
-
-    # Load raw bar data for all symbols
     raw_bars: dict[str, pd.DataFrame] = {}
     for symbol in base_config.universe:
-        df = data_feed.get_bars(symbol, start=warmup_start, end=base_config.end)
-        if not df.empty:
+        df = catalog.get("price", symbol)
+        if not df.empty and "close" in df.columns:
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
             raw_bars[symbol] = df
 
     if not raw_bars:

@@ -15,10 +15,7 @@ if (-not $ScriptDir) { $ScriptDir = "D:\Finance\scripts\autoresearch" }
 $ProjectDir = "D:\Finance"
 
 # Docker mode prompt (paths inside container)
-$dockerPrompt = @"
-Read /app/program.md for the full research protocol, then begin the experiment loop.
-Start now. Your first action should be reading program.md.
-"@
+$dockerPrompt = "Read /app/program.md for the full research protocol, then begin the experiment loop. Start now."
 
 # Host mode prompt (paths on host)
 $hostPrompt = @"

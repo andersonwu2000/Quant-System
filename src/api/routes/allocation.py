@@ -198,7 +198,8 @@ async def get_cross_asset_signals(
     try:
         from src.allocation.cross_asset import CrossAssetSignals
         from src.core.models import AssetClass
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
+        import pandas as pd
 
         # Use representative ETFs as proxies for each asset class
         proxies = {
@@ -207,11 +208,13 @@ async def get_cross_asset_signals(
             AssetClass.FUTURE: "GLD",
         }
 
-        feed = YahooFeed(universe=list(proxies.values()))
+        catalog = get_catalog()
         price_by_class: dict[AssetClass, Any] = {}
         for ac, sym in proxies.items():
-            bars = feed.get_bars(sym)
+            bars = catalog.get("price", sym)
             if not bars.empty:
+                if not isinstance(bars.index, pd.DatetimeIndex):
+                    bars.index = pd.to_datetime(bars.index)
                 price_by_class[ac] = bars["close"]
 
         cas = CrossAssetSignals()

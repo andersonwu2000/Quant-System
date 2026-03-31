@@ -469,9 +469,11 @@ async def run_now(
                         except Exception as exc:
                             logger.debug("Skip parquet %s: %s", f, exc)
 
-            # 2. If not enough from cache, supplement from Yahoo
+            # 2. If not enough from cache, supplement from DataCatalog
             if len(data) < 30:
-                from src.data.sources import create_feed
+                from src.data.data_catalog import get_catalog
+                import pandas as pd
+                catalog = get_catalog()
                 default_universe = [
                     "2330.TW", "2317.TW", "2454.TW", "2308.TW", "2382.TW",
                     "2881.TW", "2882.TW", "2891.TW", "2886.TW", "2884.TW",
@@ -480,16 +482,20 @@ async def run_now(
                     "1326.TW", "2345.TW", "2379.TW", "2327.TW", "2347.TW",
                     "2301.TW", "9910.TW", "6505.TW", "2615.TW", "3702.TW",
                 ]
-                feed = create_feed("yahoo", default_universe)
                 end_dt = datetime.now()
                 start_dt = end_dt - timedelta(days=int(cfg.lookback * 1.5))
                 for sym in default_universe:
                     if sym in data:
                         continue
                     try:
-                        bars = feed.get_bars(sym, start=start_dt, end=end_dt)
-                        if not bars.empty and len(bars) >= 60:
-                            data[sym] = bars
+                        bars = catalog.get("price", sym)
+                        if not bars.empty:
+                            if not isinstance(bars.index, pd.DatetimeIndex):
+                                bars.index = pd.to_datetime(bars.index)
+                            bars = bars[bars.index >= pd.Timestamp(start_dt)]
+                            bars = bars[bars.index <= pd.Timestamp(end_dt)]
+                            if not bars.empty and len(bars) >= 60:
+                                data[sym] = bars
                     except Exception:
                         pass
 

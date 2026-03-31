@@ -99,11 +99,18 @@ def backtest(
     # 基準比較
     bench_comparison = None
     if benchmark:
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
         from src.backtest.report import compare_with_benchmark
-        console.print(f"[bold]Fetching benchmark: {benchmark}...[/bold]")
-        yahoo = YahooFeed()
-        bench_bars = yahoo.get_bars(benchmark, start=start, end=end)
+        import pandas as pd
+        console.print(f"[bold]Loading benchmark: {benchmark}...[/bold]")
+        _cat = get_catalog()
+        bench_bars = _cat.get("price", benchmark)
+        if not bench_bars.empty and not isinstance(bench_bars.index, pd.DatetimeIndex):
+            bench_bars.index = pd.to_datetime(bench_bars.index)
+        if not bench_bars.empty and start:
+            bench_bars = bench_bars[bench_bars.index >= pd.Timestamp(start)]
+        if not bench_bars.empty and end:
+            bench_bars = bench_bars[bench_bars.index <= pd.Timestamp(end)]
         if not bench_bars.empty:
             bench_nav = bench_bars["close"]
             bench_comparison = compare_with_benchmark(result, bench_nav, benchmark)
@@ -176,12 +183,15 @@ def factors(
     """計算並顯示因子值。"""
     _setup_logging("WARNING")
 
-    from src.data.sources.yahoo import YahooFeed
+    from src.data.data_catalog import get_catalog
     from src.strategy import factors as f
+    import pandas as pd
 
-    console.print(f"[bold]Fetching data for {symbol}...[/bold]")
-    feed = YahooFeed()
-    bars = feed.get_bars(symbol)
+    console.print(f"[bold]Loading data for {symbol}...[/bold]")
+    _cat = get_catalog()
+    bars = _cat.get("price", symbol)
+    if not bars.empty and not isinstance(bars.index, pd.DatetimeIndex):
+        bars.index = pd.to_datetime(bars.index)
 
     if bars.empty:
         console.print("[red]No data available[/red]")
@@ -248,7 +258,7 @@ def factor_analysis(
     """因子研究分析。"""
     _setup_logging(log_level)
 
-    from src.data.sources.yahoo import YahooFeed
+    from src.data.data_catalog import get_catalog
     from src.strategy.research import (
         FACTOR_REGISTRY,
         analyze_factor,
@@ -265,16 +275,21 @@ def factor_analysis(
     console.print(f"Universe: {', '.join(universe)}")
     console.print(f"Period: {start} ~ {end}, Horizon: {horizon}d\n")
 
-    # 下載數據
+    # 載入數據
     import pandas as pd
-    yahoo = YahooFeed()
+    _cat = get_catalog()
     warmup_start = (pd.Timestamp(start) - pd.tseries.offsets.BDay(400)).strftime("%Y-%m-%d")
     data: dict[str, Any] = {}
     for sym in universe:
-        bars = yahoo.get_bars(sym, start=warmup_start, end=end)
+        bars = _cat.get("price", sym)
         if not bars.empty:
-            data[sym] = bars
-            console.print(f"  Loaded {len(bars)} bars for {sym}")
+            if not isinstance(bars.index, pd.DatetimeIndex):
+                bars.index = pd.to_datetime(bars.index)
+            bars = bars[bars.index >= pd.Timestamp(warmup_start)]
+            bars = bars[bars.index <= pd.Timestamp(end)]
+            if not bars.empty:
+                data[sym] = bars
+                console.print(f"  Loaded {len(bars)} bars for {sym}")
         else:
             console.print(f"  [yellow]No data for {sym}[/yellow]")
 

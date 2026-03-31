@@ -24,10 +24,39 @@ $bestScore = 0
 $bestFactor = "N/A"
 $total = 0; $keepN = 0; $discardN = 0; $crashN = 0; $l5N = 0; $l0N = 0; $l1N = 0; $l2N = 0; $l3N = 0; $l4N = 0
 
-# Docker mode: read from work/ (current cycle); fallback to host results.tsv (legacy)
+# Primary: learnings.jsonl (evaluator writes every experiment, most complete)
+# Fallback: results.tsv (agent writes, may miss experiments when session ends mid-cycle)
+$learningsFile = "$WatchdogData\learnings.jsonl"
 $dockerResults = "D:\Finance\docker\autoresearch\work\results.tsv"
 $resultsFile = if (Test-Path $dockerResults) { $dockerResults } else { "$ScriptDir\results.tsv" }
-if (Test-Path $resultsFile) {
+
+if (Test-Path $learningsFile) {
+    $jsonLines = Get-Content $learningsFile -Encoding UTF8 | Where-Object { $_.Trim() -ne "" }
+    $total = $jsonLines.Count
+    foreach ($jl in $jsonLines) {
+        try {
+            $entry = $jl | ConvertFrom-Json
+            $level = $entry.level
+            $passed = $entry.passed
+            $icir = $entry.icir
+            $desc = $entry.direction
+            $scoreRaw = if ($icir) { $icir } else { "none" }
+
+            if ($passed -eq $true) { $keepN++ } else { $discardN++ }
+            if ($level -eq "L0") { $l0N++ }
+            if ($level -eq "L1") { $l1N++ }
+            if ($level -eq "L2") { $l2N++ }
+            if ($level -eq "L3") { $l3N++ }
+            if ($level -eq "L4") { $l4N++ }
+            if ($level -eq "L5") { $l5N++ }
+
+            $results += [PSCustomObject]@{ Score=$scoreRaw; ICIR=$icir; Level=$level; St=$(if ($passed) {"keep"} else {"discard"}); Desc=$desc }
+        } catch {
+            $crashN++
+        }
+    }
+} elseif (Test-Path $resultsFile) {
+    # Fallback to results.tsv
     $lines = Get-Content $resultsFile -Encoding UTF8 | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne "" -and -not $_.StartsWith("#") }
     $total = $lines.Count
     foreach ($line in $lines) {
@@ -50,12 +79,6 @@ if (Test-Path $resultsFile) {
             if ($level -eq "L4") { $l4N++ }
             if ($level -eq "L5") { $l5N++ }
             if ($score -gt $bestScore) { $bestScore = $score; $bestFactor = $desc }
-            # For bucketed scores, track best by bucket rank
-            if ($score -eq 0 -and $scoreRaw -match "high|medium|low") {
-                $bucketRank = @{"high"=3;"medium"=2;"low"=1;"none"=0}
-                $rank = if ($bucketRank.ContainsKey($scoreRaw)) { $bucketRank[$scoreRaw] } else { 0 }
-                if ($rank -gt $bestScore) { $bestScore = $rank; $bestFactor = "$desc (score=$scoreRaw)" }
-            }
             $results += [PSCustomObject]@{ Score=$scoreRaw; ICIR=$icir; Level=$level; St=$st; Desc=$desc }
         }
     }

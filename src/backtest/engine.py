@@ -630,67 +630,98 @@ class BacktestEngine:
     def _load_dividends(
         self, config: BacktestConfig
     ) -> dict[str, dict[str, float]]:
-        """載入所有標的的股利數據。"""
-        from src.data.sources.yahoo import YahooFeed
+        """載入所有標的的股利數據。DataCatalog first, Yahoo fallback."""
+        from src.data.data_catalog import get_catalog
 
-        yahoo = YahooFeed(config.universe)
+        catalog = get_catalog()
         result: dict[str, dict[str, float]] = {}
         for symbol in config.universe:
-            divs = yahoo.get_dividends(symbol, config.start, config.end)
-            if divs:
-                result[symbol] = divs
-                logger.info("Loaded %d dividend events for %s", len(divs), symbol)
+            df = catalog.get("dividend", symbol)
+            if not df.empty and "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                # Filter to backtest range
+                mask = (df["date"] >= config.start) & (df["date"] <= config.end)
+                filtered = df[mask]
+                if not filtered.empty and "amount" in filtered.columns:
+                    divs = {
+                        row["date"].strftime("%Y-%m-%d"): float(row["amount"])
+                        for _, row in filtered.iterrows()
+                        if row.get("amount", 0) > 0
+                    }
+                    if divs:
+                        result[symbol] = divs
         return result
 
     def _load_data(
         self, config: BacktestConfig
     ) -> tuple[HistoricalFeed, set[str], FundamentalsProvider | None]:
-        """下載數據並載入 HistoricalFeed，使用配置的數據源。"""
-        from src.core.config import get_config
+        """Load data into HistoricalFeed — DataCatalog first, Yahoo fallback.
 
-        cfg = get_config()
-        source = cfg.data_source
-        source_kwargs: dict[str, object] = {}
-        if source == "finmind":
-            source_kwargs["token"] = cfg.finmind_token
+        DataCatalog reads from local parquets (yahoo/ finmind/ twse/ finlab/),
+        which is instant. Only falls back to Yahoo download for symbols not
+        found locally (e.g. US stocks or missing data).
+        """
+        from src.data.data_catalog import get_catalog
 
-        # 存活者偏差警告（僅 Yahoo 數據源）
-        if source == "yahoo":
-            logger.warning(
-                "Yahoo Finance data may exhibit survivorship bias — only currently listed "
-                "symbols are available. Consider using a point-in-time dataset for "
-                "production research."
-            )
-
-        warmup_days = 400
-        warmup_start = (
-            pd.Timestamp(config.start) - pd.tseries.offsets.BDay(warmup_days)
-        ).strftime("%Y-%m-%d")
-
-        data_feed = create_feed(source, config.universe, **source_kwargs)
+        catalog = get_catalog()
         feed = HistoricalFeed()
         all_suspect_dates: set[str] = set()
+        loaded_from_catalog = 0
+        missing_symbols: list[str] = []
 
         for symbol in config.universe:
-            df = data_feed.get_bars(symbol, start=warmup_start, end=config.end)
-            if not df.empty:
+            df = catalog.get("price", symbol)
+            if not df.empty and "close" in df.columns:
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index)
+
                 qr = check_bars(df, symbol)
                 if qr.suspect_dates:
                     all_suspect_dates.update(qr.suspect_dates)
-                    logger.warning("Quality suspect dates for %s: %s", symbol, qr.suspect_dates)
                 if not qr.ok:
                     logger.warning("Quality issues for %s: %s", symbol, qr.issues)
 
                 # Replace zero/negative close with NaN (data corruption guard)
-                if "close" in df.columns:
-                    df["close"] = df["close"].where(df["close"] > 0)
-                    df["close"] = df["close"].ffill()  # fill gaps from zeroed days
+                df["close"] = df["close"].where(df["close"] > 0)
+                df["close"] = df["close"].ffill()
                 feed.load(symbol, df)
-                logger.info("Loaded %d bars for %s (warmup from %s)", len(df), symbol, warmup_start)
+                loaded_from_catalog += 1
             else:
-                logger.warning("No data for %s, skipping", symbol)
+                missing_symbols.append(symbol)
 
-        fundamentals = create_fundamentals(source, **source_kwargs)
+        # Fallback: download missing symbols from Yahoo (non-TW stocks, new symbols)
+        if missing_symbols:
+            from src.core.config import get_config
+            cfg = get_config()
+            source = cfg.data_source
+            source_kwargs: dict[str, object] = {}
+            if source == "finmind":
+                source_kwargs["token"] = cfg.finmind_token
+
+            warmup_days = 400
+            warmup_start = (
+                pd.Timestamp(config.start) - pd.tseries.offsets.BDay(warmup_days)
+            ).strftime("%Y-%m-%d")
+
+            try:
+                data_feed = create_feed(source, missing_symbols, **source_kwargs)
+                for symbol in missing_symbols:
+                    df = data_feed.get_bars(symbol, start=warmup_start, end=config.end)
+                    if not df.empty:
+                        if "close" in df.columns:
+                            df["close"] = df["close"].where(df["close"] > 0)
+                            df["close"] = df["close"].ffill()
+                        feed.load(symbol, df)
+            except Exception as e:
+                logger.warning("Yahoo fallback failed for %d symbols: %s", len(missing_symbols), e)
+
+        logger.info("Loaded %d symbols from DataCatalog, %d from Yahoo fallback",
+                    loaded_from_catalog, len(feed.get_universe()) - loaded_from_catalog)
+
+        fundamentals = create_fundamentals(
+            get_config().data_source if 'cfg' not in dir() else cfg.data_source,
+            **(source_kwargs if 'source_kwargs' in dir() else {}),
+        )
 
         return feed, all_suspect_dates, fundamentals
 

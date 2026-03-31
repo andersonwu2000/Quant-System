@@ -517,26 +517,51 @@ class SinopacBroker(BrokerAdapter):
     def _find_broker_id_for_deal(self, msg: dict[str, Any]) -> str:
         """從成交回報中找到對應的 broker_order_id。
 
-        LT-4: 同 symbol 多筆 pending → 拒絕匹配（避免歸錯）。
+        Shioaji StockDeal 不帶 order_id，只有 code/price/quantity。
+        Strategy:
+          1. 找同 symbol 的所有 pending orders
+          2. 只有 1 筆 → 直接匹配
+          3. 多筆 → 用 price 接近度匹配（限價單的 order.price 應接近 deal price）
+          4. 仍然模糊 → 選最早提交的（FIFO）
         """
         code = msg.get("code", "")
+        deal_price = Decimal(str(msg.get("price", 0)))
         matches = []
         with self._lock:
             for bid, order in self._order_map.items():
                 if order.instrument.symbol == code and order.status in (
                     OrderStatus.SUBMITTED, OrderStatus.PARTIAL
                 ):
-                    matches.append(bid)
-        if len(matches) == 1:
-            return matches[0]
-        if len(matches) > 1:
-            logger.warning(
-                "LT-4: %d pending orders for %s — refusing to match (ambiguous). "
-                "Manual reconciliation needed. broker_ids=%s",
-                len(matches), code, matches,
-            )
+                    matches.append((bid, order))
+        if len(matches) == 0:
             return ""
-        return ""
+        if len(matches) == 1:
+            return matches[0][0]
+
+        # Multiple pending for same symbol — match by price proximity
+        if deal_price > 0:
+            best_bid = ""
+            best_diff = Decimal("999999")
+            for bid, order in matches:
+                if order.price and order.price > 0:
+                    diff = abs(order.price - deal_price)
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_bid = bid
+            if best_bid and best_diff / deal_price < Decimal("0.02"):  # within 2%
+                logger.info(
+                    "LT-4: %d pending for %s — matched by price proximity: %s (diff=%.2f%%)",
+                    len(matches), code, best_bid, float(best_diff / deal_price * 100),
+                )
+                return best_bid
+
+        # Fallback: FIFO (earliest submitted)
+        earliest_bid = matches[0][0]
+        logger.warning(
+            "LT-4: %d pending for %s — FIFO fallback to %s (price matching failed)",
+            len(matches), code, earliest_bid,
+        )
+        return earliest_bid
 
     # ── 斷線重連 ──────────────────────────────────────────
 

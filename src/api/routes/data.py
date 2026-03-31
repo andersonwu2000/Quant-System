@@ -37,11 +37,17 @@ async def check_data_quality(
 ) -> QualityCheckResponse:
     """Validate OHLCV data quality for a symbol."""
     try:
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
         from src.data.quality import check_bars_with_dividends, detect_halted_dates
 
-        feed = YahooFeed()
-        bars = feed.get_bars(req.symbol, start=req.start, end=req.end)
+        catalog = get_catalog()
+        bars = catalog.get("price", req.symbol)
+        if not bars.empty and not isinstance(bars.index, pd.DatetimeIndex):
+            bars.index = pd.to_datetime(bars.index)
+        if not bars.empty and req.start:
+            bars = bars[bars.index >= pd.Timestamp(req.start)]
+        if not bars.empty and req.end:
+            bars = bars[bars.index <= pd.Timestamp(req.end)]
         if bars.empty:
             raise HTTPException(status_code=404, detail=f"No data for {req.symbol}")
 

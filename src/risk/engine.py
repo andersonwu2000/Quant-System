@@ -169,20 +169,26 @@ class RiskEngine:
 
         return alerts
 
-    def kill_switch(self, portfolio: Portfolio) -> bool:
+    def kill_switch(self, portfolio: Portfolio, threshold: float = 0.0) -> bool:
         """
         熔斷檢查：是否需要緊急停止。
         返回 True = 觸發熔斷。
+
+        Args:
+            threshold: Drawdown threshold to trigger (0.0 = use config default).
+                       Caller should pass config.max_daily_drawdown_pct.
 
         注意：此方法只做判斷，不執行清倉。
         回測引擎用 _execute_kill_switch() 清倉。
         實盤管線需自行呼叫 liquidate_all() 或等效操作。
         """
         dd = float(portfolio.daily_drawdown)
-        if dd > 0.05:  # 5% daily drawdown kill switch (config 3% is warning threshold)
-            logger.critical("KILL SWITCH TRIGGERED: daily drawdown %.2f%%", dd * 100)
+        trigger = threshold if threshold > 0 else 0.05
+        if dd > trigger:
+            logger.critical("KILL SWITCH TRIGGERED: daily drawdown %.2f%% > %.1f%%",
+                          dd * 100, trigger * 100)
             self._record_alert(
-                "kill_switch", f"日回撤 {dd:.2%} 觸發熔斷", Severity.EMERGENCY
+                "kill_switch", f"日回撤 {dd:.2%} 觸發熔斷（門檻 {trigger:.1%}）", Severity.EMERGENCY
             )
             return True
         return False

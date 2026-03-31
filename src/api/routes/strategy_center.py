@@ -243,7 +243,9 @@ async def trigger_rebalance(
 
 async def _do_rebalance(state: Any, config: Any) -> dict[str, Any]:
     """Rebalance implementation (called under mutation_lock)."""
-    from src.data.sources import create_feed, create_fundamentals
+    from src.data.data_catalog import get_catalog
+    from src.data.feed import HistoricalFeed
+    from src.data.sources import create_fundamentals
     from src.strategy.base import Context
     from src.strategy.engine import weights_to_orders
     from src.strategy.registry import resolve_strategy
@@ -253,14 +255,20 @@ async def _do_rebalance(state: Any, config: Any) -> dict[str, Any]:
 
         # Universe: from portfolio positions or market data
         universe = list(state.portfolio.positions.keys())
+        cat = get_catalog()
         if not universe:
-            cat = get_catalog()
             universe = sorted(
                 s for s in cat.available_symbols("price")
                 if ".TW" in s and not s.startswith("00")
             )[:200]  # limit for speed
 
-        feed = create_feed(config.data_source, universe)
+        feed = HistoricalFeed()
+        for sym in universe:
+            df = cat.get("price", sym)
+            if not df.empty:
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index)
+                feed.load(sym, df)
         fundamentals = create_fundamentals(config.data_source)
 
         from datetime import datetime

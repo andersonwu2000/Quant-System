@@ -450,9 +450,18 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     if gate.warnings:
         logger.warning("Quality gate warnings: %s", gate.warnings)
 
-    # 2. 建立 Context（數據更新後建立 feed，確保用最新數據）
+    # 2. 建立 Context（用 DataCatalog 讀本地數據，refresh 已在上面更新過）
 
-    feed = create_feed(config.data_source, universe)
+    from src.data.data_catalog import get_catalog
+    from src.data.feed import HistoricalFeed
+    _catalog = get_catalog()
+    feed = HistoricalFeed()
+    for _sym in universe:
+        _df = _catalog.get("price", _sym)
+        if not _df.empty and "close" in _df.columns:
+            if not isinstance(_df.index, pd.DatetimeIndex):
+                _df.index = pd.to_datetime(_df.index)
+            feed.load(_sym, _df)
     fundamentals = create_fundamentals(config.data_source)
     # 用 tz-naive 當前時間（和 backtest Context 一致，避免 tz-aware vs tz-naive 衝突）
     import datetime as _dt
@@ -628,6 +637,27 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         )
         if trades:
             _save_trade_log(trades, strategy.name(), signal_prices=prices)
+
+        # Live mode: wait for async fills (SinopacBroker fills via background callback)
+        if config.mode == "live" and not trades:
+            import asyncio as _aio
+            n_orders = len(target_weights)
+            if n_orders > 0:
+                logger.info("Live mode: waiting up to 60s for %d async fills...", n_orders)
+                for _ in range(12):  # 12 × 5s = 60s max
+                    await _aio.sleep(5)
+                    # Check ledger for today's fills
+                    try:
+                        from src.execution.trade_ledger import get_today_entries
+                        fills = [e for e in get_today_entries() if e.get("type") == "fill"]
+                        if len(fills) >= n_orders:
+                            logger.info("Live mode: %d/%d fills received", len(fills), n_orders)
+                            break
+                    except Exception:
+                        pass
+                else:
+                    logger.warning("Live mode: timeout waiting for fills (%d orders submitted)", n_orders)
+
         # #9: log rejected orders (SimBroker rejects missing current_bars)
         if hasattr(_broker, 'rejected_log') and _broker.rejected_log:
             for rej in _broker.rejected_log:
@@ -850,22 +880,21 @@ async def update_portfolio_market_prices() -> None:
     enabling correct daily_drawdown / kill_switch calculation.
     """
     from src.api.state import get_app_state, save_portfolio
-    from src.data.sources import create_feed
+    from src.data.data_catalog import get_catalog
     from decimal import Decimal
 
     state = get_app_state()
     if not state.portfolio.positions:
         return
 
-    universe = list(state.portfolio.positions.keys())
-    feed = create_feed("yahoo", universe)
+    catalog = get_catalog()
     updated = 0
 
     for sym, pos in state.portfolio.positions.items():
         try:
-            bars = feed.get_bars(sym, start=None, end=None)
-            if bars is not None and len(bars) >= 1:
-                latest_close = Decimal(str(float(bars["close"].iloc[-1])))
+            df = catalog.get("price", sym)
+            if not df.empty and "close" in df.columns:
+                latest_close = Decimal(str(float(df["close"].iloc[-1])))
                 if latest_close > 0:
                     pos.market_price = latest_close
                     updated += 1

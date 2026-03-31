@@ -106,7 +106,8 @@ def create_app() -> FastAPI:
             loop = asyncio.get_running_loop()
 
             # LT-7: set_portfolio BEFORE initialize (connect may trigger fill callbacks)
-            state.execution_service.set_portfolio(state.portfolio, loop)
+            # Pass mutation_lock so async fills don't race with API rebalance
+            state.execution_service.set_portfolio(state.portfolio, loop, state.mutation_lock)
 
         state.execution_service.initialize()
         logger.info("ExecutionService initialized: mode=%s", config.mode)
@@ -180,7 +181,20 @@ def create_app() -> FastAPI:
                     except Exception:
                         logger.debug("ShioajiFeed init failed, falling back to config feed", exc_info=True)
 
-                from src.data.sources import create_feed as _create_feed
+                from src.data.data_catalog import get_catalog
+                from src.data.feed import HistoricalFeed
+                import pandas as pd
+
+                def _build_catalog_feed(symbols: list[str]) -> HistoricalFeed:
+                    catalog = get_catalog()
+                    feed = HistoricalFeed()
+                    for sym in symbols:
+                        df = catalog.get("price", sym)
+                        if not df.empty:
+                            if not isinstance(df.index, pd.DatetimeIndex):
+                                df.index = pd.to_datetime(df.index)
+                            feed.load(sym, df)
+                    return feed
 
                 async def _price_poll_loop() -> None:
                     """Poll latest prices every 60s when ticks unavailable."""
@@ -192,19 +206,19 @@ def create_app() -> FastAPI:
                             syms = sorted(state.portfolio.positions.keys())
                             if not syms:
                                 continue
-                            # If no ShioajiFeed, fallback to config feed (Yahoo/FinMind)
+                            # If no ShioajiFeed, fallback to catalog feed
                             if _cached_feed is None or syms != _cached_syms:
                                 if _poll_feed_source is not None:
                                     _cached_feed = _poll_feed_source
                                 else:
-                                    _cached_feed = _create_feed(config.data_source, syms)
+                                    _cached_feed = _build_catalog_feed(syms)
                                 _cached_syms = syms
                             if _cached_feed is not None:
                                 n_updated = realtime_risk.poll_prices_from_feed(_cached_feed)
-                                # ShioajiFeed 失敗 → fallback 到 Yahoo/FinMind
+                                # ShioajiFeed 失敗 → fallback 到 catalog feed
                                 if n_updated == 0 and _poll_feed_source is not None and _cached_feed is _poll_feed_source:
-                                    logger.warning("ShioajiFeed returned 0 prices — falling back to Yahoo")
-                                    _cached_feed = _create_feed(config.data_source, syms)
+                                    logger.warning("ShioajiFeed returned 0 prices — falling back to catalog")
+                                    _cached_feed = _build_catalog_feed(syms)
                                     _cached_syms = syms
                                     if _cached_feed is not None:
                                         realtime_risk.poll_prices_from_feed(_cached_feed)
@@ -325,7 +339,7 @@ def create_app() -> FastAPI:
                     if state.kill_switch_fired:
                         continue
 
-                    if state.risk_engine.kill_switch(state.portfolio):
+                    if state.risk_engine.kill_switch(state.portfolio, config.max_daily_drawdown_pct):
                         # B-7 fix: set flag and re-check inside lock to prevent double liquidation
                         async with state.mutation_lock:
                             if state.kill_switch_fired:

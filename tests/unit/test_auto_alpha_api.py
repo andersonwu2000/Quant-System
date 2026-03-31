@@ -125,9 +125,9 @@ async def test_start_and_stop(client: AsyncClient):
     assert resp.status_code == 200
     assert "stopped" in resp.json()["message"]
 
-    # Stopping again should conflict
+    # Stopping again is idempotent (returns 200, not 409)
     resp = await client.post("/api/v1/auto-alpha/stop", headers=AUTH_HEADERS)
-    assert resp.status_code == 409
+    assert resp.status_code == 200
 
 
 # ── GET /status ──────────────────────────────────────────────

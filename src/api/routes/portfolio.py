@@ -269,18 +269,25 @@ async def rebalance_preview(
     tax_rate = req.tax_rate if req.tax_rate is not None else config.tax_rate
 
     def _compute() -> RebalancePreviewResponse:
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
+        from src.data.feed import HistoricalFeed
         from src.strategy.base import Context
         from src.strategy.engine import weights_to_orders
         from src.strategy.registry import resolve_strategy
+        import pandas as pd
 
         # Resolve strategy
         strategy = resolve_strategy(req.strategy, req.params)
 
-        # Fetch current prices for the universe
-        feed = YahooFeed(universe=req.universes)
+        # Load prices from local parquets
+        catalog = get_catalog()
+        feed = HistoricalFeed()
         for symbol in req.universes:
-            feed.get_bars(symbol)
+            df = catalog.get("price", symbol)
+            if not df.empty:
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index)
+                feed.load(symbol, df)
 
         # Build context and run strategy
         ctx = Context(feed=feed, portfolio=portfolio)
@@ -387,16 +394,23 @@ class OptimizeResponse(BaseModel):
 async def optimize_portfolio(req: OptimizeRequest, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("researcher"))) -> OptimizeResponse:
     """Run portfolio optimization with specified method."""
     try:
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
         from src.portfolio.optimizer import PortfolioOptimizer, OptimizerConfig, OptimizationMethod
         import pandas as pd
 
-        feed = YahooFeed(universe=req.symbols)
+        catalog = get_catalog()
         returns_data = {}
         for sym in req.symbols:
-            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            bars = catalog.get("price", sym)
             if not bars.empty:
-                returns_data[sym] = bars["close"].pct_change().dropna()
+                if not isinstance(bars.index, pd.DatetimeIndex):
+                    bars.index = pd.to_datetime(bars.index)
+                if req.start:
+                    bars = bars[bars.index >= pd.Timestamp(req.start)]
+                if req.end:
+                    bars = bars[bars.index <= pd.Timestamp(req.end)]
+                if not bars.empty:
+                    returns_data[sym] = bars["close"].pct_change().dropna()
 
         if len(returns_data) < 2:
             raise HTTPException(status_code=400, detail="Need at least 2 symbols with data")
@@ -445,16 +459,23 @@ class RiskAnalysisResponse(BaseModel):
 async def portfolio_risk_analysis(req: RiskAnalysisRequest, api_key: str = Depends(verify_api_key), _role: dict[str, Any] = Depends(require_role("researcher"))) -> RiskAnalysisResponse:
     """Compute portfolio risk metrics."""
     try:
-        from src.data.sources.yahoo import YahooFeed
+        from src.data.data_catalog import get_catalog
         from src.portfolio.risk_model import RiskModel, RiskModelConfig
         import pandas as pd
 
-        feed = YahooFeed(universe=req.symbols)
+        catalog = get_catalog()
         returns_data = {}
         for sym in req.symbols:
-            bars = feed.get_bars(sym, start=req.start, end=req.end)
+            bars = catalog.get("price", sym)
             if not bars.empty:
-                returns_data[sym] = bars["close"].pct_change().dropna()
+                if not isinstance(bars.index, pd.DatetimeIndex):
+                    bars.index = pd.to_datetime(bars.index)
+                if req.start:
+                    bars = bars[bars.index >= pd.Timestamp(req.start)]
+                if req.end:
+                    bars = bars[bars.index <= pd.Timestamp(req.end)]
+                if not bars.empty:
+                    returns_data[sym] = bars["close"].pct_change().dropna()
 
         returns_df = pd.DataFrame(returns_data).dropna()
         if returns_df.empty:
