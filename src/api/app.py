@@ -458,6 +458,9 @@ def create_app() -> FastAPI:
     app.include_router(data.router, prefix="/api/v1")
     app.include_router(scheduler_routes.router, prefix="/api/v1")
 
+    from src.api.routes import ops
+    app.include_router(ops.router, prefix="/api/v1")
+
     # WebSocket 端點（需要 token 認證）
     @app.websocket("/ws/{channel}")
     async def websocket_endpoint(
