@@ -166,14 +166,26 @@ class TestFactory:
     def test_auto_detect_line(self) -> None:
         from src.core.config import TradingConfig
 
-        cfg = TradingConfig(line_notify_token="tok")
+        # Explicitly clear discord so line is auto-detected
+        cfg = TradingConfig(
+            line_notify_token="tok",
+            discord_webhook_url="",
+            notify_provider="",
+        )
         n = create_notifier(cfg)
         assert isinstance(n, LineNotifier)
 
     def test_no_config_returns_null(self) -> None:
         from src.core.config import TradingConfig
 
-        cfg = TradingConfig()
+        # Explicitly clear all notification providers
+        cfg = TradingConfig(
+            discord_webhook_url="",
+            line_notify_token="",
+            telegram_bot_token="",
+            telegram_chat_id="",
+            notify_provider="",
+        )
         n = create_notifier(cfg)
         assert n.is_configured() is False
 

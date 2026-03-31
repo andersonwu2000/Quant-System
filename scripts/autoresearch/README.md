@@ -29,7 +29,7 @@ Docker 3-container design:
 | `results.tsv` | work/ | Agent RW | Experiment log (one row per experiment) |
 | `evaluate.py` | evaluator container | READ ONLY | L0-L5 gates + large-scale IC + dedup + OOS |
 | `program.md` | agent container | READ ONLY | Research protocol |
-| `watchdog.py` | watchdog container | — | Validator (16 checks) + Factor-Level PBO |
+| `watchdog.py` | watchdog container | — | Validator (17 checks) + Factor-Level PBO |
 
 ## Usage
 

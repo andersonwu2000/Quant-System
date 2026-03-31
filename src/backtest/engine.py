@@ -116,6 +116,7 @@ class BacktestEngine:
         self._volume_matrix = pd.DataFrame()
         self._col_index_cache: dict[int, dict[str, int]] = {}  # matrix id → column→index
         self._last_rebalance_month = -1
+        self._last_rebalance_week = -1
         self._bar_cache = _BarCache()
 
         run_id = uuid.uuid4().hex[:8]
@@ -435,6 +436,14 @@ class BacktestEngine:
                     instrument=Instrument(symbol=symbol),
                     side=Side.SELL,
                     quantity=pos.quantity,
+                    price=prices.get(symbol, Decimal("0")),
+                ))
+            elif pos.quantity < 0:
+                liquidation_orders.append(Order(
+                    id=uuid.uuid4().hex[:12],
+                    instrument=Instrument(symbol=symbol),
+                    side=Side.BUY,
+                    quantity=abs(pos.quantity),
                     price=prices.get(symbol, Decimal("0")),
                 ))
         if liquidation_orders:
@@ -887,7 +896,11 @@ class BacktestEngine:
         if freq == "daily":
             return True
         elif freq == "weekly":
-            return bar_date.weekday() == 0 or idx == 0
+            week_key = bar_date.isocalendar()[1]
+            if idx == 0 or week_key != self._last_rebalance_week:
+                self._last_rebalance_week = week_key
+                return True
+            return False
         elif freq == "monthly":
             month_key = bar_date.year * 100 + bar_date.month
             if idx == 0 or month_key != self._last_rebalance_month:

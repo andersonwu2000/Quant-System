@@ -73,8 +73,8 @@ def _read_last_date_fast(path: Path) -> date | None:
         last_date_bytes = schema_meta.get(b"last_date")
         if last_date_bytes:
             return date.fromisoformat(last_date_bytes.decode())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to read metadata from %s: %s", path, e)
 
     # Fallback: read only the index to get max date
     try:
@@ -196,7 +196,7 @@ def pre_trade_quality_gate(
             prev_row = df.iloc[-2]
 
             # Daily return > 11% (TW limit is 10%, 11% allows for rounding)
-            if prev_row["close"] > 0:
+            if prev_row["close"] > 0 and last_row["close"] > 0:
                 daily_ret = abs(last_row["close"] / prev_row["close"] - 1)
                 if daily_ret > 0.11:
                     anomalous_symbols.append(sym)

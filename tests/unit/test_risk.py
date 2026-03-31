@@ -44,14 +44,15 @@ class TestMaxPositionWeight:
         result = rule(order, portfolio, market)
         assert result.approved
 
-    def test_reject_over_limit(self):
+    def test_modify_over_limit(self):
         rule = max_position_weight(0.05)
         portfolio = _make_portfolio(1_000_000)
-        order = _make_order("A", qty=1000, price=100)  # 100K / 1M = 10%
+        order = _make_order("A", qty=1000, price=100)  # 100K / 1M = 10% → cap to 5%
         market = MarketState(prices={}, daily_volumes={})
         result = rule(order, portfolio, market)
-        assert not result.approved
-        assert "權重" in result.reason
+        assert result.approved
+        assert result.modified_qty is not None
+        assert float(result.modified_qty) <= 500  # 50K / 1M = 5%
 
 
 class TestMaxOrderNotional:
@@ -110,27 +111,27 @@ class TestRiskEngine:
         result = engine.check_order(order, portfolio)
         assert result.approved
 
-    def test_first_reject_stops(self):
+    def test_first_rule_modifies(self):
         engine = RiskEngine(rules=[
-            max_position_weight(0.01),  # 會擋
-            max_order_notional(0.10),   # 不會到這
+            max_position_weight(0.01),  # 會 cap qty
+            max_order_notional(0.10),   # 也會檢查
         ])
         portfolio = _make_portfolio(1_000_000)
-        order = _make_order("A", qty=500, price=100)
+        order = _make_order("A", qty=500, price=100)  # 50K / 1M = 5% → cap to 1%
         result = engine.check_order(order, portfolio)
-        assert not result.approved
+        assert result.approved
+        # qty should have been modified down
+        assert order.quantity <= Decimal("100")  # 10K / 1M = 1%
 
-    def test_check_orders_filters(self):
+    def test_check_orders_modifies_oversized(self):
         engine = RiskEngine(rules=[max_position_weight(0.05)])
         portfolio = _make_portfolio(1_000_000)
         orders = [
-            _make_order("A", qty=100, price=100),   # 1% → pass
-            _make_order("B", qty=1000, price=100),   # 10% → fail
-            _make_order("C", qty=200, price=100),    # 2% → pass
+            _make_order("A", qty=100, price=100),   # 1% → pass as-is
+            _make_order("B", qty=1000, price=100),   # 10% → capped to 5%
+            _make_order("C", qty=200, price=100),    # 2% → pass as-is
         ]
         approved = engine.check_orders(orders, portfolio)
-        assert len(approved) == 2
-        symbols = [o.instrument.symbol for o in approved]
-        assert "A" in symbols
-        assert "C" in symbols
-        assert "B" not in symbols
+        assert len(approved) == 3  # all pass (B is capped, not rejected)
+        b_order = [o for o in approved if o.instrument.symbol == "B"][0]
+        assert b_order.quantity <= Decimal("500")  # capped to 5%

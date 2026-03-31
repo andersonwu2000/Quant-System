@@ -90,6 +90,7 @@ data["revenue"][symbol]         # pd.DataFrame: date, revenue, yoy_growth (month
 data["institutional"][symbol]   # pd.DataFrame: date, trust_net, foreign_net, dealer_net (daily)
 data["per_history"][symbol]     # pd.DataFrame: date, PER, PBR, dividend_yield (daily since 2019)
 data["margin"][symbol]          # pd.DataFrame: date, MarginPurchaseTodayBalance, ShortSaleTodayBalance, ... (daily)
+data["market_cap"][symbol]      # DISABLED (look-ahead bias) — use close × volume as size proxy
 data["pe"][symbol]              # DISABLED (look-ahead bias) — use per_history instead
 data["pb"][symbol]              # DISABLED — use per_history instead
 data["roe"][symbol]             # DISABLED — no time series available

@@ -38,6 +38,18 @@ curl http://localhost:8000/api/v1/auto-alpha/status -H "X-API-KEY: dev-key"
 # 啟動研究循環（容器啟動後）
 powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1
 ```
+  # 1. Rebuild（約 1-2 分鐘）
+  cd docker/autoresearch
+  docker compose build
+
+  # 2. 啟動 server
+  cd ../..
+  python -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000 --reload
+
+  # 3. 啟動 autoresearch（另一個終端）
+  Invoke-RestMethod -Method POST -Uri http://localhost:8000/api/v1/auto-alpha/start -Headers @{"X-API-KEY"="dev-key"} 
+  powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1
+
 
 ### 方式二：手動 Docker（不需要 API server）
 

@@ -88,7 +88,7 @@ class TestRunFullCycle:
 
     def test_full_cycle_with_mocks(self) -> None:
         """Full cycle executes all 4 stages."""
-        cfg = AutoAlphaConfig()
+        cfg = AutoAlphaConfig(backtest_gate_enabled=False)
 
         # Mock universe selector
         universe_selector = MagicMock(spec=UniverseSelector)

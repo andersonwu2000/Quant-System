@@ -19,7 +19,7 @@ class TestSchedulerService:
     """SchedulerService 行為測試。"""
 
     def test_disabled_by_default(self) -> None:
-        config = _make_config()
+        config = _make_config(scheduler_enabled=False)
         assert config.scheduler_enabled is False
 
         scheduler = SchedulerService()

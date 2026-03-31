@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from src.core.models import Order, Trade
+from src.core.models import Order, Side, Trade
 from src.portfolio.risk_model import RiskModel
 
 
@@ -410,19 +410,32 @@ def _trade_stats(trades: list[Trade]) -> tuple[float, float]:
     if not trades:
         return 0.0, 0.0
 
-    # 簡化：按 symbol 配對 BUY/SELL 計算 PnL
-    # 這裡用簡單的方式：假設所有 BUY 後都有 SELL
+    # FIFO matching: track (price, remaining_qty) per symbol
     pnls: list[float] = []
-    open_positions: dict[str, list[float]] = {}
+    open_positions: dict[str, list[list[float]]] = {}  # {sym: [[price, qty], ...]}
 
     for t in trades:
         symbol = t.symbol
         if t.side.value == "BUY":
-            open_positions.setdefault(symbol, []).append(float(t.price))
+            open_positions.setdefault(symbol, []).append([float(t.price), float(t.quantity)])
         elif t.side.value == "SELL" and symbol in open_positions and open_positions[symbol]:
-            buy_price = open_positions[symbol].pop(0)
-            pnl = (float(t.price) - buy_price) * float(t.quantity) - float(t.commission)
-            pnls.append(pnl)
+            sell_qty = float(t.quantity)
+            sell_price = float(t.price)
+            commission = float(t.commission)
+            # Consume buy lots FIFO until sell_qty is exhausted
+            while sell_qty > 0 and open_positions[symbol]:
+                lot = open_positions[symbol][0]
+                buy_price, buy_qty = lot
+                matched = min(sell_qty, buy_qty)
+                pnl = (sell_price - buy_price) * matched
+                pnls.append(pnl)
+                sell_qty -= matched
+                lot[1] -= matched
+                if lot[1] <= 1e-9:
+                    open_positions[symbol].pop(0)
+            # Attribute commission to last matched pnl
+            if pnls and commission > 0:
+                pnls[-1] -= commission
 
     if not pnls:
         return 0.0, 0.0
@@ -434,12 +447,18 @@ def _trade_stats(trades: list[Trade]) -> tuple[float, float]:
 
 
 def _estimate_turnover(trades: list[Trade], nav: float, n_days: int) -> float:
-    """估算年化換手率。"""
+    """估算年化換手率（單邊）。
+
+    Convention: single-sided turnover = min(buy_value, sell_value) / avg_nav / n_years.
+    This matches industry standard and ensures Validator thresholds are calibrated correctly.
+    """
     if not trades or nav <= 0 or n_days <= 0:
         return 0.0
-    total_traded = sum(float(t.quantity * t.price) for t in trades)
-    daily_turnover = total_traded / nav / n_days
-    return daily_turnover * 252
+    buy_value = sum(float(t.quantity * t.price) for t in trades if t.side == Side.BUY)
+    sell_value = sum(float(t.quantity * t.price) for t in trades if t.side == Side.SELL)
+    one_sided = min(buy_value, sell_value)
+    n_years = n_days / 252
+    return one_sided / nav / n_years if n_years > 0 else 0.0
 
 
 def _empty_result(name: str, cash: float) -> BacktestResult:

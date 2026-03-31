@@ -70,3 +70,19 @@
 53. PBO v1: noise perturbation 不是 CSCV — 假策略（加噪音）不等於真策略變體（validator.py）
 54. PBO v2: N 定義錯誤 — 用 10 個 portfolio construction 變體做 N，但 Bailey 定義 N = 所有測試過的因子。測的是 portfolio sensitivity 不是 factor selection overfitting（validator.py）
 55. PBO v3: 加速了錯誤的計算 — 向量化讓 v2 更快但沒修正 N 的定義。三次實作三次錯，根因是沒讀原論文就實作（vectorized.py, validator.py）
+
+## 2026-03-31 Bug Hunt（7 個）
+
+### 回測引擎
+56. Trade PnL matching 不管數量 — `_trade_stats` 的 FIFO 只存 price 不存 qty，pop(0) 忽略數量匹配。2 筆 BUY 各 100 股 + 1 筆 SELL 200 股 → 用第一筆買價乘 200 股，勝率和平均盈虧失真（analytics.py）
+57. Kill switch 不清空頭 — `_execute_kill_switch` 只檢查 `quantity > 0`，空頭持倉在熔斷後仍暴露（engine.py）
+58. Weekly rebalance 假日跳過 — `_is_rebalance_day` 硬編碼 `weekday == 0`，週一休市則整週跳過再平衡（engine.py）
+59. Turnover 用雙邊定義 — `_estimate_turnover` 用 total_traded（買+賣），Validator 的 0.80 門檻在雙邊下過嚴（analytics.py）
+
+### 執行層
+60. weights_to_orders 字母排序先買後賣 — 滿倉換股時先處理 BUY 導致資金不足被拒，SELL 釋放的資金來不及用（strategy/engine.py）
+61. max_position_weight all-or-nothing — 5.1% 超過 5.0% 整單 REJECT 而非 cap 到限制值，已有 MODIFY API 但規則沒用（rules.py）
+62. SimBroker 不檢查零股時段 — simulation 模式不檢查 09:10-13:30，paper trading 可在任何時間「成交」零股（simulated.py）
+
+### Autoresearch
+63. market_cap look-ahead bias — `_mask_data` 直傳最新 market_cap（close × shares_issued）未做 PIT 截斷，agent 用 size 因子有前視偏差（evaluate.py）

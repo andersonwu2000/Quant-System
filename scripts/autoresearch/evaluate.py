@@ -407,7 +407,9 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
         "pe": {},
         "pb": {},
         "roe": {},
-        "market_cap": data.get("market_cap", {}),
+        # market_cap is a latest-only snapshot (close × shares_issued) → look-ahead bias.
+        # Disabled same as pe/pb/roe. Agent should use bars close × volume as size proxy.
+        "market_cap": {},
     }
     return masked
 

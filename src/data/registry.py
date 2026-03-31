@@ -244,8 +244,8 @@ def all_source_paths(symbol: str, dataset: str) -> list[tuple[str, Path]]:
 
 
 def _source_name_to_dir(source: str) -> Path:
-    return {"yahoo": YAHOO_DIR, "finmind": FINMIND_DIR, "twse": TWSE_DIR}[source]
+    return {"yahoo": YAHOO_DIR, "finmind": FINMIND_DIR, "twse": TWSE_DIR, "finlab": FINLAB_DIR}[source]
 
 
 def _dir_to_source_name(d: Path) -> str:
-    return {YAHOO_DIR: "yahoo", FINMIND_DIR: "finmind", TWSE_DIR: "twse"}.get(d, "unknown")
+    return {YAHOO_DIR: "yahoo", FINMIND_DIR: "finmind", TWSE_DIR: "twse", FINLAB_DIR: "finlab"}.get(d, "unknown")

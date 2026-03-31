@@ -5,21 +5,6 @@
 
 ---
 
-## 0. 外部評價 vs 實際狀態
-
-| 外部指出的缺口 | 實際狀態 | 結論 |
-|---------------|---------|------|
-| 缺乏事件驅動回測引擎 | `engine.py` 事件驅動 + `vectorized.py` 快速驗證，雙引擎並行 | ❌ 不成立 |
-| 缺乏錯誤處理與狀態持久化 | `portfolio_state.json` + SQLite + trade logs + crash recovery | ❌ 不成立 |
-| 風控層與策略耦合 | `src/risk/` 12 條獨立規則 + Kill Switch + RealtimeMonitor | ❌ 不成立 |
-| 缺乏監控與警報 | Discord/LINE/Telegram webhook + structlog + Kill Switch 通知 | ❌ 不成立 |
-| 缺乏 Docker 與環境管理 | docker-compose + `.env` + `QUANT_*` 環境變數 + CI 9 jobs | ❌ 不成立 |
-| 缺乏滑價與手續費 | SimBroker: commission 0.1425% + sell tax 0.3% + spread slippage + volume impact | ❌ 不成立 |
-
-**教訓**：表面評價不可靠。系統的真正弱點在更深的地方。
-
----
-
 ## 1. 真正的技術缺口（按優先級排序）
 
 ### G1. 實盤 vs 回測一致性驗證 — P0
@@ -196,4 +181,115 @@ Phase 4（需要時）：
 | Survivorship bias 修正後 CAGR 差異 | 量化 | 無數據（G2 未做） |
 | 多策略 paper trading | 2+ 策略同時跑 | 1 策略 |
 | 掛單恢復成功率 | 100% | 0%（未實作） |
-| 測試覆蓋率 | 1,800+ tests | 1,700+ tests |
+| 測試覆蓋率 | 1,800+ tests | 1,810 tests ✅ |
+
+---
+
+## 5. 嚴格審批（2026-03-31）
+
+### 判定：方向正確，但 G1 事實有誤、G3 範圍過大、執行順序需調整。
+
+---
+
+### G1. 實盤 vs 回測一致性驗證 — 事實修正
+
+**計畫寫「沒有系統性方法比對」**，但 `data/paper_trading/reconciliation/` 已有每日對帳 JSON（2026-03-27, 2026-03-30），`jobs.py:635` 在每次 pipeline 執行後已跑 `_reconcile()` 比對 target_weights vs actual_weights。
+
+**實際缺口比計畫描述的小**：
+- ✅ 已有：每日 weight deviation 偵測 + Discord 告警
+- ❌ 缺少：daily return 比對（回測預期 return vs 實際 return）
+- ❌ 缺少：implementation shortfall 分析（成交價 vs 決策時價格）
+- ❌ 缺少：累積 weekly report
+
+**修正建議**：G1.1 不需要重做 — 現有 `_reconcile()` 已是基礎。從 G1.3（implementation shortfall）開始才是真正的增量。
+
+**優先度維持 P0**：daily return 比對確實是空白。
+
+---
+
+### G2. Survivorship Bias 整合 — 同意，但有前置依賴
+
+**計畫正確**：`SecuritiesMaster` 有 `universe_at(date)` 但回測引擎沒用。
+
+**問題**：G2.1「回填歷史上市/下市日」是整個 G2 的瓶頸。TWSE 沒有直接提供「歷史下市股票列表」的 API。需要：
+- FinMind `taiwan_stock_info()` 有 `listing_date` 但**沒有 delisted_date**
+- TWSE 公告有下市資訊但需要爬取歷史公告（HTML 格式不穩定）
+- TEJ 有完整 PIT 數據但要付費
+
+**沒有可靠的下市日數據源**，G2.1 的實作難度被低估了。
+
+**修正建議**：
+1. 先做 G2.2（回測引擎接入 `universe_at`）— 即使 master 只有現有股票，架構先到位
+2. G2.1 的數據回填作為 Phase AD Phase 4 的一部分（4b Securities Master 自動維護），不要在這裡重複規劃
+3. 近期可用 FinMind `taiwan_stock_info()` 填入 `listing_date`，`delisted_date` 暫時留空
+
+---
+
+### G3. 多資產組合最佳化串接 — 範圍過大，不該在這份計畫
+
+**問題**：
+1. 這是 Phase AA-2 的內容，已有獨立計畫。在這裡重複規劃會造成兩份文件不同步
+2. G3.1-G3.4 是至少 2-3 週的工作量，和 G1/G2 的「修補真實缺口」性質不同 — G3 是**新功能開發**
+3. 前置條件未滿足：Phase AG 明確寫了「先一個一個驗證策略，再做多策略」
+
+**修正建議**：從本計畫移除 G3。在 Phase AA-2 計畫中處理。本計畫專注 G1（對帳）和 G2（survivorship bias）。
+
+---
+
+### G4. 掛單狀態追蹤 — 同意，但優先度可降
+
+**事實正確**：pending orders 沒有持久化。
+
+**但風險評估需要更精確**：
+- 台股月頻策略每月下單 1 次，pipeline 從產生 weights 到 SimBroker 成交是**同步的**（不是 async callback）
+- SimBroker 不會有「下單後崩潰、重啟後不知道有未成交單」的情況 — 它是同步撮合
+- 只有 **live trading 用 SinopacBroker** 才有這個問題（async callback）
+- Live trading 尚未啟動（等 CA 憑證）
+
+**修正建議**：降為 P2。在 live trading 啟動前實作即可。
+
+---
+
+### G5. Tick-level 撮合 — 同意不做
+
+沒意見。日頻月再平衡不需要。
+
+---
+
+### 執行順序修正
+
+```
+Phase 1（本週-下週）：
+  G1.3       Implementation shortfall 分析（現有 reconciliation 基礎上擴展）
+  G2.2       回測引擎接入 universe_at()
+
+Phase 2（兩週內）：
+  G1.4-G1.5  Weekly reconciliation report + 排程
+  G2.1       SecuritiesMaster 回填 listing_date（FinMind）
+
+Phase 3（需要時）：
+  G4         掛單持久化（live trading 啟動前）
+  G2.4       PIT vs 現有 universe 比對實驗
+
+不在本計畫：
+  G3         → Phase AA-2
+  G5         → 日內策略時才做
+```
+
+### §3 已完成基礎設施更新
+
+| 組件 | 實作位置 | 測試覆蓋 |
+|------|---------|---------|
+| SimBroker（漲跌停+零股時段+部分成交+sqrt impact） | `src/execution/broker/simulated.py` | 116 tests |
+| 數據平台（Phase AD 1-3 + source_dirs 遷移） | `src/data/` 8+ 模組 | 33 tests |
+| 每日 weight reconciliation | `src/scheduler/jobs.py:_reconcile()` | 有 |
+| 1,810 單元測試 | `tests/unit/` | 全過 |
+
+### §4 度量指標更新
+
+| 指標 | 目標 | 當前 |
+|------|------|------|
+| Weight deviation 偵測 | 自動 | ✅ 已有（`_reconcile()` + Discord 告警） |
+| Daily return 比對 | < 50bps | 無數據（G1.3 未做） |
+| Survivorship bias CAGR 差異 | 量化 | 無數據（G2 未做） |
+| 測試覆蓋率 | 全過 | 1,810 passed, 0 failed ✅ |

@@ -44,6 +44,9 @@ class SimConfig:
     # 零股額外滑點（盤中零股每 3 分鐘撮合一次，流動性差）
     odd_lot_extra_slippage_bps: float = 10.0  # 零股額外滑點
 
+    # 是否檢查零股交易時段（09:10-13:30）— 回測關閉，paper trading 開啟
+    check_odd_lot_session: bool = False
+
 
 class SimBroker:
     """
@@ -168,8 +171,15 @@ class SimBroker:
             # 滑價計算 (using configurable impact model)
             slippage = self._calc_slippage(close_price, fill_qty, volume)
 
-            # 零股額外滑點（盤中零股每 3 分鐘撮合，流動性差）
+            # 零股時段檢查 + 額外滑點
             lot_size_check = getattr(order.instrument, "lot_size", 1000) or 1000
+            if fill_qty < lot_size_check and self.config.check_odd_lot_session:
+                from src.execution.market_hours import is_odd_lot_session
+                if not is_odd_lot_session(ts):
+                    order.status = OrderStatus.REJECTED
+                    order.reject_reason = f"Odd-lot order outside session (09:10-13:30) at {ts.strftime('%H:%M')}"
+                    self.rejected_log.append(order)
+                    continue
             if fill_qty < lot_size_check and self.config.odd_lot_extra_slippage_bps > 0:
                 slippage += close_price * Decimal(str(self.config.odd_lot_extra_slippage_bps)) / Decimal("10000")
 

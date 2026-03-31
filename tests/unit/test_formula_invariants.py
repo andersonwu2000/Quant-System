@@ -64,7 +64,7 @@ class TestICInvariant:
         from src.strategy.research import compute_ic
 
         dates = pd.bdate_range("2023-01-01", periods=20)
-        symbols = ["A", "B", "C", "D", "E"]
+        symbols = [f"S{i}" for i in range(30)]  # compute_ic requires >= 30 symbols
         fv = pd.DataFrame({s: [i + 1.0] * 20 for i, s in enumerate(symbols)}, index=dates)
         fr = pd.DataFrame({s: [0.01 * (i + 1)] * 20 for i, s in enumerate(symbols)}, index=dates)
 

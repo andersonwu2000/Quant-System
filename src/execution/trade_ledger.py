@@ -123,10 +123,19 @@ def get_fills_since(portfolio_as_of: str) -> list[dict]:
     Used to replay fills that occurred after the last portfolio save.
     """
     entries = get_today_entries()
+    try:
+        cutoff = datetime.fromisoformat(portfolio_as_of)
+    except (ValueError, TypeError):
+        return entries  # can't parse → return all fills as safety
     result = []
     for e in entries:
-        if e["type"] == "fill" and e.get("timestamp", "") > portfolio_as_of:
-            result.append(e)
+        if e["type"] == "fill":
+            try:
+                ts = datetime.fromisoformat(e.get("timestamp", ""))
+                if ts > cutoff:
+                    result.append(e)
+            except (ValueError, TypeError):
+                result.append(e)  # can't parse → include as safety
     return result
 
 

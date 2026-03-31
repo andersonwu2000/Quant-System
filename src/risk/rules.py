@@ -60,8 +60,18 @@ def max_position_weight(threshold: float = 0.05) -> RiskRule:
         projected_weight = float(abs(projected_mv) / portfolio.nav)
 
         if projected_weight > threshold:
-            return RiskDecision.REJECT(
-                f"[{symbol}] 預估權重 {projected_weight:.1%} 超過上限 {threshold:.1%}"
+            # Cap to max allowed qty instead of outright rejection
+            max_value = Decimal(str(threshold)) * portfolio.nav - current_mv
+            if order.side == Side.SELL:
+                max_value = current_mv - Decimal(str(threshold)) * portfolio.nav
+            if max_value <= 0 or price <= 0:
+                return RiskDecision.REJECT(
+                    f"[{symbol}] 已達權重上限 {threshold:.1%}"
+                )
+            max_qty = abs(max_value) / price
+            return RiskDecision.MODIFY(
+                new_qty=max_qty,
+                reason=f"[{symbol}] 權重 {projected_weight:.1%} → capped to {threshold:.1%}",
             )
         return RiskDecision.APPROVE()
 

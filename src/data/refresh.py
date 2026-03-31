@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.registry import REGISTRY, parquet_path as _registry_parquet_path, write_path as _registry_write_path, YAHOO_DIR, FINMIND_DIR
+from src.data.registry import REGISTRY, parquet_path as _registry_parquet_path, write_path as _registry_write_path
 
 logger = logging.getLogger(__name__)
 

@@ -17,6 +17,7 @@ import pandas as pd
 
 from src.data.registry import REGISTRY, DatasetDef, FINLAB_DIR, parquet_path as _registry_parquet_path
 from src.data.schemas import pit_filter
+from src.data.sources.finmind_common import strip_tw_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class DataCatalog:
         if not adj_panel_path.exists():
             return df  # no adj data available, return as-is
 
-        bare = symbol.replace(".TW", "").replace(".TWO", "")
+        bare = strip_tw_suffix(symbol)
         try:
             adj_panel = pd.read_parquet(adj_panel_path)
             if bare not in adj_panel.columns:
@@ -116,7 +117,7 @@ class DataCatalog:
             return None
 
         # Symbol in FinLab uses bare id (e.g. "2330" not "2330.TW")
-        bare = symbol.replace(".TW", "").replace(".TWO", "")
+        bare = strip_tw_suffix(symbol)
 
         try:
             panel = pd.read_parquet(panel_path)

@@ -134,10 +134,10 @@ class TestExecuteOneBar:
 
         assert trades == []
 
-    def test_risk_rejection_results_in_no_trades(self) -> None:
-        """When risk engine rejects all orders, no trades are produced."""
+    def test_risk_capping_reduces_position(self) -> None:
+        """When risk engine caps an oversized order, trade is reduced not rejected."""
         symbols = ["AAPL"]
-        # 99% in one stock, with a max_position_weight of 5% → should reject
+        # 99% in one stock, with a max_position_weight of 5% → should be capped
         strategy = _FixedWeightStrategy({"AAPL": 0.99})
         feed = _make_feed(symbols)
         portfolio = Portfolio(cash=Decimal("1000000"), initial_cash=Decimal("1000000"))
@@ -157,7 +157,10 @@ class TestExecuteOneBar:
             timestamp=datetime(2024, 1, 15),
         )
 
-        assert trades == []
+        # Trade should happen but capped — not rejected
+        assert len(trades) >= 1
+        total_value = sum(float(t.quantity * t.price) for t in trades)
+        assert total_value <= 1_000_000 * 0.06  # ~5% + margin
 
     def test_returns_empty_without_sim_broker(self) -> None:
         """Without sim_broker, execute_one_bar returns [] (no execution)."""

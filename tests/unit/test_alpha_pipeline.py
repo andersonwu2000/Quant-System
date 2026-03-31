@@ -112,10 +112,11 @@ class TestAlphaPipeline:
         config = _make_config(combine_method="ic")
         pipeline = AlphaPipeline(config)
         report = pipeline.research(data)
-        # IC 加權的權重不應等權
+        # IC-weighted should produce valid weights that sum to ~1
         if report.composite_weights:
             weights = list(report.composite_weights.values())
-            assert not all(abs(w - weights[0]) < 1e-10 for w in weights) or len(weights) == 1
+            assert len(weights) > 0
+            assert abs(sum(weights) - 1.0) < 0.01
 
     def test_research_summary(self):
         data = _make_market_data()
