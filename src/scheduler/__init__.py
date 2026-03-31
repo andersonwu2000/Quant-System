@@ -1,13 +1,10 @@
-"""Strategy scheduler — Phase S 統一交易管線。
+"""Scheduler — daily operations orchestrator.
 
-一條 Trading Pipeline（由 QUANT_ACTIVE_STRATEGY + QUANT_TRADING_PIPELINE_CRON 控制）。
-Auto-Alpha Research Pipeline 獨立運行（不操作 Portfolio），由 ``POST /auto-alpha/start`` 觸發。
+Single daily_ops entry point replaces scattered cron jobs.
+execute_pipeline is called by daily_ops, not separately scheduled.
 
-流程：cron → execute_pipeline(config)
-  → 數據更新（營收策略自動下載 FinMind）
-  → strategy.on_bar() → weights_to_orders()
-  → RiskEngine → ExecutionService → apply_trades()
-  → 持久化 + 通知
+Flow: daily_ops (07:50) → [trading day?] → TWSE snapshot → execute_pipeline → heartbeat
+      eod_ops  (13:30) → reconcile → backtest reconcile → daily summary → heartbeat
 """
 
 from __future__ import annotations
@@ -26,32 +23,30 @@ _pipeline_lock = asyncio.Lock()
 
 
 class SchedulerService:
-    """Manages scheduled strategy runs using APScheduler."""
+    """Manages daily trading operations via APScheduler.
+
+    Two jobs:
+      1. daily_ops (07:50 weekdays) — pre-market + trading + heartbeat
+      2. eod_ops  (13:30 weekdays) — reconciliation + daily summary
+    """
 
     def __init__(self) -> None:
         self._scheduler: object | None = None
         self._running = False
 
     def start(self, config: TradingConfig) -> None:
-        """Start the scheduler with the unified trading pipeline.
-
-        Registers one job: ``trading_pipeline`` (cron from ``config.trading_pipeline_cron``).
-        Strategy is determined by ``config.active_strategy``.
-        """
+        """Start the scheduler with daily_ops + eod_ops."""
         if not config.scheduler_enabled:
             logger.info("Scheduler disabled, skipping")
             return
 
         # Crash recovery: check for pipeline runs that never finished
         from src.scheduler.jobs import check_crashed_runs
-
         crashed = check_crashed_runs()
         for run in crashed:
             logger.warning(
-                "Detected crashed pipeline run: run_id=%s, strategy=%s, started_at=%s",
-                run.get("run_id", "?"),
-                run.get("strategy", "?"),
-                run.get("started_at", "?"),
+                "Detected crashed pipeline run: run_id=%s, strategy=%s",
+                run.get("run_id", "?"), run.get("strategy", "?"),
             )
 
         try:
@@ -63,42 +58,29 @@ class SchedulerService:
 
         self._scheduler = AsyncIOScheduler()
 
-        # ── Phase S: 統一交易管線（取代舊的 2-3 個 job） ──
-        pipeline_cron = config.trading_pipeline_cron
-        trigger = CronTrigger.from_crontab(pipeline_cron)
-        self._scheduler.add_job(  # type: ignore[union-attr]
-            self._run_pipeline,
-            trigger=trigger,
-            id="trading_pipeline",
+        # ── daily_ops: 07:50 weekdays ────────────────────────────────
+        # Trading day check is inside daily_ops, not in cron filter.
+        # This ensures heartbeat "休市" message is sent on holidays.
+        self._scheduler.add_job(
+            self._run_daily_ops,
+            trigger=CronTrigger(hour=7, minute=50, day_of_week="mon-fri"),
+            id="daily_ops",
             kwargs={"config": config},
         )
 
-        # ── 收盤後自動對帳（paper/live mode） ──
-        if config.mode in ("paper", "live"):
-            reconcile_cron = config.reconcile_cron
-            reconcile_trigger = CronTrigger.from_crontab(reconcile_cron)
-            self._scheduler.add_job(  # type: ignore[union-attr]
-                self._run_reconcile,
-                trigger=reconcile_trigger,
-                id="daily_reconcile",
-                kwargs={"config": config},
-            )
-            logger.info("Daily reconcile scheduled: cron=%s", reconcile_cron)
+        # ── eod_ops: 13:30 weekdays ─────────────────────────────────
+        self._scheduler.add_job(
+            self._run_eod_ops,
+            trigger=CronTrigger(hour=13, minute=30, day_of_week="mon-fri"),
+            id="eod_ops",
+            kwargs={"config": config},
+        )
 
-        # ── Phase AG: 部署因子月度模擬執行 + 比較報告 ──
-        if getattr(config, "auto_alpha_enabled", False):
-            self._scheduler.add_job(  # type: ignore[union-attr]
-                self._run_deployed_strategies,
-                trigger=CronTrigger.from_crontab("0 10 12 * *"),  # 每月 12 日 10:00
-                id="deployed_strategies",
-            )
-            logger.info("Deployed strategies executor scheduled: monthly 12th 10:00")
-
-        self._scheduler.start()  # type: ignore[union-attr]
+        self._scheduler.start()
         self._running = True
         logger.info(
-            "Scheduler started: strategy=%s, cron=%s",
-            config.active_strategy, pipeline_cron,
+            "Scheduler started: strategy=%s, daily_ops=07:50, eod_ops=13:30",
+            config.active_strategy,
         )
 
     def stop(self) -> None:
@@ -111,78 +93,25 @@ class SchedulerService:
     def is_running(self) -> bool:
         return self._running
 
-    async def _run_pipeline(self, config: TradingConfig) -> None:
-        """Phase S: 統一交易管線。
-
-        Note: The locked() check + acquire is technically TOCTOU, but acceptable
-        because asyncio.Lock is single-threaded — no preemption between check and
-        acquire within the same coroutine execution slice.
-        """
+    async def _run_daily_ops(self, config: TradingConfig) -> None:
+        """Pre-market + trading. Acquires pipeline lock."""
         if _pipeline_lock.locked():
-            logger.warning("Pipeline lock held, skipping")
+            logger.warning("Pipeline lock held, skipping daily_ops")
             return
         async with _pipeline_lock:
             try:
-                from src.scheduler.jobs import execute_pipeline
-
-                result = await execute_pipeline(config)
-                logger.info("Pipeline result: %s (%d trades)", result.status, result.n_trades)
+                from src.scheduler.ops import daily_ops
+                result = await daily_ops(config)
+                logger.info("daily_ops result: %s", result.get("status", "unknown"))
             except Exception:
-                logger.exception("Pipeline failed")
+                logger.exception("daily_ops failed")
 
-    async def _run_reconcile(self, config: TradingConfig) -> None:
-        """Daily post-market reconciliation."""
+    async def _run_eod_ops(self, config: TradingConfig) -> None:
+        """Post-market reconciliation + summary."""
+        # EOD doesn't need pipeline lock (no portfolio mutation)
         try:
-            from src.scheduler.jobs import execute_daily_reconcile
-
-            result = await execute_daily_reconcile(config)
-            logger.info("Daily reconcile result: %s", result.get("status", "unknown"))
+            from src.scheduler.ops import eod_ops
+            result = await eod_ops(config)
+            logger.info("eod_ops result: %s", result)
         except Exception:
-            logger.exception("Daily reconcile failed")
-
-    async def _run_deployed_strategies(self) -> None:
-        """Phase AG: monthly execution of auto-deployed factor strategies."""
-        # Share pipeline lock — prevent concurrent execution with main pipeline
-        if _pipeline_lock.locked():
-            logger.warning("Pipeline lock held (main pipeline running), skipping deployed strategies")
-            return
-        async with _pipeline_lock:
-            try:
-                from src.alpha.auto.paper_deployer import PaperDeployer, MAX_AUTO_STRATEGIES
-                from src.alpha.auto.deployed_executor import (
-                    process_deploy_queue,
-                    execute_deployed_strategies,
-                    generate_comparison_report,
-                )
-
-                # Check main kill switch before running auto strategies
-                from src.api.state import get_app_state
-                _state = get_app_state()
-                if hasattr(_state, 'kill_switch_fired') and _state.kill_switch_fired:
-                    logger.warning("Main kill switch active — skipping auto strategy execution")
-                    return
-
-                deployer = PaperDeployer.get_instance()
-                active = deployer.get_active()
-                logger.info(
-                    "Auto-alpha pipeline: %d/%d active strategies (max %d)",
-                    len(active), MAX_AUTO_STRATEGIES, MAX_AUTO_STRATEGIES,
-                )
-
-                # 1. Process any pending deploy queue markers
-                deployed = process_deploy_queue(deployer)
-                if deployed:
-                    logger.info("Deployed from queue: %s", deployed)
-
-                # 2. Execute all active strategies (generate weights, track NAV)
-                results = execute_deployed_strategies(deployer)
-                for name, r in results.items():
-                    logger.info("Deployed execution: %s → %s", name, r.get("status"))
-
-                # 3. Generate comparison report
-                report = generate_comparison_report(deployer)
-                if report:
-                    logger.info("Comparison report: %s", report)
-
-            except Exception:
-                logger.exception("Deployed strategies execution failed")
+            logger.exception("eod_ops failed")

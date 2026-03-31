@@ -400,8 +400,16 @@ def create_app() -> FastAPI:
         scheduler.stop()
         kill_switch_task.cancel()
         ws_manager.stop_ping_task()
-        from src.api.state import get_app_state as _get_state
-        _get_state().execution_service.shutdown()
+        from src.api.state import get_app_state as _get_state, save_portfolio
+        state = _get_state()
+        # Save portfolio state before shutdown (crash recovery)
+        try:
+            if state.portfolio and state.portfolio.positions:
+                save_portfolio(state.portfolio)
+                logger.info("Portfolio saved on shutdown (%d positions)", len(state.portfolio.positions))
+        except Exception:
+            logger.exception("Failed to save portfolio on shutdown")
+        state.execution_service.shutdown()
         await ws_manager.close_all()
 
     app = FastAPI(
