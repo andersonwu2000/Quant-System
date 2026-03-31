@@ -164,6 +164,31 @@ try {
     Remove-Job $statusJob -Force -ErrorAction SilentlyContinue
     Stop-Job $credJob -ErrorAction SilentlyContinue
     Remove-Job $credJob -Force -ErrorAction SilentlyContinue
+    # Reset factor.py to neutral baseline (avoid half-written factor persisting)
+    $baselineCode = @'
+"""Alpha factor definition — the ONLY file the agent may edit."""
+from __future__ import annotations
+import numpy as np
+import pandas as pd
+
+def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:
+    """Baseline: simple 20-day return. Starting point — replace with your own factor logic."""
+    results: dict[str, float] = {}
+    for sym in symbols:
+        bars = data["bars"].get(sym)
+        if bars is None or len(bars) < 20:
+            continue
+        b = bars.loc[:as_of]
+        if len(b) < 20:
+            continue
+        ret = b["close"].iloc[-1] / b["close"].iloc[-20] - 1
+        results[sym] = float(ret)
+    return results
+'@
+    $baselineCode | Set-Content "$workDir\factor.py" -Encoding UTF8
+    git -C $workDir add factor.py 2>$null
+    git -C $workDir commit -m "reset: baseline (session ended)" --quiet 2>$null
+    Write-Host "  factor.py reset to baseline." -ForegroundColor Gray
     powershell -ExecutionPolicy Bypass -File "$ScriptDir\status.ps1" 2>$null
     Write-Host "Final status report written." -ForegroundColor Green
 }
