@@ -244,6 +244,18 @@ class DataCatalog:
                 logger.debug("Failed to read %s", path)
                 return pd.DataFrame()
 
+            # Merge FinLab historical panel to extend date range
+            # (e.g. FinMind revenue 2019+ merged with FinLab 2005-2018)
+            ds = REGISTRY.get(dataset)
+            if ds and ds.finlab_panel and dataset != "price":
+                finlab_df = self._read_finlab_panel(dataset, symbol)
+                if finlab_df is not None and not finlab_df.empty:
+                    if "date" in df.columns and "date" in finlab_df.columns:
+                        combined = pd.concat([finlab_df, df], ignore_index=True)
+                        combined["date"] = pd.to_datetime(combined["date"])
+                        combined = combined.drop_duplicates(subset=["date"], keep="last")
+                        df = combined.sort_values("date").reset_index(drop=True)
+
         if df.empty:
             return df
 
