@@ -244,13 +244,13 @@ async def _docker_compose_action(*args: str) -> dict:
     if not (compose_dir / "docker-compose.yml").exists():
         return {"returncode": 1, "stdout": "", "stderr": "docker-compose.yml not found"}
 
-    cmd = ["docker", "compose", "-f", str(compose_dir / "docker-compose.yml"), *args]
+    compose_file = (compose_dir / "docker-compose.yml").resolve()
+    cmd = ["docker", "compose", "-f", str(compose_file), *args]
 
     def _run() -> dict:
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=120,
-                cwd=str(compose_dir),
             )
             return {
                 "returncode": proc.returncode,
