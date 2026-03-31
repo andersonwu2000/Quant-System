@@ -19,7 +19,7 @@ Repeat until the human interrupts you:
    - Forbidden directions should never be retried
    - Then choose what to try based on results.tsv + learnings + your knowledge
 2. **Edit `factor.py`** — implement your idea. You may ONLY edit `factor.py`. Do NOT touch `evaluate.py`.
-   - The docstring of `compute_factor` MUST explain the **economic rationale** — WHY this signal should predict returns (e.g., "revenue acceleration reflects improving fundamentals"). Generic descriptions like "combined signal" or "optimized metric" are not acceptable.
+   - The docstring of `compute_factor` MUST explain the **economic rationale** — WHY this signal should predict returns. Generic descriptions like "combined signal" or "optimized metric" are not acceptable.
 3. **Commit** — `git add factor.py && git commit -m "experiment: <description>"`
 4. **Run** — `curl -s -X POST http://evaluator:5000/evaluate`
 5. **Parse** — extract ONLY these 4 values: `composite_score`, `best_icir`, `level`, `passed`. Do NOT try to extract or reason about OOS values, intermediate IC values, or any other metrics from the output.
@@ -29,7 +29,7 @@ Repeat until the human interrupts you:
    - If `level=L4` (promising but not yet OOS-validated) → `status=keep`
    - If crash → `status=crash`, restore factor.py: `git checkout HEAD~1 -- factor.py && git reset --soft HEAD~1`, log error
    - Otherwise → `status=discard`, restore factor.py: `git checkout HEAD~1 -- factor.py && git reset --soft HEAD~1`
-   - **Diversity matters:** A factor reaching L3+ in a NEW dimension (e.g. institutional flows when you've only tried revenue) is more valuable than squeezing +0.01 from an already-explored dimension.
+   - **Diversity matters:** A factor reaching L3+ in a NEW dimension is more valuable than squeezing +0.01 from an already-explored dimension.
 8. **Go to step 1**
 
 ## File Access Rules
@@ -112,13 +112,13 @@ Known dead ends — don't waste time:
 
 ## Research Strategy
 
-1. **Experiments 1-10**: One experiment per dimension (revenue, technical, fundamental, institutional, volume). Establish which dimensions have signal.
+1. **Experiments 1-10**: One experiment per data dimension. Establish which dimensions have signal.
 2. **Experiments 11-30**: For each dimension that showed signal (reached L2+), try 2-3 variations (different windows, normalizations).
 3. **After 30**: Combine top performers across dimensions into multi-factor composites.
 4. **If stuck**: Try non-linear transforms, cross-sectional vs time-series normalization, interaction terms, regime-conditional logic.
 5. **Learn from near-misses**: median ICIR just below L2's 0.30 threshold is worth tweaking.
 
-**Key principle: breadth first, depth second.** Don't run 20 revenue variants before trying a single institutional factor.
+**Key principle: breadth first, depth second.** Don't run 20 variants of one dimension before trying others.
 
 ## KEEP GOING
 
