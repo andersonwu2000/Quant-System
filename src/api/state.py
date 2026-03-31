@@ -128,10 +128,73 @@ def load_portfolio() -> Portfolio | None:
             "Loaded persisted portfolio: cash=%s, %d positions",
             portfolio.cash, len(portfolio.positions),
         )
+
+        # Replay ledger fills that occurred after portfolio was saved.
+        # This handles crash between trade execution and portfolio save.
+        try:
+            portfolio = _replay_ledger(portfolio)
+        except Exception:
+            logger.warning("Ledger replay failed (non-fatal)", exc_info=True)
+
         return portfolio
     except Exception:
         logger.warning("Failed to load persisted portfolio state", exc_info=True)
         return None
+
+
+def _replay_ledger(portfolio: Portfolio) -> Portfolio:
+    """Replay trade ledger fills newer than portfolio.as_of.
+
+    If the system crashed between apply_trades (which writes ledger)
+    and save_portfolio (which writes JSON), the ledger has fills that
+    the portfolio JSON doesn't reflect. Replay them.
+    """
+    from src.execution.trade_ledger import get_fills_since
+
+    as_of_str = portfolio.as_of.isoformat() if portfolio.as_of else ""
+    if not as_of_str:
+        return portfolio
+
+    fills = get_fills_since(as_of_str)
+    if not fills:
+        return portfolio
+
+    logger.warning("Replaying %d ledger fills after portfolio as_of=%s", len(fills), as_of_str)
+
+    for fill in fills:
+        sym = fill["symbol"]
+        side = fill["side"]
+        qty = Decimal(str(fill["quantity"]))
+        price = Decimal(str(fill["fill_price"]))
+        commission = Decimal(str(fill.get("commission", 0)))
+
+        if "BUY" in side:
+            portfolio.cash -= qty * price + commission
+            if sym in portfolio.positions:
+                pos = portfolio.positions[sym]
+                total_cost = pos.avg_cost * pos.quantity + price * qty
+                new_qty = pos.quantity + qty
+                pos.avg_cost = total_cost / new_qty if new_qty > 0 else Decimal("0")
+                pos.quantity = new_qty
+                pos.market_price = price
+            else:
+                from src.core.models import Instrument, Position as Pos
+                _is_tw = sym.endswith(".TW") or sym.endswith(".TWO")
+                portfolio.positions[sym] = Pos(
+                    instrument=Instrument(symbol=sym, lot_size=1000 if _is_tw else 1, market="tw" if _is_tw else "us"),
+                    quantity=qty, avg_cost=price, market_price=price,
+                )
+        elif "SELL" in side:
+            portfolio.cash += qty * price - commission
+            if sym in portfolio.positions:
+                portfolio.positions[sym].quantity -= qty
+                if portfolio.positions[sym].quantity <= 0:
+                    del portfolio.positions[sym]
+
+    logger.info("Ledger replay complete: %d fills applied", len(fills))
+    # Re-save to reflect replayed fills
+    save_portfolio(portfolio)
+    return portfolio
 
 
 @dataclass

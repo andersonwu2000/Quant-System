@@ -120,6 +120,20 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
 
         portfolio.as_of = trades[-1].timestamp if trades else portfolio.as_of
 
+        # Log fills to append-only ledger (crash recovery for live mode)
+        try:
+            from src.execution.trade_ledger import log_fill
+            for trade in trades:
+                log_fill(
+                    symbol=trade.symbol,
+                    side=str(trade.side),
+                    quantity=float(trade.quantity),
+                    fill_price=float(trade.price),
+                    commission=float(trade.commission),
+                )
+        except Exception:
+            logger.warning("Trade ledger write failed", exc_info=True)
+
         # Persist portfolio state for crash recovery (paper/live mode)
         # Inside lock to prevent concurrent reads seeing partial state
         try:

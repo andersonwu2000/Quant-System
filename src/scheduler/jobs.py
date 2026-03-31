@@ -598,6 +598,23 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             except Exception:
                 pass
             return PipelineResult(status="aborted", strategy_name=strategy.name(), error="Kill switch fired")
+        # Log trade intents before execution (crash recovery for live mode)
+        try:
+            from src.execution.trade_ledger import log_intent
+            run_id = _today_run_id()
+            for sym, weight in target_weights.items():
+                if sym in prices and prices[sym] > 0:
+                    log_intent(
+                        symbol=sym,
+                        side="BUY" if weight > 0 else "SELL",
+                        quantity=0,  # actual qty determined by execute_from_weights
+                        expected_price=float(prices[sym]),
+                        strategy=strategy.name(),
+                        run_id=run_id,
+                    )
+        except Exception:
+            pass  # intent logging failure must not block trading
+
         trades = execute_from_weights(
             target_weights=target_weights,
             portfolio=state.portfolio,
