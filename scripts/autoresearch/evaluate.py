@@ -1219,6 +1219,8 @@ def evaluate() -> dict:
     large_icir_20d = 0.0
     large_universe = _load_universe(large=True)
     if len(large_universe) > len(universe):
+        # Clear fwd cache — Stage 2 has more symbols than IS, cached entries are incomplete
+        _fwd_return_cache.clear()
         print(f"\nStage 2: Large-scale verification ({len(large_universe)} symbols)")
         try:
             # Incrementally load only NEW symbols (don't reset cache)
