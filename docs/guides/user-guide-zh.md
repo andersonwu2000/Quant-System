@@ -24,24 +24,29 @@ python -m src.cli.main backtest --strategy revenue_momentum -u 2330.TW -u 2317.T
 ### Paper Trading
 
 ```powershell
-# 1. 啟動 API server
+# 1. 啟動 API server（scheduler 自動啟動 daily_ops + eod_ops）
 python -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000 --reload
 
-# 2. 確認 API 活著
-curl http://localhost:8000/api/v1/system/health
+# 2. 確認系統狀態（一個 API 看全貌）
+curl http://localhost:8000/api/v1/ops/status | python -m json.tool
 
-# 3. 手動觸發再平衡（排程只在每月 11 日 08:30 自動執行）
-curl -X POST http://localhost:8000/api/v1/scheduler/trigger/pipeline -H "X-API-Key: dev-key"
+# 3. 手動觸發再平衡（排程每交易日 07:50 自動執行 daily_ops）
+curl -X POST http://localhost:8000/api/v1/scheduler/trigger/pipeline -H "X-API-KEY: dev-key"
 
-# 4. 監控（開另一個終端）
-python scripts/paper_monitor.py --interval 30
-# 功能：NAV/持倉狀態、新成交偵測、異常偵測（NAV劇變/kill switch）、pipeline 記錄
-# 輸出同時寫入 docs/paper-trading/monitor.log
-# --once 跑一次就退出
+# 4. 查看持倉
+curl http://localhost:8000/api/v1/ops/positions | python -m json.tool
 
-# 5. 確認結果
-cat data/paper_trading/portfolio_state.json | python -m json.tool | head -10
-ls data/paper_trading/trades/
+# 5. 查看今日摘要
+curl http://localhost:8000/api/v1/ops/daily-summary | python -m json.tool
+
+# 6. Reconciliation 報告
+python -m src.reconciliation.report
+```
+
+**每日自動流程**（不需人工操作）：
+```
+07:50  daily_ops → 交易日檢查 → TWSE 數據刷新 → pipeline → heartbeat
+13:30  eod_ops  → 券商對帳 → backtest 比對 → 日報 → heartbeat
 ```
 
 ### 微額實盤（CA 憑證取得後）
@@ -73,9 +78,43 @@ powershell -File scripts/autoresearch/status.ps1
 
 詳見 [autoresearch-guide-zh.md](autoresearch-guide-zh.md)。
 
-### 數據更新
+### 數據管理
 
-Pipeline 觸發時自動更新價格和營收數據（`QUANT_PIPELINE_DATA_UPDATE=true`）。不需要手動更新。
+**自動化**（daily_ops 每交易日 07:50 執行）：
+- TWSE+TPEX 全市場 OHLCV 快照 → `data/twse/`
+- Yahoo 增量價格更新 → `data/yahoo/`
+- Pipeline 前 FinMind 營收更新 → `data/finmind/`
+
+**手動工具**：
+```powershell
+# 查看數據覆蓋率
+python -m src.data.cli status
+
+# 品質閘門檢查（dry run）
+python -m src.data.cli validate
+
+# Yahoo 全量下載
+python scripts/download_yahoo_price.py
+
+# FinMind 批次下載（需 token）
+python -m scripts.download_finmind_data --dataset all --symbols-from-market
+
+# FinLab 歷史數據（含已下市股票，免費 500MB/月）
+python -m scripts.download_finlab_data
+
+# TWSE 三大法人歷史回填（不需 token）
+python scripts/backfill_twse_institutional.py --start 2015-01-01
+```
+
+**數據來源**：6 個，按來源分離儲存
+```
+data/
+├── yahoo/    # Yahoo Finance — OHLCV（1,100+ 支）
+├── finmind/  # FinMind — 基本面 + 籌碼面（12 種數據集）
+├── twse/     # TWSE/TPEX — 三大法人（1,450+ 支 × 11 年）
+├── finlab/   # FinLab — 歷史含已下市股（2,718 支，2007-2018）
+└── ...
+```
 
 ## 策略
 
@@ -104,23 +143,29 @@ QUANT_NOTIFY_PROVIDER=discord
 QUANT_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
-通知：kill switch 觸發、pipeline 完成、reconciliation 偏差。
+通知分級：
+- **P0 緊急**：Kill Switch 觸發、倉位不一致 → Discord + LINE
+- **P1 重要**：交易完成、QualityGate 失敗、drift > 50bps → Discord
+- **P2 資訊**：Heartbeat、日報、數據更新完成 → Discord
+- **P3 調試**：因子評估、回測細節 → 僅寫 log
 
 ## 目錄結構
 
 ```
-src/                 # Python 後端
+src/                 # Python 後端（170+ 檔）
 strategies/          # 策略檔案
 apps/web/            # React 前端
 apps/android/        # Android app
-data/market/         # 市場數據（parquet）
-data/fundamental/    # 基本面數據（revenue, per, margin, institutional）
-data/paper_trading/  # paper trading 狀態 + 日誌
-docs/plans/          # 開發計畫（NEXT_ACTIONS.md 是唯一入口）
+data/yahoo/          # Yahoo Finance 價格數據
+data/finmind/        # FinMind 基本面 + 籌碼面
+data/twse/           # TWSE/TPEX 三大法人（11 年歷史）
+data/finlab/         # FinLab 歷史數據（含已下市股票，2007-2018）
+data/paper_trading/  # paper trading 狀態 + 日誌 + trade ledger
+docs/plans/          # 開發計畫（Phase A~AJ）
 docs/reviews/        # 審計報告（INDEX.md 是索引）
 docs/research/       # 研究報告
 docker/autoresearch/ # 因子研究容器（3-container: agent, evaluator, watchdog）
-scripts/             # 工具腳本
+scripts/             # 工具腳本（download, backfill, migrate, import）
 ```
 
 ## 關鍵文件

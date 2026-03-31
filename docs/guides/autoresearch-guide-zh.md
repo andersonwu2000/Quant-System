@@ -16,9 +16,11 @@ agent 容器            evaluator 容器         watchdog 容器
 ```
 
 3 個 Docker 容器 + 共享 volume：
-- **agent**：只有 work/（factor.py + results.tsv）+ data/（ro）+ program.md（ro）
-- **evaluator**：evaluate.py + src/ + data/（agent 看不到）
+- **agent**：只有 work/（factor.py + results.tsv）+ data/yahoo,finmind,twse,finlab（ro）
+- **evaluator**：evaluate.py + src/ + data/（agent 看不到）。evaluate.py 透過 DataCatalog 讀取所有來源
 - **watchdog**：背景跑 Validator + Factor-Level PBO
+
+> **注意**：數據目錄已從 `data/market/` + `data/fundamental/` 遷移到按來源分離的 `data/yahoo/`, `data/finmind/`, `data/twse/`, `data/finlab/`。Docker volume mount 已在 Phase AI 更新。
 
 ## 啟動
 
