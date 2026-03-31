@@ -49,14 +49,14 @@ curl.exe http://localhost:8000/api/v1/ops/status
 # 1. 啟動 server
 python -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000 --reload
 
-# 2. 手動補跑 TWSE 數據快照（daily_ops 已錯過）
-python -c "import asyncio; from src.scheduler.ops import _fetch_twse_snapshot; print(asyncio.run(_fetch_twse_snapshot()))"
+# 2. 手動補跑每日數據收集（TWSE 快照 + 三大法人 + Yahoo 增量）
+python -c "import asyncio; from src.scheduler.ops import _fetch_twse_snapshot, _yahoo_daily_refresh; asyncio.run(_fetch_twse_snapshot()); print('TWSE done'); asyncio.run(_yahoo_daily_refresh()); print('Yahoo done')"
 
 # 3. 如果是再平衡日（每月 11 日），手動觸發 pipeline
 curl.exe -X POST http://localhost:8000/api/v1/scheduler/trigger/pipeline -H "X-API-KEY: dev-key"
 ```
 
-> **注意**：`trigger/pipeline` 只跑 execute_pipeline（Yahoo refresh + QG + 策略），不含 TWSE 快照。TWSE 快照要另外手動跑。
+> **注意**：`trigger/pipeline` 只跑 execute_pipeline（QG + 策略），不含 TWSE 快照和 Yahoo 日更新。步驟 2 要先跑。
 
 ### 確認 server 正常
 
@@ -78,8 +78,10 @@ curl.exe http://localhost:8000/api/v1/ops/status
 07:50  daily_ops
        ├─ 交易日檢查（假日 → Discord "休市" → 停止）
        ├─ Heartbeat: "系統啟動"
-       ├─ TWSE+TPEX 全市場 OHLCV 快照 → data/twse/
-       ├─ 再平衡日？→ execute_pipeline（refresh+QG+策略+下單）
+       ├─ TWSE+TPEX 全市場 OHLCV 快照 → data/twse/（每日）
+       ├─ TWSE 三大法人 → data/twse/（每日）
+       ├─ Yahoo price 增量更新 → data/yahoo/（每日）
+       ├─ 再平衡日？→ execute_pipeline（QG+策略+下單）
        │              → Heartbeat: "交易完成，N 筆"
        └─ 非再平衡日 → Heartbeat: "非再平衡日"
 
@@ -91,6 +93,7 @@ curl.exe http://localhost:8000/api/v1/ops/status
 ```
 
 **再平衡日**：每月 11 日（config 可改為 weekly/daily）。
+**每日收集的數據**：TWSE OHLCV + 三大法人 + Yahoo price（非再平衡日也收）。
 **正常日不需要任何操作**，系統自己跑。
 
 ---
@@ -156,11 +159,12 @@ curl.exe -X POST http://localhost:8000/api/v1/auto-alpha/stop -H "X-API-KEY: dev
 
 ### 自動（daily_ops 每交易日 07:50）
 
-| 數據 | 來源 | 目的地 |
-|------|------|--------|
-| 全市場 OHLCV | TWSE+TPEX OpenAPI | `data/twse/` |
-| 價格增量 | Yahoo Finance | `data/yahoo/`（pipeline 內） |
-| 營收（再平衡日） | FinMind | `data/finmind/`（pipeline 內） |
+| 數據 | 來源 | 目的地 | 頻率 |
+|------|------|--------|------|
+| 全市場 OHLCV | TWSE+TPEX OpenAPI | `data/twse/` | 每交易日 |
+| 三大法人 | TWSE T86 | `data/twse/` | 每交易日 |
+| 價格增量 | Yahoo Finance | `data/yahoo/` | 每交易日 |
+| 營收 | FinMind | `data/finmind/` | 再平衡日 |
 
 ### 手動工具
 
