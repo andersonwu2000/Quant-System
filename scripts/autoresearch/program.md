@@ -98,13 +98,7 @@ data["roe"][symbol]             # DISABLED
 
 ## Factor Dimensions to Explore
 
-Explore broadly across these dimensions before going deep on any one:
-
-**Revenue-based:** acceleration, new highs, YoY growth, z-score, seasonal deviation
-**Technical:** momentum, mean reversion, RSI, low volatility anomaly, volume trends, illiquidity
-**Fundamental:** PE/PB value, ROE quality
-**Institutional flows (Taiwan-specific):** trust net buy, foreign investor flows, dealer patterns
-**Combinations:** cross-dimension composites (e.g. revenue × technical, fundamental × institutional)
+Discover on your own. Use `curl -s http://evaluator:5000/learnings` to see what's been tried and what worked. Explore broadly — price, volume, fundamental, institutional, combinations — before going deep.
 
 ## Forbidden Zones
 
