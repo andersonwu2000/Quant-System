@@ -418,10 +418,21 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
 # Forward Return Computation
 # ---------------------------------------------------------------------------
 
+_fwd_return_cache: dict[tuple[int, str], dict[str, float]] = {}
+
+
 def _compute_forward_returns(
     bars: dict[str, pd.DataFrame], as_of: pd.Timestamp, horizon: int,
 ) -> dict[str, float]:
-    """Compute forward returns for each symbol from as_of."""
+    """Compute forward returns for each symbol from as_of.
+
+    Uses a per-(horizon, as_of) cache to avoid recomputing the same
+    forward returns across L1/IS/L5/Stage2 calls.
+    """
+    cache_key = (horizon, str(as_of))
+    if cache_key in _fwd_return_cache:
+        return _fwd_return_cache[cache_key]
+
     returns: dict[str, float] = {}
     for sym, df in bars.items():
         if as_of not in df.index:
@@ -436,6 +447,8 @@ def _compute_forward_returns(
                 returns[sym] = p1 / p0 - 1
         except Exception:
             continue
+
+    _fwd_return_cache[cache_key] = returns
     return returns
 
 
@@ -673,6 +686,9 @@ def evaluate() -> dict:
                 failure=f"factor.py too complex: {n_lines} lines > 80 max",
                 elapsed=0.0,
             )
+
+    # Clear forward return cache from previous run
+    _fwd_return_cache.clear()
 
     universe = _load_universe()
     data = _load_all_data(universe)
@@ -1204,13 +1220,29 @@ def evaluate() -> dict:
     large_universe = _load_universe(large=True)
     if len(large_universe) > len(universe):
         print(f"\nStage 2: Large-scale verification ({len(large_universe)} symbols)")
-        # Reset cache to load full universe
-        global _data_cache
-        saved_cache = _data_cache
-        _data_cache = None
         try:
-            large_data = _load_all_data(large_universe)
-            large_bars = large_data["bars"]
+            # Incrementally load only NEW symbols (don't reset cache)
+            global _data_cache
+            existing_syms = set(_data_cache["bars"].keys()) if _data_cache else set()
+            new_syms = [s for s in large_universe if s not in existing_syms]
+            if new_syms:
+                from src.data.data_catalog import DataCatalog
+                catalog = DataCatalog(str(PROJECT_ROOT / "data"))
+                print(f"  Loading {len(new_syms)} additional symbols...")
+                for sym in new_syms:
+                    # bars
+                    df = catalog.get("price", sym)
+                    if not df.empty and "close" in df.columns:
+                        if not isinstance(df.index, pd.DatetimeIndex):
+                            df.index = pd.to_datetime(df.index)
+                        df.index = pd.to_datetime(df.index.date)
+                        df = df[~df.index.duplicated(keep="first")]
+                        df["close"] = df["close"].where(df["close"] > 0)
+                        if df["close"].isna().sum() / len(df) <= 0.10:
+                            _data_cache["bars"][sym] = df
+
+            large_bars = _data_cache["bars"]
+            large_data = _data_cache
             large_ics: list[float] = []
             # Use IS dates only (not OOS) to avoid data leakage in Stage 2
             large_dates = is_dates[::40]
@@ -1238,8 +1270,6 @@ def evaluate() -> dict:
             print(f"  Large-scale ICIR(20d): {large_icir_20d:.4f} ({len(large_ics)} dates)")
         except Exception as e:
             print(f"  [WARN] Large-scale verification failed: {e}")
-        finally:
-            _data_cache = saved_cache  # restore small universe cache
 
     elapsed = time.time() - t0
 

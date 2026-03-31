@@ -393,6 +393,19 @@ def create_app() -> FastAPI:
         from src.scheduler import SchedulerService
         scheduler = SchedulerService()
         scheduler.start(config)
+        if not scheduler.is_running and config.scheduler_enabled:
+            logger.warning("Scheduler failed to start on first attempt, retrying...")
+            import time as _time
+            _time.sleep(1)
+            scheduler.start(config)
+        # Store scheduler in app state so /ops/status can check it
+        from src.api.state import get_app_state as _gs
+        _gs().scheduler = scheduler
+
+        if scheduler.is_running:
+            logger.info("Scheduler confirmed running")
+        else:
+            logger.error("Scheduler failed to start — daily_ops/eod_ops will NOT run automatically")
 
         yield
 
