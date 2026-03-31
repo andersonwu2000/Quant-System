@@ -1,11 +1,11 @@
 # Phase Plan Status — 總覽表
 
-> Last updated: 2026-04-01 (session 3 — AA/AC 審計修正)
-> Total: 35 phases | Done: 16 | In Progress: 10 | Not Started: 2 | Superseded: 4 | Archived: 3
+> Last updated: 2026-04-01 (session 5 — 全面代碼審計，AA~AK 逐項驗證)
+> Total: 35 phases | Done: 24 | In Progress: 4 | Paused: 2 | Not Started: 1 | Superseded: 4
 
 ---
 
-## 已完成（16）
+## 已完成（24）
 
 | Phase | 名稱 | 備註 |
 |:-----:|------|------|
@@ -20,49 +20,47 @@
 | K | 數據品質 | 基本面因子驗證 |
 | L | 策略轉向 | 營收動量 + 法人跟隨 + 篩選管線 |
 | M | 下檔保護 | Regime-aware position sizing |
+| R | 代碼整潔 | Phase tracker, .env 文檔 |
 | S | Pipeline 統一 | 3 條管線合併為 1 |
 | U | Autoresearch 模式 | Karpathy 3-file 架構 |
-| Y | 容器化研究 | Docker 隔離 (agent+evaluator+watchdog) |
+| V | Kill Switch Debug | 核心 3 bug 已修，路徑鎖定 |
+| X | 反過擬合 | L5 gate + 複雜度限制 |
+| Y | 容器化研究 | Docker 3-container 隔離 |
 | Z | 向量化回測 | PBO + SharedFeed (Z1+Z2 done, Z3 deferred) |
-| R | 代碼整潔 | Phase tracker, .env 文檔 |
+| AB | Factor-Level PBO | daily returns 儲存 + CSCV + hierarchical clustering + DSR(N=15) |
+| AC | Validator 方法論修正 | 16 項檢查 + §7 hard/soft 門檻分離 |
+| AD | 數據管線自動化 | DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine |
+| AE | Docker Agent 隔離 | 3-container + loop.ps1 + token refresh |
+| AF | 記憶與替換系統 | learnings.jsonl + 1.3× 替換 + 飽和追蹤 + 深度限制 |
+| AI | 營運架構 | daily_ops/eod_ops + Heartbeat + Trade Ledger + P0-P3 通知 |
 
-## 進行中（10）
+## 進行中（4）
 
-| Phase | 名稱 | 完成度 | 未完成項目 |
-|:-----:|------|:------:|-----------|
-| AA | 策略建構重構 | 60% | 4.1 inverse-vol 回滾（PBO 惡化），4.2+4.6 no-trade zone/非對稱成本**未實作**（先前虛報已修正），Phase 2 construction.py 整合 |
-| AB | Factor-Level PBO | 75% | Step 4 auto-dedup 未做 |
-| AC | Validator 方法論修正 | 95% | 16 項檢查完成，§7 hard/soft 門檻分離**未實作**（validator 仍用 all-or-nothing） |
-| AD | 數據管線自動化 | 80% | Phase 4: TWSE 歷史端點、Securities Master、cross-source 驗證 |
-| AE | Docker Agent 隔離 | 90% | Token refresh 已修（rw mount） |
-| AG | 因子部署管線 | 65% | **Step 2.5 精煉管線未實作**（correlation check → 多因子組合 → Validator(no kill) → 壓力測試） |
-| AH | Web 前端改版 | 70% | Trading page 核心功能 |
-| AI | 營運架構 | 80% | Phase 5 (UI) optional |
-| AK | 整合測試體系 | 85% | AK-4 效能基準（降為上線後） |
-| AF | 記憶與替換系統 | 80% | 替換鏈深度限制已實作，飽和度追蹤已實作 |
+| Phase | 名稱 | 完成度 | 已做 | 未做 |
+|:-----:|------|:------:|------|------|
+| AA | 策略建構重構 | 80% | 4.2+4.6 no-trade zone + 非對稱成本（revenue_momentum.py）、sells-first、MODIFY cap、sqrt impact、odd-lot | Phase 2: strategy_builder 整合 construction.py（turnover penalty 代碼存在但未串接） |
+| AG | 因子部署管線 | 75% | strategy_builder、paper_deployer、deployed_executor、refinement 2.5a+2.5c | Step 1 watchdog auto-submit（_auto_submit_factor 不存在）、Step 2.5b+2.5d（composite + stress） |
+| AK | 整合測試體系 | 85% | 125 integration + 1 E2E + 2 security + 1 resilience | AK-4 效能基準（降為上線後）、E2E 缺 paper→live + autoresearch cycle |
+| AJ | 壓力測試 | 50% | 框架 + 3 歷史情景 + 4 synthetic + 成本敏感度 | 缺 3 歷史情景（台股特有）、相關性壓力、因子失效測試 |
 
-## 部分完成但暫停（5）
+## 暫停（2）
 
-| Phase | 名稱 | 完成度 | 暫停原因 |
-|:-----:|------|:------:|---------|
-| E | 實盤交易 | 90% | 等待永豐金 CA 憑證 |
-| N | Paper Trading 準備 | 80% | N5 等 CA 憑證 |
-| T | Paper Trading 完整性 | 60% | T2 回測比較部分完成，T3 自動對帳已修（live mode only） |
-| V | Kill Switch Debug | 90% | 核心 3 bug 已修，路徑鎖定已做 |
-| X | 反過擬合 | 80% | L5 gate 已實作，family labeling optional |
+| Phase | 名稱 | 暫停原因 |
+|:-----:|------|---------|
+| E/N | 實盤交易 + Paper Trading | 等永豐金 CA 憑證 |
+| AH | Web 前端改版 | 5/8 頁面完成（缺 Trading/Research/Orders），非阻塞項 |
 
-## 未開始（2）
+## 未開始（1）
 
 | Phase | 名稱 | 前置條件 |
 |:-----:|------|---------|
-| AJ | 壓力測試 | 回測基礎設施穩定後 |
 | J | 跨資產 Alpha 擴展 | 台股因子研究穩定後 |
 
 ## 已取代 / 歸檔（4）
 
 | Phase | 名稱 | 取代者 |
 |:-----:|------|--------|
-| P | 自動 Alpha 研究（舊版） | → Phase U (autoresearch) |
+| P | 自動 Alpha 研究（舊版） | → Phase U |
 | Q | 策略改進 | → Phase AA + AC |
 | N2 | Web 前端重寫 | → Phase AH |
 | M (v1) | 因子管理（舊版） | → Phase AD + AF |
@@ -73,15 +71,13 @@
 
 | 項目 | Phase | 狀態 |
 |------|:-----:|:----:|
-| AK-2 整合測試 59 tests（含 8 bug regression） | AK | ✅ |
-| AK-3 E2E 4 tests | AK | ✅ |
-| AK-5.1 Auth 5 tests + AK-5.2 沙箱 14 tests | AK | ✅ |
-| AK-6 Broker 斷線韌性 3 tests | AK | ✅ |
+| 整合測試 125 tests | AK | ✅ |
+| E2E test_full_trading_day | AK | ✅ |
+| Auth 5 + 沙箱 14 security tests | AK | ✅ |
+| Broker 斷線韌性 tests | AK | ✅ |
 | Sinopac CA 憑證 | E | ⏳ 等待 |
 | Paper mode 30 天觀察 | AG | ⏳ 未開始 |
-| 觀察期 0 假警報 | T | ✅ 已修（live mode only） |
 | NAV 追蹤 < 1% 誤差 | AG | ⏳ 需驗證 |
-| Reconciliation CLEAN | T | ✅ symbol 格式已修 |
 
 ---
 
@@ -89,8 +85,8 @@
 
 | 指標 | 數值 |
 |------|------|
-| 總實驗數 | 245+ |
+| 總實驗數 | 400+ |
 | L5 通過（手動） | 2 (revenue_acceleration, per_value) |
 | L5 通過（autoresearch） | 0 |
 | 雙因子組合 | composite_growth_value (IS ICIR 0.364, OOS ICIR 0.571) |
-| Validator 15 項 | 重跑中（kill switch OFF），首次 11/16 PASS（kill switch 觸發 20+ 次壓低 CAGR） |
+| Validator 16 項 | hard/soft 分離完成，待重跑驗證 |

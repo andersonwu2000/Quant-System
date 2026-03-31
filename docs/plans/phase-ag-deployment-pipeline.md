@@ -141,7 +141,7 @@ Step 2.5a: Correlation check — 新因子 vs 已有 L5 因子的 IC 相關性
     ↓ 如果 corr < 0.50 → 可組合；corr ≥ 0.50 → 單獨部署或替換
 Step 2.5b: 多因子組合 — rank composite / IC-weighted（用已有 L5 因子庫）
     ↓
-Step 2.5c: Validator 15 項（kill_switch=OFF）— 測因子 alpha，不測風控
+Step 2.5c: Validator 16 項（kill_switch=OFF, hard/soft 分離）— 測因子 alpha，不測風控
     ↓
 Step 2.5d: 壓力測試 — 6 歷史情景 + 成本敏感度 + benchmark 比較
     ↓ 全部 PASS
@@ -366,16 +366,26 @@ Paper Trading (SimBroker)               Micro Live (SinopacBroker)
 
 ## 8. 預估
 
-| Step | 內容 | 狀態 | 備註（2026-03-31 驗證） |
+| Step | 內容 | 狀態 | 備註（2026-04-01 更新） |
 |------|------|:----:|------------------------|
 | 1 | watchdog deploy_queue（去重 + 無需網路） | ✅ | file-based + SHA256 dedup |
-| 2 | PaperDeployer | ✅ | 代碼完成。測試為手動 E2E（不在 repo） |
-| 3 | DeployedStrategyExecutor + NAV 追蹤 | ✅ | 獨立 per-strategy NAV |
-| 4 | Scheduler 月度 job | ✅ | cron `0 10 12 * *` + pipeline lock |
+| 2 | PaperDeployer | ✅ | 代碼完成 + AK-2 測試覆蓋（9 tests） |
+| 2.5 | **因子精煉管線** | ✅ | `run_factor_refinement.py`：correlation → composite → Validator(no kill) → stress |
+| 3 | DeployedStrategyExecutor + NAV 追蹤 | ✅ | 日頻執行（改自月頻），DataCatalog 完整數據 |
+| 4 | Scheduler 日頻 job | ✅ | 每交易日執行（改自每月 12 日） |
 | 5 | 比較報告（含 30/90 天決策標準） | ⚠️ | decision logic 完成，但未接通 benchmark 實際 NAV 比較 |
 | 6 | 30 天 auto-stop（PaperDeployer 已有） | ✅ | `AUTO_STOP_DAYS=30`，`update_nav()` 檢查到期 |
 | 7 | 因子健康檢查 + 淘汰 | ⏳ | 未實作。部署後實作 |
-| 8 | 微額實盤配置（零股模式 + SinopacBroker） | ⏳ | 等 CA 憑證。config 已有 `fractional_shares` |
+| 8 | 微額實盤配置（零股模式 + SinopacBroker） | ⏳ | 等 CA 憑證 |
+
+### 2026-04-01 重大修復
+
+| 修復 | 影響 |
+|------|------|
+| Validator `enable_kill_switch=False` | Kill switch 觸發 20+ 次壓低 CAGR，Validator 測因子 alpha 不是風控 |
+| OOS/recent 用 DataCatalog feed | 之前 Yahoo download 導致 "No trading dates" / "0 trades" |
+| `Context.get_revenue` yoy_growth 重算（bug #75） | FinMind 2019+ 的 yoy_growth 全 NaN → revenue_acceleration 失效 |
+| DataCatalog 全面遷移（25+ 處） | engine/validator/stress_test/jobs/API 全部改用本地數據 |
 
 ---
 

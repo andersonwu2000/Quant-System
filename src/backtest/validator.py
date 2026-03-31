@@ -1,32 +1,26 @@
 """StrategyValidator — 策略上線前的強制驗證閘門。
 
 所有策略（無論手動研究或自動化 Alpha）在進入 Paper/Live 交易前，
-必須通過此驗證器的全部檢查。任何一項不通過即判定為不合格。
+必須通過此驗證器的硬門檻檢查。軟門檻 fail 會顯示警告但不阻擋。
 
-檢查項目（15 項）：
-1.  Universe size — 選股池 ≥ 50
-2.  CAGR — ≥ 8%
-3.  Sharpe — ≥ 0.7
-4.  Max Drawdown — ≤ 40%
-5.  Turnover + cost — 成本 / gross alpha < 50%
-6.  Walk-Forward — ≥ 60% 年份 OOS Sharpe > 0
-7.  Deflated Sharpe — ≥ 0.70（寬鬆門檻）
-8.  Bootstrap — P(Sharpe > 0) ≥ 80%
-9.  OOS Sharpe — ≥ 0
-10. vs 1/N benchmark — 超額 ≥ 0
-11. PBO — ≤ 50%
-12. Regime breakdown — 最差年 ≥ -30%
-13. Factor decay — 最近 1 年 Sharpe ≥ 0
-14. Market correlation — |corr with 0050| ≤ 0.90
-15. CVaR(95%) — ≥ -5%
+檢查項目（16 項，Phase AC §7 硬/軟分離）：
+
+硬門檻（必須全部通過）：
+  CAGR ≥ 8%, Sharpe ≥ 0.7, Cost ratio < 50%, 2× cost safety,
+  Temporal consistency ≥ 60%, DSR ≥ 0.70, Bootstrap ≥ 80%,
+  vs EW benchmark ≥ 50%, PBO ≤ 50%, Market corr ≤ 0.80,
+  Permutation p < 0.10 (if applicable)
+
+軟門檻（報告但不阻擋）：
+  Universe ≥ 50, MDD ≤ 40%, OOS Sharpe ≥ 0.3 (SE=0.82),
+  Worst regime ≥ -30%, Recent Sharpe ≥ 0 (SE=1.0), CVaR ≥ -5%
 
 用法：
     from src.backtest.validator import StrategyValidator, ValidationConfig
     validator = StrategyValidator(config)
     report = validator.validate(strategy, universe, start, end)
-    if not report.passed:
-        print(report.summary())
-        # 不可進入交易
+    if report.passed:  # 硬門檻全部通過
+        print(report.summary())  # 軟門檻 warning 會顯示
 """
 
 from __future__ import annotations
@@ -132,6 +126,22 @@ class CheckResult:
     value: Any            # 實際值
     threshold: Any        # 門檻值
     detail: str = ""      # 額外說明
+    hard: bool = True     # True = 硬門檻（必須通過），False = 軟門檻（報告但不阻擋）
+
+
+# Phase AC §7: hard/soft 門檻分類
+# 硬門檻：統計顯著性 + 經濟可行性核心指標（0 容忍）
+# 軟門檻：統計功效不足的 sanity check 或描述性風險指標
+HARD_CHECKS = {
+    "cagr", "sharpe", "annual_cost_ratio", "cost_2x_safety",
+    "temporal_consistency", "deflated_sharpe", "bootstrap_p_sharpe_positive",
+    "vs_ew_universe", "construction_sensitivity", "market_correlation",
+    "permutation_p",
+}
+SOFT_CHECKS = {
+    "universe_size", "max_drawdown", "oos_sharpe",
+    "worst_regime", "recent_period_sharpe", "cvar_95",
+}
 
 
 # ── 驗證報告 ───────────────────────────────────────────────────────
@@ -150,10 +160,10 @@ class ValidationReport:
 
     @property
     def passed(self) -> bool:
-        """全部檢查通過才算 pass。"""
+        """硬門檻全部通過才算 pass。軟門檻 fail 不阻擋。"""
         if self.error:
             return False
-        return all(c.passed for c in self.checks)
+        return all(c.passed for c in self.checks if c.hard)
 
     @property
     def n_passed(self) -> int:
@@ -163,30 +173,65 @@ class ValidationReport:
     def n_total(self) -> int:
         return len(self.checks)
 
+    @property
+    def n_hard_passed(self) -> int:
+        return sum(1 for c in self.checks if c.hard and c.passed)
+
+    @property
+    def n_hard_total(self) -> int:
+        return sum(1 for c in self.checks if c.hard)
+
+    @property
+    def soft_warnings(self) -> list[CheckResult]:
+        """軟門檻中 fail 的項目（不阻擋部署，但應注意）。"""
+        return [c for c in self.checks if not c.hard and not c.passed]
+
     def summary(self) -> str:
         """產出人類可讀的驗證摘要。"""
         lines = [
             f"═══ Strategy Validation Report: {self.strategy_name} ═══",
-            f"Result: {'PASSED' if self.passed else 'FAILED'} ({self.n_passed}/{self.n_total})",
+            f"Result: {'PASSED' if self.passed else 'FAILED'} "
+            f"(hard: {self.n_hard_passed}/{self.n_hard_total}, "
+            f"total: {self.n_passed}/{self.n_total})",
             "",
         ]
         if self.error:
             lines.append(f"ERROR: {self.error}")
             return "\n".join(lines)
 
-        for c in self.checks:
-            icon = "✓" if c.passed else "✗"
-            lines.append(f"  {icon} {c.name:<30s} {str(c.value):>12s}  (threshold: {c.threshold})")
-            if c.detail:
-                lines.append(f"    {c.detail}")
+        # Hard gates first
+        hard_checks = [c for c in self.checks if c.hard]
+        soft_checks = [c for c in self.checks if not c.hard]
 
-        lines.append("")
+        if hard_checks:
+            lines.append("─── Hard Gates (must all pass) ───")
+            for c in hard_checks:
+                icon = "✓" if c.passed else "✗"
+                lines.append(f"  {icon} {c.name:<30s} {str(c.value):>12s}  (threshold: {c.threshold})")
+                if c.detail:
+                    lines.append(f"    {c.detail}")
+            lines.append("")
+
+        if soft_checks:
+            lines.append("─── Soft Gates (warnings only) ───")
+            for c in soft_checks:
+                icon = "✓" if c.passed else "⚠"
+                lines.append(f"  {icon} {c.name:<30s} {str(c.value):>12s}  (threshold: {c.threshold})")
+                if c.detail:
+                    lines.append(f"    {c.detail}")
+            lines.append("")
+
         if self.passed:
-            lines.append("All checks passed. Strategy is eligible for paper/live trading.")
+            warnings = self.soft_warnings
+            if warnings:
+                lines.append(f"PASSED — eligible for paper/live trading. "
+                           f"{len(warnings)} soft warning(s): {', '.join(w.name for w in warnings)}")
+            else:
+                lines.append("PASSED — all checks passed. Strategy is eligible for paper/live trading.")
         else:
-            failed = [c.name for c in self.checks if not c.passed]
-            lines.append(f"Failed checks: {', '.join(failed)}")
-            lines.append("Strategy CANNOT proceed to trading until all checks pass.")
+            failed_hard = [c.name for c in self.checks if c.hard and not c.passed]
+            lines.append(f"FAILED — hard gate(s) not met: {', '.join(failed_hard)}")
+            lines.append("Strategy CANNOT proceed to trading until all hard gates pass.")
 
         return "\n".join(lines)
 
@@ -502,6 +547,13 @@ class StrategyValidator:
             ))
         else:
             logger.info("[Validator] Skipping permutation test (no compute_fn)")
+
+        # Phase AC §7: mark each check as hard or soft
+        all_known = HARD_CHECKS | SOFT_CHECKS
+        for c in report.checks:
+            if c.name not in all_known:
+                logger.warning("Check '%s' not in HARD_CHECKS or SOFT_CHECKS — defaulting to hard", c.name)
+            c.hard = c.name in HARD_CHECKS
 
         return report
 

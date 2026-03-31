@@ -1836,12 +1836,8 @@ def _run_validator(results: dict) -> dict | None:
                 print(f"  [{mark}] {c.name}: {c.value} (threshold: {c.threshold})")
         print(f"\nvalidator: {n_passed}/{n_total}")
 
-        # Hard/soft deployment threshold (Phase AC §7)
-        HARD_CHECKS = {
-            "cagr", "sharpe", "annual_cost_ratio", "temporal_consistency",
-            "deflated_sharpe", "bootstrap_p_sharpe_positive", "vs_ew_universe",
-            "construction_sensitivity", "market_correlation", "permutation_p",
-        }
+        # Hard/soft deployment threshold (Phase AC §7) — import from validator (single source of truth)
+        from src.backtest.validator import HARD_CHECKS
         deployed = all(c.passed for c in checks if c.name in HARD_CHECKS)
 
         print(f"deploy_eligible: {deployed}")

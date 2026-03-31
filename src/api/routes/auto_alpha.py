@@ -917,14 +917,10 @@ async def submit_factor(
             message=f"Validator error: {e}",
         )
 
-    # 4. 部署判定 — hard/soft threshold (Phase AC §7)
+    # 4. 部署判定 — hard/soft threshold (Phase AC §7, single source of truth)
     deployed = False
     checks = report.checks
-    HARD_CHECKS = {
-        "cagr", "sharpe", "annual_cost_ratio", "temporal_consistency",
-        "deflated_sharpe", "bootstrap_p_sharpe_positive", "vs_ew_universe",
-        "construction_sensitivity", "market_correlation", "permutation_p",
-    }
+    from src.backtest.validator import HARD_CHECKS
     hard_all_pass = all(c.passed for c in checks if c.name in HARD_CHECKS)
 
     if hard_all_pass:
