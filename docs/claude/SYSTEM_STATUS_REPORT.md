@@ -1,7 +1,7 @@
 # 系統現況報告
 
-> **更新**: 2026-03-31
-> **版本**: v16.0
+> **更新**: 2026-03-31（session 2）
+> **版本**: v17.0
 
 ---
 
@@ -9,18 +9,20 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python | 161 檔 / 38,200+ LOC |
-| 測試 | 116 檔 / 26,200+ LOC / **1,700+** test functions |
+| 後端 Python | 170+ 檔 / 40,800+ LOC |
+| 測試 | 118 檔 / 26,500+ LOC / **1,810+** test functions |
 | CI | 9 jobs（lint + mypy + test + web + e2e + android + release） |
-| API 端點 | 117（16 路由模組） |
-| 因子 | 83（66 技術 + 17 基本面） |
+| API 端點 | 120+（17 路由模組，新增 `/ops`） |
+| 因子 | 83（66 技術 + 17 基本面）+ 3 FinLab 品質因子 |
 | 策略 | 13（11 standalone + alpha + multi_asset） |
 | 最佳化方法 | 14 |
 | 風控規則 | 12 |
-| 數據源 | 5（Yahoo / FinMind / FRED / Shioaji / TWSE+TPEX OpenAPI） |
-| 本地 parquet | 1,099 支台股價格 + 3,407 基本面檔（12 種數據集） |
-| 數據平台 | DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine |
-| Autoresearch | 974 實驗, 297 L5 passes, 2 independent directions |
+| 數據源 | 6（Yahoo / FinMind / FRED / Shioaji / TWSE+TPEX / **FinLab**） |
+| 數據儲存 | 按來源分離（yahoo/ finmind/ twse/ finlab/）4,800+ files / 660+ MB |
+| 數據平台 | DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
+| SecuritiesMaster | 3,936 家公司（2,241 active + 1,695 delisted）+ 39 產業分類 |
+| 運營架構 | daily_ops + eod_ops + Heartbeat + 通知分級 P0-P3 + Trade Ledger |
+| Autoresearch | 重置（2026-03-31 清空歷史，從零開始新研究週期） |
 
 ---
 
@@ -90,11 +92,12 @@
 | `src/alpha/` | 31 | 6,663 | Alpha Pipeline + Auto-Alpha（9 子模組）+ FilterStrategy |
 | `src/backtest/` | 13 | 5,448 | Engine + Validator(16項) + PBO(CSCV) + WF + 向量化(Z1) |
 | `src/strategy/` | 19 | 4,689 | 83 因子（tech+fundamental+kakushadze）+ optimizer + registry |
-| `src/data/` | 22 | 4,100+ | 5 數據源 + DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
-| `src/execution/` | 14 | 2,666 | SimBroker + Sinopac + TWAP + OMS + 零股分流 |
+| `src/data/` | 22 | 4,500+ | 6 數據源（+FinLab）+ DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
+| `src/reconciliation/` | 3 | 450+ | 每日回測 vs 實盤比對 + 週報（G1）|
+| `src/execution/` | 15 | 2,900+ | SimBroker + Sinopac + TWAP + OMS + 零股分流 + **Trade Ledger**（intent log + fill log + crash replay）|
 | `src/portfolio/` | 4 | 1,596 | 14 最佳化方法 + 風險模型(GARCH/PCA) + 幣別對沖 |
 | `src/core/` | 7 | 1,215 | 統一模型 + Config + Logging + TradingCalendar + TradingPipeline |
-| `src/scheduler/` | 2 | 1,127 | Trading Pipeline（統一入口）+ 3 排程路徑 |
+| `src/scheduler/` | 4 | 1,500+ | **daily_ops + eod_ops**（統一運營流程）+ Heartbeat + Trading Pipeline |
 | `src/risk/` | 5 | 1,075 | 12 規則 + Kill Switch + RealtimeMonitor |
 | `src/allocation/` | 4 | 713 | 宏觀因子 + 跨資產信號 + 戰術配置 |
 | 其他 | 14 | 961 | CLI + Notifications + Instrument |
