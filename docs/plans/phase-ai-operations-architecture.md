@@ -1,6 +1,6 @@
 # Phase AI：生產運營架構 — 控制平面設計
 
-> 狀態：✅ Phase 1-4 實作完成，Phase 5（UI）可選
+> 狀態：✅ Phase 1-4 全部完成（含掛單持久化 + Docker API），Phase 5（UI）可選
 > 前置：Phase AD（數據平台）✅、Phase S（Trading Pipeline）✅
 > 日期：2026-03-31
 
@@ -320,59 +320,57 @@ async def eod_ops(config):
 > 參考：NautilusTrader crash-only design — startup 和 recovery 共用同一個 code path。
 > Paper mode 用 SimBroker（同步撮合），intent log + ledger 留到 live 前。
 
-### Phase 1：重寫 SchedulerService + daily_ops（P0）
+### Phase 1：重寫 SchedulerService + daily_ops（P0）✅ 已驗收
 
 核心改動。把散落的 cron 整合為統一的每日運營流程。
 
-| 步驟 | 內容 | 檔案 |
-|------|------|------|
-| 1a | 重寫 SchedulerService — daily_ops 統一入口 | `src/scheduler/__init__.py` |
-| 1b | daily_ops 流程（交易日檢查→數據刷新→QG→pipeline→EOD） | `src/scheduler/ops.py`（新建）|
-| 1c | 每日數據刷新步驟（TWSE 快照 + Yahoo 增量） | `src/scheduler/ops.py` |
-| 1d | is_rebalance_day（月度/週度/日度可配） | `src/core/config.py` |
-| 1e | SIGTERM handler（關機前存 portfolio） | 修改 `src/api/app.py` |
-| 1f | Docker API healthcheck | 修改 `docker-compose.yml` |
+| 步驟 | 內容 | 檔案 | 驗收 |
+|------|------|------|:----:|
+| 1a | 重寫 SchedulerService — daily_ops 統一入口 | `src/scheduler/__init__.py` | ✅ 2 jobs: daily_ops 07:50 + eod_ops 13:30 |
+| 1b | daily_ops 流程（交易日檢查→數據刷新→QG→pipeline→EOD） | `src/scheduler/ops.py` | ✅ 80 行，職責清晰 |
+| 1c | 每日數據刷新步驟（TWSE 快照 + Yahoo 增量） | `src/scheduler/ops.py` | ✅ _fetch_twse_snapshot() |
+| 1d | is_rebalance_day（月度/週度/日度可配） | `src/scheduler/ops.py` | ✅ weekly 用 ISO week 邏輯（O1 修正） |
+| 1e | SIGTERM handler（關機前存 portfolio） | `src/api/app.py` lifespan | ✅ FastAPI lifespan context manager |
+| 1f | Docker API healthcheck | `docker-compose.yml` | ✅ curl /system/health 30s interval |
 
-### Phase 2：Heartbeat + 通知分級 + 日報（P1）
+### Phase 2：Heartbeat + 通知分級 + 日報（P1）✅ 已驗收
 
 讓系統會說話 — 正常時報平安，異常時告急。
 
-| 步驟 | 內容 | 檔案 |
-|------|------|------|
-| 2a | HeartbeatMonitor（開盤前/交易後/收盤後 Discord ping） | `src/scheduler/heartbeat.py` |
-| 2b | 通知分級（P0 緊急 → P3 調試） | 修改 `src/notifications/` |
-| 2c | 每日摘要報告（Discord：NAV、trades、drift、數據狀態） | `src/scheduler/ops.py` |
-| 2d | Ops API endpoints（`/ops/daily-summary`、`/ops/positions`） | `src/api/routes/ops.py` |
+| 步驟 | 內容 | 檔案 | 驗收 |
+|------|------|------|:----:|
+| 2a | HeartbeatMonitor（開盤前/交易後/收盤後 Discord ping） | `src/scheduler/heartbeat.py` | ✅ 5 事件類型 |
+| 2b | 通知分級（P0 緊急 → P3 調試） | `src/notifications/__init__.py` | ✅ Severity enum + notify() |
+| 2c | 每日摘要報告（Discord：NAV、trades、drift、數據狀態） | `src/scheduler/ops.py` | ✅ _generate_daily_summary() |
+| 2d | Ops API endpoints（`/ops/daily-summary`、`/ops/positions`） | `src/api/routes/ops.py` | ✅ 3 endpoints |
 
-### Phase 3：Live Trading 準備（live 啟動前，P1）
+### Phase 3：Live Trading 準備（live 啟動前，P1）✅ 全部完成
 
-Paper mode 不需要，但 live 前必須有。
+| 步驟 | 內容 | 檔案 | 驗收 |
+|------|------|------|:----:|
+| 3a | Intent log（下單前寫入意圖） | `src/execution/trade_ledger.py` | ✅ log_intent() |
+| 3b | Trade ledger（逐筆 append-only） | `src/execution/trade_ledger.py` | ✅ log_fill() + JSONL |
+| 3c | 重啟時 ledger 重播恢復 | `src/api/state.py` | ✅ _replay_ledger() |
+| 3d | 掛單持久化（pending orders → SQLite） | `src/execution/order_book.py` | ✅ PersistentOrderBook |
 
-| 步驟 | 內容 | 檔案 |
-|------|------|------|
-| 3a | Intent log（下單前寫入意圖） | `src/execution/intent_log.py` |
-| 3b | Trade ledger（逐筆 append-only） | `src/execution/trade_ledger.py` |
-| 3c | 重啟時 ledger 重播恢復 | 修改 `src/api/state.py` |
-| 3d | 掛單持久化（pending orders → SQLite） | `src/execution/order_book.py` |
+### Phase 4：Autoresearch 同步（P2）✅ 已驗收
 
-### Phase 4：Autoresearch 同步（P2）
-
-| 步驟 | 內容 | 檔案 |
-|------|------|------|
-| 4a | Docker volume mount 對齊新目錄結構 | `docker/autoresearch/docker-compose.yml` |
-| 4b | 容器內數據驗證 | 驗證腳本 |
+| 步驟 | 內容 | 檔案 | 驗收 |
+|------|------|------|:----:|
+| 4a | Docker volume mount 對齊新目錄結構 | `docker/autoresearch/docker-compose.yml` | ✅ yahoo/finmind/twse/finlab/research 全掛載 |
+| 4b | 容器內數據驗證 | evaluator healthcheck | ✅ |
 
 ### ~~策略生命週期管理~~ → Phase AG 已完成
 
 PaperDeployer + DeployedExecutor + 多 portfolio 隔離 + 安全限制均在 Phase AG，不重複。
 
-### Phase 5：使用者介面（P2，可選）
+### Phase 5：使用者介面（P2，可選）⏳ 未開始
 
-| 步驟 | 內容 | 備註 |
-|------|------|------|
-| 5a | Discord Bot（/status, /rebalance） | 日常操作最方便的方式 |
-| 5b | Web Dashboard Ops 頁面 | 系統狀態一覽 |
-| 5c | Mobile Push 通知 | P0 告警推播 |
+| 步驟 | 內容 | 備註 | 驗收 |
+|------|------|------|:----:|
+| 5a | Discord Bot（/status, /rebalance） | 日常操作最方便的方式 | ⏳ |
+| 5b | Web Dashboard Ops 頁面 | 系統狀態一覽 | ⏳ |
+| 5c | Mobile Push 通知 | P0 告警推播 | ⏳ |
 
 ---
 
