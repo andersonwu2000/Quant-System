@@ -69,11 +69,17 @@ broker.connect()
 ### Autoresearch（因子研究）
 
 ```powershell
-# 啟動研究循環（Docker 模式，包含 status reporter + credentials refresher）
+# 透過 API 啟動 Docker 容器
+curl -X POST http://localhost:8000/api/v1/auto-alpha/start -H "X-API-KEY: dev-key"
+
+# 啟動研究循環
 powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1
 
-# 手動查看狀態
-powershell -File scripts/autoresearch/status.ps1
+# 查看狀態
+curl http://localhost:8000/api/v1/auto-alpha/status -H "X-API-KEY: dev-key"
+
+# 停止
+curl -X POST http://localhost:8000/api/v1/auto-alpha/stop -H "X-API-KEY: dev-key"
 ```
 
 詳見 [autoresearch-guide-zh.md](autoresearch-guide-zh.md)。

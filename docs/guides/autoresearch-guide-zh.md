@@ -24,22 +24,54 @@ agent 容器            evaluator 容器         watchdog 容器
 
 ## 啟動
 
+### 方式一：API（推薦，需要 API server 在跑）
+
 ```powershell
-# 1. 啟動 3 容器
+# 啟動 Docker 容器（agent + evaluator + watchdog）
+curl -X POST http://localhost:8000/api/v1/auto-alpha/start -H "X-API-KEY: dev-key"
+# → {"message": "Auto-alpha started. ..."}
+
+# 確認狀態
+curl http://localhost:8000/api/v1/auto-alpha/status -H "X-API-KEY: dev-key"
+# → {"running": true, "status": "running", ...}
+
+# 啟動研究循環（容器啟動後）
+powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1
+```
+
+### 方式二：手動 Docker（不需要 API server）
+
+```powershell
+# 1. 首次或代碼更新後需要 rebuild
 cd docker/autoresearch
+docker compose build
+
+# 2. 啟動 3 容器
 docker compose up -d
 
-# 2. 確認 evaluator 健康
+# 3. 確認 evaluator 健康
 docker exec autoresearch-agent curl -s http://evaluator:5000/health
 # → {"status": "ok"}
 
-# 3. 啟動研究循環
+# 4. 啟動研究循環
 powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1
 # 或 Host 模式（不用 Docker）：
 powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1 -Host
 ```
 
 ## 停止
+
+### 方式一：API
+
+```powershell
+# Ctrl+C 停止 loop.ps1（先停研究循環）
+
+# 停止 Docker 容器
+curl -X POST http://localhost:8000/api/v1/auto-alpha/stop -H "X-API-KEY: dev-key"
+# → {"message": "Auto-alpha stopped. ..."}
+```
+
+### 方式二：手動
 
 ```powershell
 # Ctrl+C 停止 loop.ps1
@@ -48,6 +80,19 @@ powershell -ExecutionPolicy Bypass -File scripts/autoresearch/loop.ps1 -Host
 # 完全停止：
 cd docker/autoresearch && docker compose down
 ```
+
+## 何時需要 rebuild
+
+以下情況需要 `docker compose build` 重建容器：
+- `evaluate.py` 修改（evaluator 容器內建此檔）
+- `Dockerfile.*` 修改
+- Python 依賴變更
+
+以下情況**不需要** rebuild（host mount 自動反映）：
+- `src/` 代碼修改（evaluator + watchdog 掛載 host 的 src/）
+- `data/` 數據更新（掛載 host 的 data/yahoo, finmind, twse, finlab）
+- `factor.py` 修改（掛載 work/ 目錄）
+- `docker-compose.yml` 修改（重啟容器即可：`docker compose up -d`）
 
 ## 檔案結構
 
