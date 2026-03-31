@@ -56,7 +56,7 @@ class DataCatalog:
 
         bare = strip_tw_suffix(symbol)
         try:
-            adj_panel = pd.read_parquet(adj_panel_path)
+            adj_panel = self._get_panel_cached(str(adj_panel_path))
             if bare not in adj_panel.columns:
                 return df  # no adj data for this symbol
 
@@ -102,11 +102,21 @@ class DataCatalog:
 
         return df
 
+    # Cache for FinLab panel reads — one file contains ALL symbols,
+    # so reading it once and reusing is a huge win (12MB × 2000 lookups → 1 read).
+    # This is NOT per-symbol caching (which we avoid) — it's per-panel-file caching.
+    _panel_cache: dict[str, pd.DataFrame] = {}
+
+    def _get_panel_cached(self, path: str) -> pd.DataFrame:
+        if path not in self._panel_cache:
+            self._panel_cache[path] = pd.read_parquet(path)
+        return self._panel_cache[path]
+
     def _read_finlab_panel(self, dataset: str, symbol: str) -> pd.DataFrame | None:
         """Read a single symbol from a FinLab panel parquet (fallback).
 
         FinLab stores data as panel: index=date, columns=all_symbols.
-        We extract one column for the requested symbol.
+        Panel files are cached in memory (one read per file, not per symbol).
         """
         ds = REGISTRY.get(dataset)
         if ds is None or not ds.finlab_panel:
@@ -120,7 +130,7 @@ class DataCatalog:
         bare = strip_tw_suffix(symbol)
 
         try:
-            panel = pd.read_parquet(panel_path)
+            panel = self._get_panel_cached(str(panel_path))
             if bare not in panel.columns:
                 return None
             series = panel[bare].dropna()
@@ -150,7 +160,7 @@ class DataCatalog:
                 pbr_path = FINLAB_DIR / "valuation" / "pbr.parquet"
                 if pbr_path.exists():
                     try:
-                        pbr_panel = pd.read_parquet(pbr_path)
+                        pbr_panel = self._get_panel_cached(str(pbr_path))
                         if bare in pbr_panel.columns:
                             pbr_series = pbr_panel[bare].dropna()
                             pbr_df = pd.DataFrame({"date": pbr_series.index, "PBR": pbr_series.values})
@@ -169,7 +179,7 @@ class DataCatalog:
                     extra_path = FINLAB_DIR / "price" / extra_file
                     if extra_path.exists():
                         try:
-                            extra_panel = pd.read_parquet(extra_path)
+                            extra_panel = self._get_panel_cached(str(extra_path))
                             if bare in extra_panel.columns:
                                 df[extra_col] = extra_panel[bare]
                         except Exception:
@@ -193,7 +203,7 @@ class DataCatalog:
         if not panel_path.exists():
             return pd.DataFrame()
         try:
-            return pd.read_parquet(panel_path)
+            return self._get_panel_cached(str(panel_path))
         except Exception:
             return pd.DataFrame()
 
