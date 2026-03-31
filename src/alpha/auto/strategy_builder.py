@@ -116,6 +116,9 @@ def build_from_research_factor(
                 if _needs_data:
                     _all_bars: dict[str, pd.DataFrame] = {}
                     _all_rev: dict[str, pd.DataFrame] = {}
+                    _all_inst: dict[str, pd.DataFrame] = {}
+                    _all_per: dict[str, pd.DataFrame] = {}
+                    _all_margin: dict[str, pd.DataFrame] = {}
                     for sym in eligible:
                         try:
                             _all_bars[sym] = ctx.bars(sym, lookback=500)
@@ -127,10 +130,30 @@ def build_from_research_factor(
                                 _all_rev[sym] = rev
                         except Exception:
                             pass
+                        try:
+                            inst = ctx.get_institutional(sym)
+                            if not inst.empty:
+                                _all_inst[sym] = inst
+                        except Exception:
+                            pass
+                        try:
+                            per = ctx.get_per_history(sym)
+                            if not per.empty:
+                                _all_per[sym] = per
+                        except Exception:
+                            pass
+                        try:
+                            mrg = ctx.get_margin(sym)
+                            if not mrg.empty:
+                                _all_margin[sym] = mrg
+                        except Exception:
+                            pass
                     _data = {
                         "bars": _all_bars,
                         "revenue": _all_rev,
-                        "institutional": {},
+                        "institutional": _all_inst,
+                        "per_history": _all_per,
+                        "margin": _all_margin,
                         "pe": {}, "pb": {}, "roe": {},
                     }
                     all_values = compute_fn(eligible, as_of, _data)

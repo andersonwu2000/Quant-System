@@ -84,27 +84,25 @@ class VectorizedPBOBacktest:
                     path = None
             if path is None or not path.exists():
                 continue
-                try:
-                    df = pd.read_parquet(path)
-                    if "date" in df.columns:
-                        df["date"] = pd.to_datetime(df["date"])
-                        df = df.set_index("date").sort_index()
-                    if not isinstance(df.index, pd.DatetimeIndex):
-                        df.index = pd.to_datetime(df.index)
-                    df.index = pd.to_datetime(df.index.date)
-                    df = df[~df.index.duplicated(keep="first")]
-                    df = df.loc[start:end]
-                    if "close" in df.columns and len(df) > 100:
-                        close = df["close"]
-                        # Replace 0/negative prices with NaN (data corruption)
-                        close = close.where(close > 0)
-                        if close.isna().sum() / len(close) > 0.10:
-                            continue  # skip stocks with >10% bad prices
-                        prices[sym] = close
-                        volumes[sym] = df.get("volume", pd.Series(0, index=df.index))
-                except Exception:
-                    continue
-                break
+            try:
+                df = pd.read_parquet(path)
+                if "date" in df.columns:
+                    df["date"] = pd.to_datetime(df["date"])
+                    df = df.set_index("date").sort_index()
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index)
+                df.index = pd.to_datetime(df.index.date)
+                df = df[~df.index.duplicated(keep="first")]
+                df = df.loc[start:end]
+                if "close" in df.columns and len(df) > 100:
+                    close = df["close"]
+                    close = close.where(close > 0)
+                    if close.isna().sum() / len(close) > 0.10:
+                        continue
+                    prices[sym] = close
+                    volumes[sym] = df.get("volume", pd.Series(0, index=df.index))
+            except Exception:
+                continue
 
         price_matrix = pd.DataFrame(prices).sort_index()
         volume_matrix = pd.DataFrame(volumes).sort_index().reindex_like(price_matrix)
@@ -135,14 +133,13 @@ class VectorizedPBOBacktest:
                     path = None
                 if path is None or not path.exists():
                     continue
-                try:
-                    df = pd.read_parquet(path)
-                    if not df.empty and "revenue" in df.columns:
-                        df["date"] = pd.to_datetime(df["date"])
-                        revenue[sym] = df.sort_values("date")
-                except Exception:
-                    pass
-                break
+            try:
+                df = pd.read_parquet(path)
+                if not df.empty and "revenue" in df.columns:
+                    df["date"] = pd.to_datetime(df["date"])
+                    revenue[sym] = df.sort_values("date")
+            except Exception:
+                pass
         return revenue
 
     def run_variant(
@@ -298,5 +295,7 @@ class VectorizedPBOBacktest:
             "bars": bars,
             "revenue": self._revenue,
             "institutional": {},
+            "per_history": {},
+            "margin": {},
             "pe": {}, "pb": {}, "roe": {},
         }

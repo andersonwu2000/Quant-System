@@ -1,8 +1,12 @@
 """Deployed Strategy Executor — Phase AG Step 3.
 
 Reads deploy_queue/ markers (written by watchdog), builds strategies,
-generates weights, records paper trades with independent NAV tracking.
+generates weights daily, records paper trades with independent NAV tracking.
 Does NOT submit real orders — avoids conflict with main trading pipeline.
+
+Daily execution:
+- process_deploy_queue(): pick up new factors from watchdog
+- execute_deployed_strategies(): generate weights, track NAV, enforce kill switch
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -78,7 +83,13 @@ def process_deploy_queue(deployer: PaperDeployer) -> list[str]:
 
 
 def execute_deployed_strategies(deployer: PaperDeployer) -> dict[str, dict]:
-    """Generate weights and record paper trades for all active deployed strategies.
+    """Generate weights and track NAV for all active deployed strategies.
+
+    Called daily. Each strategy:
+    - Rebalances monthly (first execution of month)
+    - NAV tracked daily using last weights + daily returns
+    - Kill switch: MDD > 3% → auto stop
+    - Expiry: 30 days → auto stop
 
     Returns {strategy_name: {weights: dict, nav: float, status: str}}.
     """
@@ -98,6 +109,8 @@ def execute_deployed_strategies(deployer: PaperDeployer) -> dict[str, dict]:
                 "status": "ok",
                 "n_positions": len(weights),
             }
+            logger.info("Deployed %s: NAV=%.0f, %d positions",
+                        strategy_info.name, nav, len(weights))
         except Exception as e:
             logger.warning("Execution failed for %s: %s", strategy_info.name, e)
             results[strategy_info.name] = {"status": "error", "error": str(e)}
@@ -105,72 +118,210 @@ def execute_deployed_strategies(deployer: PaperDeployer) -> dict[str, dict]:
     return results
 
 
+def _load_last_trade(name: str) -> dict | None:
+    """Load the most recent paper trade record for a strategy."""
+    trade_dir = PAPER_TRADE_DIR / name
+    if not trade_dir.exists():
+        return None
+    records = sorted(trade_dir.glob("*.json"))
+    if not records:
+        return None
+    try:
+        return json.loads(records[-1].read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _should_rebalance(name: str) -> bool:
+    """Check if strategy should rebalance (first trading day of month)."""
+    last = _load_last_trade(name)
+    if last is None:
+        return True  # first execution
+    last_date = last.get("date", "")
+    today = datetime.now().strftime("%Y-%m")
+    last_month = last_date[:7] if len(last_date) >= 7 else ""
+    return today != last_month
+
+
+def _load_data_for_universe(universe: list[str]) -> dict:
+    """Load full data dict via DataCatalog (consistent with evaluate.py)."""
+    from src.data.data_catalog import get_catalog
+    catalog = get_catalog()
+
+    bars: dict[str, pd.DataFrame] = {}
+    revenue: dict[str, pd.DataFrame] = {}
+    institutional: dict[str, pd.DataFrame] = {}
+    per_history: dict[str, pd.DataFrame] = {}
+    margin_data: dict[str, pd.DataFrame] = {}
+
+    for sym in universe:
+        # Price bars
+        df = catalog.get("price", sym)
+        if not df.empty and "close" in df.columns:
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+            df.index = pd.to_datetime(df.index.date)
+            df = df[~df.index.duplicated(keep="first")]
+            bars[sym] = df
+
+        # Revenue
+        df = catalog.get("revenue", sym)
+        if not df.empty and "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+            revenue[sym] = df.sort_values("date")
+
+        # Institutional
+        try:
+            df = catalog.get("institutional", sym)
+            if not df.empty and "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                institutional[sym] = df.sort_values("date")
+        except Exception:
+            pass
+
+        # PER history
+        try:
+            df = catalog.get("per", sym)
+            if not df.empty and "PER" in df.columns and "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                per_history[sym] = df.sort_values("date")
+        except Exception:
+            pass
+
+        # Margin
+        try:
+            df = catalog.get("margin", sym)
+            if not df.empty and "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                margin_data[sym] = df.sort_values("date")
+        except Exception:
+            pass
+
+    return {
+        "bars": bars,
+        "revenue": revenue,
+        "institutional": institutional,
+        "per_history": per_history,
+        "margin": margin_data,
+        "pe": {}, "pb": {}, "roe": {},
+    }
+
+
 def _execute_single(strategy_info) -> tuple[dict[str, float], float]:
-    """Generate weights for a single deployed strategy. Returns (weights, new_nav)."""
-    from src.alpha.auto.strategy_builder import build_from_research_factor
+    """Generate weights and compute NAV for a single deployed strategy.
 
-    built = build_from_research_factor(
-        factor_name=strategy_info.factor_name,
-        top_n=15,
-    )
+    Monthly rebalance: recalculate weights on first execution of each month.
+    Daily NAV: use last weights + daily returns between executions.
+    """
+    import importlib.util
 
-    # Load market data
-    from src.data.registry import REGISTRY
-    ds = REGISTRY["price"]
-    universe = []
-    bars_dict = {}
-    seen_syms: set[str] = set()
-    for source_dir in ds.source_dirs:
-        if not source_dir.exists():
-            continue
-        for p in sorted(source_dir.glob(f"*_{ds.suffix}.parquet"))[:200]:
-            sym = p.stem.replace(f"_{ds.suffix}", "")
-            if sym.startswith("00") or sym in seen_syms:
-                continue
-            seen_syms.add(sym)
-            try:
-                df = pd.read_parquet(p)
-                if len(df) >= 500:
-                    universe.append(sym)
-                    bars_dict[sym] = df
-            except Exception:
-                pass
+    today = datetime.now().strftime("%Y-%m-%d")
+    rebalance = _should_rebalance(strategy_info.name)
+    last_trade = _load_last_trade(strategy_info.name)
+
+    # Load universe from DataCatalog
+    from src.data.data_catalog import get_catalog
+    catalog = get_catalog()
+    all_syms = catalog.available_symbols("price")
+    # Filter: .TW only, no ETFs (00xx), limit 200
+    universe = sorted(
+        s for s in all_syms
+        if ".TW" in s and not s.replace(".TW", "").startswith("00")
+    )[:200]
 
     if len(universe) < 50:
         raise ValueError(f"Insufficient universe: {len(universe)} < 50")
 
-    # Generate factor values
-    import importlib.util
-    factor_path = Path("src/strategy/factors/research") / f"{strategy_info.factor_name}.py"
-    spec = importlib.util.spec_from_file_location(strategy_info.factor_name, factor_path)
-    if spec is None or spec.loader is None:
-        raise ValueError(f"Cannot load factor: {factor_path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    compute_fn = getattr(mod, "compute_factor", None)
-    if compute_fn is None:
-        raise ValueError(f"No compute_factor in {factor_path}")
+    # Load data
+    data = _load_data_for_universe(universe)
+    bars = data["bars"]
 
-    as_of = pd.Timestamp(datetime.now().strftime("%Y-%m-%d"))
-    data = {"bars": bars_dict}
-    factor_values = compute_fn(universe, as_of, data)
+    if rebalance:
+        # ── Rebalance: compute new weights ──
+        factor_path = Path("src/strategy/factors/research") / f"{strategy_info.factor_name}.py"
+        spec = importlib.util.spec_from_file_location(strategy_info.factor_name, factor_path)
+        if spec is None or spec.loader is None:
+            raise ValueError(f"Cannot load factor: {factor_path}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        compute_fn = getattr(mod, "compute_factor", None)
+        if compute_fn is None:
+            raise ValueError(f"No compute_factor in {factor_path}")
 
-    if not factor_values or len(factor_values) < 10:
-        raise ValueError(f"Factor returned {len(factor_values or {})} values (need 10+)")
+        as_of = pd.Timestamp(today)
 
-    # Top 15 equal weight
-    sorted_factors = sorted(factor_values.items(), key=lambda x: -x[1])[:15]
-    weights = {sym: 1 / 15 * 0.95 for sym, _ in sorted_factors}
+        # Liquidity filter (match strategy_builder: 300 lots = 300,000 shares)
+        eligible = []
+        for sym in universe:
+            if sym not in bars:
+                continue
+            b = bars[sym]
+            if len(b) >= 20 and "volume" in b.columns:
+                avg_vol = float(b["volume"].iloc[-20:].mean())
+                if avg_vol >= 300_000:
+                    eligible.append(sym)
 
-    # Calculate NAV change (simple: use latest daily returns of held positions)
-    if strategy_info.current_nav > 0:
-        portfolio_return = 0.0
-        for sym, w in weights.items():
-            if sym in bars_dict and len(bars_dict[sym]) >= 2:
-                last_two = bars_dict[sym]["close"].iloc[-2:]
-                daily_ret = last_two.iloc[-1] / last_two.iloc[-2] - 1
-                portfolio_return += w * daily_ret
-        new_nav = strategy_info.current_nav * (1 + portfolio_return)
+        if len(eligible) < 20:
+            raise ValueError(f"Too few eligible symbols: {len(eligible)} < 20")
+
+        # Mask data to as_of (prevent look-ahead)
+        masked = {
+            "bars": {s: bars[s].loc[:as_of] for s in eligible if s in bars},
+            "revenue": {
+                s: df[df["date"] <= as_of - pd.DateOffset(days=40)]
+                for s, df in data["revenue"].items() if s in eligible
+            },
+            "institutional": {
+                s: df[df["date"] <= as_of]
+                for s, df in data["institutional"].items() if s in eligible
+            },
+            "per_history": {
+                s: df[df["date"] <= as_of]
+                for s, df in data["per_history"].items() if s in eligible
+            },
+            "margin": {
+                s: df[df["date"] <= as_of]
+                for s, df in data["margin"].items() if s in eligible
+            },
+            "pe": {}, "pb": {}, "roe": {},
+        }
+
+        factor_values = compute_fn(eligible, as_of, masked)
+
+        if not factor_values or len(factor_values) < 10:
+            raise ValueError(f"Factor returned {len(factor_values or {})} values (need 10+)")
+
+        # Top 15 equal weight, 95% invested, max 10% per stock
+        sorted_factors = sorted(factor_values.items(), key=lambda x: -x[1])[:15]
+        n = len(sorted_factors)
+        w = min(0.95 / n, 0.10)
+        weights = {sym: w for sym, _ in sorted_factors}
+    else:
+        # ── No rebalance: use last weights ──
+        weights = last_trade.get("weights", {}) if last_trade else {}
+
+    # ── Calculate NAV ──
+    if strategy_info.current_nav > 0 and last_trade:
+        last_date_str = last_trade.get("date", "")
+        last_weights = last_trade.get("weights", {})
+
+        if last_date_str and last_weights:
+            # Compute cumulative return since last trade date
+            portfolio_return = 0.0
+            for sym, w in last_weights.items():
+                if sym in bars and len(bars[sym]) >= 2:
+                    b = bars[sym]
+                    # Get close on last_date and today
+                    try:
+                        after = b.loc[pd.Timestamp(last_date_str):]
+                        if len(after) >= 2:
+                            ret = after["close"].iloc[-1] / after["close"].iloc[0] - 1
+                            portfolio_return += w * float(ret)
+                    except (KeyError, IndexError):
+                        pass
+            new_nav = strategy_info.current_nav * (1 + portfolio_return)
+        else:
+            new_nav = strategy_info.current_nav
     else:
         new_nav = strategy_info.initial_nav
 

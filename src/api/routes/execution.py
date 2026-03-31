@@ -108,7 +108,7 @@ async def run_reconciliation(
     api_key: str = Depends(verify_api_key),
     _role: dict[str, Any] = Depends(require_role("trader")),
 ) -> ReconcileResponse:
-    """執行 EOD 持倉對帳。"""
+    """執行 EOD 持倉對帳（僅 live mode，paper mode 的 SimBroker 是揮發性記憶體）。"""
     from src.api.state import get_app_state
     from src.execution.reconcile import reconcile
 
@@ -119,6 +119,13 @@ async def run_reconciliation(
         raise HTTPException(
             status_code=400,
             detail="Execution service not initialized or no broker connected",
+        )
+
+    from src.execution.broker.sinopac import SinopacBroker
+    if not isinstance(exec_svc.broker, SinopacBroker):
+        raise HTTPException(
+            status_code=400,
+            detail="Reconciliation only available in live mode (SimBroker is ephemeral, comparison is meaningless)",
         )
 
     broker_positions = exec_svc.broker.query_positions()
@@ -151,7 +158,7 @@ async def auto_correct_positions(
     api_key: str = Depends(verify_api_key),
     _role: dict[str, Any] = Depends(require_role("risk_manager")),
 ) -> dict[str, Any]:
-    """根據券商端持倉自動修正系統持倉（需 risk_manager 權限）。"""
+    """根據券商端持倉自動修正系統持倉（僅 live mode，需 risk_manager 權限）。"""
     from src.api.state import get_app_state
     from src.execution.reconcile import auto_correct, reconcile
 
@@ -162,6 +169,13 @@ async def auto_correct_positions(
         raise HTTPException(
             status_code=400,
             detail="Execution service not initialized or no broker connected",
+        )
+
+    from src.execution.broker.sinopac import SinopacBroker
+    if not isinstance(exec_svc.broker, SinopacBroker):
+        raise HTTPException(
+            status_code=400,
+            detail="Auto-correct only available in live mode (SimBroker is ephemeral)",
         )
 
     broker_positions = exec_svc.broker.query_positions()

@@ -978,15 +978,16 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
     state = get_app_state()
     notifier = create_notifier(config)
 
-    # 只有 paper/live mode 才需要對帳
-    if config.mode not in ("paper", "live"):
-        logger.debug("Daily reconcile skipped: mode=%s", config.mode)
-        return {"status": "skipped", "reason": "not paper/live mode"}
+    # Broker reconciliation 只在 live mode 有意義：
+    # - paper mode：系統有模擬持倉，券商帳戶空的（或有手動部位），比對必定不一致
+    # - live mode：系統下真單，券商持倉應與系統一致，差異才是真正的告警
+    if config.mode != "live":
+        logger.debug("Daily reconcile skipped: mode=%s (only runs in live)", config.mode)
+        return {"status": "skipped", "reason": "not live mode"}
 
     # Update market prices before reconcile (fixes frozen NAV / kill switch)
     await update_portfolio_market_prices()
 
-    # 確認 broker 可用
     exec_svc = state.execution_service
     if not exec_svc.is_initialized or exec_svc.broker is None:
         logger.warning("Daily reconcile skipped: broker not initialized")

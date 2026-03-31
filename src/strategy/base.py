@@ -107,48 +107,93 @@ class Context:
         except Exception:
             return {}
 
+    def _as_of_naive(self) -> pd.Timestamp:
+        """Current time as tz-naive Timestamp."""
+        ts = pd.Timestamp(self.now())
+        if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
+            ts = ts.tz_localize(None)
+        return ts
+
     def get_revenue(self, symbol: str, lookback_months: int = 24) -> pd.DataFrame:
         """取得營收數據，自動含 40 天公布延遲。
 
-        U3: 策略不需要自己做延遲截斷，由 Context 統一處理。
+        Uses DataCatalog for FinLab panel merge (2005-2018 + 2019+ per-symbol).
 
         Returns:
             DataFrame with columns [date, revenue, yoy_growth]，
             截止到 now() - 40 天。空時回傳空 DataFrame。
         """
-        from src.data.registry import parquet_path as _ppath
-        rev_path = _ppath(symbol, "revenue")
-        if not rev_path.exists() and not symbol.endswith(".TW"):
-            rev_path = _ppath(f"{symbol}.TW", "revenue")
-        if not rev_path.exists():
-            return pd.DataFrame()
+        from src.data.data_catalog import get_catalog
         try:
-            df = pd.read_parquet(rev_path)
-            if df.empty or "revenue" not in df.columns:
+            df = get_catalog().get("revenue", symbol)
+            if df.empty:
+                return df
+            if "date" not in df.columns:
                 return pd.DataFrame()
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date")
-            df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
+            if "revenue" in df.columns:
+                df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
 
             # 40 天營收公布延遲
-            as_of = pd.Timestamp(self.now())
-            if hasattr(as_of, 'tzinfo') and as_of.tzinfo is not None:
-                as_of = as_of.tz_localize(None)
-            cutoff = as_of - pd.DateOffset(days=40)
+            cutoff = self._as_of_naive() - pd.DateOffset(days=40)
             df = df[df["date"] <= cutoff]
 
             # YoY growth
             if "yoy_growth" not in df.columns or df["yoy_growth"].isna().all():
                 import numpy as np
-                prev = df["revenue"].shift(12)
-                prev = prev.where(prev > 0, np.nan)
-                df["yoy_growth"] = ((df["revenue"] / prev) - 1) * 100
+                if "revenue" in df.columns:
+                    prev = df["revenue"].shift(12)
+                    prev = prev.where(prev > 0, np.nan)
+                    df["yoy_growth"] = ((df["revenue"] / prev) - 1) * 100
 
             # 限制 lookback
             if len(df) > lookback_months:
                 df = df.iloc[-lookback_months:]
 
             return df.reset_index(drop=True)
+        except Exception:
+            return pd.DataFrame()
+
+    def get_per_history(self, symbol: str) -> pd.DataFrame:
+        """取得 PER/PBR 歷史數據（含 FinLab panel 合併），截止到 now()。"""
+        from src.data.data_catalog import get_catalog
+        try:
+            df = get_catalog().get("per", symbol)
+            if df.empty:
+                return df
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                df = df[df["date"] <= self._as_of_naive()]
+            return df
+        except Exception:
+            return pd.DataFrame()
+
+    def get_institutional(self, symbol: str) -> pd.DataFrame:
+        """取得法人買賣超數據，截止到 now()。"""
+        from src.data.data_catalog import get_catalog
+        try:
+            df = get_catalog().get("institutional", symbol)
+            if df.empty:
+                return df
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                df = df[df["date"] <= self._as_of_naive()]
+            return df
+        except Exception:
+            return pd.DataFrame()
+
+    def get_margin(self, symbol: str) -> pd.DataFrame:
+        """取得融資融券數據（含 FinLab panel 合併），截止到 now()。"""
+        from src.data.data_catalog import get_catalog
+        try:
+            df = get_catalog().get("margin", symbol)
+            if df.empty:
+                return df
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                df = df[df["date"] <= self._as_of_naive()]
+            return df
         except Exception:
             return pd.DataFrame()
 

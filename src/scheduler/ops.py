@@ -58,22 +58,20 @@ async def daily_ops(config: object) -> dict:
     else:
         await heartbeat("skip", f"非再平衡日，跳過交易")
 
-    # ── Deployed strategies (Phase AG, monthly 12th) ─────────────────
-    if today.day == 12:
-        try:
-            from src.scheduler import _pipeline_lock
-            if not _pipeline_lock.locked():
-                async with _pipeline_lock:
-                    from src.alpha.auto.paper_deployer import PaperDeployer
-                    from src.alpha.auto.deployed_executor import (
-                        process_deploy_queue, execute_deployed_strategies,
-                    )
-                    deployer = PaperDeployer.get_instance()
-                    process_deploy_queue(deployer)
-                    execute_deployed_strategies(deployer)
-                    logger.info("Deployed strategies executed (monthly)")
-        except Exception:
-            logger.exception("Deployed strategies failed")
+    # ── Deployed strategies (daily — paper trading with independent NAV) ──
+    try:
+        from src.alpha.auto.paper_deployer import PaperDeployer
+        from src.alpha.auto.deployed_executor import (
+            process_deploy_queue, execute_deployed_strategies,
+        )
+        deployer = PaperDeployer.get_instance()
+        n_queued = len(process_deploy_queue(deployer))
+        deploy_results = execute_deployed_strategies(deployer)
+        n_active = len(deploy_results)
+        if n_queued or n_active:
+            logger.info("Deployed strategies: %d queued, %d active executed", n_queued, n_active)
+    except Exception:
+        logger.exception("Deployed strategies failed")
 
     return {
         "status": "completed",

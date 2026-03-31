@@ -950,8 +950,6 @@ def evaluate() -> dict:
             _vbt_sat = VectorizedPBOBacktest(
                 universe=[s for s in universe if s in bars],
                 start=EVAL_START, end=IS_END,
-                data_dir=str(PROJECT_ROOT / "data" / "market"),
-                fund_dir=str(PROJECT_ROOT / "data" / "fundamental"),
             )
             _sat_rets = _vbt_sat.run_variant(_cf_sat, top_n=40, weight_mode="score_tilt")
             if _sat_rets is not None and len(_sat_rets) > 50:
@@ -1200,7 +1198,7 @@ def evaluate() -> dict:
             mr_oos = _mr_test(qr_oos, n_boot=1000, block_size=max(int(len(qr_oos)**0.5), 3))
             l5c_oos_pass = mr_oos["up_pval"] < 0.10 or mr_oos["down_pval"] < 0.10  # relaxed for shorter OOS
         l5c_pass = l5c_is_pass and l5c_oos_pass
-    _l5c_detail = "IS+OOS" if len(oos_quintile_returns_matrix) >= 10 else "IS only (OOS data insufficient)"
+    _l5c_detail = "IS+OOS" if len(oos_quintile_returns_matrix) >= 5 else "IS only (OOS data insufficient)"
     print(f"  L5c monotonicity (MR test): {'PASS' if l5c_pass else 'FAIL'} [{_l5c_detail}]")
     if not l5c_pass:
         _which = "IS" if not l5c_is_pass else "OOS"
@@ -1412,8 +1410,6 @@ def main() -> None:
         _vbt = VectorizedPBOBacktest(
             universe=[s for s in bars if s in universe],
             start=EVAL_START, end=IS_END,
-            data_dir=str(PROJECT_ROOT / "data" / "market"),
-            fund_dir=str(PROJECT_ROOT / "data" / "fundamental"),
         )
         _my_rets = _vbt.run_variant(_cf_novelty, top_n=40, weight_mode="score_tilt")
         if _my_rets is not None and len(_my_rets) > 50:
@@ -1678,33 +1674,89 @@ def _run_validator(results: dict) -> dict | None:
                         if p.default is inspect.Parameter.empty]) >= 3
 
         class _FactorStrategy(StrategyBase):
+            def __init__(self) -> None:
+                self._last_month = ""
+                self._cached: dict[str, float] = {}
+
             def name(self) -> str:
                 return "autoresearch_candidate"
+
             def on_bar(self, ctx: Context) -> dict[str, float]:
+                # Monthly rebalance cache (same as strategy_builder)
+                current_date = ctx.now()
+                month = pd.Timestamp(current_date).strftime("%Y-%m")
+                if month == self._last_month:
+                    return self._cached
+
                 symbols = ctx.universe()
                 as_of = pd.Timestamp(ctx.now())
+
+                # Volume filter: match strategy_builder (300 lots = 300,000 shares)
+                eligible = []
+                for s in symbols:
+                    try:
+                        b = ctx.bars(s, lookback=60)
+                        if len(b) >= 20 and float(b["volume"].iloc[-20:].mean()) >= 300_000:
+                            eligible.append(s)
+                    except Exception:
+                        continue
+
+                if not eligible:
+                    self._last_month = month
+                    self._cached = {}
+                    return {}
+
                 if _is_3arg:
-                    # Build data dict using Context's public API
-                    revenue = {}
-                    for s in symbols:
-                        rev = ctx.get_revenue(s, lookback_months=36)
-                        if rev is not None and not rev.empty:
-                            revenue[s] = rev
+                    revenue, institutional, per_history, margin_data = {}, {}, {}, {}
+                    for s in eligible:
+                        try:
+                            rev = ctx.get_revenue(s, lookback_months=36)
+                            if rev is not None and not rev.empty:
+                                revenue[s] = rev
+                        except Exception:
+                            pass
+                        try:
+                            inst = ctx.get_institutional(s)
+                            if inst is not None and not inst.empty:
+                                institutional[s] = inst
+                        except Exception:
+                            pass
+                        try:
+                            per = ctx.get_per_history(s)
+                            if per is not None and not per.empty:
+                                per_history[s] = per
+                        except Exception:
+                            pass
+                        try:
+                            mrg = ctx.get_margin(s)
+                            if mrg is not None and not mrg.empty:
+                                margin_data[s] = mrg
+                        except Exception:
+                            pass
                     data = {
-                        "bars": {s: ctx.bars(s, lookback=500) for s in symbols},
+                        "bars": {s: ctx.bars(s, lookback=500) for s in eligible},
                         "revenue": revenue,
-                        "institutional": {},
+                        "institutional": institutional,
+                        "per_history": per_history,
+                        "margin": margin_data,
                         "pe": {}, "pb": {}, "roe": {},
                     }
-                    values = compute_factor(symbols, as_of, data)
+                    values = compute_factor(eligible, as_of, data)
                 else:
-                    values = compute_factor(symbols, as_of)
+                    values = compute_factor(eligible, as_of)
+
+                self._last_month = month
                 if not values:
+                    self._cached = {}
                     return {}
+
                 sorted_syms = sorted(values, key=lambda s: values[s], reverse=True)
                 selected = sorted_syms[:15]
-                w = 1.0 / len(selected)
-                return {s: w for s in selected}
+                n = len(selected)
+                # 95% invested, max 10% per stock (match strategy_builder)
+                w = min(0.95 / n, 0.10)
+                self._cached = {s: w for s in selected}
+                return self._cached
 
         strategy = _FactorStrategy()
         universe = _load_universe(large=False)

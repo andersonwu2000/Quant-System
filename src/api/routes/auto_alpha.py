@@ -701,6 +701,82 @@ async def get_factor_pool(
     )
 
 
+# ── Deployed Strategy Management ──────────────────────────────
+
+
+@router.get("/deployed")
+async def list_deployed(
+    api_key: str = Depends(verify_api_key),
+) -> list[dict[str, Any]]:
+    """List all deployed strategies (active, stopped, expired, killed)."""
+    from src.alpha.auto.paper_deployer import PaperDeployer
+    deployer = PaperDeployer.get_instance()
+    results = []
+    for d in deployer._deployed:
+        pnl = (d.current_nav / d.initial_nav - 1) * 100 if d.initial_nav > 0 else 0
+        mdd = (d.peak_nav - d.current_nav) / d.peak_nav * 100 if d.peak_nav > 0 else 0
+        results.append({
+            "name": d.name,
+            "factor_name": d.factor_name,
+            "status": d.status,
+            "deploy_date": d.deploy_date[:10],
+            "stop_date": d.stop_date[:10],
+            "initial_nav": d.initial_nav,
+            "current_nav": d.current_nav,
+            "peak_nav": d.peak_nav,
+            "pnl_pct": round(pnl, 2),
+            "mdd_pct": round(mdd, 2),
+            "n_days": len(d.daily_navs),
+        })
+    return results
+
+
+@router.get("/deployed/{name}/history")
+async def deployed_history(
+    name: str,
+    api_key: str = Depends(verify_api_key),
+) -> dict[str, Any]:
+    """Get NAV history and latest holdings for a deployed strategy."""
+    from src.alpha.auto.paper_deployer import PaperDeployer
+    from src.alpha.auto.deployed_executor import _load_last_trade
+    deployer = PaperDeployer.get_instance()
+
+    target = None
+    for d in deployer._deployed:
+        if d.name == name:
+            target = d
+            break
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"Strategy '{name}' not found")
+
+    last_trade = _load_last_trade(name)
+    return {
+        "name": target.name,
+        "status": target.status,
+        "daily_navs": target.daily_navs[-90:],
+        "latest_weights": last_trade.get("weights", {}) if last_trade else {},
+        "latest_date": last_trade.get("date", "") if last_trade else "",
+        "n_positions": last_trade.get("n_positions", 0) if last_trade else 0,
+    }
+
+
+@router.post("/deployed/{name}/stop")
+async def stop_deployed(
+    name: str,
+    _role: dict[str, Any] = Depends(require_role("admin")),
+) -> dict[str, str]:
+    """Manually stop a deployed strategy."""
+    from src.alpha.auto.paper_deployer import PaperDeployer
+    deployer = PaperDeployer.get_instance()
+
+    found = any(d.name == name and d.status == "active" for d in deployer._deployed)
+    if not found:
+        raise HTTPException(status_code=404, detail=f"No active strategy '{name}'")
+
+    deployer.stop(name, reason="manual_api")
+    return {"status": "stopped", "name": name}
+
+
 # ── Autoresearch Integration ────────────────────────────────
 
 

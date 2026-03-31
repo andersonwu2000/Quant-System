@@ -113,13 +113,27 @@ def reconcile(
     """
     result = ReconcileResult(timestamp=datetime.now(timezone.utc))
 
+    # Normalize broker symbols to match system format.
+    # If system uses ".TW" suffix but broker uses bare ids, add suffix.
+    # If both use the same format, no change needed.
+    system_has_suffix = any(s.endswith((".TW", ".TWO")) for s in portfolio.positions)
+    broker_has_suffix = any(s.endswith((".TW", ".TWO")) for s in broker_positions)
+
+    normalized_broker: dict[str, dict[str, Any]]
+    if system_has_suffix and not broker_has_suffix:
+        normalized_broker = {f"{s}.TW": p for s, p in broker_positions.items()}
+    elif not system_has_suffix and broker_has_suffix:
+        normalized_broker = {s.replace(".TW", "").replace(".TWO", ""): p for s, p in broker_positions.items()}
+    else:
+        normalized_broker = broker_positions
+
     system_symbols = set(portfolio.positions.keys())
-    broker_symbols = set(broker_positions.keys())
+    broker_symbols = set(normalized_broker.keys())
     all_symbols = system_symbols | broker_symbols
 
     for symbol in sorted(all_symbols):
         sys_pos = portfolio.positions.get(symbol)
-        brk_pos = broker_positions.get(symbol)
+        brk_pos = normalized_broker.get(symbol)
 
         sys_qty = sys_pos.quantity if sys_pos else Decimal("0")
         sys_cost = sys_pos.avg_cost if sys_pos else Decimal("0")

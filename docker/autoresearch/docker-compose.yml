@@ -19,7 +19,7 @@ services:
       - ../../data/twse:/app/data/twse:ro            # TWSE institutional data
       - ../../data/finlab:/app/data/finlab:ro        # FinLab panel data (incl. delisted)
       - ../../data/research:/app/data/research:ro    # universe.txt, baseline_ic
-      - ${CLAUDE_CREDENTIALS:-C:/Users/ander/.claude/.credentials.json}:/home/researcher/.claude/.credentials.json:ro
+      - ${CLAUDE_CREDENTIALS:-C:/Users/ander/.claude/.credentials.json}:/home/researcher/.claude/.credentials.json  # rw: CLI needs to refresh OAuth token
     environment:
       - EVAL_URL=http://evaluator:5000/evaluate
       - CLAUDE_MODEL=claude-sonnet-4-6
