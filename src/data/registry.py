@@ -46,7 +46,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "price": DatasetDef(
         name="price",
         suffix="1d",
-        source_dirs=(TWSE_DIR, YAHOO_DIR, FINMIND_DIR),
+        source_dirs=(YAHOO_DIR, FINMIND_DIR, TWSE_DIR),  # Yahoo first (full history), TWSE last (daily snapshot only)
         frequency="daily",
         finmind_method="taiwan_stock_daily",
         pit_delay_days=0,
@@ -208,12 +208,19 @@ def parquet_path(symbol: str, dataset: str, source: str | None = None) -> Path:
         source_dir = _source_name_to_dir(source)
         return source_dir / filename
 
-    # Search by priority — skip corrupt/empty files (< 100 bytes)
+    # Search by priority — skip corrupt/empty files (< 100 bytes).
+    # Among existing files, prefer the largest (most history).
     MIN_FILE_SIZE = 100
+    candidates: list[tuple[int, Path]] = []
     for d in ds.source_dirs:
         p = d / filename
         if p.exists() and p.stat().st_size >= MIN_FILE_SIZE:
-            return p
+            candidates.append((p.stat().st_size, p))
+
+    if candidates:
+        # Return largest file (most data)
+        candidates.sort(key=lambda x: -x[0])
+        return candidates[0][1]
 
     # Not found anywhere — return primary source dir
     return ds.source_dirs[0] / filename
