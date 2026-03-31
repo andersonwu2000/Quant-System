@@ -689,39 +689,19 @@ class BacktestEngine:
             else:
                 missing_symbols.append(symbol)
 
-        # Fallback: download missing symbols from Yahoo (non-TW stocks, new symbols)
         if missing_symbols:
-            from src.core.config import get_config
-            cfg = get_config()
-            source = cfg.data_source
-            source_kwargs: dict[str, object] = {}
-            if source == "finmind":
-                source_kwargs["token"] = cfg.finmind_token
+            logger.warning(
+                "Skipped %d symbols not in DataCatalog: %s",
+                len(missing_symbols),
+                missing_symbols[:10],
+            )
 
-            warmup_days = 400
-            warmup_start = (
-                pd.Timestamp(config.start) - pd.tseries.offsets.BDay(warmup_days)
-            ).strftime("%Y-%m-%d")
+        logger.info("Loaded %d/%d symbols from DataCatalog",
+                    loaded_from_catalog, len(config.universe))
 
-            try:
-                data_feed = create_feed(source, missing_symbols, **source_kwargs)
-                for symbol in missing_symbols:
-                    df = data_feed.get_bars(symbol, start=warmup_start, end=config.end)
-                    if not df.empty:
-                        if "close" in df.columns:
-                            df["close"] = df["close"].where(df["close"] > 0)
-                            df["close"] = df["close"].ffill()
-                        feed.load(symbol, df)
-            except Exception as e:
-                logger.warning("Yahoo fallback failed for %d symbols: %s", len(missing_symbols), e)
-
-        logger.info("Loaded %d symbols from DataCatalog, %d from Yahoo fallback",
-                    loaded_from_catalog, len(feed.get_universe()) - loaded_from_catalog)
-
-        fundamentals = create_fundamentals(
-            get_config().data_source if 'cfg' not in dir() else cfg.data_source,
-            **(source_kwargs if 'source_kwargs' in dir() else {}),
-        )
+        from src.core.config import get_config
+        cfg = get_config()
+        fundamentals = create_fundamentals(cfg.data_source)
 
         return feed, all_suspect_dates, fundamentals
 
