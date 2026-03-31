@@ -105,3 +105,4 @@
 72. Reconciliation symbol 格式不一致 — System 用 `.TW`（`2330.TW`），Sinopac broker 用 bare（`2330`），matched 永遠為 0（reconcile.py）
 73. Paper mode 假 Discord 告警 — SimBroker 每次重啟清空持倉，和持久化的 Portfolio 比對必定不一致，每天假告警（jobs.py）
 74. evaluate.py saturation + novelty check 用舊路徑 `data/market` — Phase AD 後路徑已改為 `data/yahoo`，VectorizedPBOBacktest 找不到檔案（evaluate.py）
+75. Context.get_revenue yoy_growth 為 NaN — FinLab（2005-2018）有 yoy_growth，FinMind（2019+）沒有。合併後 `isna().all()` = False 跳過重算，但 lookback 截斷到最近 36 月（全 FinMind = 全 NaN）→ revenue_acceleration 因子在 Validator/OOS 回傳空（base.py）**CRITICAL — 因子在回測中完全失效**

@@ -175,8 +175,7 @@ class YahooFeed(DataFeed):
         result_df: pd.DataFrame = df
         return result_df
 
-    def _local_path(self, symbol: str, freq: str) -> "Path":
-        from pathlib import Path
+    def _local_path(self, symbol: str, freq: str) -> "Path":  # noqa: F821
         safe = symbol.replace("/", "_").replace("\\", "_").replace("..", "_")
         return self._data_dir / f"{safe}_{freq}.parquet"
 

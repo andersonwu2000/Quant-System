@@ -3,7 +3,9 @@
 Usage: python -m scripts.run_full_factor_analysis
 """
 from __future__ import annotations
-import sys, time, importlib, json
+import sys
+import time
+import json
 sys.path.insert(0, '.')
 import os
 os.environ.setdefault("QUANT_ENV", "dev")
@@ -14,7 +16,7 @@ import scripts.autoresearch.evaluate as ev
 from scripts.autoresearch.evaluate import (
     _load_all_data, _load_universe, _compute_forward_returns,
     _compute_ic, _mask_data, IS_END, OOS_START, EVAL_END,
-    MIN_IC_L1, MIN_ICIR_L2, MIN_POSITIVE_YEARS, MIN_FITNESS
+    MIN_IC_L1, MIN_ICIR_L2, MIN_POSITIVE_YEARS
 )
 
 # ── Factor definitions ──

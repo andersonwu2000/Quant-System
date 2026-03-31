@@ -7,7 +7,8 @@ Combines the two L5-passing factors and evaluates:
 4. Compare: single vs dual
 """
 from __future__ import annotations
-import sys, time
+import sys
+import time
 sys.path.insert(0, '.')
 import os
 os.environ.setdefault("QUANT_ENV", "dev")
@@ -145,7 +146,7 @@ def main():
         catalog = DataCatalog("data")
         universe = sorted(catalog.available_symbols("price"))[:200]
 
-    print(f"Dual Factor Test: revenue_acceleration × per_value")
+    print("Dual Factor Test: revenue_acceleration × per_value")
     print(f"Universe: {len(universe)} symbols")
     print("=" * 70)
 
@@ -224,7 +225,7 @@ def main():
             oos_icir = oos_mean / oos_std if oos_std > 0 else 0
             print(f"  OOS 20d: IC={oos_mean:+.4f}  ICIR={oos_icir:+.4f}  ({len(oos_ics)} dates)")
         else:
-            print(f"  OOS: no data")
+            print("  OOS: no data")
 
         print(f"  Time: {elapsed:.1f}s")
 

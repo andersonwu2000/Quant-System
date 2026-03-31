@@ -17,7 +17,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -352,7 +351,7 @@ def generate_comparison_report(
 
     Returns report path or None if nothing to compare.
     """
-    active = deployer.get_active()
+    deployer.get_active()
     all_strategies = deployer._deployed
     if not all_strategies:
         return None
@@ -362,15 +361,15 @@ def generate_comparison_report(
 
     today = datetime.now().strftime("%Y%m%d")
     lines = [
-        f"# Auto-Alpha Comparison Report",
-        f"",
+        "# Auto-Alpha Comparison Report",
+        "",
         f"> Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"> Benchmark: {benchmark_name}",
-        f"",
-        f"## Deployed Strategies",
-        f"",
-        f"| Name | Status | Days | P&L | NAV | Peak |",
-        f"|------|--------|------|-----|-----|------|",
+        "",
+        "## Deployed Strategies",
+        "",
+        "| Name | Status | Days | P&L | NAV | Peak |",
+        "|------|--------|------|-----|-----|------|",
     ]
 
     for d in all_strategies:
@@ -381,11 +380,11 @@ def generate_comparison_report(
         )
 
     lines.extend([
-        f"",
-        f"## Decision",
-        f"",
-        f"| Condition | Check |",
-        f"|-----------|-------|",
+        "",
+        "## Decision",
+        "",
+        "| Condition | Check |",
+        "|-----------|-------|",
     ])
 
     for d in all_strategies:

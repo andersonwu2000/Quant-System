@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -11,7 +10,6 @@ from pathlib import Path
 from src.data.quality_gate import (
     pre_trade_quality_gate,
     GateResult,
-    CheckResult,
     _is_recent_trading_day,
 )
 from src.data.registry import REGISTRY

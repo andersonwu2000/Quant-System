@@ -1,6 +1,6 @@
 # Phase Plan Status — 總覽表
 
-> Last updated: 2026-04-01 (session 2)
+> Last updated: 2026-04-01 (session 3 — AA/AC 審計修正)
 > Total: 35 phases | Done: 16 | In Progress: 10 | Not Started: 2 | Superseded: 4 | Archived: 3
 
 ---
@@ -30,9 +30,9 @@
 
 | Phase | 名稱 | 完成度 | 未完成項目 |
 |:-----:|------|:------:|-----------|
-| AA | 策略建構重構 | 60% | 4.1 inverse-vol 回滾（PBO 惡化），Phase 2 construction.py 整合 |
+| AA | 策略建構重構 | 60% | 4.1 inverse-vol 回滾（PBO 惡化），4.2+4.6 no-trade zone/非對稱成本**未實作**（先前虛報已修正），Phase 2 construction.py 整合 |
 | AB | Factor-Level PBO | 75% | Step 4 auto-dedup 未做 |
-| AC | Validator 方法論修正 | 85% | Hard/soft 門檻部署測試 |
+| AC | Validator 方法論修正 | 95% | 16 項檢查完成，§7 hard/soft 門檻分離**未實作**（validator 仍用 all-or-nothing） |
 | AD | 數據管線自動化 | 80% | Phase 4: TWSE 歷史端點、Securities Master、cross-source 驗證 |
 | AE | Docker Agent 隔離 | 90% | Token refresh 已修（rw mount） |
 | AG | 因子部署管線 | 65% | **Step 2.5 精煉管線未實作**（correlation check → 多因子組合 → Validator(no kill) → 壓力測試） |

@@ -7,14 +7,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from src.alpha.auto.paper_deployer import (
-    AUTO_STOP_DAYS,
-    KILL_SWITCH_DD,
     MAX_AUTO_STRATEGIES,
     PaperDeployer,
 )

@@ -6,16 +6,10 @@ Uses mocked data feeds and SimBroker — no network, no real broker.
 
 from __future__ import annotations
 
-import json
-from datetime import date, datetime
-from decimal import Decimal
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pandas as pd
 import pytest
 
-from src.core.models import Instrument, Portfolio, Position
 
 
 def _make_trading_config(mode="paper", strategy="revenue_momentum_hedged"):

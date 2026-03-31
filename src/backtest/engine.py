@@ -25,7 +25,7 @@ from src.backtest.validation import detect_price_outliers, detect_survivorship_b
 from src.data.feed import HistoricalFeed
 from src.data.fundamentals import FundamentalsProvider
 from src.data.quality import check_bars
-from src.data.sources import create_feed, create_fundamentals
+from src.data.sources import create_fundamentals
 from src.core.models import Instrument, Order, Portfolio, Side
 from src.core.trading_pipeline import execute_one_bar
 from src.execution.oms import apply_trades

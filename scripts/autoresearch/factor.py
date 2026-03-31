@@ -1,6 +1,5 @@
 """Alpha factor definition — the ONLY file the agent may edit."""
 from __future__ import annotations
-import numpy as np
 import pandas as pd
 
 def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:

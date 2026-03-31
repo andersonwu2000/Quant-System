@@ -16,6 +16,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+import pandas as pd
+
 if TYPE_CHECKING:
     from src.core.config import TradingConfig
     from src.core.models import Portfolio
@@ -175,7 +177,8 @@ def _get_tw_universe_fallback() -> list[str]:
     catalog = get_catalog()
     all_syms = catalog.available_symbols("price")
     # Exclude ETFs (00xx)
-    bare_filter = lambda s: not s.replace(".TW", "").replace(".TWO", "").startswith("00")
+    def bare_filter(s):
+        return not s.replace(".TW", "").replace(".TWO", "").startswith("00")
     universe = sorted(s for s in all_syms if ".TW" in s and bare_filter(s))
     return universe
 
@@ -358,7 +361,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     # H1 fix: 不在內層重複寫 "started"（外層 execute_pipeline 已寫）
     run_id = _today_run_id()
     from src.api.state import get_app_state
-    from src.data.sources import create_feed, create_fundamentals
+    from src.data.sources import create_fundamentals
     from src.notifications.factory import create_notifier
     from src.strategy.base import Context
     from src.strategy.registry import resolve_strategy
@@ -806,8 +809,8 @@ def _write_daily_report(
         "",
         "## Portfolio",
         "",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| NAV | {nav:,.0f} |",
         f"| Cash | {cash:,.0f} ({cash_pct:.1f}%) |",
         f"| Positions | {n_pos} |",
@@ -826,7 +829,7 @@ def _write_daily_report(
         target = target_weights.get(sym, 0) * 100
         lines.append(f"| {sym} | {float(pos.quantity):.0f} | {float(pos.market_price):,.1f} | {mv:,.0f} | {w:.1f}% (target {target:.1f}%) |")
 
-    lines.extend(["", f"---", f"*Generated at {datetime.now().strftime('%H:%M:%S')}*"])
+    lines.extend(["", "---", f"*Generated at {datetime.now().strftime('%H:%M:%S')}*"])
 
     try:
         path.write_text("\n".join(lines), encoding="utf-8")

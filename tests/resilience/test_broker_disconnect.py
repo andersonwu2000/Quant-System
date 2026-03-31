@@ -16,7 +16,6 @@ from src.core.models import (
     Instrument,
     Market,
     Order,
-    OrderStatus,
     Portfolio,
     Position,
     Side,
@@ -74,7 +73,7 @@ class TestBrokerTimeoutDuringOrder:
 
         # execute_from_weights should raise or return empty, not modify portfolio
         try:
-            trades = execute_from_weights(
+            execute_from_weights(
                 target_weights={"2330.TW": 0.0},  # sell all
                 portfolio=portfolio,
                 risk_engine=mock_risk,

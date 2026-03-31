@@ -7,15 +7,12 @@ that produces valid weights through all 3 wrapper paths.
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from src.core.models import Instrument, Portfolio, Position
+from src.core.models import Portfolio
 from src.strategy.base import Context
 
 
@@ -109,7 +106,6 @@ def compute_factor(symbols, as_of, data):
         (factor_dir / "test_factor.py").write_text(factor_code)
 
         with patch("src.alpha.auto.strategy_builder.Path", return_value=factor_dir / "test_factor.py"):
-            from src.alpha.auto.strategy_builder import build_from_research_factor
             # This will try to load from the real path, so patch it
             import importlib.util
             spec = importlib.util.spec_from_file_location("test_factor", factor_dir / "test_factor.py")

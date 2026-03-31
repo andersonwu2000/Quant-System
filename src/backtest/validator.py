@@ -508,7 +508,7 @@ class StrategyValidator:
     # ── 內部方法 ───────────────────────────────────────────────────
 
     @staticmethod
-    def _build_catalog_feed(universe: list[str], start: str, end: str) -> "HistoricalFeed":
+    def _build_catalog_feed(universe: list[str], start: str, end: str) -> "HistoricalFeed":  # noqa: F821
         """Build HistoricalFeed from DataCatalog (local parquets, no Yahoo download)."""
         from src.data.feed import HistoricalFeed
         from src.data.data_catalog import get_catalog
@@ -837,7 +837,6 @@ class StrategyValidator:
             logger.warning("PBO: no strategy/universe, returning pessimistic (1.0)")
             return 1.0
 
-        import time as _time
 
         # Resolve compute_fn from strategy if not passed explicitly
         if compute_fn is None:
@@ -967,7 +966,6 @@ class StrategyValidator:
         shared_feed = getattr(self, '_shared_feed', None)
         daily_returns_dict: dict[str, pd.Series] = {}
 
-        from concurrent.futures import ThreadPoolExecutor
 
         # Sequential: strategy may have mutable state (e.g. _last_month cache)
         # that is not thread-safe. deepcopy per variant to avoid race conditions.
@@ -1077,7 +1075,6 @@ class StrategyValidator:
 
     def _get_ew_annual(self, universe: list[str], start: str, end: str) -> float | None:
         """Get equal-weight universe annual return for a specific period."""
-        from pathlib import Path
         from src.data.registry import parquet_path as _ppath
 
         try:
@@ -1128,7 +1125,6 @@ class StrategyValidator:
         Both sides are gross (no trading costs) for fair comparison.
         Cost efficiency is tested separately by annual_cost_ratio check.
         """
-        from pathlib import Path
         from src.data.registry import parquet_path as _ppath
 
         try:

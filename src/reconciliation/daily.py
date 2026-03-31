@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -179,7 +179,6 @@ def _calc_expected_return(prev_date: str, trade_date: str, positions: dict) -> f
     """
     try:
         from src.data.data_catalog import get_catalog
-        import pandas as pd
 
         catalog = get_catalog()
         total_start_value = 0.0

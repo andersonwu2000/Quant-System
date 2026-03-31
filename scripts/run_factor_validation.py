@@ -157,14 +157,14 @@ def main():
 
     results: list[dict] = []
     report_lines = [
-        f"# Factor Validation Report",
-        f"",
+        "# Factor Validation Report",
+        "",
         f"**Date**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"**Factors tested**: {len(tags)}",
-        f"**Validator**: 15 checks (CAGR, Sharpe, MDD, WF, DSR, Bootstrap, OOS, Benchmark, PBO, Regime, Recent, Correlation, CVaR, Universe, Cost)",
-        f"",
-        f"---",
-        f"",
+        "**Validator**: 15 checks (CAGR, Sharpe, MDD, WF, DSR, Bootstrap, OOS, Benchmark, PBO, Regime, Recent, Correlation, CVaR, Universe, Cost)",
+        "",
+        "---",
+        "",
     ]
 
     for i, tag in enumerate(tags):

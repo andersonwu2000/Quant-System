@@ -8,18 +8,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.core.models import (
     AssetClass,
     Instrument,
     Market,
     Order,
-    OrderStatus,
     Portfolio,
     Position,
     Side,

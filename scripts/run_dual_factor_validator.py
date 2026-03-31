@@ -5,7 +5,6 @@ sys.path.insert(0, '.')
 import os
 os.environ.setdefault("QUANT_ENV", "dev")
 
-import pandas as pd
 from src.alpha.auto.strategy_builder import build_from_research_factor
 from src.backtest.validator import StrategyValidator, ValidationConfig
 from src.data.data_catalog import get_catalog
@@ -50,7 +49,7 @@ def main():
     )
 
     validator = StrategyValidator(config)
-    print(f"Running Validator (IS: 2018-01-01 to OOS)...")
+    print("Running Validator (IS: 2018-01-01 to OOS)...")
     print("=" * 70)
 
     report = validator.validate(
@@ -76,7 +75,7 @@ def main():
     # Backtest stats
     if report.backtest_result:
         r = report.backtest_result
-        print(f"\n--- Backtest Summary ---")
+        print("\n--- Backtest Summary ---")
         print(f"  CAGR:        {r.annual_return:+.2%}")
         print(f"  Sharpe:      {r.sharpe:.3f}")
         print(f"  Max DD:      {r.max_drawdown:.2%}")

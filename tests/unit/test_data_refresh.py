@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from datetime import date
 
 from src.data.refresh import (
@@ -173,7 +172,7 @@ class TestRefreshDatasetSync:
     @patch("src.data.refresh._discover_symbols")
     def test_skips_fresh_symbols(self, mock_discover, mock_yahoo, tmp_path, monkeypatch):
         from dataclasses import replace
-        from datetime import datetime, timedelta
+        from datetime import datetime
         # Setup: create a parquet with last bar = today (definitely fresh)
         today = datetime.now().strftime("%Y-%m-%d")
         df = pd.DataFrame(

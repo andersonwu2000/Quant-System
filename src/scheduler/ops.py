@@ -12,7 +12,7 @@ daily_ops < 100 lines (audit condition).
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ async def daily_ops(config: object) -> dict:
     twse_result = await _fetch_twse_snapshot()
 
     # Yahoo daily price refresh (every trading day, not just rebalance days)
-    yahoo_result = await _yahoo_daily_refresh()
+    await _yahoo_daily_refresh()
 
     # ── Trading ──────────────────────────────────────────────────────
     pipeline_result = None
@@ -56,7 +56,7 @@ async def daily_ops(config: object) -> dict:
         n_trades = pipeline_result.n_trades if pipeline_result else 0
         await heartbeat("trade", f"Pipeline 完成：{n_trades} 筆交易")
     else:
-        await heartbeat("skip", f"非再平衡日，跳過交易")
+        await heartbeat("skip", "非再平衡日，跳過交易")
 
     # ── Deployed strategies (daily — paper trading with independent NAV) ──
     try:
@@ -99,7 +99,7 @@ async def eod_ops(config: object) -> dict:
     try:
         from src.scheduler.jobs import execute_backtest_reconcile
         results["backtest_reconcile"] = await execute_backtest_reconcile()
-    except Exception as e:
+    except Exception:
         logger.exception("Backtest reconcile failed")
         results["backtest_reconcile"] = {"status": "error"}
 
@@ -153,7 +153,6 @@ async def _fetch_twse_snapshot() -> str:
         from src.data.registry import write_path
         from src.data.refresh import _atomic_write
         import pandas as pd
-        from datetime import date as d
 
         results = []
 
@@ -182,7 +181,7 @@ async def _fetch_twse_snapshot() -> str:
                 results.append("OHLCV: no data")
         except Exception as e:
             logger.warning("TWSE OHLCV failed: %s", e)
-            results.append(f"OHLCV: failed")
+            results.append("OHLCV: failed")
 
         # ── Institutional (三大法人) ─────────────────────────────
         try:

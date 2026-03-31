@@ -24,7 +24,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.auth import verify_api_key, require_role
-from src.data.registry import parquet_path as _ppath, REGISTRY
+from src.data.registry import parquet_path as _ppath
 from src.data.data_catalog import get_catalog
 
 logger = logging.getLogger(__name__)

@@ -207,7 +207,6 @@ async def start_auto_alpha(
     _auth: dict[str, Any] = Depends(require_role("trader")),
 ) -> MessageResponse:
     """Start autoresearch Docker containers + research loop."""
-    import asyncio
     state = get_app_state()
     if state.auto_alpha_running:
         raise HTTPException(status_code=409, detail="Auto-alpha is already running")
@@ -226,7 +225,6 @@ async def stop_auto_alpha(
     _auth: dict[str, Any] = Depends(require_role("trader")),
 ) -> MessageResponse:
     """Stop autoresearch Docker containers."""
-    import asyncio
     state = get_app_state()
 
     result = await _docker_compose_action("down")
@@ -445,7 +443,6 @@ async def run_now(
             data: dict[str, Any] = {}
 
             # 1. Load from local parquet cache (all source dirs)
-            from pathlib import Path
             from src.data.registry import REGISTRY as _REG
             import pandas as pd
             _price_ds = _REG["price"]

@@ -21,8 +21,6 @@ sys.path.insert(0, '.')
 import os
 os.environ.setdefault("QUANT_ENV", "dev")
 
-import numpy as np
-import pandas as pd
 
 
 def _build_universe():
@@ -135,14 +133,14 @@ def step_2_5d_stress(factor_name: str, universe: list[str]):
     print(f"\n  Report: {path}")
 
     # Summary
-    print(f"\n  --- Historical ---")
+    print("\n  --- Historical ---")
     for name, data in historical.items():
         if "error" in data:
             print(f"    {name}: ERROR")
         else:
             print(f"    {name}: ret={data['total_return']:+.1%}  bench={data['benchmark_return']:+.1%}  MDD={data['max_drawdown']:.1%}")
 
-    print(f"\n  --- Cost Sensitivity ---")
+    print("\n  --- Cost Sensitivity ---")
     cost_2x_pass = False
     for name, data in cost.items():
         if "error" in data:

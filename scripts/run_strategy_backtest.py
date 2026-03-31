@@ -23,7 +23,6 @@ from src.alpha.filter_strategy import revenue_momentum_filter, trust_follow_filt
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-from src.data.registry import REGISTRY, parquet_path as _ppath
 from src.data.data_catalog import get_catalog
 
 

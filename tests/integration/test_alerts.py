@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -28,7 +28,7 @@ class TestPaperModeNoAlerts:
         config = MagicMock()
         config.mode = "paper"
 
-        with patch("src.notifications.factory.create_notifier") as mock_notifier:
+        with patch("src.notifications.factory.create_notifier"):
             result = await execute_daily_reconcile(config)
             assert result["status"] == "skipped"
             # Notifier should never be instantiated in paper mode

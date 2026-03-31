@@ -11,13 +11,10 @@ Regression tests for 2026-03-31 bugs:
 
 from __future__ import annotations
 
-import ast
 import inspect
 import re
-import textwrap
 from pathlib import Path
 
-import pytest
 
 # ── Test 1.1: Data dict key consistency ─────────────────────────────
 

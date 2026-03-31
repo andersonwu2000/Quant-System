@@ -6,10 +6,7 @@ Function-scoped: mutable state (Portfolio, mock broker) that needs isolation
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
-from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd

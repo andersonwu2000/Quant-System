@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.registry import REGISTRY, DatasetDef, FINLAB_DIR, parquet_path as _registry_parquet_path
+from src.data.registry import REGISTRY, FINLAB_DIR, parquet_path as _registry_parquet_path
 from src.data.schemas import pit_filter
 from src.data.sources.finmind_common import strip_tw_suffix
 

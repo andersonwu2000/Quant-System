@@ -139,13 +139,15 @@ class Context:
             cutoff = self._as_of_naive() - pd.DateOffset(days=40)
             df = df[df["date"] <= cutoff]
 
-            # YoY growth
-            if "yoy_growth" not in df.columns or df["yoy_growth"].isna().all():
-                import numpy as np
-                if "revenue" in df.columns:
-                    prev = df["revenue"].shift(12)
-                    prev = prev.where(prev > 0, np.nan)
-                    df["yoy_growth"] = ((df["revenue"] / prev) - 1) * 100
+            # Always recompute yoy_growth from full history BEFORE lookback truncation.
+            # FinLab data (2005-2018) has yoy_growth but FinMind (2019+) doesn't.
+            # After merge, recent rows have NaN yoy_growth. Recomputing from full
+            # revenue series fixes this.
+            import numpy as np
+            if "revenue" in df.columns:
+                prev = df["revenue"].shift(12)
+                prev = prev.where(prev > 0, np.nan)
+                df["yoy_growth"] = ((df["revenue"] / prev) - 1) * 100
 
             # 限制 lookback
             if len(df) > lookback_months:

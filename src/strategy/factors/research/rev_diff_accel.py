@@ -8,7 +8,6 @@ Direction: nonlinear_revenue
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 from src.data.registry import parquet_path as _ppath
 

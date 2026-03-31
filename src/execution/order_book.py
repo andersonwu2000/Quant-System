@@ -11,11 +11,9 @@ Paper trading (SimBroker) fills synchronously so rarely has pending orders.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
 
 import sqlalchemy as sa
 

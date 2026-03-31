@@ -23,10 +23,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 
 LOG_PATH = Path("docs/paper-trading/monitor.log")

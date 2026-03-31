@@ -102,7 +102,6 @@ class RiskEngine:
         前面通過的買單會增加 projected 持倉，影響後續訂單的權重計算。
         """
         from copy import deepcopy
-        from decimal import Decimal
 
         projected = deepcopy(portfolio)
         approved = []

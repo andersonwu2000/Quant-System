@@ -1,17 +1,17 @@
 ﻿# Autoresearch Status Report
 
-> Updated: 2026-04-01 05:46:00
+> Updated: 2026-04-01 06:16:03
 
 ## Dashboard
 
 | Item | Value |
 |------|-------|
-| Agent | Running (Up 31 minutes) |
+| Agent | Running (Up About an hour) |
 | Evaluator | Running (Up 2 hours (healthy)) |
 | Watchdog | Running (Up 2 hours) |
-| Experiments | 412 |
-| Keep / Discard / Crash | 0 / 412 / 0 |
-| Level Distribution | L0:0 L1:204 L2:208 L3:0 L4:0 L5:0 |
+| Experiments | 440 |
+| Keep / Discard / Crash | 0 / 440 / 0 |
+| Level Distribution | L0:0 L1:219 L2:221 L3:0 L4:0 L5:0 |
 | Deployed | 0 |
 | Factor-Level PBO | N/A |
 | ICIR Method | Method D (median \|ICIR\| ??0.30) |
@@ -22,6 +22,34 @@
 
 | Score | ICIR | Level | Status | Description |
 |------:|-----:|-------|--------|-------------|
+| none | none | L1 | discard | CAPM alpha: Jensen's alpha from market regression 240d. |
+| none | none | L1 | discard | Rolling VWAP deviation trend: close vs cumulative VWAP slope 120d. |
+| weak | weak | L2 | discard | CAPM alpha: time-series intercept vs equal-weighted market 240d. |
+| weak | weak | L2 | discard | Size-vol residual alpha: return after removing size and vol effects. |
+| weak | weak | L2 | discard | Size-vol residual alpha: return after removing size and volatility effects. |
+| weak | weak | L2 | discard | Cross-sectional residual alpha: return orthogonal to market and vol. |
+| none | none | L1 | discard | Cross-sectional residual alpha: return orthogonal to market and vol. |
+| none | none | L2 | discard | DMI trend quality: average of daily DMI balance EMA-smoothed 120d. |
+| none | none | L2 | discard | Negative ATR compression ratio: recent vs historical volatility 240d. |
+| weak | weak | L2 | discard | Negative volatility ratio: recent vs historical ATR compression 240d. |
+| weak | weak | L2 | discard | DMI trend quality: mean of daily DMI balance EMA-smoothed 120d. |
+| none | none | L1 | discard | High-volume day momentum: avg return on top-quartile volume days 120d. |
+| none | none | L1 | discard | Foreign-trust agreement days: fraction of days both buy net 120d. |
+| none | none | L2 | discard | Foreign-trust agreement days: fraction of days both buy net 120d. |
+| none | none | L1 | discard | Negative volume-weighted volatility: informed-day risk measure 240d. |
+| none | none | L1 | discard | Gap continuation: correlation of overnight gaps with intraday moves 120d. |
+| weak | weak | L2 | discard | Gap continuation: correlation of overnight gaps with intraday moves 120d. |
+| none | none | L1 | discard | Cumulative foreign ownership proxy: total net foreign buying to date. |
+| none | none | L1 | discard | Momentum-neutral trend quality: Kendall tau orthogonalized to return. |
+| weak | weak | L2 | discard | MACD momentum signal: EMA12 vs EMA26 with 120d warmup. |
+| weak | weak | L2 | discard | SMA10 dominance: fraction of days close above 10-day SMA over 240d. |
+| none | none | L1 | discard | SMA10 dominance: fraction of days close > 10-day SMA over 240d. |
+| none | none | L1 | discard | MACD histogram: EMA12 minus EMA26 normalized by price. |
+| none | none | L1 | discard | MACD histogram: EMA12 minus EMA26 normalized by price. |
+| none | none | L1 | discard | Midpoint momentum: trend in high-low midpoint skip close noise 240d. |
+| none | none | L1 | discard | Overnight dominance: fraction of absolute return from overnight gaps 120d. |
+| none | none | L1 | discard | Trimmed mean momentum: average daily return excluding extreme days 240d. |
+| weak | weak | L2 | discard | Trimmed mean momentum: average daily return excluding extreme days 240d. |
 | weak | weak | L2 | discard | Confirmed trend: DMI balance times Kendall tau product 240d. |
 | weak | weak | L2 | discard | Confirmed trend: DMI balance × Kendall tau product 240d. |
 | weak | weak | L2 | discard | 120-day range position: where close sits in its own high-low range. |

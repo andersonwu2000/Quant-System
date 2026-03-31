@@ -19,9 +19,7 @@ import pandas as pd
 
 from src.backtest.analytics import BacktestResult
 from src.backtest.engine import BacktestConfig, BacktestEngine
-from src.core.config import get_config
 from src.data.feed import HistoricalFeed
-from src.data.sources import create_feed
 from src.strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
@@ -421,7 +419,7 @@ def generate_stress_report(
 
     lines = [
         "# Stress Test Report",
-        f"",
+        "",
         f"> Generated: {time.strftime('%Y-%m-%d %H:%M')}",
         "",
         "## 1. Historical Crisis Periods",
@@ -459,7 +457,7 @@ def generate_stress_report(
             f"{data['cost_ratio']:.0f}% |"
         )
 
-    lines.extend(["", f"---", f"*Auto-generated stress test report*"])
+    lines.extend(["", "---", "*Auto-generated stress test report*"])
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)

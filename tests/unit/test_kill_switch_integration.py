@@ -11,7 +11,6 @@ import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from src.core.models import Instrument, Portfolio, Position
 from src.risk.engine import RiskEngine
@@ -209,7 +208,7 @@ class TestCrashRecovery:
 
     def test_save_load_roundtrip(self, tmp_path) -> None:
         """Portfolio with positions, pending_settlements, nav_sod survives save/load."""
-        from src.api.state import save_portfolio, load_portfolio, _PERSIST_PATH
+        from src.api.state import save_portfolio, load_portfolio
 
         portfolio = Portfolio(
             cash=Decimal("500000"),
@@ -311,7 +310,7 @@ class TestRebalanceIdempotency:
 
     def test_has_completed_run_today(self, tmp_path) -> None:
         """A completed run today prevents re-execution."""
-        from src.scheduler.jobs import _has_completed_run_today, PIPELINE_RUNS_DIR
+        from src.scheduler.jobs import _has_completed_run_today
         import json
 
         today = __import__("datetime").datetime.now().strftime("%Y-%m-%d")
@@ -333,7 +332,7 @@ class TestRebalanceIdempotency:
 
     def test_crashed_run_detected(self, tmp_path) -> None:
         """Crashed (started but never finished) runs are detected on startup."""
-        from src.scheduler.jobs import check_crashed_runs, PIPELINE_RUNS_DIR
+        from src.scheduler.jobs import check_crashed_runs
         import json
 
         run_file = tmp_path / "2026-03-28_0930.json"

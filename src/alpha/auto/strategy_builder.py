@@ -48,7 +48,6 @@ def build_from_research_factor(
     import pandas as pd
 
     from src.strategy.base import Context, Strategy as StrategyBase
-    from src.strategy.optimizer import signal_weight, OptConstraints
 
     factor_path = Path("src/strategy/factors/research") / f"{factor_name}.py"
     if not factor_path.exists():
@@ -179,7 +178,7 @@ def build_from_research_factor(
 
             # Equal-weight (DeMiguel 2009: 15 stocks, equal-weight beats estimated weights)
             # Phase AA 4.1 tested inverse-vol → PBO worsened 0.702→0.910. Reverted.
-            n_sel = len(selected)
+            len(selected)
             raw_weights: dict[str, float] = {}
             for sym, val in selected:
                 raw_weights[sym] = 1.0

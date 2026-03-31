@@ -63,14 +63,14 @@ def main():
     print(f"Report: {path}")
 
     # Summary
-    print(f"\n--- Historical Stress Summary ---")
+    print("\n--- Historical Stress Summary ---")
     for name, data in historical.items():
         if "error" in data:
             print(f"  {name}: ERROR — {data['error']}")
         else:
             print(f"  {name}: return={data['total_return']:+.1%}  benchmark={data['benchmark_return']:+.1%}  MDD={data['max_drawdown']:.1%}")
 
-    print(f"\n--- Cost Sensitivity Summary ---")
+    print("\n--- Cost Sensitivity Summary ---")
     for name, data in cost.items():
         if "error" in data:
             print(f"  {name}: ERROR — {data['error']}")

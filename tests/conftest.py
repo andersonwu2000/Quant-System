@@ -10,7 +10,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _block_real_notifications(tmp_path):
     """Prevent any test from sending real Discord/LINE/Telegram notifications."""
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import AsyncMock
 
     fake_notifier = AsyncMock()
     fake_notifier.is_configured.return_value = False

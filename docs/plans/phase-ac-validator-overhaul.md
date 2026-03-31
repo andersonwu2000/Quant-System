@@ -1,4 +1,4 @@
-# Phase AC：Validator 方法論修正 ✅ 已完成（2026-03-29）
+# Phase AC：Validator 方法論修正 ✅ 95% 完成（16 項檢查完成，§7 硬/軟分離延後）
 
 > 目標：修正 StrategyValidator 中被學術文獻證實有方法論錯誤的檢查
 > 教訓來源：PBO 三次實作三次錯（CLAUDE.md #10）。同樣的問題可能存在於其他 check。
@@ -377,7 +377,7 @@ CPCV 和 PBO 的 CSCV 類似，但：
 | 4.1 | Permutation test | ❌ 不做 | **⏸ 延後（P2）** | DSR 和 Permutation 測不同東西：DSR=多重測試顯著性，Permutation=信號是否有內容。策略可通過 DSR 但 fail Permutation（信號只是大盤動量）。Phase Z1 讓 100 次 permutation 只需 ~100 秒 |
 | 4.2 | CPCV | ❌ 不做 | **❌ 不做（同意）** | PBO + DSR 已覆蓋因子選擇的過擬合風險 |
 
-### 全部完成（2026-03-29）
+### 16 項檢查方法論：全部完成（2026-03-29）
 
 ```
 1. ✅ walkforward_positive_ratio → temporal_consistency（改名）
@@ -387,6 +387,10 @@ CPCV 和 PBO 的 CSCV 類似，但：
 5. ✅ Drawdown-based regime（0050 DD > 15%）
 6. ✅ Permutation test（新增 #16，shuffle real factor rankings）
 ```
+
+### §7 硬門檻/軟門檻分離：❌ 未實作
+
+> **2026-04-01 審計修正**：§7 定義了 10 硬門檻 + 6 軟門檻的部署條件重構方案，但 `validator.py` 仍使用 `all(c.passed)` 一刀切邏輯，未區分 hard/soft。延後至有策略通過大部分硬門檻後再實作。
 
 ### 不做
 

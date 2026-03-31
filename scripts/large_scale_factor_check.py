@@ -17,7 +17,7 @@ from scipy.stats import spearmanr
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.data.registry import REGISTRY, parquet_path as _ppath
+from src.data.registry import REGISTRY
 
 
 def load_data():
