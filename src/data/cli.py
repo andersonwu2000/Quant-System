@@ -93,10 +93,42 @@ def cmd_status(args: argparse.Namespace) -> None:
             except Exception:
                 continue
 
+        # Include FinLab panel in size + date range if available
+        if ds.finlab_panel:
+            from src.data.registry import FINLAB_DIR
+            panel_path = FINLAB_DIR / ds.finlab_panel
+            if panel_path.exists():
+                total_size += panel_path.stat().st_size / (1024 * 1024)
+                try:
+                    pdf = pd.read_parquet(panel_path)
+                    if not pdf.empty:
+                        p_last = pdf.index.max()
+                        p_first = pdf.index.min()
+                        if hasattr(p_last, 'date'):
+                            p_last = p_last.date()
+                            p_first = p_first.date()
+                            if freshest is None or p_last > freshest:
+                                freshest = p_last
+                            if oldest is None or p_first < oldest:
+                                oldest = p_first
+                        count += len(pdf.columns)  # panel columns = symbols
+                except Exception:
+                    pass
+
         freshest_str = freshest.isoformat() if freshest else "N/A"
         oldest_str = oldest.isoformat() if oldest else "N/A"
         print(f"{ds_name:<22} {count:>6} {freshest_str:>12} {oldest_str:>12} {total_size:>8.1f}")
 
+    # Total across all source dirs
+    total_files = 0
+    total_mb = 0.0
+    for d in [Path("data/yahoo"), Path("data/finmind"), Path("data/twse"), Path("data/finlab")]:
+        if d.exists():
+            dir_files = list(d.rglob("*.parquet"))
+            total_files += len(dir_files)
+            total_mb += sum(f.stat().st_size for f in dir_files) / (1024 * 1024)
+    print("-" * 68)
+    print(f"{'TOTAL':<22} {total_files:>6} {'':>12} {'':>12} {total_mb:>8.1f}")
     print()
 
 
