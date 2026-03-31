@@ -206,24 +206,63 @@ async def update_config(
 async def start_auto_alpha(
     _auth: dict[str, Any] = Depends(require_role("trader")),
 ) -> MessageResponse:
-    """Start the auto-alpha scheduler. Requires trader role."""
+    """Start autoresearch Docker containers + research loop."""
+    import asyncio
     state = get_app_state()
     if state.auto_alpha_running:
         raise HTTPException(status_code=409, detail="Auto-alpha is already running")
+
+    # Start Docker containers
+    result = await _docker_compose_action("up", "-d")
+    if result["returncode"] != 0:
+        raise HTTPException(status_code=500, detail=f"Docker start failed: {result['stderr'][:200]}")
+
     state.auto_alpha_running = True
-    return MessageResponse(message="Auto-alpha scheduler started")
+    return MessageResponse(message=f"Auto-alpha started. {result['stdout'][:100]}")
 
 
 @router.post("/stop", response_model=MessageResponse)
 async def stop_auto_alpha(
     _auth: dict[str, Any] = Depends(require_role("trader")),
 ) -> MessageResponse:
-    """Stop the auto-alpha scheduler. Requires trader role."""
+    """Stop autoresearch Docker containers."""
+    import asyncio
     state = get_app_state()
-    if not state.auto_alpha_running:
-        raise HTTPException(status_code=409, detail="Auto-alpha is not running")
+
+    result = await _docker_compose_action("down")
     state.auto_alpha_running = False
-    return MessageResponse(message="Auto-alpha scheduler stopped")
+    return MessageResponse(message=f"Auto-alpha stopped. {result['stdout'][:100]}")
+
+
+async def _docker_compose_action(*args: str) -> dict:
+    """Run docker compose command for autoresearch stack."""
+    import asyncio
+    import subprocess
+    from pathlib import Path
+
+    compose_dir = Path("docker/autoresearch")
+    if not (compose_dir / "docker-compose.yml").exists():
+        return {"returncode": 1, "stdout": "", "stderr": "docker-compose.yml not found"}
+
+    cmd = ["docker", "compose", "-f", str(compose_dir / "docker-compose.yml"), *args]
+
+    def _run() -> dict:
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120,
+                cwd=str(compose_dir),
+            )
+            return {
+                "returncode": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+            }
+        except subprocess.TimeoutExpired:
+            return {"returncode": 1, "stdout": "", "stderr": "Docker command timed out"}
+        except Exception as e:
+            return {"returncode": 1, "stdout": "", "stderr": str(e)}
+
+    return await asyncio.to_thread(_run)
 
 
 @router.get("/status", response_model=StatusResponse)
