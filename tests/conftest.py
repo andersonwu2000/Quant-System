@@ -29,3 +29,11 @@ def _block_portfolio_persistence(tmp_path):
     with patch("src.api.state._PERSIST_PATH", fake_path), \
          patch("src.api.state._PERSIST_DIR", fake_dir):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _block_trade_ledger(tmp_path):
+    """Prevent tests from writing to the real trade ledger."""
+    fake_ledger_dir = tmp_path / "ledger"
+    with patch("src.execution.trade_ledger.LEDGER_DIR", fake_ledger_dir):
+        yield
