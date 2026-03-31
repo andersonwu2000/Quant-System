@@ -57,8 +57,22 @@ def cmd_status(args: argparse.Namespace) -> None:
         freshest = None
         oldest = None
 
-        # Sample up to 50 files for date range (avoid reading all 1000+)
-        sample = files[:50] if len(files) > 50 else files
+        # Sample from each source dir: pick largest file (most history) + newest file
+        # This ensures we see both the oldest start date and the freshest end date
+        sample = []
+        for source_dir in ds.source_dirs:
+            if not source_dir.exists():
+                continue
+            dir_files = sorted(source_dir.glob(f"*_{suffix}.parquet"))
+            if not dir_files:
+                continue
+            # Largest file = most history (oldest date)
+            by_size = sorted(dir_files, key=lambda f: f.stat().st_size, reverse=True)
+            sample.extend(by_size[:10])
+            # Most recently modified = freshest date
+            by_mtime = sorted(dir_files, key=lambda f: f.stat().st_mtime, reverse=True)
+            sample.extend(by_mtime[:5])
+        sample = list({f: None for f in sample})  # dedupe preserving order
         for f in sample:
             try:
                 df = pd.read_parquet(f)
