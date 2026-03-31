@@ -88,6 +88,9 @@ DataFeed → Strategy.on_bar() → 目標權重 → RiskEngine → SimBroker/Bro
 | **統一交易管線** | APScheduler | `QUANT_TRADING_PIPELINE_CRON`（預設：每月 11 日 08:30） | `QUANT_SCHEDULER_ENABLED` |
 | **Autoresearch** | `loop-docker.ps1`（Docker）或 `loop.ps1` | 持續循環 | Karpathy 3 檔案 + L5 OOS + 容器化 |
 | **Auto-Alpha API** | `POST /auto-alpha/submit-factor` | L5 通過時自動提交 | Validator ≥13/15 → paper deploy |
+| **Deployed Strategies** | `deployed_executor.py`（日頻） | 每交易日執行已部署因子 | 獨立 NAV + kill switch 3% + 30 天 expiry |
+| **精煉管線** | `run_factor_refinement.py` | L5 因子部署前 | correlation → 組合 → Validator(no kill) → 壓力測試 |
+| **Reconciliation** | `reconcile.py`（僅 live mode） | EOD 持倉對帳 | symbol 格式自動 normalize（.TW↔bare） |
 
 ## 基礎設施
 

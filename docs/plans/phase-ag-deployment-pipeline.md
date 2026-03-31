@@ -36,10 +36,9 @@ baseline_ic_series.json 的因子只能被 1.3× 替換，不能主動移除。
 
 ### 1.4 不在本 Phase 的範圍
 
-- 多策略同時交易
-- 14 種組合最佳化接入（Phase AA-2）
-- 成本感知建構（Phase AA-2）
-- Live trading（需要券商 API 穩定後）
+- 多策略同時交易（同一 portfolio 跑多個策略）
+- 完整 AlphaPipeline 組合建構（Phase AA-2，精煉階段用簡化版 rank composite）
+- Live trading（需要券商 CA 憑證）
 
 ---
 
@@ -127,6 +126,34 @@ def _auto_submit_factor(factor_code, results, validator_report):
 - 確認 deploy/stop/get_active 邏輯正確
 - 加入 `get_factor_code()` 方法（從存儲讀取因子原始碼）
 - 加入 `compare_with_benchmark()` 方法
+
+### Step 2.5：因子精煉管線（L5 → 部署前必經）
+
+**問題**：Step 1-2 快速篩選用 top-15 equal-weight，但部署前需要更精細的處理。
+2026-04-01 Validator 結果顯示：IC 好（ICIR 0.57）但策略 CAGR 只有 3%，原因是 kill switch 觸發 20+ 次 + 粗糙的權重分配。
+
+**精煉流程**（每個 L5 因子必經，自動或半自動）：
+
+```
+L5 因子通過
+    ↓
+Step 2.5a: Correlation check — 新因子 vs 已有 L5 因子的 IC 相關性
+    ↓ 如果 corr < 0.50 → 可組合；corr ≥ 0.50 → 單獨部署或替換
+Step 2.5b: 多因子組合 — rank composite / IC-weighted（用已有 L5 因子庫）
+    ↓
+Step 2.5c: Validator 15 項（kill_switch=OFF）— 測因子 alpha，不測風控
+    ↓
+Step 2.5d: 壓力測試 — 6 歷史情景 + 成本敏感度 + benchmark 比較
+    ↓ 全部 PASS
+進入 Step 3（部署）
+```
+
+**實作位置**：`scripts/run_factor_refinement.py`（一個命令跑完 2.5a-d）
+
+**關鍵設計決策**：
+- Validator 回測 `enable_kill_switch=False` — MDD check 已單獨測，kill switch 是執行層控制
+- 壓力測試用 `src/backtest/stress_test.py` 的 `run_historical_stress` + `run_cost_sensitivity`
+- 精煉結果存到 `docs/research/refinement/{factor_name}/` 供人工決策
 
 ### Step 3：建立 DeployedStrategyExecutor
 

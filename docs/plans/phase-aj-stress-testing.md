@@ -236,3 +236,87 @@ def correlation_regime_analysis(
 2. **成本敏感度表** — 策略在不同成本下的 Sharpe/CAGR
 3. **相關性分析圖** — 持倉 rolling correlation heatmap
 4. **風險邊界** — 已知「策略在 X 情景下最多虧 Y%」
+
+---
+
+## 9. 嚴格審批（2026-04-01）
+
+### 判定：✅ 設計合理，範圍正確。2 個事實修正 + 1 個範圍確認。
+
+---
+
+### 事實修正
+
+**1. `src/backtest/stress_test.py` 已存在，計畫未提及**
+
+已有 `StressScenario` dataclass + 4 個 modifier（bear_market、high_volatility、flash_crash、regime_change）+ `run_stress_test()` + `ALL_SCENARIOS` + API endpoint `POST /backtest/stress-test`。
+
+計畫 §4.1 提出新建 `src/backtest/stress.py`，但 `stress_test.py` 已有同樣的架構。應該是**擴展現有的 `stress_test.py`**（加台股歷史情景），不是新建。
+
+**修正**：Phase 1 的 1a-1e 改為擴展 `stress_test.py`，加入 `TW_STRESS_SCENARIOS`（歷史日期區間）+ 合成情景。
+
+**2. §7 「Monte Carlo — 有 PBO + bootstrap 已足夠」需要更精確**
+
+PBO 測的是過擬合概率，bootstrap 測的是 Sharpe 置信區間。兩者都不做「未來路徑模擬」。Monte Carlo 的價值是回答「如果未來 1000 種可能走勢，策略虧超過 X% 的概率是多少」。
+
+但對月頻策略，歷史壓力情景（§3.1A 的 6 個事件）已經涵蓋了最差情境，比 Monte Carlo 的隨機路徑更有經濟意義。所以不做 Monte Carlo 的結論正確，但理由應改為「歷史情景比隨機路徑更有金融意義」而非「PBO 已足夠」。
+
+---
+
+### 範圍確認：不需要另外考慮
+
+**Monte Carlo 模擬** — 不做。理由如上。6 個真實歷史事件 + 5 個合成極端情景 > 隨機路徑。
+
+**訂單流程測試** — 已在 Phase AK-2 覆蓋。`test_pipeline_integration.py` 有 18 個 test 驗證 strategy → weights → orders → risk → broker → apply_trades。Phase AJ 不需重複。
+
+**風控測試** — 已有：
+- `test_risk.py`（12 tests）：max_position_weight（MODIFY capping）、fat_finger、max_notional
+- `test_pipeline_integration.py`：kill switch detection、concentrated position rejection
+- Phase AJ §3.1B 的「連續跌停 5 天」本身就是風控壓力測試（驗證 Kill Switch 觸發時機）
+
+這三項都不需要在 Phase AJ 額外考慮。Phase AJ 專注**金融情景壓力**和**成本敏感度**是正確的範圍。
+
+---
+
+### §3.2 工程韌性測試 → 搬到 Phase AK-6
+
+Phase AJ §3.2 的 6 個工程測試（數據故障、pipeline 崩潰、磁碟寫入失敗等）和 Phase AK-6 韌性測試完全重疊。不應在兩個 Phase 重複。
+
+**建議**：Phase AJ 刪除 §3.2 和 Phase 3（步驟 3a-3c）。這些歸 Phase AK-6。Phase AJ 只做金融壓力（Phase 1-2）。
+
+---
+
+### 做得好的部分
+
+1. **§3.1A 的 6 個台股歷史事件**選擇精準 — 涵蓋急跌（2008/2015/2020）、緩跌（2022）、V 轉（2020）、外資主導（2018）
+2. **§3.1B 合成情景**覆蓋了歷史未出現但合理的極端（連續跌停、流動性枯竭）
+3. **§3.1C 成本敏感度**是最被低估的測試 — 很多策略回測好看但成本一扣就虧
+4. **§6 成功標準**具體可驗證 — 不是「表現良好」而是「成本 2x 後 Sharpe > 0」
+5. **§7 不做的事**全部正確
+
+---
+
+### 實作改善（2026-04-01 補充）
+
+**6. 新增「因子失效壓力」測試**
+
+計畫測市場壓力（跌停、成本），但沒測因子本身失效。revenue_acceleration（成長）和 per_value（價值）理論上互補，但 2022 成長股重挫時可能同時反轉。新增：
+- 單獨回測 2022-01 ~ 2022-10 看雙因子 composite 行為
+- 計算 composite factor IC 在每個壓力期是否變負
+- 納入 §3.1A 情景的因子層級診斷（不只看 portfolio MDD，也看 IC 方向）
+
+**7. §3.3 參數敏感度改為聚焦 2-3 個關鍵參數**
+
+5 參數 × 4 值 = 1024 組合不可行。只測 `max_holdings × rebalance_frequency`（2 參數 × 4 值 = 16 組合），其他參數固定。省時且抓到最大影響。
+
+**8. 所有壓力測試加 0050.TW benchmark 對比**
+
+壓力結果必須跟 0050.TW 比。「策略跌 25%」不代表差 — 如果 0050 跌 30%，策略跑贏 5%。每個情景的報告加一行 benchmark MDD / return。
+
+**9. §3.2 工程韌性測試移除（歸 Phase AK-6）**
+
+Phase AJ 只做金融壓力（Phase 1-2）。§3.2 的 6 個工程測試和 Phase AK-6 完全重疊，刪除避免重複。Phase 3（步驟 3a-3c）一併移除。
+
+**10. 擴展現有 `stress_test.py` 而非新建**
+
+`src/backtest/stress_test.py` 已有 StressScenario + 4 個 modifier + `run_stress_test()` + API endpoint。Phase 1 改為擴展此檔，加入 TW_STRESS_SCENARIOS。

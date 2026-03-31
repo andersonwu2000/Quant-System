@@ -86,3 +86,22 @@
 
 ### Autoresearch
 63. market_cap look-ahead bias — `_mask_data` 直傳最新 market_cap（close × shares_issued）未做 PIT 截斷，agent 用 size 因子有前視偏差（evaluate.py）
+
+## 2026-04-01 跨模組整合 Bug（9 個）
+
+### 數據一致性
+64. evaluate.py `_FactorStrategy` data dict 缺 per_history/margin/institutional — Validator 用不完整數據判定因子，per_value 因子在 Validator 裡必定失敗（evaluate.py）
+65. `strategy_builder.py` data dict 同樣缺 per_history/margin/institutional — 部署後因子拿不到數據（strategy_builder.py）
+66. `deployed_executor.py` data dict 只有 bars — 日頻執行的因子完全沒有基本面數據（deployed_executor.py）
+67. `Context.get_revenue` 直接讀 parquet_path 繞過 DataCatalog — 沒有 FinLab panel 合併，Validator 回測只用 7 年數據而 evaluate.py 用 21 年（base.py）
+68. 權重公式不一致 — evaluate.py 用 `1/n`（100% 投資），strategy_builder 用 `0.95/n`（95%），部署後行為不同（evaluate.py, strategy_builder.py）
+
+### 回測引擎
+69. vectorized.py `_build_market_matrices` 死碼 — `continue` 後面的 try block 永遠不會執行，PBO 分析讀不到價格（vectorized.py）
+70. vectorized.py `_load_revenue` 同樣死碼 — revenue 載入被跳過（vectorized.py）
+71. Validator 回測 `enable_kill_switch=True` — kill switch 在月頻策略觸發 20+ 次，人為壓低 CAGR（validator.py）
+
+### 執行層
+72. Reconciliation symbol 格式不一致 — System 用 `.TW`（`2330.TW`），Sinopac broker 用 bare（`2330`），matched 永遠為 0（reconcile.py）
+73. Paper mode 假 Discord 告警 — SimBroker 每次重啟清空持倉，和持久化的 Portfolio 比對必定不一致，每天假告警（jobs.py）
+74. evaluate.py saturation + novelty check 用舊路徑 `data/market` — Phase AD 後路徑已改為 `data/yahoo`，VectorizedPBOBacktest 找不到檔案（evaluate.py）

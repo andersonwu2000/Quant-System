@@ -176,6 +176,39 @@ ALL_SCENARIOS: list[StressScenario] = [
 ]
 
 
+# ── Taiwan historical stress periods ──────────────────────────────
+# These use REAL data (no modification) — just backtest within the crisis window.
+
+
+@dataclass
+class HistoricalStressPeriod:
+    """A real historical crisis period for backtest."""
+    name: str
+    start: str
+    end: str
+    description: str
+    benchmark: str = "0050.TW"  # compare against
+
+
+TW_STRESS_PERIODS = [
+    HistoricalStressPeriod("2008_financial_crisis", "2008-09-01", "2009-03-31", "金融海嘯 — 台股跌 46%"),
+    HistoricalStressPeriod("2015_china_crash", "2015-06-01", "2015-08-31", "中國股災 — 急跌 28%"),
+    HistoricalStressPeriod("2018_trade_war", "2018-10-01", "2018-12-31", "中美貿易戰 — 外資大量賣超"),
+    HistoricalStressPeriod("2020_covid", "2020-02-01", "2020-04-30", "COVID 崩盤 — 跌 30% 後 V 轉"),
+    HistoricalStressPeriod("2021_tw_outbreak", "2021-05-01", "2021-06-30", "本土疫情 — 單週跌 8.5%"),
+    HistoricalStressPeriod("2022_rate_hike", "2022-01-01", "2022-10-31", "升息通膨 — 緩慢下跌 25%"),
+]
+
+# Cost sensitivity scenarios
+COST_SCENARIOS = {
+    "base":      {"commission_rate": 0.001425, "tax_rate": 0.003, "slippage_bps": 5},
+    "2x_cost":   {"commission_rate": 0.00285,  "tax_rate": 0.003, "slippage_bps": 10},
+    "3x_slip":   {"commission_rate": 0.001425, "tax_rate": 0.003, "slippage_bps": 15},
+    "day_trade":  {"commission_rate": 0.001425, "tax_rate": 0.0015, "slippage_bps": 5},
+    "worst":     {"commission_rate": 0.00285,  "tax_rate": 0.003, "slippage_bps": 20},
+}
+
+
 def run_stress_test(
     strategy_factory: Callable[[], Strategy],
     base_config: BacktestConfig,
@@ -254,6 +287,192 @@ def run_stress_test(
             continue
 
     return results
+
+
+def run_historical_stress(
+    strategy_factory: Callable[[], Strategy],
+    universe: list[str],
+    periods: list[HistoricalStressPeriod] | None = None,
+    initial_cash: float = 10_000_000,
+) -> dict[str, dict]:
+    """Run strategy through real historical crisis periods.
+
+    Uses actual market data (no synthetic modification).
+    Compares against 0050.TW benchmark for each period.
+
+    Returns {period_name: {strategy: BacktestResult, benchmark_return: float, ...}}
+    """
+    if periods is None:
+        periods = TW_STRESS_PERIODS
+
+    results: dict[str, dict] = {}
+    engine = BacktestEngine()
+
+    for period in periods:
+        logger.info("Historical stress: %s (%s to %s)", period.name, period.start, period.end)
+        try:
+            config = BacktestConfig(
+                universe=universe,
+                start=period.start,
+                end=period.end,
+                initial_cash=initial_cash,
+                rebalance_freq="monthly",
+            )
+            strategy = strategy_factory()
+            result = engine.run(strategy, config)
+
+            # Benchmark: 0050.TW buy-and-hold return
+            benchmark_ret = _benchmark_return(period.benchmark, period.start, period.end)
+
+            results[period.name] = {
+                "description": period.description,
+                "start": period.start,
+                "end": period.end,
+                "cagr": result.annual_return,
+                "sharpe": result.sharpe,
+                "max_drawdown": result.max_drawdown,
+                "total_return": float(result.nav_series.iloc[-1] / result.nav_series.iloc[0] - 1) if len(result.nav_series) > 1 else 0,
+                "benchmark_return": benchmark_ret,
+                "excess_return": (float(result.nav_series.iloc[-1] / result.nav_series.iloc[0] - 1) if len(result.nav_series) > 1 else 0) - benchmark_ret,
+                "result": result,
+            }
+            logger.info("  %s: return=%.1f%% benchmark=%.1f%% MDD=%.1f%%",
+                        period.name,
+                        results[period.name]["total_return"] * 100,
+                        benchmark_ret * 100,
+                        result.max_drawdown * 100)
+        except Exception as e:
+            logger.warning("Historical stress %s failed: %s", period.name, e)
+            results[period.name] = {"description": period.description, "error": str(e)}
+
+    return results
+
+
+def run_cost_sensitivity(
+    strategy_factory: Callable[[], Strategy],
+    universe: list[str],
+    start: str = "2018-01-01",
+    end: str = "2025-12-31",
+    scenarios: dict[str, dict] | None = None,
+    initial_cash: float = 10_000_000,
+) -> dict[str, dict]:
+    """Run strategy with different cost assumptions.
+
+    Returns {scenario_name: {sharpe, cagr, max_drawdown, total_cost, cost_ratio}}
+    """
+    if scenarios is None:
+        scenarios = COST_SCENARIOS
+
+    results: dict[str, dict] = {}
+    engine = BacktestEngine()
+
+    for name, costs in scenarios.items():
+        logger.info("Cost scenario: %s", name)
+        try:
+            config = BacktestConfig(
+                universe=universe,
+                start=start,
+                end=end,
+                initial_cash=initial_cash,
+                commission_rate=costs["commission_rate"],
+                tax_rate=costs["tax_rate"],
+                slippage_bps=costs["slippage_bps"],
+                rebalance_freq="monthly",
+            )
+            strategy = strategy_factory()
+            result = engine.run(strategy, config)
+
+            n_years = max(len(result.nav_series) / 252, 0.5)
+            annual_cost = result.total_commission / initial_cash / n_years
+            gross_alpha = result.annual_return + annual_cost
+            cost_ratio = annual_cost / gross_alpha if gross_alpha > 0 else 1.0
+
+            results[name] = {
+                "sharpe": result.sharpe,
+                "cagr": result.annual_return,
+                "max_drawdown": result.max_drawdown,
+                "annual_cost_pct": annual_cost * 100,
+                "cost_ratio": cost_ratio,
+                "result": result,
+            }
+            logger.info("  %s: Sharpe=%.3f CAGR=%.1f%% cost_ratio=%.0f%%",
+                        name, result.sharpe, result.annual_return * 100, cost_ratio * 100)
+        except Exception as e:
+            logger.warning("Cost scenario %s failed: %s", name, e)
+            results[name] = {"error": str(e)}
+
+    return results
+
+
+def _benchmark_return(symbol: str, start: str, end: str) -> float:
+    """Get buy-and-hold return for a benchmark symbol."""
+    try:
+        from src.data.data_catalog import get_catalog
+        catalog = get_catalog()
+        from datetime import date
+        df = catalog.get("price", symbol, start=date.fromisoformat(start), end=date.fromisoformat(end))
+        if df.empty or "close" not in df.columns or len(df) < 2:
+            return 0.0
+        return float(df["close"].iloc[-1] / df["close"].iloc[0] - 1)
+    except Exception:
+        return 0.0
+
+
+def generate_stress_report(
+    historical: dict[str, dict],
+    cost: dict[str, dict],
+    output_path: str = "docs/research/stress_test_report.md",
+) -> str:
+    """Generate markdown stress test report."""
+    from pathlib import Path
+    import time
+
+    lines = [
+        "# Stress Test Report",
+        f"",
+        f"> Generated: {time.strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "## 1. Historical Crisis Periods",
+        "",
+        "| Period | Description | Return | Benchmark | Excess | MDD | Sharpe |",
+        "|--------|-------------|-------:|----------:|-------:|----:|-------:|",
+    ]
+
+    for name, data in historical.items():
+        if "error" in data:
+            lines.append(f"| {name} | {data['description']} | ERROR | — | — | — | — |")
+            continue
+        ret = data.get("total_return", 0) * 100
+        bench = data.get("benchmark_return", 0) * 100
+        excess = data.get("excess_return", 0) * 100
+        mdd = data.get("max_drawdown", 0) * 100
+        sharpe = data.get("sharpe", 0)
+        lines.append(f"| {name} | {data['description']} | {ret:+.1f}% | {bench:+.1f}% | {excess:+.1f}% | {mdd:.1f}% | {sharpe:.2f} |")
+
+    lines.extend([
+        "",
+        "## 2. Cost Sensitivity",
+        "",
+        "| Scenario | Sharpe | CAGR | MDD | Annual Cost | Cost/Alpha |",
+        "|----------|-------:|-----:|----:|------------:|-----------:|",
+    ])
+
+    for name, data in cost.items():
+        if "error" in data:
+            lines.append(f"| {name} | ERROR | — | — | — | — |")
+            continue
+        lines.append(
+            f"| {name} | {data['sharpe']:.3f} | {data['cagr']:+.1f}% | "
+            f"{data['max_drawdown']:.1f}% | {data['annual_cost_pct']:.2f}% | "
+            f"{data['cost_ratio']:.0f}% |"
+        )
+
+    lines.extend(["", f"---", f"*Auto-generated stress test report*"])
+
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return str(path)
 
 
 def _run_with_feed(

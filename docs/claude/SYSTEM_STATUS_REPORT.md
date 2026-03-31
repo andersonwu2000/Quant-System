@@ -1,7 +1,7 @@
 # 系統現況報告
 
-> **更新**: 2026-03-31（session 2）
-> **版本**: v17.0
+> **更新**: 2026-04-01
+> **版本**: v18.0
 
 ---
 
@@ -10,7 +10,7 @@
 | 指標 | 數值 |
 |------|------|
 | 後端 Python | 170+ 檔 / 40,800+ LOC |
-| 測試 | 118 檔 / 26,500+ LOC / **1,810+** test functions |
+| 測試 | 130+ 檔 / 29,000+ LOC / **1,810 unit + 210 integration/e2e/security/resilience** tests (0 failed) |
 | CI | 9 jobs（lint + mypy + test + web + e2e + android + release） |
 | API 端點 | 120+（17 路由模組，新增 `/ops`） |
 | 因子 | 83（66 技術 + 17 基本面）+ 3 FinLab 品質因子 |
@@ -22,7 +22,9 @@
 | 數據平台 | DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
 | SecuritiesMaster | 3,936 家公司（2,241 active + 1,695 delisted）+ 39 產業分類 |
 | 運營架構 | daily_ops + eod_ops + Heartbeat + 通知分級 P0-P3 + Trade Ledger |
-| Autoresearch | 重置（2026-03-31 清空歷史，從零開始新研究週期） |
+| Autoresearch | 343+ 實驗（0 L3+），合併數據生效中 |
+| 部署管線 | 日頻 paper trading + kill switch OFF in Validator + 精煉管線（AG Step 2.5） |
+| 壓力測試 | 6 台股歷史情景 + 5 成本敏感度 + benchmark 比較（Phase AJ） |
 
 ---
 
@@ -79,6 +81,11 @@
 | PBO 系統性惡化（0.78→0.99） | ✅ 已解決 | Rolling OOS + construction_sensitivity ≤ 0.50 + Factor-Level PBO |
 | event-driven PBO 的 ThreadPool + shared strategy state | MEDIUM | 並發呼叫 base.on_bar() 可能互相干擾 |
 | 3 個殘留 bug（realtime lock, idempotency tz, risk_parity short） | LOW | `docs/dev/CODE_REVIEW_REPORT.md` §10 |
+| 跨模組 data dict 不一致（#64-68） | ✅ 已解決 | 2026-04-01 修復 + 85 regression tests |
+| vectorized.py 死碼（#69-70） | ✅ 已解決 | 2026-04-01 修復 |
+| Reconciliation symbol 格式（#72） | ✅ 已解決 | .TW vs bare 自動 normalize |
+| Paper mode 假告警（#73） | ✅ 已解決 | Reconcile 僅 live mode 執行 |
+| Validator kill switch 過度觸發（#71） | ✅ 已解決 | enable_kill_switch=False in Validator |
 
 ---
 

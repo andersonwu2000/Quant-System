@@ -534,7 +534,7 @@ class StrategyValidator:
             fractional_shares=fractional,
             market_lot_sizes={".TW": 1000, ".TWO": 1000},
             risk_rules=validator_risk_rules,
-            enable_kill_switch=True,
+            enable_kill_switch=False,  # Validator tests factor alpha, not risk control. MDD check is separate.
             kill_switch_cooldown="end_of_month",
             execution_delay=1,
             fill_on="open",

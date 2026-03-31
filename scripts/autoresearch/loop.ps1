@@ -136,6 +136,7 @@ try {
         } else {
             docker exec `
                 -e "HOME=/home/researcher" `
+                -e "CLAUDE_CONFIG_DIR=/home/researcher/.claude" `
                 autoresearch-agent `
                 claude -p $dockerPrompt --dangerously-skip-permissions --max-turns 200
         }

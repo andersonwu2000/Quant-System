@@ -326,6 +326,16 @@ def _load_all_data(universe: list[str]) -> dict:
         "roe": roe_values,
         "market_cap": market_cap,  # D3: {sym: float} latest market cap
     }
+
+    # Build close matrix for vectorized forward returns (date × symbol)
+    global _close_matrix
+    close_series = {sym: df["close"] for sym, df in bars.items() if "close" in df.columns}
+    if close_series:
+        _close_matrix = pd.DataFrame(close_series).sort_index()
+        print(f"  Close matrix: {_close_matrix.shape[0]} dates × {_close_matrix.shape[1]} symbols")
+    else:
+        _close_matrix = None
+
     return _data_cache
 
 
@@ -379,27 +389,37 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
     - per_history: truncated to as_of (daily PER/PBR)
     - margin: truncated to as_of (daily margin balances)
     - pe/pb/roe: passed as-is (point-in-time snapshots, backward compat)
+
+    Optimized: uses .loc[:as_of] for DatetimeIndex (O(log N) bisect),
+    and searchsorted for date-column DataFrames (avoids boolean mask).
     """
     cutoff = as_of - pd.DateOffset(days=REVENUE_DELAY_DAYS)
+
+    # Fast path for date-column truncation: searchsorted on sorted dates
+    def _trunc_date_col(df: pd.DataFrame, limit: pd.Timestamp) -> pd.DataFrame:
+        dates = df["date"].values
+        idx = np.searchsorted(dates, np.datetime64(limit), side="right")
+        return df.iloc[:idx]
+
     masked = {
         "bars": {
             sym: df.loc[:as_of]
             for sym, df in data["bars"].items()
         },
         "revenue": {
-            sym: df[df["date"] <= cutoff]
+            sym: _trunc_date_col(df, cutoff)
             for sym, df in data["revenue"].items()
         },
         "institutional": {
-            sym: df[df["date"] <= as_of]
+            sym: _trunc_date_col(df, as_of)
             for sym, df in data["institutional"].items()
         },
         "per_history": {
-            sym: df[df["date"] <= as_of]
+            sym: _trunc_date_col(df, as_of)
             for sym, df in data.get("per_history", {}).items()
         },
         "margin": {
-            sym: df[df["date"] <= as_of]
+            sym: _trunc_date_col(df, as_of)
             for sym, df in data.get("margin", {}).items()
         },
         # pe/pb/roe are latest-only snapshots → look-ahead bias in historical IC calculation
@@ -428,11 +448,26 @@ def _compute_forward_returns(
 
     Uses a per-(horizon, as_of) cache to avoid recomputing the same
     forward returns across L1/IS/L5/Stage2 calls.
+
+    Vectorized: uses pre-built close matrix when available (3-5x faster).
     """
     cache_key = (horizon, str(as_of))
     if cache_key in _fwd_return_cache:
         return _fwd_return_cache[cache_key]
 
+    # Fast path: use close matrix if built
+    if _close_matrix is not None and as_of in _close_matrix.index:
+        idx = _close_matrix.index.get_loc(as_of)
+        if idx + horizon < len(_close_matrix):
+            p0 = _close_matrix.iloc[idx]
+            p1 = _close_matrix.iloc[idx + horizon]
+            valid = (p0 > 0) & (p1 > 0) & p0.notna() & p1.notna()
+            ret = (p1 / p0 - 1)[valid]
+            returns = {sym: float(v) for sym, v in ret.items()}
+            _fwd_return_cache[cache_key] = returns
+            return returns
+
+    # Fallback: per-symbol loop
     returns: dict[str, float] = {}
     for sym, df in bars.items():
         if as_of not in df.index:
@@ -450,6 +485,11 @@ def _compute_forward_returns(
 
     _fwd_return_cache[cache_key] = returns
     return returns
+
+
+# Pre-built close price matrix (date × symbol) for vectorized forward returns.
+# Built once in _load_all_data, reused across all IC computations.
+_close_matrix: pd.DataFrame | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -513,17 +553,30 @@ def _mr_test(quintile_returns: np.ndarray, n_boot: int = 1000,
 def _compute_ic(
     factor_values: dict[str, float], forward_returns: dict[str, float],
 ) -> float | None:
-    """Compute Spearman rank IC."""
+    """Compute Spearman rank IC using numpy (faster than scipy.spearmanr).
+
+    numpy rankdata + Pearson on ranks = Spearman, ~3x faster for N=200.
+    """
     common = set(factor_values) & set(forward_returns)
     if len(common) < MIN_SYMBOLS:
         return None
     syms = sorted(common)
-    x = [factor_values[s] for s in syms]
-    y = [forward_returns[s] for s in syms]
-    if all(v == x[0] for v in x):
+    x = np.array([factor_values[s] for s in syms])
+    y = np.array([forward_returns[s] for s in syms])
+    if x.max() == x.min():
         return None
-    ic, _ = spearmanr(x, y)
-    return float(ic) if not np.isnan(ic) else None
+    # Rank-based Pearson = Spearman
+    from scipy.stats import rankdata
+    rx = rankdata(x)
+    ry = rankdata(y)
+    n = len(rx)
+    mx, my = rx.mean(), ry.mean()
+    dx, dy = rx - mx, ry - my
+    denom = np.sqrt((dx * dx).sum() * (dy * dy).sum())
+    if denom == 0:
+        return None
+    ic = float((dx * dy).sum() / denom)
+    return ic if not np.isnan(ic) else None
 
 
 # ---------------------------------------------------------------------------
