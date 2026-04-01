@@ -6,7 +6,7 @@ No IC values, no OOS data, no Validator details.
 import os
 import subprocess
 import json
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -226,9 +226,15 @@ def evaluate():
             lib_dir = "/app/watchdog_data/factor_library"
             os.makedirs(lib_dir, exist_ok=True)
             factor_code = open("/app/work/factor.py", encoding="utf-8").read()
-            # Use direction as filename (sanitized)
+            # Use factor docstring direction as filename (sanitized)
             import re
-            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', ic_source or "unknown")[:40]
+            direction = ""
+            for line in factor_code.splitlines():
+                stripped = line.strip().strip('"').strip("'")
+                if stripped and not stripped.startswith(("from ", "import ", "def ", "#", '"""', "'''")):
+                    direction = stripped[:50]
+                    break
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', direction or "unknown")[:40]
             ts = _t.strftime("%Y%m%d_%H%M%S")
             lib_path = f"{lib_dir}/{ts}_{safe_name}_{icir_bucket}.py"
             with open(lib_path, "w", encoding="utf-8") as f:
@@ -301,7 +307,6 @@ def evaluate_ensemble():
 
     Returns: composite IC/ICIR across horizons.
     """
-    from flask import request
     data = request.get_json(silent=True) or {}
     factor_names = data.get("factors", [])
 
@@ -382,16 +387,15 @@ def evaluate_ensemble():
             if len(common) < MIN_SYMBOLS:
                 continue
 
+            # Pre-compute ranks once per factor (not per symbol)
+            rank_arrays = []
+            for vals in all_vals:
+                scores = [vals[s] for s in common]
+                rank_arrays.append(rankdata(scores))
+
             composite = {}
-            for sym in common:
-                ranks = []
-                for vals in all_vals:
-                    # Rank within common symbols
-                    scores = [vals[s] for s in common]
-                    r = rankdata(scores)
-                    idx = common.index(sym)
-                    ranks.append(r[idx])
-                composite[sym] = sum(ranks) / len(ranks)
+            for i, sym in enumerate(common):
+                composite[sym] = sum(r[i] for r in rank_arrays) / len(rank_arrays)
 
             # IC for each horizon
             for h in FORWARD_HORIZONS:
