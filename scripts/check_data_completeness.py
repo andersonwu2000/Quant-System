@@ -10,8 +10,16 @@ def check_data_completeness():
     from sqlalchemy import create_engine
     engine = create_engine('sqlite:///data/quant.db')
     master = SecuritiesMaster(engine)
-    active_symbols = master.active_symbols()
-    all_symbols = [s.symbol for s in master.list_all()]
+    
+    # Defensively get symbols since list_active() might crash on 'NaT'
+    with engine.connect() as conn:
+        import sqlalchemy as sa
+        from src.data.master import securities_table
+        rows = conn.execute(sa.select(securities_table.c.symbol).where(securities_table.c.status == 'active')).fetchall()
+        active_symbols = [r[0] for r in rows]
+        rows_all = conn.execute(sa.select(securities_table.c.symbol)).fetchall()
+        all_symbols = [r[0] for r in rows_all]
+        
     print(f"Total symbols in DB: {len(all_symbols)}")
     print(f"Active symbols in DB: {len(active_symbols)}")
     
@@ -48,8 +56,6 @@ def check_data_completeness():
             if p.exists() and p.stat().st_size > 100:
                 found += 1
         print(f"{ds_name:20}: {found}/{len(active_symbols)} ({found/len(active_symbols):.1%})")
-
-    conn.close()
 
 if __name__ == "__main__":
     check_data_completeness()
