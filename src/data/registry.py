@@ -74,7 +74,7 @@ REGISTRY: dict[str, DatasetDef] = {
         source_dirs=(FINMIND_DIR,),
         frequency="quarterly",
         finmind_method="taiwan_stock_financial_statement",
-        pit_delay_days=90,
+        pit_delay_days=45,  # Conservative: Q1 deadline 5/15, Q2 8/14, Q3 11/14, Q4 3/31
         min_coverage=0.40,
         refresh_cron="0 8 16 5,8,11 *",
         description="Income statement (EPS, ROE, revenue, etc.)",
@@ -104,7 +104,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "per": DatasetDef(
         name="per",
         suffix="per",
-        source_dirs=(FINMIND_DIR,),
+        source_dirs=(TWSE_DIR, FINMIND_DIR),
         frequency="daily",
         finmind_method="taiwan_stock_per_pbr",
         pit_delay_days=0,
@@ -128,7 +128,7 @@ REGISTRY: dict[str, DatasetDef] = {
     "margin": DatasetDef(
         name="margin",
         suffix="margin",
-        source_dirs=(FINMIND_DIR,),
+        source_dirs=(TWSE_DIR, FINMIND_DIR),
         frequency="daily",
         finmind_method="taiwan_stock_margin_purchase_short_sale",
         pit_delay_days=0,
@@ -180,6 +180,28 @@ REGISTRY: dict[str, DatasetDef] = {
         refresh_cron="0 8 1 * *",
         description="Dividend distributions",
     ),
+    "inventory": DatasetDef(
+        name="inventory",
+        suffix="",
+        source_dirs=(),
+        frequency="weekly",
+        finmind_method="",
+        pit_delay_days=0,
+        min_coverage=0.50,
+        description="TDCC shareholder distribution (retail vs whale holding %)",
+        finlab_panel="inventory/above_1000_lot_pct.parquet",
+    ),
+    "disposal": DatasetDef(
+        name="disposal",
+        suffix="",
+        source_dirs=(),
+        frequency="daily",
+        finmind_method="",
+        pit_delay_days=0,
+        min_coverage=0.30,
+        description="Disposal stock filter (True=tradable, False=under disposal)",
+        finlab_panel="disposal/disposal_filter.parquet",
+    ),
 }
 
 
@@ -222,8 +244,10 @@ def parquet_path(symbol: str, dataset: str, source: str | None = None) -> Path:
         candidates.sort(key=lambda x: -x[0])
         return candidates[0][1]
 
-    # Not found anywhere — return primary source dir
-    return ds.source_dirs[0] / filename
+    # Not found anywhere — return primary source dir (or a non-existent path for finlab-only datasets)
+    if ds.source_dirs:
+        return ds.source_dirs[0] / filename
+    return Path(f"data/_nonexistent/{filename}")
 
 
 def write_path(symbol: str, dataset: str, source: str) -> Path:

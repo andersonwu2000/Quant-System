@@ -250,6 +250,80 @@ class TestBroadcastAlert:
         assert monitor._alerts_count >= 1
 
 
+class TestNavSanityCheck:
+    """Kill switch should be suppressed when NAV/SOD ratio is unreasonable."""
+
+    def test_suppressed_when_nav_far_above_sod(self) -> None:
+        """NAV 37x SOD (bad price data) → kill switch suppressed."""
+        monitor, portfolio, ws = _make_monitor(
+            cash=0, positions={"AAPL": (1000, 100)}
+        )
+        # Set SOD to a small value (simulating stale SOD from restart)
+        portfolio.nav_sod = Decimal("13000")
+        # NAV is 100,000 (1000 * 100) → ratio = 100000/13000 ≈ 7.7x → suppressed
+
+        with patch.object(monitor.risk_engine, "generate_liquidation_orders") as mock_liq:
+            # Push nav_high up, then drop to trigger kill switch check
+            monitor.on_price_update("AAPL", Decimal("110"))  # nav_high = 110000
+            monitor.on_price_update("AAPL", Decimal("90"))   # dd = (90k-110k)/110k = -18%
+            assert "kill_switch" in monitor._alerts_sent
+            mock_liq.assert_not_called()  # suppressed due to NAV/SOD ratio
+
+    def test_not_suppressed_when_ratio_normal(self) -> None:
+        """NAV close to SOD → kill switch proceeds normally."""
+        monitor, portfolio, ws = _make_monitor(
+            cash=0, positions={"AAPL": (1000, 100)}
+        )
+        portfolio.nav_sod = Decimal("100000")  # same as initial NAV
+
+        with patch.object(monitor.risk_engine, "generate_liquidation_orders") as mock_liq:
+            mock_liq.return_value = []
+            monitor.on_price_update("AAPL", Decimal("94"))  # 6% drop
+            assert "kill_switch" in monitor._alerts_sent
+            mock_liq.assert_called_once()
+
+
+class TestPaperModeKillSwitch:
+    """Paper mode should alert but not liquidate."""
+
+    def test_paper_mode_no_liquidation(self) -> None:
+        portfolio = _make_portfolio(cash=0, positions={"AAPL": (1000, 100)})
+        portfolio.nav_sod = Decimal("100000")
+        risk_engine = RiskEngine()
+        ws_manager = MagicMock()
+        ws_manager.broadcast = AsyncMock()
+        monitor = RealtimeRiskMonitor(
+            portfolio=portfolio,
+            risk_engine=risk_engine,
+            ws_manager=ws_manager,
+            mode="paper",
+        )
+
+        with patch.object(risk_engine, "generate_liquidation_orders") as mock_liq:
+            monitor.on_price_update("AAPL", Decimal("94"))  # 6% drop
+            assert "kill_switch" in monitor._alerts_sent
+            mock_liq.assert_not_called()  # paper mode → no liquidation
+
+    def test_live_mode_does_liquidate(self) -> None:
+        portfolio = _make_portfolio(cash=0, positions={"AAPL": (1000, 100)})
+        portfolio.nav_sod = Decimal("100000")
+        risk_engine = RiskEngine()
+        ws_manager = MagicMock()
+        ws_manager.broadcast = AsyncMock()
+        monitor = RealtimeRiskMonitor(
+            portfolio=portfolio,
+            risk_engine=risk_engine,
+            ws_manager=ws_manager,
+            mode="live",
+        )
+
+        with patch.object(risk_engine, "generate_liquidation_orders") as mock_liq:
+            mock_liq.return_value = []
+            monitor.on_price_update("AAPL", Decimal("94"))
+            assert "kill_switch" in monitor._alerts_sent
+            mock_liq.assert_called_once()  # live mode → liquidate
+
+
 class TestZeroNav:
     def test_zero_nav_no_crash(self) -> None:
         """Zero NAV should not cause division by zero."""

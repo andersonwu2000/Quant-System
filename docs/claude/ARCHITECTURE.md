@@ -29,7 +29,7 @@ DataFeed → Strategy.on_bar() → 目標權重 → RiskEngine → SimBroker/Bro
 - `src/strategy/` — Strategy ABC（`on_bar()` → 權重），`factors/` 套件（66 技術因子 + 17 基本面 = 83 個），optimizers（等權/信號/風險平價），registry（自動發現 `strategies/`），research（IC 分析、因子衰減）
 - `src/risk/` — RiskEngine 執行宣告式規則；5% 日回撤 kill switch。RealtimeRiskMonitor 即時監控（2%/3%/5% 分級警示）
 - `src/execution/` — `broker/`：BrokerAdapter ABC, PaperBroker, SimBroker（滑價/佣金/稅/T+N 結算）, SinopacBroker（Shioaji SDK）。`quote/`：SinopacQuoteManager（tick/bidask 訂閱）。ExecutionService（模式感知路由：backtest/paper/live），TWAP 拆單，OMS，交易時段驗證
-- `src/backtest/` — BacktestEngine，40+ 分析指標，HTML/CSV 報告，walk-forward，`validator.py`（**StrategyValidator — 13 項強制驗證閘門**），`experiment.py`（平行網格回測）
+- `src/backtest/` — BacktestEngine，40+ 分析指標，HTML/CSV 報告，walk-forward，`validator.py`（**StrategyValidator — 16 項驗證閘門，11 hard + 6 soft**），`experiment.py`（平行網格回測）
 - `src/data/` — **DataCatalog**（統一存取層）+ Registry（12 dataset × source 優先級）+ SecuritiesMaster（3,936 公司，含 1,695 已下市）+ QualityGate + RefreshEngine + Schemas + CLI。數據按來源分離：`data/yahoo/`, `data/finmind/`, `data/twse/`, `data/finlab/`。FinLab panel 含已下市股票 + PIT 財報上傳日 + adj_close
 - `src/api/` — FastAPI REST + WebSocket，14 個路由模組，JWT 認證，Prometheus
 - `src/notifications/` — Discord / LINE / Telegram

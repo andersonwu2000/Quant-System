@@ -106,3 +106,15 @@
 73. Paper mode 假 Discord 告警 — SimBroker 每次重啟清空持倉，和持久化的 Portfolio 比對必定不一致，每天假告警（jobs.py）
 74. evaluate.py saturation + novelty check 用舊路徑 `data/market` — Phase AD 後路徑已改為 `data/yahoo`，VectorizedPBOBacktest 找不到檔案（evaluate.py）
 75. Context.get_revenue yoy_growth 為 NaN — FinLab（2005-2018）有 yoy_growth，FinMind（2019+）沒有。合併後 `isna().all()` = False 跳過重算，但 lookback 截斷到最近 36 月（全 FinMind = 全 NaN）→ revenue_acceleration 因子在 Validator/OOS 回傳空（base.py）**CRITICAL — 因子在回測中完全失效**
+
+## 2026-04-01 Paper Trading Bug
+
+76. Paper mode kill switch 假清倉 — 伺服器重啟後 ShioajiFeed 無報價（盤前），fallback 到 catalog 價格導致 NAV 跳到 4.89 億（SOD 1,312 萬），_nav_high 被污染後微幅下跌即觸發 kill switch，SimBroker 以錯誤市價執行 92 筆 liquidation。根因有三：(1) NAV/SOD 比率無 sanity check (2) paper mode 不應執行真正的 liquidation (3) path A（_kill_switch_monitor）也有同樣問題。（realtime.py, app.py）
+77. `_atomic_write` Windows rename 失敗 — `Path.rename()` 在 Windows 上不能覆蓋既有檔案，需先 `unlink` 再 `rename`（refresh.py）
+
+## 預防措施（2026-04-01）
+
+78. 啟動冷卻期 — ExecutionService.initialize() 後 120 秒內拒絕所有訂單，防止報價未穩定時誤交易（service.py）
+79. 每分鐘訂單限速 — 滑動窗口 10 筆/分鐘，防止策略異常產生訂單洪水（service.py）
+80. 檔案型 Kill Switch — `data/emergency_halt.flag` 存在即拒絕所有訂單，API server crash 時仍可手動停止交易（service.py）
+81. Paper mode 行為集中管控 — `config.enable_kill_switch_liquidation` / `enable_reconciliation` / `enable_portfolio_persistence` 三個 property 取代散佈各處的 `if mode == "paper"` 判斷（config.py）

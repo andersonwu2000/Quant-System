@@ -3,7 +3,7 @@
 > **更新日期**: 2026-03-27
 > **範圍**: 21 份實驗報告（88+ bug 修正後）
 > **方法論**: `docs/claude/EXPERIMENT_STANDARDS.md`
-> **所有數字均為修正後結果**（40 天營收延遲、月度 IC 取樣、15 項 Validator）
+> **所有數字均為修正後結果**（40 天營收延遲、月度 IC 取樣、16 項 Validator，hard/soft 分離）
 
 ---
 
@@ -71,7 +71,7 @@
 | IC 取樣 | **月度**（非每日） | 避免自相關偏誤（每日 ICIR 被壓低 ~50%） |
 | 營收延遲 | **40 天** | 台灣月營收於次月 10 日前公布 |
 | Forward return | close[as_of+h-1] / close[as_of] | 和 L1-L5 evaluator 一致 |
-| Validator | **15 項** | 含 market_correlation + CVaR |
+| Validator | **16 項** | 11 hard + 6 soft（hard/soft 分離，permutation 僅 auto） |
 | 風控 | 寬鬆（15%/股） | Validator 測策略邏輯，非風控 |
 
 ---

@@ -75,6 +75,18 @@ class ExecutionService:
         self._initialized = False
         self._fallback_mode = False
         self._trade_callbacks: list[Any] = []
+        self._order_timestamps: list[float] = []
+        # Safety settings from TradingConfig (read once, not per-call)
+        try:
+            from src.core.config import get_config
+            _tc = get_config()
+            self._emergency_halt_file = _tc.emergency_halt_file
+            self._startup_warmup_seconds = _tc.startup_warmup_seconds
+            self._max_orders_per_minute = _tc.max_orders_per_minute
+        except Exception:
+            self._emergency_halt_file = "data/emergency_halt.flag"
+            self._startup_warmup_seconds = 120
+            self._max_orders_per_minute = 10
         # TWAP splitter
         self._twap: TWAPSplitter | None = None
         if self._config.smart_order_enabled:
@@ -90,6 +102,9 @@ class ExecutionService:
         Returns:
             是否初始化成功。
         """
+        import time
+        self._startup_time = time.monotonic()
+
         mode = self._config.mode
 
         if mode == "backtest":
@@ -192,6 +207,54 @@ class ExecutionService:
         """OrderExecutor protocol — 統一執行介面（U1）。"""
         return self.submit_orders(orders, portfolio=None, current_bars=current_bars, timestamp=timestamp)
 
+    def _check_safety_gates(self, orders: list[Order]) -> bool:
+        """Run pre-trade safety gates. Returns True if orders were rejected."""
+        import time
+        from pathlib import Path
+
+        # Gate 1: Emergency halt file
+        halt_path = Path(self._emergency_halt_file)
+        if halt_path.exists():
+            logger.critical(
+                "EMERGENCY HALT: %s exists — all %d orders rejected. "
+                "Remove file to resume trading.",
+                halt_path, len(orders),
+            )
+            for o in orders:
+                o.status = OrderStatus.REJECTED
+                o.reject_reason = f"Emergency halt file: {halt_path}"
+            return True
+
+        # Gate 2: Startup warmup
+        if hasattr(self, '_startup_time'):
+            elapsed = time.monotonic() - self._startup_time
+            if elapsed < self._startup_warmup_seconds:
+                remaining = self._startup_warmup_seconds - elapsed
+                logger.warning(
+                    "Startup warmup: %.0fs remaining — %d orders rejected",
+                    remaining, len(orders),
+                )
+                for o in orders:
+                    o.status = OrderStatus.REJECTED
+                    o.reject_reason = f"Startup warmup ({remaining:.0f}s remaining)"
+                return True
+
+        # Gate 3: Per-minute order rate limiting
+        now = time.monotonic()
+        self._order_timestamps = [t for t in self._order_timestamps if now - t < 60]
+        if len(self._order_timestamps) + len(orders) > self._max_orders_per_minute:
+            logger.warning(
+                "Order rate limit: %d orders in last 60s + %d new > %d/min — rejected",
+                len(self._order_timestamps), len(orders), self._max_orders_per_minute,
+            )
+            for o in orders:
+                o.status = OrderStatus.REJECTED
+                o.reject_reason = f"Rate limit: {self._max_orders_per_minute}/min exceeded"
+            return True
+        self._order_timestamps.extend([now] * len(orders))
+
+        return False
+
     def submit_orders(
         self,
         orders: list[Order],
@@ -216,6 +279,13 @@ class ExecutionService:
         if not orders:
             return []
 
+        # ── Safety gates (paper/live only — backtest skips all) ─────
+        if self._config.mode != "backtest":
+            rejected = self._check_safety_gates(orders)
+            if rejected:
+                return []
+
+        mode = self._config.mode
         mode = self._config.mode
 
         # 回測模式：直接使用 SimBroker

@@ -150,10 +150,12 @@ class TestRefreshReport:
 class TestDatasetRegistry:
     def test_all_datasets_have_required_fields(self):
         for name, ds in REGISTRY.items():
+            assert ds.frequency, f"{name} missing frequency"
+            # finlab-only datasets (no per-symbol files) don't need suffix/source_dirs
+            if ds.finlab_panel and not ds.source_dirs:
+                continue
             assert ds.suffix, f"{name} missing suffix"
             assert ds.source_dirs, f"{name} missing source_dirs"
-            assert ds.finmind_method, f"{name} missing finmind_method"
-            assert ds.frequency, f"{name} missing frequency"
 
 
 class TestRefreshDatasetSync:

@@ -150,6 +150,7 @@ def create_app() -> FastAPI:
                 loop=loop,
                 execution_service=state.execution_service,
                 app_state=state,
+                mode=config.mode,
             )
             state.realtime_risk_monitor = realtime_risk
 
@@ -340,6 +341,17 @@ def create_app() -> FastAPI:
                         continue
 
                     if state.risk_engine.kill_switch(state.portfolio, config.max_daily_drawdown_pct):
+                        # Sanity check: NAV vs SOD ratio must be reasonable
+                        _nav = float(state.portfolio.nav)
+                        _sod = float(state.portfolio.nav_sod) if state.portfolio.nav_sod > 0 else _nav
+                        if _sod > 0 and (_nav / _sod > 5.0 or _nav / _sod < 0.05):
+                            logger.warning(
+                                "Kill switch (path A) suppressed: NAV/SOD=%.1f unreasonable "
+                                "(NAV=%s, SOD=%s) — likely bad price data",
+                                _nav / _sod, _nav, _sod,
+                            )
+                            continue
+
                         # B-7 fix: set flag and re-check inside lock to prevent double liquidation
                         async with state.mutation_lock:
                             if state.kill_switch_fired:
@@ -349,8 +361,8 @@ def create_app() -> FastAPI:
                                 state.strategies[name]["status"] = "stopped"
                             state.oms.cancel_all()
 
-                            # Paper/live: generate, submit, and APPLY liquidation orders
-                            if config.mode in ("paper", "live") and state.execution_service.is_initialized:
+                            # Kill switch liquidation controlled by config (paper=alert only)
+                            if config.enable_kill_switch_liquidation and state.execution_service.is_initialized:
                                 liq_orders = state.risk_engine.generate_liquidation_orders(
                                     state.portfolio
                                 )
@@ -369,6 +381,11 @@ def create_app() -> FastAPI:
                                             "Kill switch: %d liquidation trades executed, NAV=%s",
                                             len(trades), state.portfolio.nav,
                                         )
+                            elif not config.enable_kill_switch_liquidation:
+                                logger.warning(
+                                    "Kill switch triggered in %s mode — alert only, no liquidation",
+                                    config.mode,
+                                )
 
                         _dd_pct = float(state.portfolio.daily_drawdown) * 100
                         _pos_list = ", ".join(

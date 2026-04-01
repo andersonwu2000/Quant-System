@@ -60,6 +60,9 @@ class TradingConfig(BaseSettings):
     default_slippage_bps: float = 5.0
     commission_rate: float = 0.001425       # 台灣券商手續費
     tax_rate: float = 0.003                 # 台灣證交稅 (賣出)
+    startup_warmup_seconds: int = 120       # 啟動後冷卻期（秒），冷卻中不下單
+    max_orders_per_minute: int = 10         # 每分鐘訂單上限
+    emergency_halt_file: str = "data/emergency_halt.flag"  # 存在即停止所有交易
 
     # ── Smart Order (TWAP) ──
     smart_order_enabled: bool = False
@@ -161,6 +164,21 @@ class TradingConfig(BaseSettings):
             if not self.sinopac_ca_path:
                 raise ValueError("LIVE mode requires QUANT_SINOPAC_CA_PATH")
         return self
+
+    @property
+    def enable_kill_switch_liquidation(self) -> bool:
+        """Kill switch liquidation only in live mode. Paper mode alerts only."""
+        return self.mode == "live"
+
+    @property
+    def enable_reconciliation(self) -> bool:
+        """Reconciliation only in live mode. Paper mode always drifts (SimBroker resets)."""
+        return self.mode == "live"
+
+    @property
+    def enable_portfolio_persistence(self) -> bool:
+        """Portfolio state persistence for crash recovery (paper + live)."""
+        return self.mode in ("paper", "live")
 
     def resolve_api_key_role(self, provided_key: str) -> str | None:
         """查詢 API Key 對應的角色。回傳 None 表示 key 無效。

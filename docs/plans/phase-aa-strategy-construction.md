@@ -378,9 +378,12 @@ Phase 2（Phase 1 驗證後）：
 - 20 天波動率估計 × 15 檔 → 噪音太大，有效持股降到 8-10
 - 如需風險管理，應在投組層級做 vol-targeting，不是個股層級改權重
 
-#### 4.2+4.6 No-trade zone + 非對稱成本: ❌ 未實作
+#### 4.2+4.6 No-trade zone + 非對稱成本: ✅ 已實作
 
-> **2026-04-01 審計修正**：先前標記「已採用」並附績效數字，但代碼審查確認 `strategy_builder.py` 中無 no-trade zone 或非對稱成本邏輯。績效數字來源不明，移除。待 Phase 2 研究啟動後再評估是否實作。
+實作於 `strategies/revenue_momentum.py:305-326`（非 strategy_builder.py）。
+買入門檻 1.5%、賣出門檻 3%（反映賣出成本是買入 3 倍）。
+
+> **2026-04-01 審計修正**：先前誤標為「未實作」，實際已在 revenue_momentum.py 中直接實作，未經由 construction.py。strategy_builder.py 的自動化路徑仍使用等權 top-15，不含 no-trade zone。
 
 #### PBO 變體設計研究結論（2026-03-28）
 

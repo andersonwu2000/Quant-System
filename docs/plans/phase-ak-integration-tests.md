@@ -10,7 +10,7 @@
 
 2026-03-31 單日發現 9 個跨模組 bug（data dict 不一致、死碼、symbol 格式、假警報等），根因是各模組獨立開發後缺乏整合測試。現有 1,700+ 單元測試覆蓋單模組正確性，但模組間接口、端到端流程、效能基準、安全性幾乎零覆蓋。
 
-**系統規模**：~30,000 LOC Python + React + Android，15 項策略驗證閘門，Docker autoresearch 3 容器。
+**系統規模**：~30,000 LOC Python + React + Android，16 項策略驗證閘門（11 hard + 6 soft），Docker autoresearch 3 容器。
 
 ---
 

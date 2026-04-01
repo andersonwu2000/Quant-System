@@ -121,6 +121,9 @@ def _atomic_write(
         merged = {**(table.schema.metadata or {}), **custom_meta}
         table = table.replace_schema_metadata(merged)
         pq.write_table(table, tmp)
+        # Windows: rename cannot overwrite existing file, so remove first
+        if target.exists():
+            target.unlink()
         tmp.rename(target)
     except Exception:
         if tmp.exists():

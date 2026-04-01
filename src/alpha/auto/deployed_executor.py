@@ -351,7 +351,6 @@ def generate_comparison_report(
 
     Returns report path or None if nothing to compare.
     """
-    deployer.get_active()
     all_strategies = deployer._deployed
     if not all_strategies:
         return None

@@ -55,7 +55,7 @@ src/
 ├── allocation/     (4)   戰術資產配置（4 總經因子）
 ├── risk/           (5)   12 規則 + Kill Switch + RealtimeRiskMonitor
 ├── execution/      (14)  SimBroker + PaperBroker + SinopacBroker + TWAP + OMS + 對帳
-├── backtest/       (13)  BacktestEngine + 40+ 指標 + Walk-Forward/PBO/DSR + Validator 15 項
+├── backtest/       (13)  BacktestEngine + 40+ 指標 + Walk-Forward/PBO/DSR + Validator 16 項（11 hard + 6 soft）
 ├── data/           (15)  Yahoo/FinMind/FRED/Shioaji + Parquet 快取
 ├── api/            (25)  FastAPI REST + WebSocket + JWT/RBAC + Prometheus
 ├── scheduler/      (2)   APScheduler（統一交易管線 + 每日對帳）
@@ -134,7 +134,7 @@ claude -p scripts/autoresearch/program.md
 
 **架構**：Karpathy 3 檔案（`evaluate.py` READ-ONLY + `factor.py` Agent 可改 + `program.md` 協議）
 
-**閘門**：L1-L4 in-sample → L5 OOS holdout → 大規模 IC → Validator 15 項
+**閘門**：L1-L4 in-sample → L5 OOS holdout → 大規模 IC → Validator 16 項（hard/soft 分離）
 
 ### 3. Auto-Alpha API
 

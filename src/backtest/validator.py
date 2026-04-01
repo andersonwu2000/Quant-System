@@ -291,11 +291,9 @@ class StrategyValidator:
         logger.info("[Validator] Pre-loading data feed from DataCatalog...")
         feed_end = max(end, cfg.oos_end, "2026-12-31")
         try:
-            self._shared_feed = self._build_catalog_feed(universe, start, feed_end)
-            self._shared_fundamentals = None
+            self._shared_feed = self._build_catalog_feed(universe)
         except Exception:
             self._shared_feed = None
-            self._shared_fundamentals = None
 
         # 1. Full backtest (use original start/end, not extended feed range)
         logger.info("[Validator] Running full backtest...")
@@ -560,7 +558,7 @@ class StrategyValidator:
     # ── 內部方法 ───────────────────────────────────────────────────
 
     @staticmethod
-    def _build_catalog_feed(universe: list[str], start: str, end: str) -> "HistoricalFeed":  # noqa: F821
+    def _build_catalog_feed(universe: list[str]) -> "HistoricalFeed":  # noqa: F821
         """Build HistoricalFeed from DataCatalog (local parquets, no Yahoo download)."""
         from src.data.feed import HistoricalFeed
         from src.data.data_catalog import get_catalog
@@ -857,7 +855,7 @@ class StrategyValidator:
         try:
             bt_config = self._make_bt_config(universe, start, end)
             engine = BacktestEngine()
-            feed = self._build_catalog_feed(universe, start, end)
+            feed = self._build_catalog_feed(universe)
             r = engine.run(strategy, bt_config, feed_override=feed)
             if r.nav_series is not None and len(r.nav_series) < 5:
                 return {"return": 0.0, "sharpe": 0.0,
@@ -1266,7 +1264,7 @@ class StrategyValidator:
             recent_start = (pd.Timestamp(end) - pd.Timedelta(days=calendar_days)).strftime("%Y-%m-%d")
             bt_config = self._make_bt_config(universe, recent_start, end)
             engine = BacktestEngine()
-            feed = self._build_catalog_feed(universe, recent_start, end)
+            feed = self._build_catalog_feed(universe)
             r = engine.run(strategy, bt_config, feed_override=feed)
             if r.nav_series is not None and len(r.nav_series) < 5:
                 return {"sharpe": 0.0, "start": recent_start, "end": end,

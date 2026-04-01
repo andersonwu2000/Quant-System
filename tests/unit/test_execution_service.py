@@ -445,3 +445,92 @@ class TestErrorHandling:
         svc = ExecutionService()
         assert svc.order_queue is not None
         assert svc.order_queue.size == 0
+
+
+# ── Safety Gates ──────────────────────────────────────────────
+
+
+class TestEmergencyHaltFile:
+    """Gate 1: file-based kill switch."""
+
+    def test_halt_file_rejects_all_orders(self, tmp_path: "Path") -> None:
+        halt_file = tmp_path / "halt.flag"
+        halt_file.touch()
+
+        svc = ExecutionService(ExecutionConfig(mode="paper"))
+        svc._initialized = True
+        svc._emergency_halt_file = str(halt_file)
+        svc._startup_warmup_seconds = 0
+        svc._startup_time = 0
+
+        orders = [_make_order()]
+        trades = svc._check_safety_gates(orders)
+        assert trades is True  # rejected
+        assert orders[0].status == OrderStatus.REJECTED
+        assert "Emergency halt" in orders[0].reject_reason
+
+    def test_no_halt_file_allows_orders(self, tmp_path: "Path") -> None:
+        svc = ExecutionService(ExecutionConfig(mode="paper"))
+        svc._initialized = True
+        svc._emergency_halt_file = str(tmp_path / "nonexistent.flag")
+        svc._startup_warmup_seconds = 0
+        svc._startup_time = 0
+
+        orders = [_make_order()]
+        rejected = svc._check_safety_gates(orders)
+        assert rejected is False
+
+
+class TestStartupWarmup:
+    """Gate 2: startup cooldown period."""
+
+    def test_warmup_rejects_during_cooldown(self) -> None:
+        import time
+        svc = ExecutionService(ExecutionConfig(mode="paper"))
+        svc._initialized = True
+        svc._startup_time = time.monotonic()  # just started
+        svc._emergency_halt_file = "nonexistent_path"
+        svc._startup_warmup_seconds = 300
+
+        orders = [_make_order()]
+        rejected = svc._check_safety_gates(orders)
+        assert rejected is True
+        assert orders[0].status == OrderStatus.REJECTED
+        assert "warmup" in orders[0].reject_reason.lower()
+
+    def test_warmup_allows_after_cooldown(self) -> None:
+        import time
+        svc = ExecutionService(ExecutionConfig(mode="paper"))
+        svc._initialized = True
+        svc._startup_time = time.monotonic() - 600
+        svc._emergency_halt_file = "nonexistent_path"
+        svc._startup_warmup_seconds = 120
+
+        orders = [_make_order()]
+        rejected = svc._check_safety_gates(orders)
+        assert rejected is False
+
+
+class TestOrderRateLimit:
+    """Gate 3: per-minute order throttling."""
+
+    def test_rate_limit_rejects_burst(self) -> None:
+        import time
+        svc = ExecutionService(ExecutionConfig(mode="paper"))
+        svc._initialized = True
+        svc._startup_time = time.monotonic() - 9999
+        svc._emergency_halt_file = "nonexistent_path"
+        svc._startup_warmup_seconds = 0
+        svc._max_orders_per_minute = 5
+
+        # Submit 5 orders (should pass gate)
+        batch1 = [_make_order(symbol=f"{i}.TW") for i in range(5)]
+        rejected1 = svc._check_safety_gates(batch1)
+        assert rejected1 is False
+
+        # Submit 1 more (should be rejected — 6 > 5/min)
+        batch2 = [_make_order(symbol="9999.TW")]
+        rejected2 = svc._check_safety_gates(batch2)
+        assert rejected2 is True
+        assert batch2[0].status == OrderStatus.REJECTED
+        assert "Rate limit" in batch2[0].reject_reason

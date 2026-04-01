@@ -35,6 +35,7 @@ class RealtimeRiskMonitor:
         loop: asyncio.AbstractEventLoop | None = None,
         execution_service: Any = None,
         app_state: Any = None,
+        mode: str = "live",  # "paper" or "live"
     ) -> None:
         self.portfolio = portfolio
         self.risk_engine = risk_engine
@@ -42,6 +43,7 @@ class RealtimeRiskMonitor:
         self.execution_service = execution_service  # for kill switch liquidation
         self._app_state = app_state  # shared AppState for kill_switch_fired + mutation_lock
         self._loop = loop
+        self._mode = mode
         # Price updates use portfolio.lock (shared with apply_trades) for thread safety
         self._nav_high: float = float(portfolio.nav)
         self._alerts_sent: set[str] = set()
@@ -113,6 +115,32 @@ class RealtimeRiskMonitor:
             self._alerts_sent.add("dd_3pct")
 
         if intraday_dd < -0.05 and "kill_switch" not in self._alerts_sent:
+            # Sanity check: if NAV diverges from SOD by > 5x, prices are likely wrong
+            # (e.g. catalog fallback during pre-market when feed is unavailable).
+            # In this case, suppress kill switch to avoid false liquidation.
+            _sod = float(self.portfolio.nav_sod) if self.portfolio.nav_sod > 0 else self._nav_high
+            if _sod > 0 and (current_nav / _sod > 5.0 or current_nav / _sod < 0.05):
+                logger.warning(
+                    "Kill switch suppressed: NAV/SOD ratio %.1f is unreasonable "
+                    "(NAV=%s, SOD=%s) — likely bad price data",
+                    current_nav / _sod, current_nav, _sod,
+                )
+                self._alerts_sent.add("kill_switch")  # don't re-trigger
+                return
+
+            # Paper mode: alert only, no liquidation
+            if self._mode == "paper":
+                self._broadcast_alert(
+                    "emergency",
+                    f"KILL SWITCH (paper, alert only): drawdown {intraday_dd:.1%}",
+                )
+                self._alerts_sent.add("kill_switch")
+                logger.warning(
+                    "Kill switch triggered in paper mode (dd=%.1f%%), alert only — no liquidation",
+                    intraday_dd * 100,
+                )
+                return
+
             self._broadcast_alert(
                 "emergency",
                 f"KILL SWITCH: drawdown {intraday_dd:.1%}",

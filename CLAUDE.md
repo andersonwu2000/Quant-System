@@ -79,7 +79,7 @@ Keep updates minimal — only touch sections affected by the change.
 
 ### 關鍵檔案（修改前必須看 `.claude/hooks/pre-edit-check.md`）
 - `src/backtest/analytics.py` — Sharpe/Sortino/CAGR/MDD/DSR
-- `src/backtest/validator.py` — 15 項驗證閘門
+- `src/backtest/validator.py` — 16 項驗證閘門（11 hard + 6 soft）
 - `src/backtest/engine.py` — NAV/cash/settlement/execution
 - `src/execution/broker/simulated.py` — 成本模型
 - `src/strategy/research.py` — IC/ICIR/forward returns
@@ -188,7 +188,7 @@ scripts/autoresearch/
 - evaluate.py 是 READ ONLY — 評估標準不可改
 - IC-series 去重防止 clone 因子
 - 大規模 IC 驗證（865+ 支）防小樣本偏差
-- 通過因子用 **StrategyValidator 15 項** 最終驗證
+- 通過因子用 **StrategyValidator 16 項**（hard/soft 分離）最終驗證
 
 ## Architecture Quick Reference
 

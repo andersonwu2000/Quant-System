@@ -22,7 +22,7 @@
 | 數據平台 | DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
 | SecuritiesMaster | 3,936 家公司（2,241 active + 1,695 delisted）+ 39 產業分類 |
 | 運營架構 | daily_ops + eod_ops + Heartbeat + 通知分級 P0-P3 + Trade Ledger |
-| Autoresearch | 343+ 實驗（0 L3+），合併數據生效中 |
+| Autoresearch | 400+ 實驗（0 L3+），合併數據生效中，preflight.py 防洩漏 |
 | 部署管線 | 日頻 paper trading + kill switch OFF in Validator + 精煉管線（AG Step 2.5） |
 | 壓力測試 | 6 台股歷史情景 + 5 成本敏感度 + benchmark 比較（Phase AJ） |
 
@@ -36,7 +36,7 @@
 |------|:---------:|:------:|:----:|------|
 | revenue_momentum_hedged | 13/15 | 0.926 | 12.8% | oos_sharpe(-0.73), construction_sensitivity(0.596) |
 
-**884 stocks, 15 項檢查（permutation 跳過：手寫策略無 compute_fn）。** 2 項 fail：OOS Sharpe（軟門檻）+ construction_sensitivity 0.596 > 0.50（硬門檻，PBO fillna 修正後惡化）。**不符合部署條件。**
+**884 stocks, 16 項檢查（permutation 跳過：手寫策略無 compute_fn）。** Hard/soft 分離後：OOS Sharpe 為軟門檻（不阻擋），construction_sensitivity 0.596 > 0.50 為硬門檻 fail。**硬門檻未全通過，不符合部署條件。**
 
 ### 進行中的工作
 
@@ -51,14 +51,27 @@
 
 | Phase | 名稱 | 完成日期 |
 |-------|------|---------|
-| AC | Validator 方法論修正（16 項） | 03-29 |
+| AC | Validator 方法論修正（16 項 + hard/soft 分離） | 04-01 |
 | AB | Factor-Level PBO | 03-29 |
-| AA | 策略構建（no-trade + 非對稱成本） | 03-28 |
+| AD | 數據管線自動化 | 04-01 |
+| AE | Docker Agent 隔離 | 03-28 |
+| AF | 記憶與替換系統 | 03-30 |
+| AI | 營運架構 | 04-01 |
 | Z1+Z2 | 向量化回測 + Shared Feed | 03-28 |
 | Y | 容器化 Autoresearch | 03-28 |
-| X | Anti-Overfitting 設計（被 AC 實作） | 03-28 |
+| X | Anti-Overfitting 設計 | 03-28 |
 | V | Kill Switch Debug | 03-28 |
 | U | Autoresearch 模式重構 | 03-27 |
+| R | 代碼整潔 | 03-27 |
+
+**進行中的計畫（4 個）：**
+
+| Phase | 名稱 | 完成度 | 缺什麼 |
+|-------|------|:------:|--------|
+| AA | 策略建構重構 | 80% | strategy_builder 整合 construction.py |
+| AG | 因子部署管線 | 75% | watchdog auto-submit + 精煉 2.5b/2.5d |
+| AK | 整合測試體系 | 85% | AK-4 效能基準（上線後） |
+| AJ | 壓力測試 | 50% | 台股歷史情景 + 相關性壓力 |
 
 **延後或已取代的計畫：**
 
@@ -66,8 +79,9 @@
 |-------|------|------|
 | P | Auto-Alpha Research | 被 Phase U 取代 |
 | Q | Strategy Refinement | 被 Phase AA+AC 取代 |
-| R | Codebase Hygiene | R7-R9 待完成（Paper Trading 前置） |
-| N | Paper Trading 30 天驗證 | N1-N3 完成，N5 卡 CA cert |
+| AH | Web 前端改版 | 5/8 頁面完成，暫停 |
+| E/N | 實盤 + Paper Trading | 等 CA 憑證 |
+| J | 跨資產 Alpha | 等台股研究穩定 |
 | N2 | Web Rewrite | 核心 UI 完成，i18n 延後 |
 | J | Cross-Asset Automation | 延後（等台股研究穩定） |
 | S | Pipeline Unification | 延後（前置條件需重評） |

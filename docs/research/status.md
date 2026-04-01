@@ -1,17 +1,17 @@
 ﻿# Autoresearch Status Report
 
-> Updated: 2026-04-01 06:16:03
+> Updated: 2026-04-01 08:09:49
 
 ## Dashboard
 
 | Item | Value |
 |------|-------|
-| Agent | Running (Up About an hour) |
-| Evaluator | Running (Up 2 hours (healthy)) |
-| Watchdog | Running (Up 2 hours) |
-| Experiments | 440 |
-| Keep / Discard / Crash | 0 / 440 / 0 |
-| Level Distribution | L0:0 L1:219 L2:221 L3:0 L4:0 L5:0 |
+| Agent | Running (Up 3 hours) |
+| Evaluator | Running (Up 50 seconds (health: starting)) |
+| Watchdog | Running (Up 4 hours) |
+| Experiments | 516 |
+| Keep / Discard / Crash | 0 / 516 / 0 |
+| Level Distribution | L0:0 L1:266 L2:250 L3:0 L4:0 L5:0 |
 | Deployed | 0 |
 | Factor-Level PBO | N/A |
 | ICIR Method | Method D (median \|ICIR\| ??0.30) |
@@ -22,6 +22,82 @@
 
 | Score | ICIR | Level | Status | Description |
 |------:|-----:|-------|--------|-------------|
+| none | none | L1 | discard | Negative return concentration: steady vs lumpy gains 240d. |
+| weak | weak | L2 | discard | Multi-scale trend linearity: avg R2 sign at 60/120/240d. |
+| none | none | L1 | discard | Trend quality momentum: R-squared × annualized slope 120d. |
+| weak | weak | L2 | discard | Signed trend linearity: R-squared x slope sign of log-price 120d. |
+| none | none | L1 | discard | Negative lag-1 autocorrelation magnitude: low spread proxy 240d. |
+| none | none | L1 | discard | Lagged vol-return cross-corr: attention delay lag-10 120d. |
+| none | none | L1 | discard | Lagged volume-return cross-corr: investor attention delay 240d. |
+| none | none | L2 | discard | Lagged volume-return cross-correlation: attention delay 120d. |
+| none | none | L1 | discard | Negative 40-day return: intermediate-term mean reversion signal. |
+| none | none | L1 | discard | Revenue growth momentum: latest YoY revenue growth. |
+| none | none | L1 | discard | Streak asymmetry: average win streak minus loss streak 240d. |
+| none | none | L1 | discard | Streak asymmetry: avg win streak minus loss streak length 240d. |
+| none | none | L1 | discard | Baseline: 12-1 momentum (skip most recent month). |
+| weak | weak | L2 | discard | Streak asymmetry: average win streak minus loss streak 240d. |
+| none | none | L1 | discard | Baseline: 12-1 momentum (skip most recent month). |
+| none | none | L1 | discard | Momentum orthogonal to vol and size: pure alpha momentum 240d. |
+| weak | weak | L2 | discard | Gap-to-range ratio: overnight dominance of price discovery 240d. |
+| none | none | L2 | discard | Momentum orthogonal to volatility: vol-residualized momentum 120d. |
+| none | none | L1 | discard | Vol-scaled momentum: 120d return divided by recent volatility. |
+| weak | weak | L2 | discard | Overnight-intraday shift trend: Spearman of ON-ID spread vs time 240d. |
+| none | none | L1 | discard | Sortino momentum: 120d return divided by downside deviation. |
+| weak | weak | L2 | discard | Market-regime adaptive momentum: use market vol to condition 240d. |
+| weak | weak | L2 | discard | Vol-scaled momentum: 120d return divided by recent volatility. |
+| weak | weak | L2 | discard | Regime-conditional signal: momentum in calm, reversal in turmoil. |
+| none | none | L1 | discard | Regime-conditional signal: momentum in calm, reversal in turmoil. |
+| none | none | L1 | discard | Regime-adaptive momentum: vol-scaled directional signal 240d. |
+| weak | weak | L2 | discard | Regime-conditional signal: momentum in calm, reversal in turmoil. |
+| none | none | L1 | discard | Cross-sectional momentum z-score: 60d return standardized. |
+| none | none | L1 | discard | Net institutional flow normalized by turnover 60d. |
+| none | none | L1 | discard | Trust flow momentum: trust net buying EMA 120d. |
+| none | none | L2 | discard | EMA-smoothed trend quality: Spearman of EMA prices vs time 500d. |
+| none | none | L1 | discard | Baseline: 12-1 momentum (skip most recent month). |
+| weak | weak | L2 | discard | EMA-smoothed trend quality: Spearman of EMA prices vs time 240d. |
+| none | none | L1 | discard | Capital gains overhang: disposition-driven momentum 120d. |
+| none | none | L2 | discard | Negative capital gains overhang: disposition effect avoidance 240d. |
+| none | none | L2 | discard | Gain-loss ratio: total gains over total losses 240d. |
+| none | none | L1 | discard | Upside-downside beta spread: asymmetric market co-movement 240d. |
+| none | none | L1 | discard | Gap persistence ratio: overnight information quality 240d. |
+| none | none | L1 | discard | Gain-loss asymmetry: sum of positive vs negative returns 240d. |
+| none | none | L2 | discard | Negative Parkinson vol: low intraday range premium 500d. |
+| none | none | L1 | discard | Price trend linearity: R-squared of log-price regression 500d. |
+| none | none | L1 | discard | Volume-return asymmetry: up-vol vs down-vol log ratio 240d. |
+| none | none | L2 | discard | Gap persistence ratio: overnight info quality 240d. |
+| none | none | L1 | discard | Post-volume-spike return: next-day return after high-volume days. |
+| none | none | L1 | discard | Negative VPIN proxy: low order flow toxicity 120d. |
+| none | none | L1 | discard | Negative VPIN proxy: low order flow toxicity 120d. |
+| none | none | L1 | discard | Negative VPIN proxy: low order flow toxicity 120d. |
+| none | none | L1 | discard | Robust Sharpe: median daily return over MAD 240d. |
+| none | none | L1 | discard | Intermediate momentum skip month: 240d return minus recent 20d. |
+| none | none | L1 | discard | Momentum minus recent return: intermediate trend with dip-buy. |
+| weak | weak | L2 | discard | Intermediate momentum skip month: 240d return minus 20d return. |
+| weak | weak | L2 | discard | Cross-sectional excess momentum skip-month 120d. |
+| none | none | L1 | discard | Sortino ratio: return per unit downside risk 240d. |
+| none | none | L1 | discard | Foreign participation trend: Spearman corr of flow/volume with time 120d. |
+| none | none | L1 | discard | Conviction up-day ratio: high-volume positive return days 240d. |
+| none | none | L1 | discard | Intraday upward bias: average (high-open)/(high-low) ratio 240d. |
+| none | none | L2 | discard | Negative price path convexity: decelerating trend premium 240d. |
+| none | none | L1 | discard | Negative price path convexity: decelerating trend premium 240d. |
+| none | none | L1 | discard | High-volume day return direction: informed trading signal 240d. |
+| none | none | L1 | discard | Negative volume Gini: evenly distributed trading activity 120d. |
+| none | none | L2 | discard | Foreign flow persistence: longest consecutive buying streak 120d. |
+| none | none | L1 | discard | PBR percentile reversion: low PBR vs own 2yr history. |
+| none | none | L2 | discard | Monthly return autocorrelation: lag-21 serial correlation 500d. |
+| weak | weak | L2 | discard | Volume Gini coefficient: even vs concentrated trading activity 120d. |
+| none | none | L2 | discard | Negative high-low range normalized by close: low intraday volatility. |
+| none | none | L1 | discard | Institutional feedback: return predicts next-day foreign flow 120d. |
+| none | none | L1 | discard | Margin usage change as crowding indicator: negative 60d delta. |
+| none | none | L1 | discard | Signed volume autocorrelation: directional flow persistence 240d. |
+| none | none | L2 | discard | Negative sub-period return dispersion: consistent monthly returns 240d. |
+| none | none | L2 | discard | Negative volume CV: consistent trading volume institutional premium 500d. |
+| none | none | L2 | discard | Conditional return asymmetry: persistence after up vs down days 240d. |
+| none | none | L1 | discard | Negative volatility-of-volatility: stable risk premium 240d. |
+| none | none | L1 | discard | Weekly return autocorrelation: lag-5 serial correlation 240d. |
+| none | none | L2 | discard | Negative max weekly return: avoid lottery-spike stocks 240d. |
+| none | none | L1 | discard | Low return-volume coupling: negative abs correlation 240d. |
+| none | none | L2 | discard | Rank composite: Calmar ratio + candle body decisiveness 240d. |
 | none | none | L1 | discard | CAPM alpha: Jensen's alpha from market regression 240d. |
 | none | none | L1 | discard | Rolling VWAP deviation trend: close vs cumulative VWAP slope 120d. |
 | weak | weak | L2 | discard | CAPM alpha: time-series intercept vs equal-weighted market 240d. |
@@ -465,16 +541,16 @@
 
 ## Alerts
 
-- `[2026-03-31 21:00:31] STALE: No new results for 57 minutes`
-- `[2026-03-31 21:01:37] STALE: No new results for 58 minutes`
-- `[2026-03-31 21:02:45] STALE: No new results for 59 minutes`
-- `[2026-03-31 21:03:52] STALE: No new results for 60 minutes`
-- `[2026-03-31 21:04:59] STALE: No new results for 62 minutes`
-- `[2026-03-31 21:06:06] STALE: No new results for 63 minutes`
-- `[2026-03-31 21:07:13] STALE: No new results for 64 minutes`
-- `[2026-03-31 21:08:20] STALE: No new results for 65 minutes`
-- `[2026-03-31 21:09:27] STALE: No new results for 66 minutes`
-- `[2026-03-31 21:10:34] STALE: No new results for 67 minutes`
+- `[2026-03-31 22:56:59] STALE: No new results for 68 minutes`
+- `[2026-03-31 23:28:52] STALE: No new results for 30 minutes`
+- `[2026-03-31 23:29:59] STALE: No new results for 31 minutes`
+- `[2026-03-31 23:31:08] STALE: No new results for 33 minutes`
+- `[2026-03-31 23:32:17] STALE: No new results for 34 minutes`
+- `[2026-03-31 23:33:25] STALE: No new results for 35 minutes`
+- `[2026-03-31 23:34:34] STALE: No new results for 36 minutes`
+- `[2026-03-31 23:35:44] STALE: No new results for 37 minutes`
+- `[2026-03-31 23:36:53] STALE: No new results for 38 minutes`
+- `[2026-03-31 23:38:01] STALE: No new results for 39 minutes`
 
 ---
 *Auto-generated by `scripts/autoresearch/status.ps1`*

@@ -42,11 +42,18 @@ async def daily_ops(config: object) -> dict:
     # ── Pre-market ───────────────────────────────────────────────────
     await heartbeat("start", f"系統啟動，準備交易日 ({today})")
 
-    # Fetch TWSE/TPEX daily snapshot (OHLCV + institutional)
+    # Fetch TWSE/TPEX daily snapshot (OHLCV + institutional + PER + margin + market summary)
     twse_result = await _fetch_twse_snapshot()
 
     # Yahoo daily price refresh (every trading day, not just rebalance days)
     await _yahoo_daily_refresh()
+
+    # FinMind incremental refresh — frequency-aware (daily/weekly/monthly/quarterly)
+    data_refresh_result = await _finmind_scheduled_refresh(today)
+
+    # TDCC weekly shareholder snapshot (every Friday or last trading day of week)
+    if today.weekday() == 4:  # Friday
+        await _tdcc_weekly_snapshot()
 
     # ── Trading ──────────────────────────────────────────────────────
     pipeline_result = None
@@ -77,6 +84,7 @@ async def daily_ops(config: object) -> dict:
         "status": "completed",
         "date": str(today),
         "twse": twse_result,
+        "data_refresh": data_refresh_result,
         "pipeline": pipeline_result.status if pipeline_result else "skipped",
     }
 
@@ -145,80 +153,104 @@ def _is_rebalance_day(today: date, config: object) -> bool:
 
 
 async def _fetch_twse_snapshot() -> str:
-    """Fetch today's TWSE+TPEX OHLCV + institutional to data/twse/."""
+    """Fetch today's TWSE+TPEX snapshots: OHLCV, institutional, PER, margin, market summary."""
     import asyncio
 
     def _do_fetch() -> str:
-        from src.data.sources.twse import fetch_all_daily, fetch_twse_institutional
+        from src.data.sources.twse import (
+            fetch_all_daily, fetch_twse_institutional,
+            fetch_all_per, fetch_twse_margin_all, fetch_twse_market_summary,
+        )
         from src.data.registry import write_path
         from src.data.refresh import _atomic_write
         import pandas as pd
 
         results = []
 
-        # ── OHLCV snapshot ───────────────────────────────────────
-        try:
-            ohlcv = fetch_all_daily()
-            if not ohlcv.empty:
-                saved = 0
-                for sym, group in ohlcv.groupby("symbol"):
-                    path = write_path(str(sym), "price", "twse")
-                    group_df = group.set_index(pd.DatetimeIndex(pd.to_datetime(group["date"])))
-                    group_df = group_df[["open", "high", "low", "close", "volume"]]
-                    if path.exists():
-                        try:
-                            existing = pd.read_parquet(path)
-                            combined = pd.concat([existing, group_df])
+        def _append_per_symbol(df: pd.DataFrame, dataset: str, label: str,
+                               date_col: str = "date", use_index: bool = False) -> None:
+            """Save per-symbol data with append + dedup."""
+            if df.empty:
+                results.append(f"{label}: no data")
+                return
+            saved = 0
+            for sym, group in df.groupby("symbol"):
+                path = write_path(str(sym), dataset, "twse")
+                if use_index:
+                    new_data = group.set_index(pd.DatetimeIndex(pd.to_datetime(group[date_col])))
+                    new_data = new_data.drop(columns=["symbol", date_col], errors="ignore")
+                else:
+                    new_data = group.drop(columns=["symbol"], errors="ignore")
+                if path.exists():
+                    try:
+                        existing = pd.read_parquet(path)
+                        if use_index:
+                            combined = pd.concat([existing, new_data])
                             combined = combined[~combined.index.duplicated(keep="last")].sort_index()
-                            _atomic_write(combined, path, source="twse", dataset="price")
-                        except Exception:
-                            pass
-                    else:
-                        _atomic_write(group_df, path, source="twse", dataset="price")
-                    saved += 1
-                results.append(f"OHLCV: {saved}")
-            else:
-                results.append("OHLCV: no data")
+                        else:
+                            combined = pd.concat([existing, new_data], ignore_index=True)
+                            if date_col in combined.columns:
+                                combined[date_col] = pd.to_datetime(combined[date_col])
+                                combined = combined.drop_duplicates(subset=[date_col], keep="last")
+                                combined = combined.sort_values(date_col).reset_index(drop=True)
+                    except Exception:
+                        combined = new_data
+                else:
+                    combined = new_data
+                _atomic_write(combined, path, source="twse", dataset=dataset)
+                saved += 1
+            results.append(f"{label}: {saved}")
+
+        # OHLCV (DatetimeIndex format)
+        try:
+            _append_per_symbol(fetch_all_daily(), "price", "OHLCV", use_index=True)
         except Exception as e:
             logger.warning("TWSE OHLCV failed: %s", e)
             results.append("OHLCV: failed")
 
-        # ── Institutional (三大法人) ─────────────────────────────
+        # Institutional (date column format)
         try:
-            inst = fetch_twse_institutional()
-            if not inst.empty:
-                import pyarrow as pa
-                import pyarrow.parquet as pq
-                from datetime import datetime
-
-                saved = 0
-                for sym, group in inst.groupby("symbol"):
-                    path = write_path(str(sym), "institutional", "twse")
-                    if path.exists():
-                        try:
-                            existing = pd.read_parquet(path)
-                            combined = pd.concat([existing, group], ignore_index=True)
-                            combined["date"] = pd.to_datetime(combined["date"])
-                            combined = combined.drop_duplicates(subset=["date"], keep="last")
-                            combined = combined.sort_values("date").reset_index(drop=True)
-                        except Exception:
-                            combined = group
-                    else:
-                        combined = group
-
-                    table = pa.Table.from_pandas(combined)
-                    meta = {b"source": b"twse", b"dataset": b"institutional",
-                            b"fetch_time": datetime.now().isoformat().encode()}
-                    table = table.replace_schema_metadata({**(table.schema.metadata or {}), **meta})
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    pq.write_table(table, path)
-                    saved += 1
-                results.append(f"Institutional: {saved}")
-            else:
-                results.append("Institutional: no data")
+            _append_per_symbol(fetch_twse_institutional(), "institutional", "Institutional")
         except Exception as e:
             logger.warning("TWSE institutional failed: %s", e)
             results.append("Institutional: failed")
+
+        # PER/PBR/Dividend Yield
+        try:
+            _append_per_symbol(fetch_all_per(), "per", "PER")
+        except Exception as e:
+            logger.warning("TWSE PER failed: %s", e)
+            results.append("PER: failed")
+
+        # Margin Trading
+        try:
+            _append_per_symbol(fetch_twse_margin_all(), "margin", "Margin")
+        except Exception as e:
+            logger.warning("TWSE margin failed: %s", e)
+            results.append("Margin: failed")
+
+        # Market Summary (single file, not per-symbol)
+        try:
+            mkt_df = fetch_twse_market_summary()
+            if not mkt_df.empty:
+                mkt_path = Path("data/twse/market_summary.parquet")
+                mkt_path.parent.mkdir(parents=True, exist_ok=True)
+                if mkt_path.exists():
+                    try:
+                        existing = pd.read_parquet(mkt_path)
+                        mkt_df = pd.concat([existing, mkt_df], ignore_index=True)
+                        mkt_df["date"] = pd.to_datetime(mkt_df["date"])
+                        mkt_df = mkt_df.drop_duplicates(subset=["date"], keep="last")
+                        mkt_df = mkt_df.sort_values("date").reset_index(drop=True)
+                    except Exception:
+                        pass
+                _atomic_write(mkt_df, mkt_path, source="twse", dataset="market_summary")
+                results.append(f"Market: {len(mkt_df)}d")
+            else:
+                results.append("Market: no data")
+        except Exception as e:
+            logger.warning("TWSE market summary failed: %s", e)
+            results.append("Market: failed")
 
         return " | ".join(results)
 
@@ -239,6 +271,103 @@ async def _yahoo_daily_refresh() -> str:
             return f"Yahoo: failed ({e})"
 
     return await asyncio.to_thread(_do_refresh)
+
+
+async def _finmind_scheduled_refresh(today: date) -> str:
+    """Refresh FinMind datasets based on their configured frequency.
+
+    Only refreshes datasets that are due today:
+    - daily: every trading day (per, institutional, margin, securities_lending)
+    - weekly: Monday (shareholding)
+    - monthly: day 11 (revenue), day 1 (dividend)
+    - quarterly: day 16 of May/Aug/Nov (financial_statement, cash_flows, balance_sheet)
+    """
+    import asyncio
+
+    def _do_refresh() -> str:
+        from src.data.registry import REGISTRY
+        from src.data.refresh import refresh_dataset_sync
+
+        due: list[str] = []
+        for name, ds in REGISTRY.items():
+            if not ds.source_dirs or not ds.finmind_method:
+                continue  # finlab-only or no provider
+            if name == "price":
+                continue  # handled by _yahoo_daily_refresh + _fetch_twse_snapshot
+
+            if ds.frequency == "daily":
+                due.append(name)
+            elif ds.frequency == "weekly" and today.weekday() == 0:  # Monday
+                due.append(name)
+            elif ds.frequency == "monthly":
+                # revenue on day 11, dividend on day 1
+                if name == "revenue" and today.day == 11:
+                    due.append(name)
+                elif name == "dividend" and today.day == 1:
+                    due.append(name)
+            elif ds.frequency == "quarterly" and today.day == 16 and today.month in (5, 8, 11):
+                due.append(name)
+
+        if not due:
+            return "no datasets due"
+
+        results = []
+        for name in due:
+            try:
+                report = refresh_dataset_sync(name)
+                results.append(f"{name}:{report.updated}u/{report.skipped}s")
+            except Exception as e:
+                results.append(f"{name}:ERR")
+                logger.warning("Refresh %s failed: %s", name, e)
+
+        summary = " | ".join(results)
+        logger.info("FinMind refresh: %s", summary)
+        return summary
+
+    return await asyncio.to_thread(_do_refresh)
+
+
+async def _tdcc_weekly_snapshot() -> str:
+    """Download TDCC shareholder distribution weekly snapshot."""
+    import asyncio
+
+    def _do_tdcc() -> str:
+        import io
+        import requests
+        import pandas as pd
+        from pathlib import Path
+
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(
+                "https://opendata.tdcc.com.tw/getOD.ashx?id=1-5",
+                headers=headers, timeout=30, allow_redirects=False,
+            )
+            if r.status_code != 200 or len(r.content) < 1000:
+                return "TDCC: no data"
+
+            text = r.content.decode("utf-8-sig")
+            df = pd.read_csv(io.StringIO(text))
+            df.columns = ["date", "stock_id", "level", "holders", "shares", "pct"]
+            df["date"] = pd.to_datetime(df["date"], format="%Y%m%d")
+            df["stock_id"] = df["stock_id"].str.strip()
+
+            report_date = df["date"].iloc[0].strftime("%Y%m%d")
+            out_dir = Path("data/tdcc")
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / f"shareholding_{report_date}.parquet"
+
+            if out_path.exists():
+                return f"TDCC: {report_date} already exists"
+
+            df.to_parquet(out_path, index=False)
+            logger.info("TDCC snapshot saved: %s (%d rows)", out_path, len(df))
+            return f"TDCC: {report_date} ({df['stock_id'].nunique()} stocks)"
+        except Exception as e:
+            logger.warning("TDCC download failed: %s", e)
+            return f"TDCC: failed ({e})"
+
+    return await asyncio.to_thread(_do_tdcc)
 
 
 async def _generate_daily_summary() -> str:

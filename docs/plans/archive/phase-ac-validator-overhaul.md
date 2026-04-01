@@ -1,4 +1,4 @@
-# Phase AC：Validator 方法論修正 ✅ 95% 完成（16 項檢查完成，§7 硬/軟分離延後）
+# Phase AC：Validator 方法論修正 ✅ 已完成（2026-04-01）
 
 > 目標：修正 StrategyValidator 中被學術文獻證實有方法論錯誤的檢查
 > 教訓來源：PBO 三次實作三次錯（CLAUDE.md #10）。同樣的問題可能存在於其他 check。
@@ -388,9 +388,20 @@ CPCV 和 PBO 的 CSCV 類似，但：
 6. ✅ Permutation test（新增 #16，shuffle real factor rankings）
 ```
 
-### §7 硬門檻/軟門檻分離：❌ 未實作
+### §7 硬門檻/軟門檻分離：✅ 已實作（2026-04-01）
 
-> **2026-04-01 審計修正**：§7 定義了 10 硬門檻 + 6 軟門檻的部署條件重構方案，但 `validator.py` 仍使用 `all(c.passed)` 一刀切邏輯，未區分 hard/soft。延後至有策略通過大部分硬門檻後再實作。
+`CheckResult` 新增 `hard: bool` 欄位，`ValidationReport.passed` 改為只檢查硬門檻。
+
+硬門檻（11 項，全部必須通過）：
+  cagr, sharpe, annual_cost_ratio, cost_2x_safety,
+  temporal_consistency, deflated_sharpe, bootstrap_p_sharpe_positive,
+  vs_ew_universe, construction_sensitivity, market_correlation, permutation_p
+
+軟門檻（6 項，報告但不阻擋部署）：
+  universe_size, max_drawdown, oos_sharpe, worst_regime,
+  recent_period_sharpe, cvar_95
+
+OOS Sharpe 降為軟門檻的原因：SE=0.82（548 天樣本），統計功效不足，隨機 fail 率 30-50%。
 
 ### 不做
 

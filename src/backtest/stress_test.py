@@ -522,13 +522,13 @@ def run_correlation_stress(
 
     ret_df = pd.DataFrame(returns_dict).dropna(how="all")
 
-    # Rolling average pairwise correlation
+    # Rolling average pairwise correlation (monthly sampling for O(months×N²) not O(days×N²))
     corr_series = []
-    dates = ret_df.index[window:]
-    for i in range(window, len(ret_df)):
+    monthly_indices = [i for i in range(window, len(ret_df))
+                       if i == window or ret_df.index[i].month != ret_df.index[i - 1].month]
+    for i in monthly_indices:
         win = ret_df.iloc[i - window:i]
         corr_matrix = win.corr()
-        # Average off-diagonal correlation
         n = len(corr_matrix)
         if n < 2:
             continue

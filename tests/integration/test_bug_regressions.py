@@ -179,7 +179,8 @@ class TestMarketCapLookAheadBias:
 
     def test_mask_data_disables_market_cap(self):
         source = open("scripts/autoresearch/evaluate.py", encoding="utf-8").read()
-        assert '"market_cap": {}' in source, (
+        # market_cap should be in the disabled set (pe/pb/roe/market_cap → empty dicts)
+        assert "market_cap" in source and ('("pe", "pb", "roe", "market_cap")' in source or '"market_cap": {}' in source), (
             "evaluate.py _mask_data must disable market_cap (look-ahead bias)"
         )
 

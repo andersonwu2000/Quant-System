@@ -644,7 +644,13 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         # Live mode: wait for async fills (SinopacBroker fills via background callback)
         if config.mode == "live" and not trades:
             import asyncio as _aio
-            n_orders = len(target_weights)
+            # Count intent logs for today (actual orders submitted, not target weights)
+            n_orders = 0
+            try:
+                from src.execution.trade_ledger import get_today_entries
+                n_orders = sum(1 for e in get_today_entries() if e.get("type") == "intent")
+            except Exception:
+                n_orders = len(target_weights)  # fallback
             if n_orders > 0:
                 logger.info("Live mode: waiting up to 60s for %d async fills...", n_orders)
                 for _ in range(12):  # 12 × 5s = 60s max
@@ -1013,7 +1019,7 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
     # Broker reconciliation 只在 live mode 有意義：
     # - paper mode：系統有模擬持倉，券商帳戶空的（或有手動部位），比對必定不一致
     # - live mode：系統下真單，券商持倉應與系統一致，差異才是真正的告警
-    if config.mode != "live":
+    if not config.enable_reconciliation:
         logger.debug("Daily reconcile skipped: mode=%s (only runs in live)", config.mode)
         return {"status": "skipped", "reason": "not live mode"}
 
