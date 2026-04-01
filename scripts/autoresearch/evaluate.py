@@ -35,7 +35,7 @@ PROJECT_ROOT = Path(_os.environ["PROJECT_ROOT"]) if "PROJECT_ROOT" in _os.enviro
     else Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-REVENUE_DELAY_DAYS = 40        # Taiwan monthly revenue publication delay
+REVENUE_DELAY_DAYS = 40        # Taiwan monthly revenue publication delay (used by _mask_data fallback)
 MIN_SYMBOLS = 50               # Minimum symbols per date for valid IC (200-stock universe)
 EVAL_START = "2017-01-01"      # Evaluation period start
 
@@ -213,11 +213,17 @@ def _load_universe(large: bool = False) -> list[str]:
 
 
 def _load_all_data(universe: list[str]) -> dict:
-    """Load all available data for the universe via DataCatalog.
+    """Load all registered datasets for the universe via DataCatalog.
 
-    Uses DataCatalog for path resolution and reading, but preserves the exact
-    same output dict format (data["bars"][sym], data["revenue"][sym], etc.)
-    so all downstream code is unaffected.
+    Auto-discovers datasets from REGISTRY — adding a new dataset to registry.py
+    automatically makes it available to the agent. No evaluate.py change needed.
+
+    Special handling:
+    - "price" → stored as data["bars"] with DatetimeIndex (not date column)
+    - "per" → stored as data["per_history"] (backward compat)
+    - All others → stored as data[dataset_name][sym] with date column
+
+    Disabled datasets (look-ahead bias): pe, pb, roe, market_cap → empty dicts.
 
     Cached after first call.
     """
@@ -226,106 +232,68 @@ def _load_all_data(universe: list[str]) -> dict:
         return _data_cache
 
     from src.data.data_catalog import DataCatalog
+    from src.data.registry import REGISTRY
+
     catalog = DataCatalog(str(PROJECT_ROOT / "data"))
 
-    print(f"Loading data for {len(universe)} symbols...")
+    print(f"Loading data for {len(universe)} symbols from {len(REGISTRY)} datasets...")
 
+    # Special: price uses DatetimeIndex, not date column
     bars: dict[str, pd.DataFrame] = {}
-    revenue: dict[str, pd.DataFrame] = {}
-    institutional: dict[str, pd.DataFrame] = {}
-    pe_ratios: dict[str, float] = {}
-    pb_ratios: dict[str, float] = {}
-    roe_values: dict[str, float] = {}
-    per_history: dict[str, pd.DataFrame] = {}
-    market_cap: dict[str, float] = {}
-    margin_data: dict[str, pd.DataFrame] = {}
+
+    # All other datasets: dict[dataset_name] → dict[symbol] → DataFrame
+    dataset_data: dict[str, dict[str, pd.DataFrame]] = {}
 
     for sym in universe:
-        # Market data (OHLCV)
-        df = catalog.get("price", sym)
-        if not df.empty and "close" in df.columns:
-            if not isinstance(df.index, pd.DatetimeIndex):
-                df.index = pd.to_datetime(df.index)
-            df.index = pd.to_datetime(df.index.date)  # normalize to date-only
-            df = df[~df.index.duplicated(keep="first")]
-            df["close"] = df["close"].where(df["close"] > 0)
-            if df["close"].isna().sum() / len(df) <= 0.10:
-                bars[sym] = df
+        for ds_name, ds in REGISTRY.items():
+            if ds_name == "price":
+                # Price: special handling (DatetimeIndex, close > 0 filter)
+                df = catalog.get("price", sym)
+                if not df.empty and "close" in df.columns:
+                    if not isinstance(df.index, pd.DatetimeIndex):
+                        df.index = pd.to_datetime(df.index)
+                    df.index = pd.to_datetime(df.index.date)
+                    df = df[~df.index.duplicated(keep="first")]
+                    df["close"] = df["close"].where(df["close"] > 0)
+                    if df["close"].isna().sum() / len(df) <= 0.10:
+                        bars[sym] = df
+                continue
 
-        # Revenue
-        df = catalog.get("revenue", sym)
-        if not df.empty and "revenue" in df.columns:
-            if "date" in df.columns:
-                df["date"] = pd.to_datetime(df["date"])
-                revenue[sym] = df.sort_values("date")
-
-        # Institutional
-        df = catalog.get("institutional", sym)
-        if not df.empty and "date" in df.columns:
-            df["date"] = pd.to_datetime(df["date"])
-            institutional[sym] = df.sort_values("date")
-
-        # PER history (daily PER/PBR/dividend_yield)
-        try:
-            df = catalog.get("per", sym)
-            if not df.empty and "PER" in df.columns and "date" in df.columns:
-                df["date"] = pd.to_datetime(df["date"])
-                per_history[sym] = df.sort_values("date")
-        except Exception:
-            pass
-
-        # Margin data
-        try:
-            df = catalog.get("margin", sym)
-            if not df.empty and "date" in df.columns:
-                df["date"] = pd.to_datetime(df["date"])
-                margin_data[sym] = df.sort_values("date")
-        except Exception:
-            pass
-
-        # D3: Market cap (close × shares_issued)
-        if sym in bars:
+            # All other datasets: load with date column
             try:
-                sh_df = catalog.get("shareholding", sym)
-                if not sh_df.empty and "NumberOfSharesIssued" in sh_df.columns:
-                    if "date" in sh_df.columns:
-                        sh_df = sh_df.sort_values("date")
-                    shares = float(sh_df.iloc[-1]["NumberOfSharesIssued"])
-                    last_close = float(bars[sym]["close"].iloc[-1])
-                    if shares > 0 and last_close > 0:
-                        market_cap[sym] = last_close * shares
+                df = catalog.get(ds_name, sym)
+                if df.empty:
+                    continue
+                if "date" in df.columns:
+                    df["date"] = pd.to_datetime(df["date"])
+                    df = df.sort_values("date")
+                if ds_name not in dataset_data:
+                    dataset_data[ds_name] = {}
+                dataset_data[ds_name][sym] = df
             except Exception:
                 pass
 
-        # Financial metrics (PE, PB, ROE)
-        try:
-            df = catalog.get("financial_statement", sym)
-            if not df.empty:
-                latest = df.iloc[-1]
-                if "pe_ratio" in df.columns:
-                    pe_ratios[sym] = float(latest.get("pe_ratio", 0) or 0)
-                if "pb_ratio" in df.columns:
-                    pb_ratios[sym] = float(latest.get("pb_ratio", 0) or 0)
-                if "roe" in df.columns:
-                    roe_values[sym] = float(latest.get("roe", 0) or 0)
-        except Exception:
-            pass
+    # Build output dict — backward compatible keys
+    _data_cache = {"bars": bars}
 
-    print(f"  Loaded: {len(bars)} bars, {len(revenue)} revenue, "
-          f"{len(institutional)} institutional, {len(per_history)} PER history, "
-          f"{len(margin_data)} margin, {len(pe_ratios)} PE ratios")
+    # Map dataset names to output keys (backward compat)
+    _key_map = {"per": "per_history", "margin": "margin"}
+    for ds_name in REGISTRY:
+        if ds_name == "price":
+            continue
+        out_key = _key_map.get(ds_name, ds_name)
+        _data_cache[out_key] = dataset_data.get(ds_name, {})
 
-    _data_cache = {
-        "bars": bars,
-        "revenue": revenue,
-        "institutional": institutional,
-        "per_history": per_history,  # data["per_history"][sym] → DataFrame[date, PER, PBR, dividend_yield]
-        "margin": margin_data,       # data["margin"][sym] → DataFrame[date, ...]
-        "pe": pe_ratios,
-        "pb": pb_ratios,
-        "roe": roe_values,
-        "market_cap": market_cap,  # D3: {sym: float} latest market cap
-    }
+    # Disabled datasets (look-ahead bias — latest-only snapshots)
+    _data_cache["pe"] = {}
+    _data_cache["pb"] = {}
+    _data_cache["roe"] = {}
+    _data_cache["market_cap"] = {}
+
+    # Print summary
+    counts = {k: len(v) for k, v in _data_cache.items() if isinstance(v, dict) and v}
+    summary = ", ".join(f"{n} {k}" for k, n in sorted(counts.items()) if k not in ("pe", "pb", "roe", "market_cap"))
+    print(f"  Loaded: {summary}")
 
     # Build close matrix for vectorized forward returns (date × symbol)
     global _close_matrix
@@ -383,17 +351,12 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
     """Return a copy of data with ALL time-series truncated to as_of.
 
     Safety: agent cannot see future data regardless of what factor.py does.
-    - bars: truncated to as_of (no future prices)
-    - revenue: truncated to as_of - 40 days (publication delay)
-    - institutional: truncated to as_of
-    - per_history: truncated to as_of (daily PER/PBR)
-    - margin: truncated to as_of (daily margin balances)
-    - pe/pb/roe: passed as-is (point-in-time snapshots, backward compat)
+    Uses pit_delay_days from REGISTRY for each dataset — no hardcoded delays.
 
     Optimized: uses .loc[:as_of] for DatetimeIndex (O(log N) bisect),
     and searchsorted for date-column DataFrames (avoids boolean mask).
     """
-    cutoff = as_of - pd.DateOffset(days=REVENUE_DELAY_DAYS)
+    from src.data.registry import REGISTRY
 
     # Fast path for date-column truncation: searchsorted on sorted dates
     def _trunc_date_col(df: pd.DataFrame, limit: pd.Timestamp) -> pd.DataFrame:
@@ -401,36 +364,39 @@ def _mask_data(data: dict, as_of: pd.Timestamp) -> dict:
         idx = np.searchsorted(dates, np.datetime64(limit), side="right")
         return df.iloc[:idx]
 
-    masked = {
-        "bars": {
-            sym: df.loc[:as_of]
-            for sym, df in data["bars"].items()
-        },
-        "revenue": {
-            sym: _trunc_date_col(df, cutoff)
-            for sym, df in data["revenue"].items()
-        },
-        "institutional": {
-            sym: _trunc_date_col(df, as_of)
-            for sym, df in data["institutional"].items()
-        },
-        "per_history": {
-            sym: _trunc_date_col(df, as_of)
-            for sym, df in data.get("per_history", {}).items()
-        },
-        "margin": {
-            sym: _trunc_date_col(df, as_of)
-            for sym, df in data.get("margin", {}).items()
-        },
-        # pe/pb/roe are latest-only snapshots → look-ahead bias in historical IC calculation
-        # Use per_history (daily PER/PBR with date truncation) instead
-        "pe": {},
-        "pb": {},
-        "roe": {},
-        # market_cap is a latest-only snapshot (close × shares_issued) → look-ahead bias.
-        # Disabled same as pe/pb/roe. Agent should use bars close × volume as size proxy.
-        "market_cap": {},
-    }
+    # Map output keys back to registry names for PIT delay lookup
+    _key_to_registry = {"bars": "price", "per_history": "per"}
+
+    masked: dict = {}
+    for key, value in data.items():
+        # Disabled datasets — pass through as empty
+        if key in ("pe", "pb", "roe", "market_cap"):
+            masked[key] = {}
+            continue
+
+        # Look up PIT delay from registry
+        registry_name = _key_to_registry.get(key, key)
+        ds = REGISTRY.get(registry_name)
+        delay_days = ds.pit_delay_days if ds else 0
+        cutoff = as_of - pd.DateOffset(days=delay_days) if delay_days > 0 else as_of
+
+        if key == "bars":
+            # Price: DatetimeIndex, truncate with .loc
+            masked["bars"] = {
+                sym: df.loc[:as_of]
+                for sym, df in value.items()
+            }
+        elif isinstance(value, dict):
+            # All other datasets: date-column DataFrames
+            masked[key] = {}
+            for sym, df in value.items():
+                if isinstance(df, pd.DataFrame) and "date" in df.columns:
+                    masked[key][sym] = _trunc_date_col(df, cutoff)
+                else:
+                    masked[key][sym] = df  # pass through non-timeseries
+        else:
+            masked[key] = value  # pass through non-dict values
+
     return masked
 
 
@@ -1627,18 +1593,23 @@ def _write_learning(results: dict) -> None:
         except Exception:
             pass
 
-        # AF-H1 fix: bucket ICIR (same as /evaluate) to prevent leaking precise values
+        # Bucket ICIR with finer granularity (6 levels) — helps agent distinguish
+        # "near threshold" (0.2-0.3) from "no signal" (0-0.1).
         # Use median |ICIR| across horizons (consistent with L2 gate, method D)
         horizon_vals = [abs(v) for v in results.get("icir_by_horizon", {}).values() if v != 0]
         raw_icir = float(np.median(horizon_vals)) if horizon_vals else 0.0
-        if raw_icir >= 0.40:
-            icir_bucket = "strong"
+        if raw_icir >= 0.50:
+            icir_bucket = "exceptional"  # >0.5: very rare, likely real alpha
+        elif raw_icir >= 0.40:
+            icir_bucket = "strong"       # 0.4-0.5: strong signal
         elif raw_icir >= 0.30:
-            icir_bucket = "moderate"
-        elif raw_icir >= 0.15:
-            icir_bucket = "weak"
+            icir_bucket = "moderate"     # 0.3-0.4: passes L2
+        elif raw_icir >= 0.20:
+            icir_bucket = "near"         # 0.2-0.3: close to threshold, worth refining
+        elif raw_icir >= 0.10:
+            icir_bucket = "weak"         # 0.1-0.2: faint signal
         else:
-            icir_bucket = "none"
+            icir_bucket = "noise"        # 0-0.1: no signal
 
         entry = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),

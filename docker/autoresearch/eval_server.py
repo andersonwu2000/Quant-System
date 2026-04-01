@@ -99,10 +99,23 @@ def learnings():
     except Exception:
         pass
 
+    # ICIR bucket distribution (6-level: noise/weak/near/moderate/strong/exceptional)
+    icir_dist: dict[str, int] = {}
+    near_threshold: list[str] = []  # directions with ICIR "near" (0.2-0.3) — worth refining
+    for e in recent:
+        bucket = e.get("icir", "unknown")
+        icir_dist[bucket] = icir_dist.get(bucket, 0) + 1
+        if bucket == "near":
+            d = e.get("direction", "")
+            if d and d not in near_threshold:
+                near_threshold.append(d)
+
     return jsonify({
         "successful_patterns": successful,
         "failed_patterns": failed,
         "forbidden": forbidden,
+        "near_threshold": near_threshold[:10],  # directions close to L2 pass — try refining
+        "icir_distribution": icir_dist,
         "stats": {
             "total_experiments": len(entries),
             "directions_explored": len(direction_stats),
