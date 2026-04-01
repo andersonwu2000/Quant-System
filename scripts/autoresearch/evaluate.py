@@ -1611,6 +1611,9 @@ def _write_learning(results: dict) -> None:
         else:
             icir_bucket = "noise"        # 0-0.1: no signal
 
+        # Best horizon (which timeframe the signal is strongest)
+        best_h = results.get("best_horizon", "")
+
         entry = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "direction": direction,
@@ -1620,6 +1623,10 @@ def _write_learning(results: dict) -> None:
             "failure": results.get("failure", ""),
             "ic_corr": round(results.get("max_correlation", 0), 3),
             "correlated_with": results.get("correlated_with", ""),
+            # Structured decomposition — helps agent learn WHY it failed
+            "source": results.get("ic_source", ""),     # stock_alpha | mixed | industry_beta
+            "trend": results.get("ic_trend", ""),        # stable | improving | declining
+            "best_horizon": best_h,                      # 5d | 10d | 20d | 60d
         }
         if results.get("replaced"):
             entry["replaced"] = results["replaced"]

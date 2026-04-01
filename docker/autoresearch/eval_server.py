@@ -102,15 +102,25 @@ def learnings():
     # ICIR bucket distribution (6-level: noise/weak/near/moderate/strong/exceptional)
     # Only aggregate counts — no direction names (prevents overfitting to specific approaches)
     icir_dist: dict[str, int] = {}
+    source_dist: dict[str, int] = {}
+    trend_dist: dict[str, int] = {}
     for e in recent:
         bucket = e.get("icir", "unknown")
         icir_dist[bucket] = icir_dist.get(bucket, 0) + 1
+        src = e.get("source", "")
+        if src:
+            source_dist[src] = source_dist.get(src, 0) + 1
+        trend = e.get("trend", "")
+        if trend:
+            trend_dist[trend] = trend_dist.get(trend, 0) + 1
 
     return jsonify({
         "successful_patterns": successful,
         "failed_patterns": failed,
         "forbidden": forbidden,
         "icir_distribution": icir_dist,
+        "source_distribution": source_dist,   # stock_alpha vs industry_beta vs mixed
+        "trend_distribution": trend_dist,      # stable vs improving vs declining
         "stats": {
             "total_experiments": len(entries),
             "directions_explored": len(direction_stats),
@@ -209,11 +219,23 @@ def evaluate():
     except Exception:
         pass
 
+    # Extract factor decomposition info (already printed by evaluate.py)
+    ic_source = _extract(stdout, "ic_source:") or "unknown"   # stock_alpha | mixed | industry_beta
+    ic_trend = _extract(stdout, "ic_trend:") or "unknown"     # stable | improving | declining
+    novelty = _extract(stdout, "novelty:") or "unknown"       # high | not_high
+
+    # Find best horizon (agent can learn which timeframe works)
+    best_horizon = _extract(stdout, "best_horizon:") or ""
+
     return jsonify({
         "passed": passed,
         "level": level,
         "score": score_bucket,
         "icir": icir_bucket,
+        "source": ic_source,     # stock_alpha = good, industry_beta = needs neutralization
+        "trend": ic_trend,        # declining = signal decaying, improving = getting stronger
+        "novelty": novelty,       # high = unique signal, not_high = correlated with existing
+        "best_horizon": best_horizon,  # which timeframe the signal is strongest
     })
 
 
