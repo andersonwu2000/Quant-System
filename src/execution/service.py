@@ -347,7 +347,7 @@ class ExecutionService:
                     state = get_app_state()
                     state.kill_switch_fired = True
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception", exc_info=True)
                 raise
             if rejected:
                 return []
@@ -575,6 +575,6 @@ class ExecutionService:
                 if isinstance(self._broker, SinopacBroker):
                     self._broker.disconnect()
             except ImportError:
-                pass
+                logger.debug("Suppressed exception", exc_info=True)
         self._initialized = False
         logger.info("ExecutionService shutdown")

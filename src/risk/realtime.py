@@ -106,7 +106,7 @@ class RealtimeRiskMonitor:
             INTRADAY_DRAWDOWN.set(intraday_dd)
             NAV_CURRENT.set(current_nav)
         except Exception:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
 
         # 3. Tiered alerts (outside lock to avoid blocking)
         if intraday_dd < -0.02 and "dd_2pct" not in self._alerts_sent:
@@ -184,7 +184,7 @@ class RealtimeRiskMonitor:
                                     from src.metrics import KILL_SWITCH_TRIGGERS
                                     KILL_SWITCH_TRIGGERS.labels(path="tick").inc()
                                 except Exception:
-                                    pass
+                                    logger.debug("Suppressed exception", exc_info=True)
                                 trades = svc.submit_orders(orders, pf)
                                 if trades:
                                     from src.execution.oms import apply_trades
@@ -330,7 +330,7 @@ class RealtimeRiskMonitor:
             from src.metrics import RISK_ALERTS
             RISK_ALERTS.labels(severity=level).inc()
         except Exception:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
         payload: dict[str, Any] = {
             "type": "realtime_risk",
             "level": level,

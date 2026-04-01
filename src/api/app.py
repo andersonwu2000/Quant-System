@@ -278,7 +278,7 @@ def create_app() -> FastAPI:
                                     if change < -0.03:
                                         alerts.append(f"NAV dropped {change:.1%}")
                             except Exception:
-                                pass
+                                logger.debug("Suppressed exception", exc_info=True)
                         if n_pos == 0 and nav > 100000:
                             alerts.append("No positions but significant NAV")
 
@@ -573,7 +573,7 @@ def create_app() -> FastAPI:
                 if data == "ping":
                     await websocket.send_text("pong")
         except WebSocketDisconnect:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
         except Exception:
             logger.debug("WS error on channel=%s", channel, exc_info=True)
         finally:

@@ -54,7 +54,7 @@ def _write_pipeline_record(
             existing = json.loads(path.read_text(encoding="utf-8"))
             record["started_at"] = existing.get("started_at")
         except Exception:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
     path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
 
@@ -343,7 +343,7 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
             if notifier.is_configured():
                 await notifier.send("Pipeline Timeout", msg)
         except Exception:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
 
     except Exception as exc:
@@ -359,14 +359,14 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
                 state = get_app_state()
                 state.kill_switch_fired = True
             except Exception:
-                pass
+                logger.debug("Suppressed exception", exc_info=True)
             try:
                 from src.notifications.factory import create_notifier
                 notifier = create_notifier(config)
                 if notifier.is_configured():
                     await notifier.send("INVARIANT VIOLATION", f"Pipeline stopped: {exc}")
             except Exception:
-                pass
+                logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
 
 
@@ -452,7 +452,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                     try:
                         await notifier.send("Pipeline Error", msg)
                     except Exception:
-                        pass
+                        logger.debug("Suppressed exception", exc_info=True)
                 return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
 
     # 1c. Pre-trade quality gate (always runs, even if data update is off)
@@ -465,7 +465,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             try:
                 await notifier.send("🚫 Quality Gate BLOCKED", msg)
             except Exception:
-                pass
+                logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
     if gate.warnings:
         logger.warning("Quality gate warnings: %s", gate.warnings)
@@ -592,7 +592,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                             elif _pb is not None and len(_pb) >= 1:
                                 _prev = float(_pb["close"].iloc[-1])
                         except Exception:
-                            pass
+                            logger.debug("Suppressed exception", exc_info=True)
                         current_bars[s] = {
                             "open": float(_r.get("Open", _r.get("Close", 0))),
                             "high": float(_r.get("High", _r.get("Close", 0))),
@@ -603,9 +603,9 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                         }
                         _realtime_fetched += 1
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception", exc_info=True)
         except ImportError:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
         # Fall back to parquet for symbols not fetched
         for s in _all_syms:
             if s not in current_bars:
@@ -623,7 +623,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                             "prev_close": _prev,
                         }
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception", exc_info=True)
         logger.info("Paper SimBroker: %d realtime + %d parquet fallback = %d current_bars",
                     _realtime_fetched, len(current_bars) - _realtime_fetched, len(current_bars))
     else:
@@ -641,7 +641,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                     deployer.stop(d.name, reason="main_kill_switch")
                     logger.warning("Auto strategy %s stopped due to main kill switch", d.name)
             except Exception:
-                pass
+                logger.debug("Suppressed exception", exc_info=True)
             return PipelineResult(status="aborted", strategy_name=strategy.name(), error="Kill switch fired")
         # Log trade intents before execution (crash recovery for live mode)
         try:
@@ -697,7 +697,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                             logger.info("Live mode: %d/%d fills received", len(fills), n_orders)
                             break
                     except Exception:
-                        pass
+                        logger.debug("Suppressed exception", exc_info=True)
                 else:
                     logger.warning("Live mode: timeout waiting for fills (%d orders submitted)", n_orders)
 
@@ -830,7 +830,7 @@ def _write_daily_report(
             if _prev_nav > 0 and 0.1 < nav / _prev_nav < 10:
                 prev_nav = _prev_nav
         except Exception:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
     daily_ret = (nav / prev_nav - 1) * 100 if prev_nav > 0 else 0
 
     # Cumulative return: use configured initial cash
@@ -1078,7 +1078,7 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
             RECONCILE_RUNS.labels(status=status).inc()
             RECONCILE_MISMATCHES.set(len(result.mismatched))
         except Exception:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
 
         if not result.is_clean and notifier.is_configured():
             await notifier.send(
@@ -1102,7 +1102,7 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
             from src.metrics import RECONCILE_RUNS
             RECONCILE_RUNS.labels(status="error").inc()
         except Exception:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)
         if notifier.is_configured():
             try:
                 await notifier.send(
@@ -1113,5 +1113,5 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
                     f"Positions: {len(state.portfolio.positions)}",
                 )
             except Exception:
-                pass
+                logger.debug("Suppressed exception", exc_info=True)
         return {"status": "error"}

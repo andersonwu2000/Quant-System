@@ -148,7 +148,7 @@ def _is_rebalance_day(today: date, config: object) -> bool:
                 rebalance_day = int(parts[2])
                 return today.day == rebalance_day
             except ValueError:
-                pass
+                logger.debug("Suppressed exception", exc_info=True)
         return today.day == 11  # fallback
 
 
@@ -244,7 +244,7 @@ async def _fetch_twse_snapshot() -> str:
                         mkt_df = mkt_df.drop_duplicates(subset=["date"], keep="last")
                         mkt_df = mkt_df.sort_values("date").reset_index(drop=True)
                     except Exception:
-                        pass
+                        logger.debug("Suppressed exception", exc_info=True)
                 _atomic_write(mkt_df, mkt_path, source="twse", dataset="market_summary")
                 results.append(f"Market: {len(mkt_df)}d")
             else:

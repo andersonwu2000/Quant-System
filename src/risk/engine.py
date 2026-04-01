@@ -266,7 +266,7 @@ class RiskEngine:
                 try:
                     self._persist_fn(alert)
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception", exc_info=True)
 
         return alerts
 
