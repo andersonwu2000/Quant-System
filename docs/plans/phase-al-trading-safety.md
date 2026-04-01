@@ -437,3 +437,81 @@ Phase AL 完成的定義：
 | 部署後沒有驗證 | 啟動冷卻 120 秒 + 每日煙霧測試 |
 
 **Knight Capital 的核心教訓不是「他們的代碼有 bug」，而是「bug 發生後沒有足夠快地停止系統」。** Phase AL 的目標是確保：即使有 bug，損失在系統自動反應之前被控制在可接受範圍內。
+
+---
+
+## 14. 審批（2026-04-01）
+
+### 判定：方向完全正確，是 live 前最重要的工作。3 個事實修正 + 2 個過度設計 + 1 個遺漏。
+
+---
+
+### 做得好的部分
+
+1. **§1 Runtime Invariant** — 整份計畫最有價值。14 個 invariant 各幾行代碼，成本極低，直接防止真金白銀損失。比再寫 100 個 mock 測試有用
+2. **§5 漸進式部署** — Level 0→4 階梯合理，每級重新驗證 G1-G6 正確
+3. **§13 Knight Capital 對照** — 「bug 一定會有，關鍵是多快停止」思路完全正確
+4. **核心原則** — 三條都對：測試不能只靠 mock、安全必須 runtime、異常必須 fail-closed
+
+---
+
+### 事實修正
+
+**1. I4 NAV 容差 1 元太緊**
+
+Decimal 運算 + 整張交易 rounding 可產生超過 1 元誤差。1000 萬 NAV 裡 1 元 = 0.00001%。
+
+**修正**：改為 NAV 的 0.01%（1000 萬 → 容差 1000 元），或固定 100 元。
+
+**2. I5 單一持倉 20% 不該 raise**
+
+策略不下單不代表市場不動。一支股票漲 100%，權重 6% → 12% — 這不是 bug，是市場。Raise TradingInvariantError 會在正常市場行為下停止交易。
+
+**修正**：20% → warning + 觸發下次強制再平衡。30% 才 raise。
+
+**3. §3 Paper vs Backtest R² 用 7 天無統計意義**
+
+7 個數據點的 R² 方差極大，power 接近 0。
+
+**修正**：改為 30 天滾動比對。或不用 R²，改用 daily return sign agreement rate ≥ 70%。
+
+---
+
+### 過度設計
+
+**4. §4.3 Type Guard — 移除**
+
+`isinstance(portfolio, Portfolio)` 防禦過度。mypy strict 已在 CI 抓型別錯誤。runtime type check 增加每次交易的開銷和維護成本（改 class hierarchy 要改 guard）。刪除 §4.3，靠 mypy + invariant 就夠。
+
+**5. §9 Replay Testing — 降為 P3 或刪除**
+
+概念好但需要先建「tick 錄製基礎設施」，這本身一個 Phase 的工作量。paper trading 30 天本身就是真實市場的 replay，不需要另外錄。Phase AL 不做 replay。
+
+---
+
+### 遺漏
+
+**6. 缺流動性風險檢查**
+
+I6-I8 檢查訂單本身，但沒檢查「這筆訂單佔日成交量多少」。日成交量 100 張的股票下 50 張 = 佔日量 50%，滑價嚴重。
+
+**新增 I15**：`order_qty / avg_daily_volume < 0.05`（不超過日均量 5%）。
+
+---
+
+### 修正後的實施優先序
+
+| 階段 | 優先 | 改動 |
+|:----:|:----:|------|
+| AL-1 | P0 | I1-I4（I4 容差改 0.01% NAV），I5 改為 warning |
+| AL-2 | P0 | I6-I8 + **I15 流動性** |
+| AL-3 | P0 | I9-I11, I12-I14 + NaN 防火牆 |
+| AL-4 | P0 | Heartbeat kill switch |
+| AL-5 | P1 | bare except 清理（保留合理的 optional degradation） |
+| AL-6 | P1 | 每日煙霧測試 |
+| AL-7 | P2 | Paper vs Backtest（改 30 天 + sign agreement） |
+| AL-8 | — | ~~Replay testing~~ → **刪除**，paper trading 30 天已涵蓋 |
+| AL-9 | P2 | 靜默即 P0（用 Discord watchdog，不用 Prometheus） |
+| AL-10 | P2 | 畢業條件自動化 |
+
+**AL-1 到 AL-4 是 live 前的硬門檻。**
