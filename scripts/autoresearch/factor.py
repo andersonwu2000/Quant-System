@@ -4,13 +4,13 @@ import pandas as pd
 import numpy as np
 
 def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:
-    """Revenue YoY growth divided by price volatility (growth confidence).
+    """Revenue YoY growth / long-term volatility (120d).
 
-    Economic rationale: revenue growth signals business momentum, but
-    high-volatility stocks with strong growth may be speculative or
-    priced-in. Dividing by realized volatility (60d) rewards stocks
-    where growth is more likely to be sustainably priced — high growth
-    with low vol implies the market hasn't fully reacted yet.
+    Economic rationale: revenue growth signals business momentum.
+    Dividing by 120d realized volatility (more stable than 60d)
+    rewards stocks with strong growth and steady price behavior —
+    implying the growth is real and sustainable, not driven by
+    speculation. Longer vol window reduces estimation noise.
     """
     results: dict[str, float] = {}
     for sym in symbols:
@@ -29,8 +29,8 @@ def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[
                 continue
             bdf = bars.copy()
             bdf.index = pd.to_datetime(bdf.index)
-            bdf = bdf[bdf.index <= as_of].sort_index().tail(60)
-            if len(bdf) < 40:
+            bdf = bdf[bdf.index <= as_of].sort_index().tail(120)
+            if len(bdf) < 80:
                 continue
             ret = bdf["close"].pct_change().dropna()
             vol = ret.std()
