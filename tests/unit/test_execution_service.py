@@ -453,7 +453,7 @@ class TestErrorHandling:
 class TestEmergencyHaltFile:
     """Gate 1: file-based kill switch."""
 
-    def test_halt_file_rejects_all_orders(self, tmp_path: "Path") -> None:
+    def test_halt_file_rejects_all_orders(self, tmp_path: "Path") -> None:  # noqa: F821
         halt_file = tmp_path / "halt.flag"
         halt_file.touch()
 
@@ -469,7 +469,7 @@ class TestEmergencyHaltFile:
         assert orders[0].status == OrderStatus.REJECTED
         assert "Emergency halt" in orders[0].reject_reason
 
-    def test_no_halt_file_allows_orders(self, tmp_path: "Path") -> None:
+    def test_no_halt_file_allows_orders(self, tmp_path: "Path") -> None:  # noqa: F821
         svc = ExecutionService(ExecutionConfig(mode="paper"))
         svc._initialized = True
         svc._emergency_halt_file = str(tmp_path / "nonexistent.flag")

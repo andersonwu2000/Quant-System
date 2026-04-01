@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-from src.core.models import Order, OrderStatus, Portfolio, Side, Trade
+from src.core.models import Order, OrderStatus, Portfolio, Side, Trade, TradingInvariantError
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class OrderManager:
         return count
 
 
-def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
+def apply_trades(portfolio: Portfolio, trades: list[Trade], *, check_invariants: bool = False) -> Portfolio:
     """
     將成交記錄應用到投資組合，更新持倉和現金。
 
@@ -143,5 +143,14 @@ def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
                 save_portfolio(portfolio)
         except Exception as _pe:
             logger.error("Portfolio persistence failed: %s", _pe)  # H4: was silent
+
+        # AL-1: Portfolio invariant check after every trade application (paper/live only)
+        # Backtest mode allows slight rounding issues (e.g. cash going slightly negative from order sizing)
+        if check_invariants:
+            try:
+                portfolio._check_invariants()
+            except TradingInvariantError:
+                logger.critical("INVARIANT VIOLATION after apply_trades — raising to caller")
+                raise
 
     return portfolio

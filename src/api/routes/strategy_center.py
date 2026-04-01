@@ -327,7 +327,7 @@ async def _do_rebalance(state: Any, config: Any) -> dict[str, Any]:
             from src.execution.oms import apply_trades
             trade_list = state.execution_service.submit_orders(approved, state.portfolio)
             if trade_list:
-                apply_trades(state.portfolio, trade_list)
+                apply_trades(state.portfolio, trade_list, check_invariants=True)
                 trades = [{"symbol": t.symbol, "side": t.side.value, "quantity": float(t.quantity), "price": float(t.price)} for t in trade_list]
 
         return {

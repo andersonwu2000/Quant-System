@@ -46,19 +46,24 @@ def _check_invariants(self) -> None:
         if pos.quantity < 0:
             raise TradingInvariantError(f"{sym} quantity={pos.quantity} is negative")
 
-    # I4: NAV = cash + sum(market_value)，誤差 < 1 元
+    # I4: NAV = cash + sum(market_value)，誤差 < 0.01% NAV
+    # (審批修正：Decimal rounding + 整張交易可產生 >1 TWD 誤差)
     computed = self.cash + sum(p.market_value for p in self.positions.values())
-    if abs(computed - self.nav) > 1:
+    tolerance = max(self.nav * Decimal("0.0001"), 100)  # 0.01% or 100 TWD
+    if abs(computed - self.nav) > tolerance:
         raise TradingInvariantError(
-            f"NAV mismatch: computed={computed}, stored={self.nav}")
+            f"NAV mismatch: computed={computed}, stored={self.nav}, tolerance={tolerance}")
 
-    # I5: 單一持倉不超過 NAV 的 20%（硬上限，超過即異常）
+    # I5: 單一持倉權重監控
+    # (審批修正：市場漲跌可自然推高權重，20% warn + 25% raise)
     if self.nav > 0:
         for sym, pos in self.positions.items():
             weight = abs(pos.market_value) / self.nav
-            if weight > 0.20:
+            if weight > 0.25:
                 raise TradingInvariantError(
-                    f"{sym} weight={weight:.1%} > 20% hard limit")
+                    f"{sym} weight={weight:.1%} > 25% hard limit")
+            elif weight > 0.20:
+                logger.warning("Position %s weight %.1f%% > 20%% — force rebalance next cycle", sym, weight * 100)
 ```
 
 ### 1.2 Order Invariant
@@ -81,6 +86,10 @@ def _check_order_invariants(self, orders: list[Order]) -> None:
         # I8: Symbol 不得為空
         if not o.instrument.symbol:
             raise TradingInvariantError("Order has empty symbol")
+
+        # I15: 訂單量不超過日均量 5%（流動性保護）
+        # (審批新增：防止在低流動性股票下大單)
+        # adv 需從外部傳入或從 DataCatalog 查詢
 ```
 
 ### 1.3 Fill Invariant
@@ -183,13 +192,15 @@ class TradingInvariantError(Exception):
 
 ```
 每週日自動執行：
-  1. 取過去 7 天的 paper NAV 序列
-  2. 用同期的真實資料跑回測
-  3. 計算兩者的相關性和偏差
+  1. 取過去 30 天的 paper daily returns
+  2. 用同期的真實資料跑回測，取 daily returns
+  3. 計算 daily return sign agreement（同漲同跌的比例）
 
-  R² > 0.7    → 正常（paper 和 backtest 行為一致）
-  R² 0.3-0.7  → 告警（可能有成本模型偏差）
-  R² < 0.3    → P0 停止（系統行為和預期嚴重不符）
+  sign agreement ≥ 70%  → 正常（paper 和 backtest 行為一致）
+  sign agreement 50-70% → 告警（可能有成本模型或資料偏差）
+  sign agreement < 50%  → P0 停止（系統行為和預期嚴重不符）
+
+  (審批修正：7 天 R² 無統計意義，改 30 天 sign agreement)
 ```
 
 ### 3.2 偏差分類
@@ -235,17 +246,9 @@ weights_to_orders() → 回傳前檢查 qty 和 price 無 NaN
 apply_trades()      → 回傳前檢查 NAV 無 NaN
 ```
 
-### 4.3 關鍵路徑 Type Guard
+### ~~4.3 Type Guard~~ — 已移除
 
-目前 Python 的動態型別允許任何值傳入。在關鍵函式入口加 runtime type check：
-
-```python
-def apply_trades(portfolio: Portfolio, trades: list[Trade]) -> Portfolio:
-    if not isinstance(portfolio, Portfolio):
-        raise TypeError(f"Expected Portfolio, got {type(portfolio)}")
-    if not all(isinstance(t, Trade) for t in trades):
-        raise TypeError("All items must be Trade instances")
-```
+> 審批判定：mypy strict 已在 CI 抓型別錯誤。runtime isinstance 增加維護成本。靠 mypy + invariant 即可。
 
 ---
 
@@ -344,30 +347,10 @@ Level 4: Live 全額
 
 ---
 
-## 9. Replay Testing（歷史重播測試）
+## ~~9. Replay Testing~~ — 降為未來可選
 
-### 概念
-
-選 3-5 個有代表性的交易日，錄製完整的 tick 資料和訂單流，作為固定的測試用例。每次系統變更後重播，確認輸出一致。
-
-### 選擇的交易日
-
-| 日期 | 事件 | 測試什麼 |
-|------|------|---------|
-| 除權息日 | 股價跳空 | 除權息後 NAV 計算、kill switch 不誤觸 |
-| 月營收公布日 | 策略再平衡 | 訂單生成、風控、成交 |
-| 大盤暴跌日 | 高波動 | Kill switch 正確觸發、漲跌停拒單 |
-| 平靜日 | 無事件 | 系統不做多餘的事 |
-| 伺服器重啟日 | 中斷恢復 | Portfolio 恢復、warmup、報價穩定 |
-
-### 驗證方式
-
-```
-replay(recorded_ticks, recorded_orders) → actual_trades
-assert actual_trades == expected_trades  # 逐筆比對
-assert final_nav == expected_nav         # NAV 一致
-assert 0 invariant violations            # 無異常
-```
+> 審批判定：需要先建 tick 錄製基礎設施，工程量大。Paper trading 30 天本身就是真實市場的 replay。
+> Phase AL 不做。如果未來需要回歸測試特定交易日場景，可作為獨立工具開發。
 
 ---
 
@@ -391,20 +374,20 @@ Paper trading 的 30 天必須包含：
 
 ## 11. 實施順序
 
-| 階段 | 內容 | 工時估計 | 前置 |
-|------|------|---------|------|
-| **AL-1** | TradingInvariantError + Portfolio invariant (I1-I5) | 小 | 無 |
-| **AL-2** | Order invariant (I6-I8) + Fill invariant (I9-I11) | 小 | AL-1 |
-| **AL-3** | Pipeline invariant (I12-I14) + NaN 防火牆 | 小 | AL-1 |
-| **AL-4** | Heartbeat kill switch + 網路斷線處理 | 小 | AL-1 |
-| **AL-5** | bare except 清理 + type guard | 小 | 無 |
-| **AL-6** | 每日煙霧測試（S1-S7） | 中 | AL-1~3 |
-| **AL-7** | Paper vs Backtest 一致性比對 | 中 | AL-6 |
-| **AL-8** | Replay testing（3-5 個歷史交易日） | 中 | AL-6 |
-| **AL-9** | 「靜默即 P0」外部 watchdog | 小 | 無 |
-| **AL-10** | 畢業條件自動化 + 階梯加碼機制 | 小 | AL-6~7 |
+| 階段 | 優先 | 內容 | 審批後調整 |
+|:----:|:----:|------|-----------|
+| **AL-1** | P0 | TradingInvariantError + Portfolio invariant (I1-I5) | I4 容差改 0.01% NAV，I5 改 20% warn + 25% raise |
+| **AL-2** | P0 | Order invariant (I6-I8) + **I15 流動性** | 新增 I15: qty/ADV < 5% |
+| **AL-3** | P0 | Fill invariant (I9-I11) + Pipeline invariant (I12-I14) + NaN 防火牆 | 不變 |
+| **AL-4** | P0 | Heartbeat kill switch + 網路斷線處理 | 不變 |
+| **AL-5** | P1 | bare except 清理（保留合理的 optional degradation） | 移除 type guard（mypy 已涵蓋） |
+| **AL-6** | P1 | 每日煙霧測試（S1-S7） | 不變 |
+| **AL-7** | P2 | Paper vs Backtest 一致性比對 | 改 30 天 sign agreement（移除 7 天 R²） |
+| ~~AL-8~~ | — | ~~Replay testing~~ | **刪除**（paper trading 30 天已涵蓋） |
+| **AL-9** | P2 | 「靜默即 P0」外部 watchdog | 不變 |
+| **AL-10** | P2 | 畢業條件自動化 + 階梯加碼機制 | 不變 |
 
-**AL-1 到 AL-5 應立即實作** — 每個都是幾十行代碼，加在現有函式裡，不需要新模組。
+**AL-1 到 AL-4 是 live 前的硬門檻。** 每個都是幾十行代碼，加在現有函式裡。
 
 ---
 
@@ -412,15 +395,14 @@ Paper trading 的 30 天必須包含：
 
 Phase AL 完成的定義：
 
-- [ ] 交易路徑上 14 個 invariant 全部在生產代碼中
+- [ ] 交易路徑上 15 個 invariant（I1-I15）全部在生產代碼中
 - [ ] Heartbeat kill switch：報價中斷 > 5 分鐘自動暫停
 - [ ] 煙霧測試每日盤前自動執行
-- [ ] Paper vs Backtest R² ≥ 0.5 連續 4 週
-- [ ] 交易路徑中 0 個 bare `except: pass`
-- [ ] 3-5 個歷史交易日的 replay test 通過
+- [ ] Paper vs Backtest sign agreement ≥ 70%（30 天滾動）
+- [ ] 交易路徑中 0 個 bare `except: pass`（合理的 optional degradation 除外）
 - [ ] 「靜默即 P0」watchdog 運行中
 - [ ] Paper trading 畢業條件（§5.1 G1-G6）全部自動化
-- [ ] 30+ 天 paper trading，包含至少 1 次大盤暴跌日，0 invariant violation
+- [ ] 30+ 天 paper trading，包含至少 1 次大盤暴跌日 + 1 次除息日，0 invariant violation
 
 **不滿足以上全部條件，不得進入 live trading。**
 

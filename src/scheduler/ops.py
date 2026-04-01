@@ -233,6 +233,7 @@ async def _fetch_twse_snapshot() -> str:
         try:
             mkt_df = fetch_twse_market_summary()
             if not mkt_df.empty:
+                from pathlib import Path
                 mkt_path = Path("data/twse/market_summary.parquet")
                 mkt_path.parent.mkdir(parents=True, exist_ok=True)
                 if mkt_path.exists():

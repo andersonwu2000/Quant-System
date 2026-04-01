@@ -50,6 +50,9 @@ class RealtimeRiskMonitor:
         self._alerts_count: int = 0
         self._last_update: datetime | None = None
         self._last_reset_date: str = ""  # #17: auto reset tracking
+        # AL-4: Heartbeat kill switch — track last valid tick time
+        self._last_valid_tick_time: datetime | None = None
+        self._heartbeat_paused: bool = False  # True when orders paused due to stale ticks
 
     # ── Public API ────────────────────────────────────────
 
@@ -80,6 +83,12 @@ class RealtimeRiskMonitor:
             if symbol in self.portfolio.positions:
                 self.portfolio.positions[symbol].market_price = price
             self._last_update = now
+            # AL-4: Update last valid tick time (for heartbeat kill switch)
+            if price > 0:
+                self._last_valid_tick_time = now
+                if self._heartbeat_paused:
+                    self._heartbeat_paused = False
+                    logger.info("Heartbeat restored — resuming order acceptance")
 
             # 2. Check intraday drawdown
             current_nav = float(self.portfolio.nav)
@@ -179,7 +188,7 @@ class RealtimeRiskMonitor:
                                 trades = svc.submit_orders(orders, pf)
                                 if trades:
                                     from src.execution.oms import apply_trades
-                                    apply_trades(pf, trades)
+                                    apply_trades(pf, trades, check_invariants=True)
                                     logger.critical(
                                         "Kill switch (tick): %d liquidation trades, NAV=%s",
                                         len(trades), pf.nav,
@@ -252,6 +261,43 @@ class RealtimeRiskMonitor:
         self._nav_high = float(self.portfolio.nav)
         self._alerts_sent.clear()
 
+    def check_heartbeat(self) -> str | None:
+        """AL-4: Check if tick data is stale during market hours.
+
+        Returns:
+            None if OK, "paused" if > 5 min, "kill_switch" if > 15 min.
+            Only checks during Taiwan market hours (09:00-13:30 weekdays).
+        """
+        if self._last_valid_tick_time is None:
+            return None
+
+        _tw_tz = timezone(timedelta(hours=8))
+        now = datetime.now(_tw_tz)
+
+        # Only check during Taiwan market hours (09:00-13:30, weekdays)
+        if now.weekday() >= 5:  # Saturday=5, Sunday=6
+            return None
+        if not (9 <= now.hour < 13 or (now.hour == 13 and now.minute <= 30)):
+            return None
+
+        # Ensure last_valid_tick_time is tz-aware for comparison
+        last_tick = self._last_valid_tick_time
+        if last_tick.tzinfo is None:
+            last_tick = last_tick.replace(tzinfo=_tw_tz)
+
+        elapsed = (now - last_tick).total_seconds()
+
+        if elapsed > 900:  # 15 minutes
+            return "kill_switch"
+        elif elapsed > 300:  # 5 minutes
+            return "paused"
+        return None
+
+    @property
+    def is_heartbeat_paused(self) -> bool:
+        """True if orders should be paused due to stale tick data."""
+        return self._heartbeat_paused
+
     def get_status(self) -> dict[str, Any]:
         """Return current realtime risk status for the API."""
         current_nav = float(self.portfolio.nav)
@@ -268,6 +314,10 @@ class RealtimeRiskMonitor:
             "alerts_total": self._alerts_count,
             "last_update": (
                 self._last_update.isoformat() if self._last_update else None
+            ),
+            "heartbeat_paused": self._heartbeat_paused,
+            "last_valid_tick": (
+                self._last_valid_tick_time.isoformat() if self._last_valid_tick_time else None
             ),
         }
 

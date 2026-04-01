@@ -350,6 +350,23 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
         msg = f"Pipeline crashed: {exc}"
         logger.exception("Pipeline failed")
         _write_pipeline_record(run_id, status="failed", strategy=config.active_strategy, error=msg)
+        # AL-1/3: TradingInvariantError → trigger kill switch + P0 notification
+        from src.core.models import TradingInvariantError
+        if isinstance(exc, TradingInvariantError):
+            logger.critical("INVARIANT VIOLATION in pipeline: %s — triggering kill switch", exc)
+            try:
+                from src.api.state import get_app_state
+                state = get_app_state()
+                state.kill_switch_fired = True
+            except Exception:
+                pass
+            try:
+                from src.notifications.factory import create_notifier
+                notifier = create_notifier(config)
+                if notifier.is_configured():
+                    await notifier.send("INVARIANT VIOLATION", f"Pipeline stopped: {exc}")
+            except Exception:
+                pass
         return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
 
 
@@ -476,6 +493,22 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
 
     # 3. 執行策略
     target_weights = strategy.on_bar(ctx)
+
+    # AL-3: Pipeline invariant checks (I12-I14) + NaN firewall
+    if target_weights:
+        import math
+        from src.core.models import TradingInvariantError
+
+        # I13: 權重中不得有 NaN 或 Inf (check first, before summing)
+        for sym, w in target_weights.items():
+            if math.isnan(w) or math.isinf(w):
+                raise TradingInvariantError(f"I13: Weight for {sym} is {w}")
+
+        # I12: 策略回傳的權重總和不超過 1.05（含容差）
+        total_weight = sum(abs(w) for w in target_weights.values())
+        if total_weight > 1.05:
+            raise TradingInvariantError(f"I12: Total weight {total_weight:.2f} > 1.05")
+
     if not target_weights:
         has_positions = bool(state.portfolio.positions)
         if has_positions:
@@ -637,6 +670,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             current_bars=current_bars,
             market_lot_sizes=config.market_lot_sizes,
             fractional_shares=config.fractional_shares,
+            check_invariants=True,  # AL-1: enable portfolio invariant checks for paper/live
         )
         if trades:
             _save_trade_log(trades, strategy.name(), signal_prices=prices)

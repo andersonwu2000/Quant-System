@@ -128,9 +128,15 @@ $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine("| Score | ICIR | Level | Status | Description |")
 [void]$sb.AppendLine("|------:|-----:|-------|--------|-------------|")
 
-for ($i = $results.Count - 1; $i -ge 0; $i--) {
+# Show latest 100 experiments only (oldest are least relevant)
+$showStart = [math]::Max(0, $results.Count - 100)
+for ($i = $results.Count - 1; $i -ge $showStart; $i--) {
     $r = $results[$i]
     [void]$sb.AppendLine("| $($r.Score) | $($r.ICIR) | $($r.Level) | $($r.St) | $($r.Desc) |")
+}
+if ($results.Count -gt 100) {
+    [void]$sb.AppendLine("")
+    [void]$sb.AppendLine("*($($results.Count - 100) older experiments omitted)*")
 }
 
 # Kept factors summary

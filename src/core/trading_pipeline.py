@@ -12,7 +12,7 @@ import math
 from decimal import Decimal
 from typing import Any
 
-from src.core.models import Instrument, Portfolio, Trade
+from src.core.models import Instrument, Portfolio, Trade, TradingInvariantError
 from src.execution.broker.simulated import SimBroker
 from src.execution.oms import apply_trades
 from src.risk.engine import RiskEngine
@@ -38,6 +38,7 @@ def execute_one_bar(
     market_lot_sizes: dict[str, int] | None = None,
     fractional_shares: bool = False,
     timestamp: Any = None,
+    check_invariants: bool = False,
 ) -> list[Trade]:
     """Execute one bar: strategy → weights → orders → risk → broker → apply_trades.
 
@@ -76,6 +77,7 @@ def execute_one_bar(
         market_lot_sizes=market_lot_sizes,
         fractional_shares=fractional_shares,
         timestamp=timestamp,
+        check_invariants=check_invariants,
     )
 
 
@@ -92,6 +94,7 @@ def execute_from_weights(
     market_lot_sizes: dict[str, int] | None = None,
     fractional_shares: bool = False,
     timestamp: Any = None,
+    check_invariants: bool = False,
 ) -> list[Trade]:
     """Execute from pre-computed weights: orders → risk → broker → apply_trades.
 
@@ -120,6 +123,12 @@ def execute_from_weights(
     if not orders:
         return []
 
+    # AL-3 I14: 訂單數量不得超過持倉股票數 × 2 + 5（防止訂單爆炸）
+    if len(orders) > len(target_weights) * 2 + 5:
+        raise TradingInvariantError(
+            f"I14: Order count {len(orders)} >> weight count {len(target_weights)}"
+        )
+
     # 2. Risk check (batch with projected portfolio)
     market_state = MarketState(
         prices=prices,
@@ -143,6 +152,6 @@ def execute_from_weights(
 
     # 4. Apply trades to portfolio
     if trades:
-        apply_trades(portfolio, trades)
+        apply_trades(portfolio, trades, check_invariants=check_invariants)
 
     return trades

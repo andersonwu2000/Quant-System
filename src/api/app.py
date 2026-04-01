@@ -340,6 +340,44 @@ def create_app() -> FastAPI:
                     if state.kill_switch_fired:
                         continue
 
+                    # AL-4: Heartbeat kill switch — check tick data freshness
+                    _rtm = getattr(state, 'realtime_risk_monitor', None)
+                    if _rtm is not None:
+                        _hb_status = _rtm.check_heartbeat()
+                        if _hb_status == "kill_switch" and "heartbeat_kill" not in _rtm._alerts_sent:
+                            _rtm._alerts_sent.add("heartbeat_kill")
+                            _rtm._heartbeat_paused = True
+                            logger.critical(
+                                "HEARTBEAT KILL SWITCH: No valid tick for >15 minutes during market hours"
+                            )
+                            async with state.mutation_lock:
+                                state.kill_switch_fired = True
+                            await ws_manager.broadcast("alerts", {
+                                "type": "heartbeat_kill_switch",
+                                "message": "No valid tick data for >15 minutes — all trading stopped",
+                            })
+                            try:
+                                from src.notifications.factory import create_notifier
+                                _notifier = create_notifier(config)
+                                if _notifier.is_configured():
+                                    await _notifier.send(
+                                        "HEARTBEAT KILL SWITCH",
+                                        "No valid tick data for >15 minutes during market hours. "
+                                        "All trading stopped. Manual restart required.",
+                                    )
+                            except Exception:
+                                logger.debug("Heartbeat notification failed", exc_info=True)
+                            continue
+                        elif _hb_status == "paused" and not _rtm._heartbeat_paused:
+                            _rtm._heartbeat_paused = True
+                            logger.warning(
+                                "HEARTBEAT WARNING: No valid tick for >5 minutes — new orders paused"
+                            )
+                            await ws_manager.broadcast("alerts", {
+                                "type": "heartbeat_warning",
+                                "message": "No valid tick data for >5 minutes — new orders paused",
+                            })
+
                     if state.risk_engine.kill_switch(state.portfolio, config.max_daily_drawdown_pct):
                         # Sanity check: NAV vs SOD ratio must be reasonable
                         _nav = float(state.portfolio.nav)
@@ -376,7 +414,7 @@ def create_app() -> FastAPI:
                                     )
                                     if trades:
                                         from src.execution.oms import apply_trades
-                                        apply_trades(state.portfolio, trades)
+                                        apply_trades(state.portfolio, trades, check_invariants=True)
                                         logger.critical(
                                             "Kill switch: %d liquidation trades executed, NAV=%s",
                                             len(trades), state.portfolio.nav,

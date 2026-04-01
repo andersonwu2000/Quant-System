@@ -124,7 +124,7 @@ def compute_factor(symbols, as_of, data):
         """Deployed strategy rebalances on first run, skips same month."""
         import json
         from datetime import datetime
-        from src.alpha.auto.deployed_executor import _should_rebalance, PAPER_TRADE_DIR
+        from src.alpha.auto.deployed_executor import _should_rebalance
 
         with patch("src.alpha.auto.deployed_executor.PAPER_TRADE_DIR", tmp_path):
             # First run: should rebalance

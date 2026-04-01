@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
-from src.core.models import Order, OrderStatus, Portfolio, Trade
+from src.core.models import Order, OrderStatus, Portfolio, Trade, TradingInvariantError
 from src.execution.broker.base import BrokerAdapter, PaperBroker
 from src.execution.market_hours import (
     OrderQueue,
@@ -207,10 +207,46 @@ class ExecutionService:
         """OrderExecutor protocol — 統一執行介面（U1）。"""
         return self.submit_orders(orders, portfolio=None, current_bars=current_bars, timestamp=timestamp)
 
+    def _check_order_invariants(self, orders: list[Order]) -> None:
+        """AL-2: 每筆訂單的基本 sanity check。違反即 raise TradingInvariantError。"""
+        for o in orders:
+            # I6: 數量必須 > 0
+            if o.quantity <= 0:
+                raise TradingInvariantError(f"I6: Order qty={o.quantity} <= 0")
+
+            # I7: 價格必須 > 0（市價單除外）
+            if o.price is not None and o.price <= 0:
+                raise TradingInvariantError(f"I7: Order price={o.price} <= 0")
+
+            # I8: Symbol 不得為空
+            if not o.instrument.symbol:
+                raise TradingInvariantError("I8: Order has empty symbol")
+
+            # I15: 訂單量不超過日均量 5%（流動性保護）
+            try:
+                from src.data.data_catalog import get_catalog
+                catalog = get_catalog()
+                df = catalog.get("price", o.instrument.symbol)
+                if df is not None and not df.empty and "volume" in df.columns:
+                    recent_vol = df["volume"].iloc[-20:]
+                    adv = recent_vol.mean()
+                    if adv > 0 and float(o.quantity) / float(adv) > 0.05:
+                        raise TradingInvariantError(
+                            f"I15: Order qty {o.quantity} / ADV {adv:.0f} = "
+                            f"{float(o.quantity)/float(adv):.1%} > 5%"
+                        )
+            except TradingInvariantError:
+                raise
+            except Exception:
+                pass  # ADV unavailable — skip I15 gracefully
+
     def _check_safety_gates(self, orders: list[Order]) -> bool:
         """Run pre-trade safety gates. Returns True if orders were rejected."""
         import time
         from pathlib import Path
+
+        # Gate 0: Order invariants (AL-2)
+        self._check_order_invariants(orders)
 
         # Gate 1: Emergency halt file
         halt_path = Path(self._emergency_halt_file)
@@ -281,7 +317,21 @@ class ExecutionService:
 
         # ── Safety gates (paper/live only — backtest skips all) ─────
         if self._config.mode != "backtest":
-            rejected = self._check_safety_gates(orders)
+            try:
+                rejected = self._check_safety_gates(orders)
+            except TradingInvariantError as e:
+                logger.critical("INVARIANT VIOLATION in safety gates: %s", e)
+                for o in orders:
+                    o.status = OrderStatus.REJECTED
+                    o.reject_reason = f"Invariant violation: {e}"
+                # Trigger kill switch
+                try:
+                    from src.api.state import get_app_state
+                    state = get_app_state()
+                    state.kill_switch_fired = True
+                except Exception:
+                    pass
+                raise
             if rejected:
                 return []
 
@@ -492,9 +542,9 @@ class ExecutionService:
             mutation_lock = getattr(self, '_mutation_lock', None)
             if mutation_lock is not None:
                 async with mutation_lock:
-                    apply_trades(portfolio, [trade])
+                    apply_trades(portfolio, [trade], check_invariants=True)
             else:
-                apply_trades(portfolio, [trade])
+                apply_trades(portfolio, [trade], check_invariants=True)
             logger.info("Async fill applied: %s %s %s @ %s",
                        trade.side.value, trade.quantity, trade.symbol, trade.price)
 

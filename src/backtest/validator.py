@@ -289,7 +289,6 @@ class StrategyValidator:
         # Pre-load shared feed from DataCatalog (local parquets, no Yahoo download).
         # Covers IS + OOS + recent period in one load.
         logger.info("[Validator] Pre-loading data feed from DataCatalog...")
-        feed_end = max(end, cfg.oos_end, "2026-12-31")
         try:
             self._shared_feed = self._build_catalog_feed(universe)
         except Exception:

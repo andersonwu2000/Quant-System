@@ -17,6 +17,21 @@ from decimal import Decimal
 from enum import Enum
 
 
+# ─── 交易不變量異常 ────────────────────────────────────
+
+
+class TradingInvariantError(Exception):
+    """交易路徑中的不變量被違反。
+
+    捕獲後：
+    1. 停止所有交易（set kill_switch_fired = True）
+    2. 發送 P0 通知
+    3. 記錄完整 context 到 audit log
+    不靜默吞掉。不自動恢復。必須人工確認後才能重啟。
+    """
+    pass
+
+
 # ─── 枚舉 ───────────────────────────────────────────────
 
 class Side(Enum):
@@ -325,6 +340,43 @@ class Portfolio:
             for symbol, price in prices.items():
                 if symbol in self.positions:
                     self.positions[symbol].market_price = price
+
+    def _check_invariants(self) -> None:
+        """交易後自動執行。違反任一條即 raise TradingInvariantError。"""
+        import logging as _logging
+        _logger = _logging.getLogger(__name__)
+
+        # I1: NAV 永遠非負
+        if self.nav < 0:
+            raise TradingInvariantError(f"I1: NAV={self.nav} is negative")
+
+        # I2: 現金永遠非負（不允許透支）
+        if self.cash < 0:
+            raise TradingInvariantError(f"I2: Cash={self.cash} is negative")
+
+        # I3: 持倉數量必須 >= 0（做多策略不允許負持倉）
+        for sym, pos in self.positions.items():
+            if pos.quantity < 0:
+                raise TradingInvariantError(f"I3: {sym} quantity={pos.quantity} is negative")
+
+        # I4: NAV = cash + sum(market_value)，誤差 < 0.01% NAV or 100 TWD
+        computed = self.cash + sum(p.market_value for p in self.positions.values())
+        tolerance = max(self.nav * Decimal("0.0001"), Decimal("100"))
+        if abs(computed - self.nav) > tolerance:
+            raise TradingInvariantError(
+                f"I4: NAV mismatch: computed={computed}, stored={self.nav}, tolerance={tolerance}")
+
+        # I5: 單一持倉權重監控
+        if self.nav > 0:
+            for sym, pos in self.positions.items():
+                weight = abs(pos.market_value) / self.nav
+                if weight > Decimal("0.25"):
+                    raise TradingInvariantError(
+                        f"I5: {sym} weight={float(weight):.1%} > 25% hard limit")
+                elif weight > Decimal("0.20"):
+                    _logger.warning(
+                        "I5: Position %s weight %.1f%% > 20%% — force rebalance next cycle",
+                        sym, float(weight) * 100)
 
 
 # ─── 風控相關 ──────────────────────────────────────────

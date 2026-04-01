@@ -12,7 +12,7 @@ from typing import Any, Literal
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from src.core.models import Order, OrderStatus, Side, Trade
+from src.core.models import Order, OrderStatus, Side, Trade, TradingInvariantError
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +250,22 @@ class SimBroker:
             if order.side == Side.SELL and self.config.short_borrow_rate > 0:
                 borrow_cost = notional * Decimal(str(self.config.short_borrow_rate)) / Decimal("252")
                 commission += borrow_cost
+
+            # AL-3: Fill invariant checks (I9-I11)
+            # I9: 成交價不得偏離市價超過 10%
+            if close_price > 0 and abs(fill_price - close_price) / close_price > Decimal("0.10"):
+                raise TradingInvariantError(
+                    f"I9: Fill price {fill_price} deviates >10% from market {close_price} for {symbol}")
+
+            # I10: 成交數量不得超過委託數量
+            if fill_qty > order.quantity:
+                raise TradingInvariantError(
+                    f"I10: Fill qty {fill_qty} > order qty {order.quantity} for {symbol}")
+
+            # I11: 手續費不得為負
+            if commission < 0:
+                raise TradingInvariantError(
+                    f"I11: Commission {commission} is negative for {symbol}")
 
             # 更新訂單狀態
             order.status = OrderStatus.FILLED
