@@ -152,11 +152,22 @@ Do NOT pause to ask the human. The human might be asleep. Just keep running expe
 **Context window management:** After every 30 experiments, write a brief summary to results.tsv (as a `#` comment line): which dimensions have signal, best scores, key lessons. This helps recover context if the session is interrupted.
 
 If you run out of ideas:
-- Re-read results.tsv — which near-misses could be improved?
+- Re-read results.tsv — look at the `source` and `best_horizon` feedback
 - Try the OPPOSITE of what failed
 - Try Kakushadze-style formulas (rank correlations, delta operations, conditional signs)
 - Try regime-conditional factors (200d MA as regime detector)
 - Try interaction terms: factor_A × factor_B, factor_A / volatility
+- **Try ensemble mode** (see below)
+
+## Ensemble Mode
+
+Factors with "near" ICIR (0.2-0.3) are automatically saved to a library. Two weak factors that are uncorrelated can pass L2 together.
+
+1. Check library: `curl -s http://evaluator:5000/factor-library`
+2. If ≥ 2 factors available, test ensemble: `curl -s -X POST http://evaluator:5000/evaluate-ensemble -H 'Content-Type: application/json' -d '{"factors": ["factor_a.py", "factor_b.py"]}'`
+3. Ensemble that passes L2 (median ICIR ≥ 0.30) counts as a discovery
+
+**Key**: the two factors should be from DIFFERENT economic dimensions (e.g. one price-based, one fundamental-based). Two momentum variants won't help.
 
 ## Simplicity Criterion
 

@@ -219,6 +219,40 @@ def evaluate():
     except Exception:
         pass
 
+    # Auto-save "near" and above factors to library for ensemble testing
+    if median_icir >= ICIR_THRESHOLDS[3]:  # >= 0.20 ("near" or better)
+        try:
+            import time as _t
+            lib_dir = "/app/watchdog_data/factor_library"
+            os.makedirs(lib_dir, exist_ok=True)
+            factor_code = open("/app/work/factor.py", encoding="utf-8").read()
+            # Use direction as filename (sanitized)
+            import re
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', ic_source or "unknown")[:40]
+            ts = _t.strftime("%Y%m%d_%H%M%S")
+            lib_path = f"{lib_dir}/{ts}_{safe_name}_{icir_bucket}.py"
+            with open(lib_path, "w", encoding="utf-8") as f:
+                f.write(factor_code)
+            # Save metadata
+            meta_path = f"{lib_dir}/index.json"
+            meta = {}
+            if os.path.exists(meta_path):
+                try:
+                    meta = json.loads(open(meta_path, encoding="utf-8").read())
+                except Exception:
+                    meta = {}
+            meta[os.path.basename(lib_path)] = {
+                "icir": icir_bucket,
+                "source": ic_source,
+                "trend": ic_trend,
+                "best_horizon": best_horizon,
+                "level": level,
+            }
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+        except Exception:
+            pass  # library save failure must not block evaluation
+
     # Extract factor decomposition info (already printed by evaluate.py)
     ic_source = _extract(stdout, "ic_source:") or "unknown"   # stock_alpha | mixed | industry_beta
     ic_trend = _extract(stdout, "ic_trend:") or "unknown"     # stable | improving | declining
@@ -237,6 +271,172 @@ def evaluate():
         "novelty": novelty,       # high = unique signal, not_high = correlated with existing
         "best_horizon": best_horizon,  # which timeframe the signal is strongest
     })
+
+
+@app.route("/factor-library", methods=["GET"])
+def factor_library():
+    """List saved factors available for ensemble testing."""
+    lib_dir = "/app/watchdog_data/factor_library"
+    meta_path = f"{lib_dir}/index.json"
+    if not os.path.exists(meta_path):
+        return jsonify({"factors": [], "count": 0})
+    try:
+        meta = json.loads(open(meta_path, encoding="utf-8").read())
+        factors = [
+            {"name": name, **info}
+            for name, info in meta.items()
+        ]
+        return jsonify({"factors": factors, "count": len(factors)})
+    except Exception:
+        return jsonify({"factors": [], "count": 0})
+
+
+@app.route("/evaluate-ensemble", methods=["POST"])
+def evaluate_ensemble():
+    """Test rank composite of 2-3 library factors.
+
+    Agent sends: curl -X POST http://evaluator:5000/evaluate-ensemble \
+      -H 'Content-Type: application/json' \
+      -d '{"factors": ["20260401_xxx_near.py", "20260401_yyy_near.py"]}'
+
+    Returns: composite IC/ICIR across horizons.
+    """
+    from flask import request
+    data = request.get_json(silent=True) or {}
+    factor_names = data.get("factors", [])
+
+    if len(factor_names) < 2:
+        return jsonify({"error": "Need at least 2 factors", "passed": False})
+    if len(factor_names) > 5:
+        return jsonify({"error": "Max 5 factors", "passed": False})
+
+    lib_dir = "/app/watchdog_data/factor_library"
+
+    # Load factor functions
+    factor_fns = []
+    for name in factor_names:
+        path = os.path.join(lib_dir, name)
+        if not os.path.exists(path):
+            return jsonify({"error": f"Factor not found: {name}", "passed": False})
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(name.replace(".py", ""), path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            fn = getattr(mod, "compute_factor", None)
+            if fn is None:
+                return jsonify({"error": f"No compute_factor in {name}", "passed": False})
+            factor_fns.append((name, fn))
+        except Exception as e:
+            return jsonify({"error": f"Load error for {name}: {e}", "passed": False})
+
+    # Run ensemble evaluation via evaluate.py's infrastructure
+    try:
+        import sys
+        sys.path.insert(0, "/app")
+        from evaluate import _load_universe, _load_all_data, _mask_data, _compute_ic, _compute_forward_returns
+        import numpy as np
+        import pandas as pd
+        from scipy.stats import rankdata
+
+        universe = _load_universe()
+        data_dict = _load_all_data(universe)
+        bars = data_dict["bars"]
+
+        # Sample dates (every 20 trading days, IS only)
+        all_dates = set()
+        for df in bars.values():
+            all_dates |= set(df.index)
+        from evaluate import EVAL_START, IS_END, SAMPLE_FREQ_DAYS, MIN_SYMBOLS, FORWARD_HORIZONS
+        eval_dates = sorted(d for d in all_dates if pd.Timestamp(EVAL_START) <= d <= pd.Timestamp(IS_END))
+        sample_dates = eval_dates[::SAMPLE_FREQ_DAYS]
+
+        ic_by_horizon = {h: [] for h in FORWARD_HORIZONS}
+
+        for as_of in sample_dates:
+            masked = _mask_data(data_dict, as_of)
+            active = [s for s in universe if s in bars and as_of in bars[s].index]
+            if len(active) < MIN_SYMBOLS:
+                continue
+
+            # Compute each factor
+            all_vals = []
+            for name, fn in factor_fns:
+                try:
+                    vals = fn(active, as_of, masked)
+                    vals = {k: v for k, v in (vals or {}).items()
+                            if isinstance(v, (int, float)) and np.isfinite(v)}
+                    if len(vals) >= MIN_SYMBOLS:
+                        all_vals.append(vals)
+                except Exception:
+                    pass
+
+            if len(all_vals) < 2:
+                continue
+
+            # Rank composite: equal-weight rank average
+            common = set(active)
+            for vals in all_vals:
+                common &= set(vals.keys())
+            common = sorted(common)
+            if len(common) < MIN_SYMBOLS:
+                continue
+
+            composite = {}
+            for sym in common:
+                ranks = []
+                for vals in all_vals:
+                    # Rank within common symbols
+                    scores = [vals[s] for s in common]
+                    r = rankdata(scores)
+                    idx = common.index(sym)
+                    ranks.append(r[idx])
+                composite[sym] = sum(ranks) / len(ranks)
+
+            # IC for each horizon
+            for h in FORWARD_HORIZONS:
+                fwd = _compute_forward_returns(bars, as_of, h)
+                ic = _compute_ic(composite, fwd)
+                if ic is not None:
+                    ic_by_horizon[h].append(ic)
+
+        # Compute ICIR
+        result_horizons = {}
+        best_icir = 0.0
+        best_h = ""
+        for h in FORWARD_HORIZONS:
+            ics = ic_by_horizon[h]
+            if len(ics) >= 10:
+                ic_mean = float(np.mean(ics))
+                ic_std = float(np.std(ics, ddof=1))
+                icir = ic_mean / ic_std if ic_std > 0 else 0
+                result_horizons[f"{h}d"] = round(icir, 4)
+                if abs(icir) > abs(best_icir):
+                    best_icir = icir
+                    best_h = f"{h}d"
+            else:
+                result_horizons[f"{h}d"] = 0.0
+
+        median_icir = float(np.median([abs(v) for v in result_horizons.values()])) if result_horizons else 0.0
+
+        # Bucket
+        if median_icir >= 0.30:
+            passed_l2 = True
+        else:
+            passed_l2 = False
+
+        return jsonify({
+            "passed": passed_l2,
+            "n_factors": len(factor_fns),
+            "median_icir": round(median_icir, 4),
+            "best_icir": round(best_icir, 4),
+            "best_horizon": best_h,
+            "icir_by_horizon": result_horizons,
+            "n_dates": len(sample_dates),
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e), "passed": False})
 
 
 if __name__ == "__main__":
