@@ -42,7 +42,7 @@
 | AG | 因子部署管線 | 75% | strategy_builder、paper_deployer、deployed_executor、refinement 2.5a+2.5c | Step 1 watchdog auto-submit（_auto_submit_factor 不存在）、Step 2.5b+2.5d（composite + stress） |
 | AK | 整合測試體系 | 85% | 125 integration + 1 E2E + 2 security + 1 resilience | AK-4 效能基準（降為上線後）、E2E 缺 paper→live + autoresearch cycle |
 | AJ | 壓力測試 | 50% | 框架 + 3 歷史情景 + 4 synthetic + 成本敏感度 | 缺 3 歷史情景（台股特有）、相關性壓力、因子失效測試 |
-| **AL** | **Trading Safety** | **0%** | **— 未開始 —** | **14 個 runtime invariant + 煙霧測試 + paper/backtest 一致性 + 畢業條件。不完成不得 live。** |
+| **AL** | **Trading Safety** | **40%** | AL-1~4 完成：15 個 runtime invariant + heartbeat kill switch + safety gates | AL-5 bare except 清理、AL-6 煙霧測試、AL-7 paper/backtest 一致性、AL-9~10 |
 
 ## 暫停（2）
 

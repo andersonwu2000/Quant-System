@@ -248,6 +248,23 @@ class ExecutionService:
         # Gate 0: Order invariants (AL-2)
         self._check_order_invariants(orders)
 
+        # Gate 0.5: Heartbeat pause (AL-4) — tick data stale > 5 min
+        try:
+            from src.api.state import get_app_state
+            _state = get_app_state()
+            _rtm = getattr(_state, 'realtime_risk_monitor', None)
+            if _rtm is not None and _rtm.is_heartbeat_paused:
+                logger.warning(
+                    "Heartbeat paused — %d orders rejected (no valid tick for >5 min)",
+                    len(orders),
+                )
+                for o in orders:
+                    o.status = OrderStatus.REJECTED
+                    o.reject_reason = "Heartbeat paused: tick data stale >5 min"
+                return True
+        except Exception:
+            pass  # app_state not available (tests, backtest)
+
         # Gate 1: Emergency halt file
         halt_path = Path(self._emergency_halt_file)
         if halt_path.exists():
@@ -335,7 +352,6 @@ class ExecutionService:
             if rejected:
                 return []
 
-        mode = self._config.mode
         mode = self._config.mode
 
         # 回測模式：直接使用 SimBroker
