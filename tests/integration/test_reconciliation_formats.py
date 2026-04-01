@@ -116,23 +116,24 @@ class TestReconcileSchedulerModeGuard:
 
     @pytest.mark.asyncio
     async def test_paper_mode_skips(self):
-        """Paper mode → reconcile skipped, no Discord alert."""
+        """Paper mode (reconciliation disabled) → reconcile skipped."""
         from src.scheduler.jobs import execute_daily_reconcile
 
         config = MagicMock()
         config.mode = "paper"
+        config.enable_reconciliation = False
 
         result = await execute_daily_reconcile(config)
         assert result["status"] == "skipped"
-        assert "not live" in result["reason"]
 
     @pytest.mark.asyncio
     async def test_backtest_mode_skips(self):
-        """Backtest mode → reconcile skipped."""
+        """Backtest mode (reconciliation disabled) → reconcile skipped."""
         from src.scheduler.jobs import execute_daily_reconcile
 
         config = MagicMock()
         config.mode = "backtest"
+        config.enable_reconciliation = False
 
         result = await execute_daily_reconcile(config)
         assert result["status"] == "skipped"
