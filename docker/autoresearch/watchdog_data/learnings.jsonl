@@ -1,0 +1,2 @@
+
+{"ts": "2026-04-01T00:11:13", "direction": "Pure alpha: return residualized on vol and size proxy 120d.", "level": "L2", "passed": false, "icir": "near", "failure": "median|ICIR|=0.2105 < 0.3", "ic_corr": 0.0, "correlated_with": ""}

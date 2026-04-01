@@ -14,9 +14,13 @@ You are an autonomous quantitative researcher. Your job is to discover profitabl
 Repeat until the human interrupts you:
 
 1. **Think** — check past experience first:
-   - `curl -s http://evaluator:5000/learnings` — shows successful patterns, failed patterns, forbidden directions, and saturation levels
+   - `curl -s http://evaluator:5000/learnings` — shows:
+     - `near_threshold`: directions with ICIR 0.2-0.3 (close to L2 pass) — **refine these first**
+     - `icir_distribution`: count per bucket (noise/weak/near/moderate/strong/exceptional)
+     - `failed_patterns`: directions that failed multiple times
+     - `forbidden`: directions that should never be retried
    - If a direction shows saturation=HIGH (10+ variants tried), move to a DIFFERENT direction
-   - Forbidden directions should never be retried
+   - **Priority**: refine `near_threshold` directions before trying brand new ones
    - Then choose what to try based on results.tsv + learnings + your knowledge
 2. **Edit `factor.py`** — implement your idea. You may ONLY edit `factor.py`. Do NOT touch `evaluate.py`.
    - The docstring of `compute_factor` MUST explain the **economic rationale** — WHY this signal should predict returns. Generic descriptions like "combined signal" or "optimized metric" are not acceptable.
@@ -85,15 +89,38 @@ You see:
 ## Available Data
 
 ```python
-data["bars"][symbol]            # pd.DataFrame: open, high, low, close, volume (daily, 2007-2026)
-data["revenue"][symbol]         # pd.DataFrame: date, revenue, yoy_growth (monthly, 40d delayed, 2005-2018)
-data["institutional"][symbol]   # pd.DataFrame: date, foreign_net, trust_net, dealer_net, total_net (daily, 2012-2026)
-data["per_history"][symbol]     # pd.DataFrame: date, PER, PBR (daily, 2010-2018. NO dividend_yield)
-data["margin"][symbol]          # pd.DataFrame: date, margin_usage (daily, 2009-2018. 使用率 not 餘額)
-data["market_cap"][symbol]      # DISABLED (look-ahead bias) — use close × volume as size proxy
-data["pe"][symbol]              # DISABLED (look-ahead bias)
-data["pb"][symbol]              # DISABLED
-data["roe"][symbol]             # DISABLED
+# === Price & Volume (daily) ===
+data["bars"][symbol]                 # pd.DataFrame: open, high, low, close, volume (2007~2026)
+
+# === Fundamental (with publication delay enforced) ===
+data["revenue"][symbol]              # pd.DataFrame: date, revenue, yoy_growth (monthly, 40d delayed, 2005~2026)
+data["financial_statement"][symbol]  # pd.DataFrame: date, type, value (quarterly, 45d delayed, 2015~2025)
+                                     #   type values: EPS, Revenue, GrossProfit, OperatingIncome,
+                                     #   CostOfGoodsSold, OperatingExpenses, NetIncome, etc.
+                                     #   Use: df[df["type"] == "EPS"]["value"] to extract specific metrics
+data["dividend"][symbol]             # pd.DataFrame: date, CashEarningsDistribution,
+                                     #   CashExDividendTradingDate, AnnouncementDate, ... (annual, 2019~2025)
+
+# === Market Microstructure (daily) ===
+data["institutional"][symbol]        # pd.DataFrame: date, foreign_net, trust_net, foreign_buy, foreign_sell,
+                                     #   trust_buy, trust_sell, dealer_net, total_net (2012~2026)
+data["per_history"][symbol]          # pd.DataFrame: date, PER, PBR, dividend_yield (2010~2026)
+data["margin"][symbol]               # pd.DataFrame: date, margin_usage, MarginPurchaseTodayBalance,
+                                     #   ShortSaleTodayBalance, ... (2009~2025, 融資融券詳細餘額)
+
+# === Shareholder Structure (weekly) ===
+data["inventory"][symbol]            # pd.DataFrame: date, above_1000_lot_pct (weekly, 2016~2018)
+                                     #   TDCC shareholder distribution: percentage held by holders with >1000 lots
+                                     #   High = institutional/whale dominated, Low = retail dominated
+data["disposal"][symbol]             # pd.DataFrame: date, disposal_filter (daily, 2001~2019)
+                                     #   True = stock is tradable, False = under disposal (trading restrictions)
+                                     #   Use as FILTER: exclude disposal stocks from universe
+
+# === DISABLED (look-ahead bias) ===
+data["market_cap"][symbol]           # {} — use close × volume as size proxy
+data["pe"][symbol]                   # {} — use data["per_history"] instead
+data["pb"][symbol]                   # {} — use data["per_history"] instead
+data["roe"][symbol]                  # {} — use data["financial_statement"] instead
 ```
 
 ## Factor Dimensions to Explore
@@ -105,7 +132,7 @@ Discover on your own. Use `curl -s http://evaluator:5000/learnings` to see what'
 Known dead ends — don't waste time:
 
 - **Pure price reversal (< 5 days)** — too noisy, slippage eats alpha
-- **`data["pe"]/["pb"]/["roe"]` are latest-only snapshots** — use `data["per_history"]` for time series (PER/PBR/dividend_yield daily since 2019)
+- **`data["pe"]/["pb"]/["roe"]` are DISABLED** — use `data["per_history"]` for PER/PBR/dividend_yield time series, `data["financial_statement"]` for EPS/ROE/margins
 - **Single-stock patterns** — must work cross-sectionally across 50+ stocks
 - **Calendar effects** — too weak and well-arbitraged
 - **Exact clones** — the dedup check will catch `corr > 0.50` with known factors
