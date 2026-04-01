@@ -14,7 +14,7 @@ app = Flask(__name__)
 # evaluate.py 需要 5-60 秒，不需要 gunicorn
 
 # Bucket boundaries (AF-M3: centralized)
-ICIR_THRESHOLDS = (0.40, 0.30, 0.15)        # strong / moderate / weak / none (median |ICIR|, L2=0.30)
+ICIR_THRESHOLDS = (0.50, 0.40, 0.30, 0.20, 0.10)  # exceptional/strong/moderate/near/weak/noise
 SCORE_THRESHOLDS = (15, 5, 0)                # high / medium / low / none
 SATURATION_HIGH = 10
 SATURATION_MEDIUM = 5
@@ -100,21 +100,16 @@ def learnings():
         pass
 
     # ICIR bucket distribution (6-level: noise/weak/near/moderate/strong/exceptional)
+    # Only aggregate counts — no direction names (prevents overfitting to specific approaches)
     icir_dist: dict[str, int] = {}
-    near_threshold: list[str] = []  # directions with ICIR "near" (0.2-0.3) — worth refining
     for e in recent:
         bucket = e.get("icir", "unknown")
         icir_dist[bucket] = icir_dist.get(bucket, 0) + 1
-        if bucket == "near":
-            d = e.get("direction", "")
-            if d and d not in near_threshold:
-                near_threshold.append(d)
 
     return jsonify({
         "successful_patterns": successful,
         "failed_patterns": failed,
         "forbidden": forbidden,
-        "near_threshold": near_threshold[:10],  # directions close to L2 pass — try refining
         "icir_distribution": icir_dist,
         "stats": {
             "total_experiments": len(entries),
@@ -178,13 +173,17 @@ def evaluate():
             pass
     median_icir = statistics.median(horizon_icirs) if horizon_icirs else 0.0
     if median_icir >= ICIR_THRESHOLDS[0]:
-        icir_bucket = "strong"
+        icir_bucket = "exceptional"
     elif median_icir >= ICIR_THRESHOLDS[1]:
-        icir_bucket = "moderate"
+        icir_bucket = "strong"
     elif median_icir >= ICIR_THRESHOLDS[2]:
+        icir_bucket = "moderate"
+    elif median_icir >= ICIR_THRESHOLDS[3]:
+        icir_bucket = "near"
+    elif median_icir >= ICIR_THRESHOLDS[4]:
         icir_bucket = "weak"
     else:
-        icir_bucket = "none"
+        icir_bucket = "noise"
 
     # Bucket composite similarly
     composite = 0.0

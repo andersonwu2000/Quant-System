@@ -15,12 +15,10 @@ Repeat until the human interrupts you:
 
 1. **Think** — check past experience first:
    - `curl -s http://evaluator:5000/learnings` — shows:
-     - `near_threshold`: directions with ICIR 0.2-0.3 (close to L2 pass) — **refine these first**
-     - `icir_distribution`: count per bucket (noise/weak/near/moderate/strong/exceptional)
+     - `icir_distribution`: count per signal strength bucket (noise/weak/near/moderate/strong/exceptional)
      - `failed_patterns`: directions that failed multiple times
      - `forbidden`: directions that should never be retried
    - If a direction shows saturation=HIGH (10+ variants tried), move to a DIFFERENT direction
-   - **Priority**: refine `near_threshold` directions before trying brand new ones
    - Then choose what to try based on results.tsv + learnings + your knowledge
 2. **Edit `factor.py`** — implement your idea. You may ONLY edit `factor.py`. Do NOT touch `evaluate.py`.
    - The docstring of `compute_factor` MUST explain the **economic rationale** — WHY this signal should predict returns. Generic descriptions like "combined signal" or "optimized metric" are not acceptable.
@@ -143,7 +141,7 @@ Known dead ends — don't waste time:
 2. **Experiments 11-30**: For each dimension that showed signal (reached L2+), try 2-3 variations (different windows, normalizations).
 3. **After 30**: Combine top performers across dimensions into multi-factor composites.
 4. **If stuck**: Try non-linear transforms, cross-sectional vs time-series normalization, interaction terms, regime-conditional logic.
-5. **Learn from near-misses**: median ICIR just below L2's 0.30 threshold is worth tweaking.
+5. **Breadth over depth**: explore genuinely different economic hypotheses rather than tweaking parameters of the same idea.
 
 **Key principle: breadth first, depth second.** Don't run 20 variants of one dimension before trying others.
 
