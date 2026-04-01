@@ -1,37 +1,42 @@
 """Alpha factor definition — the ONLY file the agent may edit."""
 from __future__ import annotations
 import pandas as pd
+import numpy as np
 
 def compute_factor(symbols: list[str], as_of: pd.Timestamp, data: dict) -> dict[str, float]:
-    """Revenue growth + value composite (YoY growth / PBR).
+    """Revenue YoY growth divided by price volatility (growth confidence).
 
-    Economic rationale: stocks with strong revenue growth AND
-    reasonable valuation (low PBR) offer the best risk-reward.
-    High growth justifies a premium, but overpaying erodes returns.
-    Dividing YoY growth by PBR rewards growth-at-a-reasonable-price.
+    Economic rationale: revenue growth signals business momentum, but
+    high-volatility stocks with strong growth may be speculative or
+    priced-in. Dividing by realized volatility (60d) rewards stocks
+    where growth is more likely to be sustainably priced — high growth
+    with low vol implies the market hasn't fully reacted yet.
     """
     results: dict[str, float] = {}
     for sym in symbols:
         try:
             rev = data["revenue"].get(sym)
-            per = data["per_history"].get(sym)
-            if rev is None or rev.empty or per is None or per.empty:
+            bars = data["bars"].get(sym)
+            if rev is None or rev.empty or bars is None or bars.empty:
                 continue
-            # Revenue YoY
             rdf = rev.copy()
             rdf["date"] = pd.to_datetime(rdf["date"])
             rdf = rdf[rdf["date"] <= as_of].sort_values("date")
-            if len(rdf) < 3: continue
+            if len(rdf) < 3:
+                continue
             yoy = rdf["yoy_growth"].iloc[-1]
-            if pd.isna(yoy): continue
-            # PBR
-            pdf = per.copy()
-            pdf["date"] = pd.to_datetime(pdf["date"])
-            pdf = pdf[pdf["date"] <= as_of].sort_values("date")
-            if len(pdf) < 5: continue
-            pbr = pdf["PBR"].iloc[-1]
-            if pd.isna(pbr) or pbr <= 0: continue
-            results[sym] = float(yoy / pbr)
+            if pd.isna(yoy):
+                continue
+            bdf = bars.copy()
+            bdf.index = pd.to_datetime(bdf.index)
+            bdf = bdf[bdf.index <= as_of].sort_index().tail(60)
+            if len(bdf) < 40:
+                continue
+            ret = bdf["close"].pct_change().dropna()
+            vol = ret.std()
+            if vol <= 0 or pd.isna(vol):
+                continue
+            results[sym] = float(yoy / vol)
         except Exception:
             continue
     return results
