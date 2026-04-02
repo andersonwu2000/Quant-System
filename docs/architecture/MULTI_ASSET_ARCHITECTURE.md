@@ -396,7 +396,7 @@ src/                          ~120 .py files
 strategies/           7 files — 7 個內建策略
 tests/               63 files — pytest (856 tests)
 apps/web/                     — React 18 + Vite + Tailwind (10 頁)
-apps/mobile/                  — React Native + Expo 52 (7 tabs)
+apps/android/                 — Android native (Kotlin + Jetpack Compose + Material 3)
 apps/shared/                  — @quant/shared TypeScript 套件
 ```
 

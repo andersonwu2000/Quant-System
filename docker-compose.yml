@@ -5,7 +5,7 @@ services:
       - "8000:8000"
     environment:
       QUANT_ENV: prod
-      QUANT_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/quant
+      QUANT_DATABASE_URL: postgresql://postgres:${DB_PASSWORD:-dev_only_password}@db:5432/quant
       QUANT_API_KEY: ${QUANT_API_KEY:?Set QUANT_API_KEY}
       QUANT_JWT_SECRET: ${QUANT_JWT_SECRET:?Set QUANT_JWT_SECRET}
       QUANT_ALLOWED_ORIGINS: ${QUANT_ALLOWED_ORIGINS:-http://localhost:3000}
@@ -22,6 +22,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
     depends_on:
       db:
         condition: service_healthy
@@ -33,7 +38,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: quant
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_only_password}
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:

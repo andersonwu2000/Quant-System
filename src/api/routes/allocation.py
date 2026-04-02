@@ -77,6 +77,8 @@ async def compute_tactical_allocation(
         "FUTURE": AssetClass.FUTURE,
     }
     if req.strategic_weights:
+        from src.api.routes import validate_weights
+        validate_weights(req.strategic_weights)  # reject NaN/Inf/negative
         parsed_weights = {}
         for k, v in req.strategic_weights.items():
             ac = ac_map.get(k.upper())

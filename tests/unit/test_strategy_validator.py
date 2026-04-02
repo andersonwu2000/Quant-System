@@ -252,15 +252,15 @@ class TestValidatorCheckNames:
         "deflated_sharpe", "bootstrap_p_sharpe_positive",
         "oos_sharpe", "vs_ew_universe", "construction_sensitivity",
         "worst_regime", "recent_period_sharpe", "market_correlation",
-        "cvar_95",
+        "cvar_95", "naive_baseline",
     }
     CONDITIONAL_CHECKS = {"permutation_p"}  # only with compute_fn
 
     def test_always_count(self) -> None:
-        assert len(self.ALWAYS_CHECKS) == 15
+        assert len(self.ALWAYS_CHECKS) == 16
 
     def test_total_with_conditional(self) -> None:
-        assert len(self.ALWAYS_CHECKS | self.CONDITIONAL_CHECKS) == 16
+        assert len(self.ALWAYS_CHECKS | self.CONDITIONAL_CHECKS) == 17
 
     def test_no_old_names(self) -> None:
         """Old check names must not appear."""

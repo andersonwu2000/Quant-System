@@ -30,6 +30,8 @@ from src.core.logging import setup_logging
 logger = logging.getLogger(__name__)
 
 # Rate limiter（全域）
+# AN-32 TODO: Per-user rate limiting (currently global 60/min)
+# One bot can exhaust the entire rate limit budget
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 
@@ -61,6 +63,8 @@ def create_app() -> FastAPI:
     config = get_config()
 
     # 初始化 structured logging
+    # AN-30 TODO: Add file handler for persistent logging
+    # Currently stdout-only, logs lost on container restart
     setup_logging(config.log_level, config.log_format)
 
     @asynccontextmanager
@@ -180,6 +184,7 @@ def create_app() -> FastAPI:
                         _poll_feed_source = ShioajiFeed(broker.api)
                         logger.info("Price polling: using ShioajiFeed (snapshot API)")
                     except Exception:
+                        # expected: ShioajiFeed init failure (simulation mode, no live API)
                         logger.debug("ShioajiFeed init failed, falling back to config feed", exc_info=True)
 
                 from src.data.data_catalog import get_catalog
@@ -222,8 +227,9 @@ def create_app() -> FastAPI:
                                     _cached_feed = _build_catalog_feed(syms)
                                     _cached_syms = syms
                                     if _cached_feed is not None:
-                                        realtime_risk.poll_prices_from_feed(_cached_feed)
+                                        realtime_risk.poll_prices_from_feed(_cached_feed, realtime=False)
                         except Exception:
+                            # expected: external API failure (price feed)
                             logger.warning("Price poll failed", exc_info=True)
 
                 asyncio.create_task(_price_poll_loop())
@@ -278,6 +284,7 @@ def create_app() -> FastAPI:
                                     if change < -0.03:
                                         alerts.append(f"NAV dropped {change:.1%}")
                             except Exception:
+                                # data-quality: corrupted snapshot JSON
                                 logger.debug("Suppressed exception", exc_info=True)
                         if n_pos == 0 and nav > 100000:
                             alerts.append("No positions but significant NAV")
@@ -300,6 +307,7 @@ def create_app() -> FastAPI:
                                 try:
                                     today_snaps.append(_json.loads(p.read_text(encoding="utf-8")))
                                 except Exception:
+                                    # data-quality: corrupted snapshot file — skip
                                     continue
                             if today_snaps:
                                 first_nav = today_snaps[0]["nav"]
@@ -323,6 +331,7 @@ def create_app() -> FastAPI:
                                 logger.info("Daily report generated: %s", today)
 
                     except Exception:
+                        # expected: monitor iteration failure — non-critical, will retry next hour
                         logger.debug("Monitor loop error", exc_info=True)
 
             if config.mode in ("paper", "live"):
@@ -366,6 +375,7 @@ def create_app() -> FastAPI:
                                         "All trading stopped. Manual restart required.",
                                     )
                             except Exception:
+                                # expected: external API failure (notification service)
                                 logger.debug("Heartbeat notification failed", exc_info=True)
                             continue
                         elif _hb_status == "paused" and not _rtm._heartbeat_paused:
@@ -452,8 +462,10 @@ def create_app() -> FastAPI:
                                     + _ks_detail,
                                 )
                         except Exception:
+                            # expected: external API failure (notification service)
                             logger.debug("Kill switch notification failed", exc_info=True)
                 except Exception:
+                    # invariant: kill switch monitor should not crash — log and continue
                     logger.warning("Kill switch monitor error", exc_info=True)
 
         kill_switch_task = asyncio.create_task(_kill_switch_monitor())
@@ -478,21 +490,47 @@ def create_app() -> FastAPI:
 
         yield
 
-        logger.info("Quant Trading System shutting down...")
-        scheduler.stop()
-        kill_switch_task.cancel()
-        ws_manager.stop_ping_task()
-        from src.api.state import get_app_state as _get_state, save_portfolio
-        state = _get_state()
-        # Save portfolio state before shutdown (crash recovery)
+        logger.info("Graceful shutdown initiated")
         try:
-            if state.portfolio and state.portfolio.positions:
-                save_portfolio(state.portfolio)
-                logger.info("Portfolio saved on shutdown (%d positions)", len(state.portfolio.positions))
+            scheduler.stop()
+            kill_switch_task.cancel()
+            ws_manager.stop_ping_task()
+
+            from src.api.state import get_app_state as _get_state, save_portfolio
+            state = _get_state()
+
+            # Log pending orders before shutdown
+            try:
+                if state.execution_service and state.execution_service.is_initialized:
+                    open_orders = state.oms.get_open_orders()
+                    if open_orders:
+                        logger.warning(
+                            "Shutting down with %d pending orders", len(open_orders),
+                        )
+                    else:
+                        logger.info("No pending orders at shutdown")
+            except Exception:
+                # expected: OMS/execution service partially torn down
+                logger.warning("Failed to check pending orders", exc_info=True)
+
+            # Save portfolio state before shutdown (crash recovery)
+            try:
+                if state.portfolio:
+                    save_portfolio(state.portfolio)
+                    logger.info(
+                        "Portfolio saved on shutdown (%d positions)",
+                        len(state.portfolio.positions),
+                    )
+            except Exception:
+                # invariant: portfolio save should not fail — critical data loss risk
+                logger.exception("Failed to save portfolio on shutdown")
+
+            state.execution_service.shutdown()
+            await ws_manager.close_all()
         except Exception:
-            logger.exception("Failed to save portfolio on shutdown")
-        state.execution_service.shutdown()
-        await ws_manager.close_all()
+            # invariant: shutdown should complete cleanly — log full trace
+            logger.exception("Error during shutdown sequence")
+        logger.info("Shutdown complete")
 
     app = FastAPI(
         title="Quant Trading System",
@@ -573,8 +611,10 @@ def create_app() -> FastAPI:
                 if data == "ping":
                     await websocket.send_text("pong")
         except WebSocketDisconnect:
+            # expected: client disconnected normally
             logger.debug("Suppressed exception", exc_info=True)
         except Exception:
+            # expected: WS transport error (client disconnect, network issue)
             logger.debug("WS error on channel=%s", channel, exc_info=True)
         finally:
             ws_manager.disconnect(websocket, channel)

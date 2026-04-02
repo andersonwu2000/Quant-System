@@ -80,6 +80,8 @@ class TradingConfig(BaseSettings):
     api_workers: int = 1
     api_key: str = "dev-key"
     api_key_roles: dict[str, str] = {}      # 額外 key→role 映射，env var: QUANT_API_KEY_ROLES (JSON)
+    # AN-23 TODO: Force password change on first login (not implemented yet)
+    # Current default: Admin1234 — acceptable for dev/paper, must change for live
     admin_password: str = "Admin1234"          # 首次啟動預設密碼，可用 QUANT_ADMIN_PASSWORD 覆蓋
     jwt_secret: str = "change-me-in-production"
     jwt_expire_minutes: int = 1440          # 24 小時

@@ -637,7 +637,11 @@ class TestRejectedOrders:
 class TestDividendIntegration:
 
     def test_dividends_add_cash(self) -> None:
-        """With enable_dividends=True, dividends increase cash."""
+        """With enable_dividends=True, dividends increase cash.
+
+        Uses mock to disable auto_adjust guard (test uses synthetic unadjusted prices).
+        """
+        from unittest.mock import patch
         dates = ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05",
                  "2024-01-08"]
         feed = _make_flat_feed(["DIV"], dates, price=50.0)
@@ -669,22 +673,25 @@ class TestDividendIntegration:
             tax_rate=0.0,
         )
 
-        # Engine with dividends
-        engine_div = BacktestEngine()
-        _patch_engine(
-            engine_div, feed,
-            dividend_data={"DIV": {"2024-01-04": 1.00}},
-        )
+        # Mock auto_adjust=False so dividend guard allows enable_dividends=True
+        # (test uses synthetic unadjusted prices, not Yahoo-adjusted)
+        with patch("src.data.sources.yahoo.YAHOO_AUTO_ADJUST", False):
+            # Engine with dividends
+            engine_div = BacktestEngine()
+            _patch_engine(
+                engine_div, feed,
+                dividend_data={"DIV": {"2024-01-04": 1.00}},
+            )
 
-        strategy_div = _FixedWeightStrategy({"DIV": 0.5})
-        result_div = engine_div.run(strategy_div, config_div)
+            strategy_div = _FixedWeightStrategy({"DIV": 0.5})
+            result_div = engine_div.run(strategy_div, config_div)
 
-        # Engine without dividends
-        engine_nodiv = BacktestEngine()
-        _patch_engine(engine_nodiv, feed)
+            # Engine without dividends
+            engine_nodiv = BacktestEngine()
+            _patch_engine(engine_nodiv, feed)
 
-        strategy_nodiv = _FixedWeightStrategy({"DIV": 0.5})
-        result_nodiv = engine_nodiv.run(strategy_nodiv, config_nodiv)
+            strategy_nodiv = _FixedWeightStrategy({"DIV": 0.5})
+            result_nodiv = engine_nodiv.run(strategy_nodiv, config_nodiv)
 
         # The dividend run should have higher final NAV
         final_nav_div = float(result_div.nav_series.iloc[-1])

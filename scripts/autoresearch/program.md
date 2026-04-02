@@ -121,6 +121,20 @@ data["pb"][symbol]                   # {} — use data["per_history"] instead
 data["roe"][symbol]                  # {} — use data["financial_statement"] instead
 ```
 
+## Economic Intuition Whitelist
+
+Priority factor families — these have clear economic rationale and are more likely to survive OOS:
+
+| Family | Examples | ICIR threshold |
+|--------|----------|---------------|
+| Revenue trend | YoY growth, acceleration, surprise | 0.30 (standard) |
+| Valuation re-rating | PER/PBR change, earnings yield delta | 0.30 (standard) |
+| Quality | Gross margin stability, ROE trend, operating leverage | 0.30 (standard) |
+| Liquidity | Turnover ratio, Amihud illiquidity, bid-ask proxy | 0.30 (standard) |
+| Sentiment | Institutional flow momentum, margin balance change | 0.30 (standard) |
+
+**Non-whitelist factors require ICIR > 0.40 to pass L2.** This guides the agent toward economically interpretable factors. If you discover a strong signal outside these families, the higher bar ensures it is robust enough to justify the lack of obvious economic story.
+
 ## Factor Dimensions to Explore
 
 Discover on your own. Use `curl -s http://evaluator:5000/learnings` to see what's been tried and what worked. Explore broadly — price, volume, fundamental, institutional, combinations — before going deep.

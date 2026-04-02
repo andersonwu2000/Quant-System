@@ -1,7 +1,7 @@
 # Phase AL：Trading Safety — 杜絕 Paper/Live Trading Bug
 
 > 建立日期：2026-04-01
-> 狀態：未開始
+> 狀態：**90% 完成** — AL-1~10 實作完畢，等 30 天 paper 數據累積驗證 G1/G4
 > 優先級：**最高** — 不完成此 Phase 不得進入 live trading
 
 ---
@@ -395,14 +395,14 @@ Paper trading 的 30 天必須包含：
 
 Phase AL 完成的定義：
 
-- [ ] 交易路徑上 15 個 invariant（I1-I15）全部在生產代碼中
-- [ ] Heartbeat kill switch：報價中斷 > 5 分鐘自動暫停
-- [ ] 煙霧測試每日盤前自動執行
-- [ ] Paper vs Backtest sign agreement ≥ 70%（30 天滾動）
-- [ ] 交易路徑中 0 個 bare `except: pass`（合理的 optional degradation 除外）
-- [ ] 「靜默即 P0」watchdog 運行中
-- [ ] Paper trading 畢業條件（§5.1 G1-G6）全部自動化
-- [ ] 30+ 天 paper trading，包含至少 1 次大盤暴跌日 + 1 次除息日，0 invariant violation
+- [x] 交易路徑上 15 個 invariant（I1-I15）全部在生產代碼中
+- [x] Heartbeat kill switch：報價中斷 > 5 分鐘自動暫停
+- [x] 煙霧測試每日盤前自動執行（已整合 daily_ops）
+- [ ] Paper vs Backtest sign agreement ≥ 70%（30 天滾動）— 等數據累積
+- [x] 交易路徑中 0 個 bare `except: pass`（合理的 optional degradation 除外）
+- [x] 「靜默即 P0」watchdog 運行中
+- [x] Paper trading 畢業條件（§5.1 G1-G6）全部自動化
+- [ ] 30+ 天 paper trading，包含至少 1 次大盤暴跌日 + 1 次除息日，0 invariant violation — 等數據累積
 
 **不滿足以上全部條件，不得進入 live trading。**
 

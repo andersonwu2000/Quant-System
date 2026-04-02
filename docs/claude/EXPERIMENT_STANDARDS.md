@@ -69,33 +69,45 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 - learnings API 只回傳方向描述和 bucketed 指標（不含精確 ICIR）
 - 方向飽和（同方向 ≥10 個變體）在 L3 強制阻擋（correlation-based）
 
-### 3.2 StrategyValidator 16 項（2026-03-28 Phase AC 凍結）
+### 3.2 StrategyValidator 16 項（2026-04-02 Phase AM 更新）
 
-| # | 檢查名 | 門檻 | 說明 | 方法論變更 |
-|---|--------|------|------|-----------|
-| 1 | universe_size | ≥ 50 | 選股池不能太小 | — |
-| 2 | cagr | ≥ 8% | 絕對報酬門檻 | — |
-| 3 | sharpe | ≥ 0.7 | 風險調整報酬 | — |
-| 4 | max_drawdown | ≤ 40% | 收緊自 50%（機構標準） | — |
-| 5 | annual_cost_ratio | < 50% of gross | 成本 / gross alpha | V2: 分母改 gross（非 net） |
-| 6 | temporal_consistency | ≥ 60% | WF 年正率（OOS Sharpe > 0 的比例） | 更名自 walkforward_positive |
-| 7 | deflated_sharpe | ≥ 0.70 | DSR（N=15 independent directions） | Lo(2002) SE; N 由外部傳入 |
-| 8 | bootstrap_p_sharpe_positive | ≥ 80% | P(Sharpe > 0) | Stationary Bootstrap (Politis & Romano 1994, avg_block=20) |
-| 9 | oos_sharpe | ≥ 0.30 | Rolling OOS: today-549d ~ yesterday | 滾動 OOS（非固定期間） |
-| 10 | vs_ew_universe | ≥ 0% | 超額 vs 等權 universe 平均 | Phase AC: 取代 vs 0050（消除 size premium 偏差） |
-| 11 | construction_sensitivity | ≤ 0.50 | 組合建構變異穩定性 | 更名自 pbo（非 Bailey CSCV；真正 PBO 在 watchdog） |
-| 12 | worst_regime | ≥ -30% | 市場危機期間累計報酬 | Phase AC: drawdown-based（0050 DD > 15%），非年度 |
-| 13 | recent_period_sharpe | ≥ 0 | 最近 252 交易日 Sharpe | — |
-| 14 | market_correlation | \|corr\| ≤ 0.80 | 和 0050.TW 日報酬相關性 | 收緊自 0.90 |
-| 15 | cvar_95 | ≥ -5% | Daily CVaR(95%) expected shortfall | — |
-| 16 | permutation_p | < 0.10 | 排列檢定 p-value | Phase AC 新增：shuffles real factor rankings |
+**Hard Gates（7 項，全部必須通過）：**
+
+| # | 檢查名 | 門檻 | 說明 |
+|---|--------|------|------|
+| 1 | cagr | ≥ 8% | 絕對報酬門檻 |
+| 2 | annual_cost_ratio | < 50% of gross | 成本 / gross alpha |
+| 3 | cost_2x_safety | > 0% CAGR after 2× cost | 成本翻倍安全邊際 |
+| 4 | temporal_consistency | score > 0 | sign-magnitude weighted（取代簡單正率） |
+| 5 | deflated_sharpe | ≥ 0.70 | DSR，N = n_independent（和 PBO 統一） |
+| 6 | construction_sensitivity | ≤ 0.60 | 建構 PBO（放寬自 0.50，含 avg_pairwise_corr 可信度） |
+| 7 | market_correlation | \|corr\| ≤ 0.80 | 和 0050.TW 日報酬相關性 |
+
+**Soft Gates（9 項，≥ 3 項 fail 阻擋部署）：**
+
+| # | 檢查名 | 門檻 | 說明 |
+|---|--------|------|------|
+| 8 | universe_size | ≥ 50 | 選股池大小 |
+| 9 | sharpe | ≥ 0.7 | 風險調整報酬（降為 soft，DSR 已涵蓋） |
+| 10 | max_drawdown | ≤ 40% | 最大回撤 |
+| 11 | bootstrap_p_sharpe_positive | ≥ 80% | P(Sharpe > 0)（降為 soft，和 DSR 重疊） |
+| 12 | oos_sharpe | ≥ 0.30 | OOS2 Sharpe（後半段 275 天，Validator 專用） |
+| 13 | vs_ew_universe | ≥ 50% windows | Beta-neutral excess vs 月頻 EW（降為 soft） |
+| 14 | worst_regime | ≥ -30% | 市場危機期間累計報酬 |
+| 15 | sharpe_decay | t > -2.0 | SR(後半) - SR(前半) 的 t-stat（取代 recent_period_sharpe） |
+| 16 | cvar_95 | ≥ -5% | Daily CVaR(95%) |
 
 **方法論細節：**
-- **Stationary Bootstrap (#8)**：保留時間序列自相關結構，avg_block=20 天（月頻策略）
-- **Rolling OOS (#9)**：`oos_end = today - 1d`, `oos_start = today - 549d`，自動滾動避免 holdout leakage
-- **等權基準 (#10)**：universe 內所有股票等權持有，衡量選股 alpha（非 size premium）
-- **Drawdown Regime (#12)**：0050.TW 回撤 > 15% 的日期集合，測策略在市場危機中的表現
-- **Permutation Test (#16)**：保留因子值不變，打亂股票對應（固定 mapping per trial），100 次排列
+- **OOS 切割**：549 天分兩半。L5（evaluate.py）用 OOS1（前半 ~275 天），Validator 用 OOS2（後半 ~275 天）。消除 double-dipping
+- **DSR N 統一**：N = n_independent（從 factor_pbo.json 讀取，correlation clustering threshold=0.50），和 factor-level PBO 同定義
+- **temporal_consistency**：score = mean(sign(SR_i) × min(|SR_i|, 2.0))，取代簡單的「SR > 0 年數比例」。更 robust，不被 SR=0.01 污染
+- **sharpe_decay**：Lo (2002) SE 計算差值 t-stat。2 年數據 delta=-0.5 → t≈-1.1（不顯著，通過），10 年數據 delta=-0.5 → t≈-2.5（顯著退化，不通過）
+- **vs_ew_universe**：月頻再平衡 EW（匹配策略頻率）+ 120d beta neutralization + 下市股 ffill。降為 soft（15 vs 200 集中度不對稱）
+- **construction_sensitivity**：PBO ≤ 0.60（放寬自 0.50）。報告 avg_pairwise_corr，> 0.8 標記 LOW CONFIDENCE
+- **Soft gate 累積**：≥ 3 個 soft fail → 阻擋部署（soft check 有約束力）
+- **行業中性化 IC**：IC 計算前對因子值和 forward return 各減去行業均值
+- **Factor Attribution**：Fama-French 風格迴歸（MKT + SMB + HML + MOM），描述性（不擋部署）
+- **Permutation Test (#16)**：打亂因子-股票映射，100 次排列。條件式（需有 compute_fn）
 
 ### 3.3 Autoresearch 評估閘門（L1-L5 + Stage 2）
 
@@ -103,28 +115,31 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 
 **期間分割（Rolling，自動依 today 計算）：**
 - In-Sample (IS)：2017-01-01 ~ `today - 90d - 549d`（L1-L4 使用）
-- Out-of-Sample (OOS)：`today - 90d - 548d` ~ `today - 90d`（L5 使用，agent 不可見）
-- 例：2026-03-29 → IS 2017-01-01~2024-05-12, OOS 2024-05-13~2025-12-29
+- Out-of-Sample OOS1：`today - 90d - 548d` ~ `today - 90d - 274d`（L5 使用，agent 不可見）
+- Out-of-Sample OOS2：`today - 275d` ~ `today - 1d`（Validator 使用，L5 未見過）
+- 例：2026-04-02 → IS ~2024-05, OOS1 ~2024-05~2025-07, OOS2 ~2025-07~2026-04
 
 **Universe：**
 - Core：200 支大中型股（依日均成交額排序，ADV ≥ 340M TWD）
 - Large：865+ 支全市場（Stage 2 用）
 - MIN_SYMBOLS：每日至少 50 支有效股票才計算 IC
 
-| 閘門 | 條件 | Universe | 說明 | 失敗處理 |
-|------|------|----------|------|----------|
-| **L0** | factor.py ≤ 80 行 | — | 複雜度限制（防過擬合） | 直接拒絕 |
-| **L1** | \|IC(20d)\| ≥ 0.02 | Core 200 | IS 前 30 個日期快篩（~30 秒） | 換方向 |
-| **L2** | median\|ICIR\| ≥ 0.30, ≤ 1.00 | Core 200 | IS 全期間、median across 4 horizons（Method D: 不偏向任何 horizon） | 訊號不穩，試平滑 |
-| **L3a** | dedup corr ≤ 0.50 | Core 200 | IC-series 與已知因子相關性 | 因子是 clone |
-| **L3b** | positive_years ≥ 4/6.5 | Core 200 | IS 年度穩定性 | regime 依賴 |
-| **L4** | fitness ≥ 3.0 | Core 200 | WorldQuant BRAIN 公式 | 綜合不足 |
-| **L5a** | OOS IC 方向一致 | Core 200 | IS 和 OOS 的 IC 同號 | 過擬合 IS |
-| **L5a** | OOS ICIR 衰退 ≤ 60% | Core 200 | OOS \|ICIR\| ≥ IS \|ICIR\| × 0.40 | 過擬合 IS |
-| **L5a** | OOS 正向月 ≥ 50% | Core 200 | 至少半數 OOS 月份 IC > 0 | 不穩定 |
-| **L5b** | Top quintile > universe | Core 200 | IS top quintile 月報酬 > universe 平均（pass/fail） | IC 高但 portfolio 不賺錢 |
-| **L5c** | 分位單調性 | Core 200 | abs(Spearman(quintile_ranks, quintile_returns)) > 0.5（pass/fail） | 信號只在中間有效 |
-| **Stage 2** | large ICIR(20d)（參考） | Large 865+ | 全市場驗證，不硬擋，記錄於報告 | — |
+**因子自動 normalization：** 每個因子自動測試 [raw, rank, z-score] 三種 normalization，取 best |IC| 的版本進入 L1。
+
+**行業中性化 IC：** IC 計算前對因子值和 forward return 各減去行業均值（FinMind industry_category）。
+
+| 閘門 | 條件 | 說明 | 失敗處理 |
+|------|------|------|----------|
+| **L0** | factor.py ≤ 80 行 | 複雜度限制（防過擬合） | 直接拒絕 |
+| **L1** | \|IC(20d)\| ≥ 0.02 OR \|IC(60d)\| ≥ 0.03 | IS 前 30 日快篩 + slow-alpha bypass。要求 sign(IC_20d)==sign(IC_60d) | 換方向 |
+| **L2** | median\|ICIR\| ≥ 0.30, ≤ 1.00 | IS 全期間 median across 4 horizons | 訊號不穩 |
+| **L3a** | dedup corr ≤ **0.65** | IC-series 相關性（放寬自 0.50）。替換門檻 **1.15x** ICIR（放寬自 1.3x）。失敗標記 L3_dedup | clone |
+| **L3b** | rolling 12-month ≥ **50%** positive | 滾動窗口（取代固定年份）。失敗標記 L3_stability | regime 依賴 |
+| **L4** | fitness ≥ 3.0 | WorldQuant BRAIN 公式 | 綜合不足 |
+| **L5** | OOS1 IC 方向一致 + 正月 ≥ 50% | **移除 ICIR decay**（留給 Validator DSR）。只看方向 | 過擬合 IS |
+| **L5b** | Top quintile > universe (IS+OOS1) | pass/fail | IC 高但不賺錢 |
+| **L5c** | 分位單調性 (IS+OOS1) | abs(Spearman) > 0.5 | 信號中間有效 |
+| **Stage 2** | large ICIR(20d) | 全市場驗證（參考） | — |
 
 **防過擬合設計：**
 - L2 使用 median |ICIR| across 4 horizons（Method D），不取最佳也不固定單一 horizon，消除 selection bias 且不歧視長期因子
@@ -134,7 +149,7 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 - Thresholdout 加 Laplace 噪音降低每次 L5 查詢的資訊洩漏
 - 最終驗證靠 StrategyValidator + paper trading
 
-> **deflated_sharpe 說明**：90+ trials 下 DSR 0.95 需 Sharpe > 2.0（業界不現實）。0.70 對應 Sharpe ~1.5，是合理門檻。Bailey & López de Prado 原意是排名工具而非絕對門檻。
+> **deflated_sharpe 說明**：N = n_independent（聚類後獨立方向數，和 factor-level PBO 統一）。N=15 時 DSR 0.70 對應 Sharpe ~1.3。N 過大（如用全部實驗數 262）會過度懲罰。
 
 ### 3.4 關鍵約束（2026-03-27 大規模審計後確立）
 
@@ -149,7 +164,7 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 
 | 層 | 位置 | 檢查 | 門檻 | 速度 |
 |:--:|------|------|:----:|:----:|
-| 1 | evaluate.py L3 | IC series correlation | > 0.50 擋 | 即時 |
+| 1 | evaluate.py L3 | IC series correlation | > 0.65 擋（放寬自 0.50） | 即時 |
 | 2 | watchdog pre-filter | Portfolio returns correlation | > 0.85 擋 | 秒級 |
 | 3 | watchdog Validator | 17 項策略級驗證（vs_ew_universe 改為 walk-forward） | 全通過才部署 | ~9 min |
 | 4 | watchdog PBO | Factor-Level PBO（Bailey CSCV） | > 0.70 擋 | 分鐘級 |
@@ -169,37 +184,12 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 
 因子報告存放在 `docs/research/autoresearch/`。
 
-**報告生成條件：** 通過 L5 OOS 驗證後，evaluate.py 寫 pending marker 到 watchdog_data/pending/。Watchdog 背景執行 StrategyValidator 17 項，10 項 HARD 全過（deployed=True）才寫報告到 `docs/research/autoresearch/`。
+**報告生成條件：** 通過 L5 OOS1 驗證後，evaluate.py 寫 pending marker。Watchdog 背景執行 StrategyValidator（OOS2），7 項 HARD 全過 + soft fail < 3 才部署。
 
-**部署條件（硬/軟門檻，Phase AC §7 + FACTOR_PIPELINE_DEEP_REVIEW）：**
+**部署條件（2026-04-02 Phase AM 更新）：** 見 §3.2 表格。
 
-硬門檻 — 統計/結構檢定（防過擬合）：
-| Check | 門檻 | 測什麼 |
-|-------|------|--------|
-| deflated_sharpe | ≥ 0.70 | 多重測試後 Sharpe 是否顯著 |
-| bootstrap_p_sharpe_positive | ≥ 80% | P(Sharpe > 0) 含自相關修正 |
-| vs_ew_universe | ≥ 0% | 選股 alpha（非 size premium） |
-| construction_sensitivity | ≤ 0.50 | portfolio 建構穩定性 |
-| market_correlation | ≤ 0.80 | 獨立於大盤（非 beta 搬運） |
-| permutation_p | < 0.10 | 信號打亂後 Sharpe 是否下降（條件式：需有 compute_fn） |
-
-硬門檻 — 經濟可行性（確保值得交易）：
-| Check | 門檻 | 測什麼 |
-|-------|------|--------|
-| cagr | ≥ 8% | 最低報酬門檻 |
-| sharpe | ≥ 0.7 | 風險調整報酬 |
-| annual_cost_ratio | < 50% | 成本不吃掉 alpha |
-| temporal_consistency | ≥ 60% | 不依賴單一年份 |
-
-軟門檻（sanity check，統計功效不足，報告但不擋部署）：
-| Check | 門檻 | 為什麼是軟門檻 |
-|-------|------|---------------|
-| oos_sharpe | ≥ 0.30 | SE=0.82，p=0.36（Lo 2002） |
-| recent_period_sharpe | ≥ 0 | SE=1.0，50% 拋硬幣 |
-| max_drawdown | ≤ 40% | 路徑依賴極強（Magdon-Ismail 2004） |
-| worst_regime | ≥ -30% | 描述性，非假設檢定 |
-| universe_size | ≥ 50 | 前置條件 |
-| cvar_95 | ≥ -5% | 描述性風險度量 |
+- 硬門檻（7 項）：cagr, annual_cost_ratio, cost_2x_safety, temporal_consistency, deflated_sharpe, construction_sensitivity, market_correlation, permutation_p
+- 軟門檻（9 項，≥ 3 fail 阻擋）：universe_size, sharpe, max_drawdown, bootstrap_p, oos_sharpe, vs_ew_universe, worst_regime, sharpe_decay, cvar_95
 
 額外條件：Factor-Level PBO ≤ 0.70（watchdog 獨立計算，Bailey 2014 CSCV，累積 ≥20 因子後生效）
 

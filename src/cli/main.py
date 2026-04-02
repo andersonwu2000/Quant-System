@@ -310,5 +310,22 @@ def factor_analysis(
     console.print()
 
 
+@app.command()
+def autostart(
+    action: str = typer.Argument(..., help="install / uninstall / status"),
+) -> None:
+    """管理盤前自動啟動排程（Windows Task Scheduler）。"""
+    import scripts.autostart as _auto
+    if action == "install":
+        _auto.install()
+    elif action == "uninstall":
+        _auto.uninstall()
+    elif action == "status":
+        _auto.status()
+    else:
+        console.print("[red]Unknown action. Use: install / uninstall / status[/red]")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

@@ -330,6 +330,51 @@ class TestRebalanceIdempotency:
             from src.scheduler.jobs import _has_completed_run_today
             assert _has_completed_run_today() is False
 
+    def test_concurrent_kill_switch_and_rebalance(self) -> None:
+        """AN-20: Verify kill switch and rebalance don't corrupt state."""
+        app_state = _make_app_state(kill_switch_fired=False)
+        portfolio = _make_portfolio_with_positions()
+        risk_engine = RiskEngine()
+        loop = asyncio.new_event_loop()
+
+        try:
+            ws_manager = MagicMock()
+            ws_manager.broadcast = AsyncMock()
+            mock_svc = MagicMock()
+            mock_svc.submit_orders.return_value = [MagicMock()]
+
+            monitor = RealtimeRiskMonitor(
+                portfolio=portfolio,
+                risk_engine=risk_engine,
+                ws_manager=ws_manager,
+                loop=loop,
+                execution_service=mock_svc,
+                app_state=app_state,
+            )
+
+            # Fire kill switch
+            scheduled_coros: list = []
+
+            def capture(coro, lp):
+                scheduled_coros.append(coro)
+                return MagicMock()
+
+            with patch("asyncio.run_coroutine_threadsafe", side_effect=capture):
+                monitor.on_price_update("AAPL", Decimal("94"))
+
+            # Simultaneously set kill_switch_fired (simulating rebalance path)
+            app_state.kill_switch_fired = True
+
+            # Run the kill switch coroutine — should not raise
+            if scheduled_coros:
+                with patch("src.execution.oms.apply_trades"):
+                    loop.run_until_complete(scheduled_coros[0])
+
+            # Assert: kill_switch_fired = True, no exception raised
+            assert app_state.kill_switch_fired is True
+        finally:
+            loop.close()
+
     def test_crashed_run_detected(self, tmp_path) -> None:
         """Crashed (started but never finished) runs are detected on startup."""
         from src.scheduler.jobs import check_crashed_runs

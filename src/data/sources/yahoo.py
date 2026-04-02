@@ -18,6 +18,10 @@ from src.data.registry import YAHOO_DIR
 
 logger = logging.getLogger(__name__)
 
+# Yahoo downloads use dividend-adjusted prices by default.
+# Changing this affects all downstream consumers — see engine.py dividend guard.
+YAHOO_AUTO_ADJUST = True
+
 # 快取 TTL（秒），預設 24 小時
 _CACHE_TTL = 86400
 

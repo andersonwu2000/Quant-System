@@ -68,6 +68,20 @@ def process_deploy_queue(deployer: PaperDeployer) -> list[str]:
                 deployed_names.append(result.name)
                 logger.info("Deployed from queue: %s (hash=%s)", result.name, code_hash)
 
+            # Write ACK before removing marker (watchdog can verify host received it)
+            ack_dir = DEPLOY_QUEUE_DIR / "ack"
+            ack_dir.mkdir(exist_ok=True)
+            ack_data = {
+                "marker": marker_path.name,
+                "code_hash": code_hash,
+                "deployed_name": result.name if result else None,
+                "status": "deployed" if result else "skipped",
+                "timestamp": datetime.now().isoformat(),
+            }
+            (ack_dir / marker_path.name).write_text(
+                json.dumps(ack_data, indent=2), encoding="utf-8"
+            )
+
             # Remove processed marker
             marker_path.unlink()
 

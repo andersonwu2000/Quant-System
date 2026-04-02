@@ -99,12 +99,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Silence watchdog")
     parser.add_argument("--loop", action="store_true", help="Run continuously")
     parser.add_argument("--interval", type=int, default=300, help="Check interval (seconds)")
+    parser.add_argument("--stop-after", type=int, default=0,
+                        help="Auto-stop after N minutes (0 = run forever)")
     args = parser.parse_args()
 
     if args.loop:
-        logger.info("Starting silence watchdog (interval=%ds, threshold=%dmin)",
-                     args.interval, SILENCE_THRESHOLD_MINUTES)
+        logger.info("Starting silence watchdog (interval=%ds, threshold=%dmin, stop-after=%dmin)",
+                     args.interval, SILENCE_THRESHOLD_MINUTES, args.stop_after)
+        start = time.monotonic()
         while True:
+            if args.stop_after > 0:
+                elapsed_min = (time.monotonic() - start) / 60
+                if elapsed_min >= args.stop_after:
+                    logger.info("Stop-after limit reached (%.0f min). Exiting.", elapsed_min)
+                    break
             alert = check_silence()
             if alert:
                 send_alert(alert)

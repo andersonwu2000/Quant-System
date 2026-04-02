@@ -51,6 +51,7 @@
 
 | Phase | 名稱 | 完成日期 |
 |-------|------|---------|
+| AM | Validator 方法論 + Alpha 可部署性（21 項） | 04-02 |
 | AC | Validator 方法論修正（16 項 + hard/soft 分離） | 04-01 |
 | AB | Factor-Level PBO | 03-29 |
 | AD | 數據管線自動化 | 04-01 |
@@ -72,6 +73,8 @@
 | AG | 因子部署管線 | 75% | watchdog auto-submit + 精煉 2.5b/2.5d |
 | AK | 整合測試體系 | 85% | AK-4 效能基準（上線後） |
 | AJ | 壓力測試 | 50% | 台股歷史情景 + 相關性壓力 |
+| AL | Trading Safety | 90% | 等 30 天 paper 數據累積 |
+| AN | 架構整理（從 AM 獨立） | 0% | 拆 app.py / engine.py / validator.py / singleton |
 
 **延後或已取代的計畫：**
 
@@ -111,12 +114,12 @@
 |------|:----:|----:|---------|
 | `src/api/` | 25 | 6,965 | REST + WebSocket + JWT/RBAC + 16 路由 |
 | `src/alpha/` | 31 | 6,663 | Alpha Pipeline + Auto-Alpha（9 子模組）+ FilterStrategy |
-| `src/backtest/` | 13 | 5,448 | Engine + Validator(16項) + PBO(CSCV) + WF + 向量化(Z1) |
+| `src/backtest/` | 14 | 6,000+ | Engine + Validator(16項+6描述性) + PBO(CSCV) + WF + 向量化(Z1) + FactorAttribution |
 | `src/strategy/` | 19 | 4,689 | 83 因子（tech+fundamental+kakushadze）+ optimizer + registry |
 | `src/data/` | 22 | 4,500+ | 6 數據源（+FinLab）+ DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
 | `src/reconciliation/` | 3 | 450+ | 每日回測 vs 實盤比對 + 週報（G1）|
 | `src/execution/` | 15 | 2,900+ | SimBroker + Sinopac + TWAP + OMS + 零股分流 + **Trade Ledger**（intent log + fill log + crash replay）|
-| `src/portfolio/` | 4 | 1,596 | 14 最佳化方法 + 風險模型(GARCH/PCA) + 幣別對沖 |
+| `src/portfolio/` | 6 | 1,800+ | 14 最佳化方法 + 風險模型(GARCH/PCA) + 幣別對沖 + **overlay**(beta/sector/exposure) + **risk_budget**(3桶inverse-vol) |
 | `src/core/` | 7 | 1,215 | 統一模型 + Config + Logging + TradingCalendar + TradingPipeline |
 | `src/scheduler/` | 4 | 1,500+ | **daily_ops + eod_ops**（統一運營流程）+ Heartbeat + Trading Pipeline |
 | `src/risk/` | 5 | 1,075 | 12 規則 + Kill Switch + RealtimeMonitor |
@@ -127,29 +130,29 @@
 
 ## 4. 驗證與研究
 
-### 最新 Validator 結果（Post-Audit Rerun, 2026-03-29）
+### 最新 Validator 結果（Experiment #25, 2026-04-02, Phase AM）
 
-revenue_momentum_hedged, 884 支, 2018-2025:
+> 注意：Phase AM 大幅修改了 Validator 架構（7 hard + 9 soft，OOS 切割，DSR N 統一，行業中性化 IC），與 3/29 結果不可直接比較。
 
-| Check | Value | Result |
-|-------|------:|:------:|
-| CAGR | +12.83% | ✅ |
-| Sharpe | 0.926 | ✅ |
-| MDD | -29.88% | ✅ |
-| Cost ratio | 22% | ✅ |
-| Temporal consistency | 75% | ✅ |
-| DSR | 0.924 | ✅ |
-| Bootstrap (Stationary) | 99.7% | ✅ |
-| **OOS Sharpe** | **-0.728** | **❌** |
-| vs EW universe | +8.66% | ✅ |
-| **Construction sensitivity** | **0.596** | **❌** |
-| Worst regime (DD-based) | -10.81% | ✅ |
-| Recent Sharpe | 2.447 | ✅ |
-| Market corr | 0.536 | ✅ |
-| CVaR 95 | -2.22% | ✅ |
-| Permutation p | skipped | — |
+**revenue_acceleration**, 200 支, 2018-2025: **PASSED (7/7 Hard, 14/16 Total)**
 
-**13/15 通過（permutation 跳過）。** 2 項 fail：OOS Sharpe（軟門檻）+ construction_sensitivity（硬門檻，PBO fillna 修正後 0.408→0.596）。詳見 `docs/research/20260329_validator_post_audit.md`。
+| Check | Hard/Soft | Value | Result |
+|-------|:---------:|------:|:------:|
+| CAGR | Hard | +18.99% | ✅ |
+| Cost ratio | Hard | 3% | ✅ |
+| Cost 2x safety | Hard | +18.32% | ✅ |
+| Temporal consistency | Hard | +1.532 | ✅ |
+| Deflated Sharpe (N=15) | Hard | 0.887 | ✅ |
+| Construction PBO | Hard | 0.544 | ✅ |
+| Market correlation | Hard | 0.574 | ✅ |
+| Sharpe | Soft | 1.174 | ✅ |
+| Max drawdown | Soft | 44.35% | ⚠ |
+| vs EW (beta-neutral) | Soft | 25% | ⚠ |
+| Sharpe decay | Soft | t=+28.97 | ✅ |
+
+**per_value**: FAILED (5/7 Hard) — DSR 0.476 + PBO 0.898
+
+詳見 `docs/research/20260402_25_validator_full_audit.md`。
 
 ### 因子研究結論
 

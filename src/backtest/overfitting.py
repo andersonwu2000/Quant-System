@@ -146,6 +146,131 @@ def compute_pbo(
     )
 
 
+@dataclass
+class DSRResult:
+    """Deflated Sharpe Ratio result."""
+
+    observed_sharpe: float
+    deflated_sharpe: float
+    haircut_pct: float  # (1 - deflated/observed) * 100
+    n_trials: int
+    p_value: float  # P(observed SR is due to luck given N trials)
+    is_significant: bool  # p_value < 0.05
+
+    def summary(self) -> str:
+        status = "SIGNIFICANT" if self.is_significant else "LIKELY OVERFIT"
+        lines = [
+            "═══ Deflated Sharpe Ratio (Harvey et al. 2016) ═══",
+            "",
+            f"Observed SR:      {self.observed_sharpe:.3f}",
+            f"Deflated SR:      {self.deflated_sharpe:.3f}",
+            f"Haircut:          {self.haircut_pct:.1f}%",
+            f"Trials (N):       {self.n_trials}",
+            f"p-value:          {self.p_value:.4f}  ({status})",
+            "",
+            "DSR adjusts for multiple testing: higher N → higher bar.",
+        ]
+        return "\n".join(lines)
+
+
+def compute_deflated_sharpe(
+    returns: pd.Series,
+    n_trials: int,
+    annualize: bool = True,
+) -> DSRResult:
+    """Deflated Sharpe Ratio — Harvey, Liu & Zhu (2016).
+
+    Adjusts the observed Sharpe ratio for the number of trials (N) conducted,
+    accounting for non-normality (skewness, kurtosis) of returns.
+
+    The key insight: if you test N strategies and pick the best, the expected
+    maximum Sharpe under the null (all strategies have SR=0) grows as
+    E[max(SR)] ≈ sqrt(2 * ln(N)) * (1 - γ/ln(N) + γ/(2*ln(N)²))
+    where γ ≈ 0.5772 (Euler-Mascheroni constant).
+
+    DSR = (SR_observed - SR_expected_max) / SE(SR)
+
+    Args:
+        returns: Daily return series of the selected strategy.
+        n_trials: Total number of strategies/factors tested (including rejected).
+        annualize: If True, annualize the Sharpe ratio.
+
+    Returns:
+        DSRResult with deflated Sharpe, haircut, and p-value.
+    """
+    from scipy import stats as sp_stats
+
+    T = len(returns)
+    if T < 10 or n_trials < 1:
+        return DSRResult(
+            observed_sharpe=0.0, deflated_sharpe=0.0,
+            haircut_pct=100.0, n_trials=n_trials,
+            p_value=1.0, is_significant=False,
+        )
+
+    # Observed Sharpe (daily)
+    mu = float(returns.mean())
+    sigma = float(returns.std(ddof=1))
+    if sigma == 0:
+        return DSRResult(
+            observed_sharpe=0.0, deflated_sharpe=0.0,
+            haircut_pct=100.0, n_trials=n_trials,
+            p_value=1.0, is_significant=False,
+        )
+
+    sr_daily = mu / sigma
+    sr = sr_daily * np.sqrt(252) if annualize else sr_daily
+
+    # Non-normality adjustment (Bailey & López de Prado 2014, Eq. 4)
+    skew = float(sp_stats.skew(returns, bias=False))
+    kurt = float(sp_stats.kurtosis(returns, bias=False))  # excess kurtosis
+
+    # Standard error of Sharpe ratio (Lo 2002, with non-normality correction)
+    se_sr = np.sqrt(
+        (1 - skew * sr_daily + (kurt - 1) / 4 * sr_daily ** 2) / T
+    )
+    if annualize:
+        se_sr *= np.sqrt(252)
+
+    # Expected maximum Sharpe under the null, given N independent trials
+    # E[max] ≈ (1 - γ/ln(N)) * sqrt(2 * ln(N))  (Bailey & López de Prado 2014)
+    if n_trials <= 1:
+        sr_expected_max = 0.0
+    else:
+        euler_gamma = 0.5772156649
+        ln_n = np.log(n_trials)
+        sr_expected_max = float(
+            np.sqrt(2 * ln_n) * (1 - euler_gamma / ln_n + euler_gamma / (2 * ln_n ** 2))
+        )
+        if annualize:
+            # sr_expected_max is in daily units, annualize
+            sr_expected_max *= np.sqrt(252) / np.sqrt(T)
+            # More precise: E[max] for annualized = sqrt(V(SR)) * E[max(Z)]
+            sr_expected_max = se_sr * np.sqrt(2 * ln_n) * (
+                1 - euler_gamma / ln_n + euler_gamma / (2 * ln_n ** 2)
+            )
+
+    # Deflated Sharpe = observed minus expected max, in SE units
+    dsr_stat = (sr - sr_expected_max) / se_sr if se_sr > 0 else 0.0
+
+    # p-value: P(SR >= observed | null = max of N zero-SR strategies)
+    p_value = float(1 - sp_stats.norm.cdf(dsr_stat))
+
+    # Deflated Sharpe (intuitive form): how much SR survives after multiple testing
+    deflated = max(0.0, sr - sr_expected_max)
+
+    haircut = (1 - deflated / sr) * 100 if sr > 0 else 100.0
+
+    return DSRResult(
+        observed_sharpe=float(sr),
+        deflated_sharpe=float(deflated),
+        haircut_pct=float(haircut),
+        n_trials=n_trials,
+        p_value=float(p_value),
+        is_significant=p_value < 0.05,
+    )
+
+
 def _sharpe(returns: pd.Series) -> float:
     """年化 Sharpe ratio（無風險利率=0）。"""
     if len(returns) < 2:

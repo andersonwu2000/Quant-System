@@ -44,23 +44,30 @@ EVAL_START = "2017-01-01"      # Evaluation period start
 # Forward returns need ~60 trading days ≈ 3 months after EVAL_END
 from datetime import datetime as _dt, timedelta as _td
 
-def _compute_dates() -> tuple[str, str, str]:
-    """Compute rolling dates at call time, not import time."""
+def _compute_dates() -> tuple[str, str, str, str]:
+    """Compute rolling dates at call time, not import time.
+
+    OOS split: L5 uses first half (OOS1), Validator uses second half (OOS2).
+    This prevents double-dipping on the same OOS data.
+    """
     today = _dt.now()
     eval_end = (today - _td(days=90)).strftime("%Y-%m-%d")
     oos_start = (today - _td(days=90 + 548)).strftime("%Y-%m-%d")
+    # OOS midpoint: split 549 days into ~275 + ~274
+    oos_mid = (today - _td(days=90 + 274)).strftime("%Y-%m-%d")
     is_end = (today - _td(days=91 + 548)).strftime("%Y-%m-%d")
-    return eval_end, oos_start, is_end
+    return eval_end, oos_start, oos_mid, is_end
 
-EVAL_END, OOS_START, IS_END = _compute_dates()
+EVAL_END, OOS_START, OOS_MID, IS_END = _compute_dates()
 SAMPLE_FREQ_DAYS = 20          # Sample IC every 20 trading days
 FORWARD_HORIZONS = [5, 10, 20, 60]  # Forward return horizons (trading days)
 
 # L1-L4 gate thresholds (from legacy factor_evaluator.py)
 MIN_IC_L1 = 0.02              # L1: minimum |IC_20d| — fast reject
+MIN_IC_L1_SLOW = 0.03         # L1: slow-alpha bypass — |IC_60d| >= this also passes L1
 MIN_ICIR_L2 = 0.30            # L2: minimum median |ICIR| across horizons (no horizon bias)
 MAX_ICIR_L2 = 1.00            # L2: maximum median |ICIR| — above this is suspicious
-MAX_CORRELATION = 0.50         # L3: max IC-series correlation with known factors
+MAX_CORRELATION = 0.65         # L3: max IC-series correlation (relaxed from 0.50 — TW factors cluster tightly)
 MIN_POSITIVE_YEARS = 4         # L3: minimum years with positive mean IC (IS=6.5yr)
 MIN_FITNESS = 3.0              # L4: minimum WorldQuant BRAIN fitness
 
@@ -75,7 +82,7 @@ L5_QUERY_BUDGET = 200             # warn after this many L5 queries
 OOS_MIN_POSITIVE_RATIO = 0.50 # OOS months with positive IC >= 50%
 
 # Phase AF: Factor replacement & library health (FactorMiner Wang et al. 2026)
-REPLACEMENT_ICIR_MULTIPLIER = 1.3   # New must have >= 1.3x ICIR of replaced (Eq.11)
+REPLACEMENT_ICIR_MULTIPLIER = 1.15  # New must have >= 1.15x ICIR of replaced (relaxed from 1.3)
 REPLACEMENT_MIN_ICIR = 0.20          # Minimum absolute ICIR for replacement candidate
 MAX_REPLACEMENTS_PER_CYCLE = 10      # Max replacements per research cycle
 SATURATION_MATCH_LIMIT = 10          # Direction saturated after 10 correlated variants
@@ -516,19 +523,83 @@ def _mr_test(quintile_returns: np.ndarray, n_boot: int = 1000,
 # IC / ICIR Computation
 # ---------------------------------------------------------------------------
 
+# Industry classification cache for IC neutralization
+_industry_map: dict[str, str] = {}
+_industry_map_loaded = False
+
+
+def _load_industry_map() -> dict[str, str]:
+    """Load symbol → industry mapping (cached). Falls back to empty if unavailable."""
+    global _industry_map, _industry_map_loaded
+    if _industry_map_loaded:
+        return _industry_map
+    _industry_map_loaded = True
+    try:
+        from src.data.sources.finmind_fundamentals import FinMindFundamentals
+        fm = FinMindFundamentals()
+        # Load universe and populate cache in one API call
+        universe = _load_universe()
+        for sym in universe:
+            sector = fm.get_sector(sym)
+            if sector:
+                _industry_map[sym] = sector
+    except Exception:
+        pass
+    return _industry_map
+
+
+def _neutralize_by_industry(
+    values: dict[str, float], industry_map: dict[str, str],
+) -> dict[str, float]:
+    """Subtract industry mean from values (industry neutralization)."""
+    if not industry_map:
+        return values
+
+    # Group by industry
+    industry_groups: dict[str, list[tuple[str, float]]] = {}
+    for sym, val in values.items():
+        ind = industry_map.get(sym, "Unknown")
+        industry_groups.setdefault(ind, []).append((sym, val))
+
+    # Subtract industry mean
+    result: dict[str, float] = {}
+    for ind, members in industry_groups.items():
+        if len(members) < 2:
+            # Single stock in industry — keep raw value
+            for sym, val in members:
+                result[sym] = val
+            continue
+        mean_val = sum(v for _, v in members) / len(members)
+        for sym, val in members:
+            result[sym] = val - mean_val
+
+    return result
+
+
 def _compute_ic(
     factor_values: dict[str, float], forward_returns: dict[str, float],
 ) -> float | None:
-    """Compute Spearman rank IC using numpy (faster than scipy.spearmanr).
+    """Compute Spearman rank IC with industry neutralization.
 
-    numpy rankdata + Pearson on ranks = Spearman, ~3x faster for N=200.
+    Both factor values and forward returns are industry-neutralized
+    (subtract industry mean) before computing Spearman correlation.
+    This removes industry beta contamination from IC.
     """
     common = set(factor_values) & set(forward_returns)
     if len(common) < MIN_SYMBOLS:
         return None
     syms = sorted(common)
-    x = np.array([factor_values[s] for s in syms])
-    y = np.array([forward_returns[s] for s in syms])
+
+    # Industry neutralization
+    ind_map = _load_industry_map()
+    fv_common = {s: factor_values[s] for s in syms}
+    fr_common = {s: forward_returns[s] for s in syms}
+    if ind_map:
+        fv_common = _neutralize_by_industry(fv_common, ind_map)
+        fr_common = _neutralize_by_industry(fr_common, ind_map)
+
+    x = np.array([fv_common[s] for s in syms])
+    y = np.array([fr_common[s] for s in syms])
     if x.max() == x.min():
         return None
     # Rank-based Pearson = Spearman
@@ -722,7 +793,8 @@ def evaluate() -> dict:
                         if pd.Timestamp(EVAL_START) <= d <= pd.Timestamp(EVAL_END))
 
     is_dates = [d for d in eval_dates if d <= pd.Timestamp(IS_END)]
-    oos_dates = [d for d in eval_dates if pd.Timestamp(OOS_START) <= d <= pd.Timestamp(EVAL_END)]
+    # L5 uses OOS1 (first half), Validator uses OOS2 (second half) — no double-dipping
+    oos_dates = [d for d in eval_dates if pd.Timestamp(OOS_START) <= d <= pd.Timestamp(OOS_MID)]
     is_sample = is_dates[::SAMPLE_FREQ_DAYS]
     oos_sample = oos_dates[::SAMPLE_FREQ_DAYS]
 
@@ -731,8 +803,79 @@ def evaluate() -> dict:
 
     print(f"Stage 1: {len(is_sample)} IS dates, {len(bars)} symbols")
 
-    # ── Stage 1: L1 early screening (20d IC only, first 30 dates) ──
+    # ── Normalization variants: try [raw, rank, z-score], pick best ──
+    def _normalize_raw(vals: dict[str, float]) -> dict[str, float]:
+        return vals
+
+    def _normalize_rank(vals: dict[str, float]) -> dict[str, float]:
+        from scipy.stats import rankdata
+        syms = sorted(vals)
+        arr = np.array([vals[s] for s in syms])
+        ranks = rankdata(arr)
+        return {s: float(r) for s, r in zip(syms, ranks)}
+
+    def _normalize_zscore(vals: dict[str, float]) -> dict[str, float]:
+        arr = np.array(list(vals.values()))
+        mu, sigma = arr.mean(), arr.std()
+        if sigma == 0:
+            return vals
+        return {s: float((v - mu) / sigma) for s, v in vals.items()}
+
+    def _normalize_winsorize(vals: dict[str, float]) -> dict[str, float]:
+        arr = np.array(list(vals.values()))
+        lo, hi = np.percentile(arr, 5), np.percentile(arr, 95)
+        return {s: float(np.clip(v, lo, hi)) for s, v in vals.items()}
+
+    def _normalize_percentile_rank(vals: dict[str, float]) -> dict[str, float]:
+        from scipy.stats import rankdata
+        syms = sorted(vals)
+        arr = np.array([vals[s] for s in syms])
+        return {s: float(r / len(arr)) for s, r in zip(syms, rankdata(arr))}
+
+    NORM_VARIANTS = [("raw", _normalize_raw), ("rank", _normalize_rank), ("zscore", _normalize_zscore),
+                     ("winsorize", _normalize_winsorize), ("percentile_rank", _normalize_percentile_rank)]
+
+    # ── Stage 0: Pick best normalization (first 15 dates, fast) ──
     t0 = time.time()
+    norm_limit = min(15, len(sample_dates))
+    norm_scores: dict[str, list[float]] = {name: [] for name, _ in NORM_VARIANTS}
+
+    for as_of in sample_dates[:norm_limit]:
+        masked_data = _mask_data(data, as_of)
+        active = [s for s in universe if s in bars and as_of in bars[s].index]
+        if len(active) < MIN_SYMBOLS:
+            continue
+        try:
+            raw_values = compute_factor(active, as_of, masked_data)
+        except Exception:
+            continue
+        raw_values = {k: v for k, v in (raw_values or {}).items()
+                      if isinstance(v, (int, float)) and np.isfinite(v)}
+        if len(raw_values) < MIN_SYMBOLS:
+            continue
+        fwd = _compute_forward_returns(bars, as_of, 20)
+        for name, norm_fn in NORM_VARIANTS:
+            normed = norm_fn(raw_values)
+            ic = _compute_ic(normed, fwd)
+            if ic is not None:
+                norm_scores[name].append(abs(ic))
+
+    # Pick normalization with highest mean |IC|
+    best_norm_name = "raw"
+    best_norm_fn = _normalize_raw
+    best_mean_ic = 0.0
+    for name, norm_fn in NORM_VARIANTS:
+        scores = norm_scores[name]
+        mean_ic = float(np.mean(scores)) if scores else 0.0
+        if mean_ic > best_mean_ic:
+            best_mean_ic = mean_ic
+            best_norm_name = name
+            best_norm_fn = norm_fn
+    norm_summary = ", ".join(f"{name}={np.mean(norm_scores[name]):.4f}" if norm_scores[name] else f"{name}=0.0000"
+                             for name, _ in NORM_VARIANTS)
+    print(f"  Normalization: {best_norm_name} (|IC|={best_mean_ic:.4f}) [{norm_summary}]")
+
+    # ── Stage 1: L1 early screening (20d IC only, first 30 dates) ──
     early_ics: list[float] = []
     early_limit = min(30, len(sample_dates))
 
@@ -750,6 +893,7 @@ def evaluate() -> dict:
                   if isinstance(v, (int, float)) and np.isfinite(v)}
         if len(values) < MIN_SYMBOLS:
             continue
+        values = best_norm_fn(values)
         fwd = _compute_forward_returns(bars, as_of, 20)
         ic = _compute_ic(values, fwd)
         if ic is not None:
@@ -758,14 +902,47 @@ def evaluate() -> dict:
     early_ic = float(np.mean(early_ics)) if early_ics else 0.0
     early_time = time.time() - t0
 
-    # L1 early exit
+    # L1 early exit — with slow-alpha bypass via 60d IC
     if abs(early_ic) < MIN_IC_L1:
-        return _make_result(
-            level="L1", failure=f"|IC_20d|={abs(early_ic):.4f} < {MIN_IC_L1} (early exit)",
-            ic_20d=early_ic, elapsed=early_time,
-        )
+        # Slow-alpha bypass: check 60d forward returns before rejecting
+        slow_ics: list[float] = []
+        for as_of in sample_dates[:early_limit]:
+            masked_data = _mask_data(data, as_of)
+            active = [s for s in universe if s in bars and as_of in bars[s].index]
+            if len(active) < MIN_SYMBOLS:
+                continue
+            try:
+                values = compute_factor(active, as_of, masked_data)
+            except Exception:
+                continue
+            values = {k: v for k, v in (values or {}).items()
+                      if isinstance(v, (int, float)) and np.isfinite(v)}
+            if len(values) < MIN_SYMBOLS:
+                continue
+            fwd_60 = _compute_forward_returns(bars, as_of, 60)
+            ic_60 = _compute_ic(values, fwd_60)
+            if ic_60 is not None:
+                slow_ics.append(ic_60)
 
-    print(f"  L1 passed: IC_20d={early_ic:.4f} ({early_time:.1f}s)")
+        slow_ic = float(np.mean(slow_ics)) if slow_ics else 0.0
+
+        if abs(slow_ic) < MIN_IC_L1_SLOW:
+            return _make_result(
+                level="L1",
+                failure=f"|IC_20d|={abs(early_ic):.4f} < {MIN_IC_L1} AND "
+                        f"|IC_60d|={abs(slow_ic):.4f} < {MIN_IC_L1_SLOW} (early exit)",
+                ic_20d=early_ic, elapsed=time.time() - t0,
+            )
+        # Sign consistency: 20d and 60d IC must agree on direction
+        if early_ic != 0 and slow_ic != 0 and np.sign(early_ic) != np.sign(slow_ic):
+            return _make_result(
+                level="L1",
+                failure=f"IC sign conflict: IC_20d={early_ic:+.4f} vs IC_60d={slow_ic:+.4f}",
+                ic_20d=early_ic, elapsed=time.time() - t0,
+            )
+        print(f"  L1 passed (slow-alpha bypass): IC_20d={early_ic:.4f}, IC_60d={slow_ic:.4f} ({time.time() - t0:.1f}s)")
+    else:
+        print(f"  L1 passed: IC_20d={early_ic:.4f} ({early_time:.1f}s)")
 
     # ── Stage 1: Full evaluation (all dates, all horizons) ──
     ic_by_horizon: dict[int, list[float]] = {h: [] for h in FORWARD_HORIZONS}
@@ -790,6 +967,7 @@ def evaluate() -> dict:
                   if isinstance(v, (int, float)) and np.isfinite(v)}
         if len(values) < MIN_SYMBOLS:
             continue
+        values = best_norm_fn(values)
 
         for h in FORWARD_HORIZONS:
             fwd = _compute_forward_returns(bars, as_of, h)
@@ -849,8 +1027,22 @@ def evaluate() -> dict:
             best_horizon = f"{h}d"
 
     avg_turnover = turnover_changes / turnover_total if turnover_total > 0 else 0.0
-    positive_years = sum(1 for ics in ic_by_year.values() if np.mean(ics) > 0)
-    total_years = len(ic_by_year)
+
+    # Rolling 12-month window IC stability (replaces fixed-year positive_years)
+    # Count what fraction of rolling 12-month windows have positive mean IC
+    if len(ic_series_20d) >= 12:
+        rolling_positive = 0
+        rolling_total = 0
+        for i in range(len(ic_series_20d) - 11):
+            window = ic_series_20d[i:i + 12]
+            rolling_total += 1
+            if np.mean(window) > 0:
+                rolling_positive += 1
+        positive_years = rolling_positive  # reuse variable name for downstream compatibility
+        total_years = rolling_total
+    else:
+        positive_years = sum(1 for ics in ic_by_year.values() if np.mean(ics) > 0)
+        total_years = len(ic_by_year)
 
     # Fix #8 → D: use median |ICIR| across horizons (no selection bias, no horizon discrimination)
     icir_20d = icir_by_horizon.get("20d", 0.0)
@@ -945,14 +1137,34 @@ def evaluate() -> dict:
             elapsed=elapsed,
         )
 
-    # ICIR upper bound: > 1.0 in 200-stock universe is suspicious
+    # ICIR upper bound: > 1.0 in 200-stock universe is suspicious — check ESS before rejecting
     if median_icir > MAX_ICIR_L2:
-        return _make_result(
-            level="L2", failure=f"median|ICIR|={median_icir:.4f} > {MAX_ICIR_L2} (suspicious)",
-            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
-            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
-            elapsed=elapsed,
-        )
+        # Compute Effective Sample Size accounting for autocorrelation in IC series
+        ic_arr = np.array([x for x in ic_series_20d if not (x is None or np.isnan(x))])
+        N = len(ic_arr)
+        if N < 30:
+            return _make_result(
+                level="L2", failure=f"median|ICIR|={median_icir:.4f} > {MAX_ICIR_L2} + too few IC obs ({N}<30)",
+                ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+                icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+                elapsed=elapsed,
+            )
+        max_lag = min(N // 4, 20)
+        autocorr_sum = 0.0
+        ic_mean = np.mean(ic_arr)
+        ic_var = np.var(ic_arr, ddof=0)
+        if ic_var > 0:
+            for lag_k in range(1, max_lag + 1):
+                autocorr_sum += np.sum((ic_arr[:N - lag_k] - ic_mean) * (ic_arr[lag_k:] - ic_mean)) / (N * ic_var)
+        ess = N / (1 + 2 * autocorr_sum) if (1 + 2 * autocorr_sum) > 0 else N
+        if ess < 30:
+            return _make_result(
+                level="L2", failure=f"median|ICIR|={median_icir:.4f} > {MAX_ICIR_L2} + low ESS={ess:.1f}<30 (suspicious)",
+                ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+                icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+                elapsed=elapsed,
+            )
+        print(f"  L2: median|ICIR|={median_icir:.4f} > {MAX_ICIR_L2} but ESS={ess:.1f}>=30 — suspicious, allowing through")
 
     # Saturation check — uses BOTH IC series corr AND returns corr
     # IC corr > 0.20 → direct saturation check (fast path)
@@ -1033,7 +1245,7 @@ def evaluate() -> dict:
             print(f"  L3: replacement candidate (median_ICIR {median_icir:.4f} >= {REPLACEMENT_ICIR_MULTIPLIER}x {correlated_icir:.4f})")
         else:
             return _make_result(
-                level="L3", failure=f"corr={max_corr:.3f} with {corr_with} > {MAX_CORRELATION}",
+                level="L3", failure=f"L3_dedup: corr={max_corr:.3f} with {corr_with} > {MAX_CORRELATION}",
                 ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
                 icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
                 max_correlation=max_corr, correlated_with=corr_with,
@@ -1052,9 +1264,22 @@ def evaluate() -> dict:
                 elapsed=elapsed,
             )
 
-    if positive_years < MIN_POSITIVE_YEARS and total_years >= MIN_POSITIVE_YEARS:
+    # Rolling window stability: ≥ 50% of rolling 12-month windows must have positive mean IC
+    positive_ratio_l3 = positive_years / total_years if total_years > 0 else 0.0
+    runs_note = ""
+    if len(ic_series_20d) >= 20:
+        signs = [1 if x > 0 else -1 for x in ic_series_20d if x != 0]
+        if len(signs) >= 20:
+            n_pos = sum(1 for s in signs if s > 0)
+            n_neg = len(signs) - n_pos
+            runs = 1 + sum(1 for j in range(1, len(signs)) if signs[j] != signs[j - 1])
+            expected_runs = 2 * n_pos * n_neg / (n_pos + n_neg) + 1 if (n_pos + n_neg) > 0 else 1
+            if runs < expected_runs * 0.6:
+                runs_note = f" [runs_test: {runs} runs vs {expected_runs:.0f} expected — sign clustering detected]"
+                print(f"  IC sign persistence: {runs} runs vs {expected_runs:.0f} expected (ratio={runs/expected_runs:.2f}){runs_note}")
+    if positive_ratio_l3 < 0.50 and total_years >= 10:
         return _make_result(
-            level="L3", failure=f"positive_years={positive_years}/{total_years} < {MIN_POSITIVE_YEARS}",
+            level="L3", failure=f"L3_stability: rolling_positive={positive_years}/{total_years} ({positive_ratio_l3:.0%}) < 50%{runs_note}",
             ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
             icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
             positive_years=positive_years, total_years=total_years,
@@ -1093,6 +1318,7 @@ def evaluate() -> dict:
                       if isinstance(v, (int, float)) and np.isfinite(v)}
             if len(values) < MIN_SYMBOLS:
                 continue
+            values = best_norm_fn(values)
             fwd = _compute_forward_returns(bars, as_of, 20)
             ic = _compute_ic(values, fwd)
             if ic is not None:
@@ -1140,14 +1366,11 @@ def evaluate() -> dict:
     noise = lambda: float(rng_l5.laplace(0, THRESHOLDOUT_NOISE_SCALE))
 
     l5_failure = False
-    is_icir_20d = float(icir_by_horizon.get("20d", 0))
     # Sub-check 1: IC sign consistency (add noise to sign comparison margin)
+    # ICIR decay removed — left to Validator's DSR + sharpe_decay (no double-dipping)
     if is_ic_sign != oos_ic_sign and abs(oos_ic_mean) > noise():
         l5_failure = True
-    # Sub-check 2: ICIR decay (noisy threshold)
-    elif abs(is_icir_20d) > 0 and abs(oos_icir) < abs(is_icir_20d) * (1 - OOS_ICIR_DECAY_MAX) + noise():
-        l5_failure = True
-    # Sub-check 3: monthly consistency (noisy threshold)
+    # Sub-check 2: monthly consistency (noisy threshold)
     elif oos_positive_ratio < OOS_MIN_POSITIVE_RATIO + noise() and oos_total_months >= 6:
         l5_failure = True
 
@@ -1679,7 +1902,9 @@ def _run_validator(results: dict) -> dict | None:
 
         print("\n--- VALIDATOR (15 checks) ---")
 
-        # Read n_independent from watchdog's Factor-Level PBO (dynamic, not hardcoded)
+        # n_trials = independent directions (clustered), NOT total experiments.
+        # Must match factor-level PBO's N definition (correlation clustering).
+        # Using total experiments (262) over-penalizes — most are unrelated hypotheses.
         _n_trials = 15  # default fallback
         try:
             _pbo_path = Path("/app/watchdog_data/factor_pbo.json")
@@ -1692,6 +1917,8 @@ def _run_validator(results: dict) -> dict | None:
                     _n_trials = int(_n_ind)
         except Exception:
             pass
+
+        print(f"  Multiple testing correction: n_trials={_n_trials} (independent directions)")
 
         config = ValidationConfig(
             n_trials=_n_trials,

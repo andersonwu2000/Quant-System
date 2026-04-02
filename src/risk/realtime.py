@@ -56,7 +56,7 @@ class RealtimeRiskMonitor:
 
     # ── Public API ────────────────────────────────────────
 
-    def on_price_update(self, symbol: str, price: Decimal) -> None:
+    def on_price_update(self, symbol: str, price: Decimal, *, realtime: bool = True) -> None:
         """Called on each tick — update portfolio prices and check risk.
 
         Thread-safe: uses portfolio.lock to protect portfolio mutation.
@@ -84,7 +84,8 @@ class RealtimeRiskMonitor:
                 self.portfolio.positions[symbol].market_price = price
             self._last_update = now
             # AL-4: Update last valid tick time (for heartbeat kill switch)
-            if price > 0:
+            # Only real-time ticks count — catalog fallback must NOT reset heartbeat
+            if price > 0 and realtime:
                 self._last_valid_tick_time = now
                 if self._heartbeat_paused:
                     self._heartbeat_paused = False
@@ -106,6 +107,7 @@ class RealtimeRiskMonitor:
             INTRADAY_DRAWDOWN.set(intraday_dd)
             NAV_CURRENT.set(current_nav)
         except Exception:
+            # expected: prometheus metrics not available (tests, no prometheus)
             logger.debug("Suppressed exception", exc_info=True)
 
         # 3. Tiered alerts (outside lock to avoid blocking)
@@ -184,6 +186,7 @@ class RealtimeRiskMonitor:
                                     from src.metrics import KILL_SWITCH_TRIGGERS
                                     KILL_SWITCH_TRIGGERS.labels(path="tick").inc()
                                 except Exception:
+                                    # expected: prometheus metrics not available
                                     logger.debug("Suppressed exception", exc_info=True)
                                 trades = svc.submit_orders(orders, pf)
                                 if trades:
@@ -213,6 +216,7 @@ class RealtimeRiskMonitor:
                                             f"Positions: {_pos_list or 'none'}",
                                         )
                                 except Exception:
+                                    # expected: notification service not configured
                                     logger.debug("Kill switch notification failed", exc_info=True)
                         else:
                             # No app_state (tests / legacy): execute without coordination
@@ -225,6 +229,7 @@ class RealtimeRiskMonitor:
                                     len(trades), pf.nav,
                                 )
                     except Exception:
+                        # invariant: liquidation should not fail — log at exception level
                         logger.exception("Kill switch liquidation failed")
 
                 asyncio.run_coroutine_threadsafe(
@@ -237,8 +242,12 @@ class RealtimeRiskMonitor:
                     len(liq_orders),
                 )
 
-    def poll_prices_from_feed(self, feed: Any) -> int:
+    def poll_prices_from_feed(self, feed: Any, *, realtime: bool = True) -> int:
         """Fallback price update when tick callbacks are unavailable.
+
+        Args:
+            realtime: If True, resets heartbeat timer. Set False for catalog
+                      fallback so stale prices don't mask feed failures.
 
         Returns number of successfully updated symbols.
         """
@@ -247,10 +256,11 @@ class RealtimeRiskMonitor:
             try:
                 price = feed.get_latest_price(symbol)
                 if price and price > 0:
-                    self.on_price_update(symbol, price)
+                    self.on_price_update(symbol, price, realtime=realtime)
                     updated += 1
             except Exception:
-                logger.debug("Price poll failed for %s", symbol)
+                # data-quality: individual symbol price fetch failure
+                logger.debug("Price poll failed for %s", symbol, exc_info=True)
         if updated == 0 and self.portfolio.positions:
             logger.warning("Price poll: 0/%d symbols updated — feed may be broken",
                           len(self.portfolio.positions))
@@ -330,6 +340,7 @@ class RealtimeRiskMonitor:
             from src.metrics import RISK_ALERTS
             RISK_ALERTS.labels(severity=level).inc()
         except Exception:
+            # expected: prometheus metrics not available
             logger.debug("Suppressed exception", exc_info=True)
         payload: dict[str, Any] = {
             "type": "realtime_risk",

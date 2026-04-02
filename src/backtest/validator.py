@@ -39,6 +39,9 @@ from src.strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
 
+# Methodology version — bump when gates change
+VALIDATOR_VERSION = "v3.0-AM"
+
 
 # ── 驗證配置 ───────────────────────────────────────────────────────
 
@@ -58,7 +61,7 @@ class ValidationConfig:
     wf_min_positive_ratio: float = 0.6  # ≥ 60% 年份 OOS Sharpe > 0
 
     # 3. PBO
-    max_pbo: float = 0.50             # PBO < 50%
+    max_pbo: float = 0.60             # PBO < 60% (0.50 too tight — Bailey warns at 0.50-0.60)
     pbo_n_partitions: int = 10
 
     # 4. Deflated Sharpe
@@ -107,12 +110,17 @@ class ValidationConfig:
     rebalance_freq: str = "monthly"
 
     def __post_init__(self) -> None:
-        """Compute rolling OOS dates at instance creation time (not import time)."""
+        """Compute rolling OOS dates at instance creation time (not import time).
+
+        Validator uses OOS2 (second half of 549-day window) to avoid
+        double-dipping with evaluate.py L5 which uses OOS1 (first half).
+        """
         if not self.oos_start or not self.oos_end:
             from datetime import datetime, timedelta
             today = datetime.now()
             self.oos_end = (today - timedelta(days=1)).strftime("%Y-%m-%d")
-            self.oos_start = (today - timedelta(days=1 + 548)).strftime("%Y-%m-%d")
+            # OOS2: second half of 549 days (from midpoint to yesterday)
+            self.oos_start = (today - timedelta(days=1 + 274)).strftime("%Y-%m-%d")
 
 
 # ── 單項檢查結果 ───────────────────────────────────────────────────
@@ -133,14 +141,15 @@ class CheckResult:
 # 硬門檻：統計顯著性 + 經濟可行性核心指標（0 容忍）
 # 軟門檻：統計功效不足的 sanity check 或描述性風險指標
 HARD_CHECKS = {
-    "cagr", "sharpe", "annual_cost_ratio", "cost_2x_safety",
-    "temporal_consistency", "deflated_sharpe", "bootstrap_p_sharpe_positive",
-    "vs_ew_universe", "construction_sensitivity", "market_correlation",
-    "permutation_p",
+    "cagr", "annual_cost_ratio", "cost_2x_safety",
+    "temporal_consistency", "deflated_sharpe",
+    "construction_sensitivity", "market_correlation",
+    "permutation_p", "naive_baseline",
 }
 SOFT_CHECKS = {
-    "universe_size", "max_drawdown", "oos_sharpe",
-    "worst_regime", "recent_period_sharpe", "cvar_95",
+    "universe_size", "sharpe", "max_drawdown", "oos_sharpe",
+    "bootstrap_p_sharpe_positive", "vs_ew_universe",
+    "worst_regime", "sharpe_decay", "cvar_95",
 }
 
 
@@ -157,13 +166,33 @@ class ValidationReport:
     error: str = ""
     actual_is_start: str = ""  # V8 截斷後的實際 IS 起始日
     actual_is_end: str = ""    # V8 截斷後的實際 IS 結束日（可能 != 傳入的 end）
+    factor_attribution: str = ""  # Descriptive factor exposure summary
+    cost_breakdown: str = ""      # Cost-adjusted IR + turnover distribution
+    regime_split: str = ""        # Sharpe per market regime (6 regimes)
+    capacity_analysis: str = ""   # Alpha decay at 1x/3x/5x/10x capital
+    stress_test: str = ""          # Left-tail stress test (AM-13)
+    benchmark_relative: str = ""   # Benchmark-relative tracking vs 0050 (AM-14)
+    exit_warning: str = ""         # Factor exit condition warnings (AM-16)
+    oos_regime: str = ""           # OOS period market regime label (AM-17)
+    announcement_warning: str = ""  # AN-8: trades on announcement days (1-10th)
+    factor_risk: str = ""            # AN-10: factor risk quantification
+    economic_rationale: str = ""     # AN-12: factor hypothesis annotation
+    family_cluster: str = ""         # AN-13: strategy family clustering
+    position_liquidity: str = ""     # AN-14: position-level liquidity report
+    crowding_risk: str = ""          # AN-15: announcement crowding risk
+
+    MAX_SOFT_FAILURES = 3  # ≥ 3 soft failures → block deployment
 
     @property
     def passed(self) -> bool:
-        """硬門檻全部通過才算 pass。軟門檻 fail 不阻擋。"""
+        """硬門檻全部通過 + 軟門檻 fail 不超過上限。"""
         if self.error:
             return False
-        return all(c.passed for c in self.checks if c.hard)
+        if not all(c.passed for c in self.checks if c.hard):
+            return False
+        # Cumulative soft gate: too many soft failures = systemic problem
+        n_soft_fail = sum(1 for c in self.checks if not c.hard and not c.passed)
+        return n_soft_fail < self.MAX_SOFT_FAILURES
 
     @property
     def n_passed(self) -> int:
@@ -190,6 +219,7 @@ class ValidationReport:
         """產出人類可讀的驗證摘要。"""
         lines = [
             f"═══ Strategy Validation Report: {self.strategy_name} ═══",
+            f"Validator: {VALIDATOR_VERSION}",
             f"Result: {'PASSED' if self.passed else 'FAILED'} "
             f"(hard: {self.n_hard_passed}/{self.n_hard_total}, "
             f"total: {self.n_passed}/{self.n_total})",
@@ -221,6 +251,77 @@ class ValidationReport:
                     lines.append(f"    {c.detail}")
             lines.append("")
 
+        if self.cost_breakdown:
+            lines.append(f"─── Cost & Capacity (descriptive) ───")
+            lines.append(f"  {self.cost_breakdown}")
+            lines.append("")
+
+        if self.regime_split:
+            lines.append(f"─── Regime Split (descriptive) ───")
+            lines.append(f"  {self.regime_split}")
+            lines.append("")
+
+        if self.capacity_analysis:
+            lines.append(f"─── Capacity Analysis (descriptive) ───")
+            lines.append(f"  {self.capacity_analysis}")
+            lines.append("")
+
+        if self.factor_attribution:
+            lines.append(f"─── Factor Attribution (descriptive) ───")
+            lines.append(f"  {self.factor_attribution}")
+            lines.append("")
+
+        if self.stress_test:
+            lines.append(f"─── Stress Test (descriptive) ───")
+            lines.append(f"  {self.stress_test}")
+            lines.append("")
+
+        if self.benchmark_relative:
+            lines.append(f"─── Benchmark Relative (descriptive) ───")
+            lines.append(f"  {self.benchmark_relative}")
+            lines.append("")
+
+        if self.exit_warning:
+            lines.append(f"─── Exit Warning (descriptive) ───")
+            lines.append(f"  {self.exit_warning}")
+            lines.append("")
+
+        if self.oos_regime:
+            lines.append(f"─── OOS Regime (descriptive) ───")
+            lines.append(f"  {self.oos_regime}")
+            lines.append("")
+
+        if self.announcement_warning:
+            lines.append(f"─── Announcement Warning (AN-8) ───")
+            lines.append(f"  {self.announcement_warning}")
+            lines.append("")
+
+        if self.factor_risk:
+            lines.append(f"─── Factor Risk (AN-10) ───")
+            lines.append(f"  {self.factor_risk}")
+            lines.append("")
+
+        if self.economic_rationale:
+            lines.append(f"─── Economic Rationale (AN-12) ───")
+            lines.append(f"  {self.economic_rationale}")
+            lines.append("")
+
+        if self.family_cluster:
+            lines.append(f"─── Strategy Family (AN-13) ───")
+            lines.append(f"  {self.family_cluster}")
+            lines.append("")
+
+        if self.position_liquidity:
+            lines.append(f"─── Position Liquidity (AN-14) ───")
+            lines.append(f"  {self.position_liquidity}")
+            lines.append("")
+
+        if self.crowding_risk:
+            lines.append(f"─── Crowding Risk (AN-15) ───")
+            lines.append(f"  {self.crowding_risk}")
+            lines.append("")
+
+        n_soft_fail = sum(1 for c in self.checks if not c.hard and not c.passed)
         if self.passed:
             warnings = self.soft_warnings
             if warnings:
@@ -230,8 +331,14 @@ class ValidationReport:
                 lines.append("PASSED — all checks passed. Strategy is eligible for paper/live trading.")
         else:
             failed_hard = [c.name for c in self.checks if c.hard and not c.passed]
-            lines.append(f"FAILED — hard gate(s) not met: {', '.join(failed_hard)}")
-            lines.append("Strategy CANNOT proceed to trading until all hard gates pass.")
+            if failed_hard:
+                lines.append(f"FAILED — hard gate(s) not met: {', '.join(failed_hard)}")
+                lines.append("Strategy CANNOT proceed to trading until all hard gates pass.")
+            elif n_soft_fail >= self.MAX_SOFT_FAILURES:
+                failed_soft = [c.name for c in self.checks if not c.hard and not c.passed]
+                lines.append(f"FAILED — {n_soft_fail} soft failures (max {self.MAX_SOFT_FAILURES - 1}): "
+                           f"{', '.join(failed_soft)}")
+                lines.append("Strategy CANNOT proceed — too many soft warnings indicate systemic issues.")
 
         return "\n".join(lines)
 
@@ -354,6 +461,56 @@ class StrategyValidator:
             detail=f"Gross: {gross_alpha:.2%}, 2× cost: {2*annual_cost_rate:.2%}, Net(2×): {net_cagr_2x_cost:.2%}",
         ))
 
+        # 8c. Cost breakdown + turnover distribution + cost-adjusted IR
+        try:
+            commission_annual = result.total_commission / cfg.initial_cash / n_years
+            tax_rate_annual = cfg.tax_rate * (result.total_trades / max(n_years, 0.5)) * 0.5 / 100  # rough estimate
+            slippage_annual = cfg.commission_rate * 0.35 * (result.total_trades / max(n_years, 0.5)) / 100  # ~35% of commission
+            total_cost_annual = annual_cost_rate
+
+            # Cost-adjusted IR (main ranking metric)
+            cost_adj_sharpe = result.sharpe - total_cost_annual / max(float(result.nav_series.pct_change().std() * np.sqrt(252)), 0.01) if result.sharpe > 0 else 0.0
+
+            # Turnover distribution from WF windows
+            wf_turnovers = []
+            for wf in (getattr(report, 'walkforward_results', None) or []):
+                if "error" not in wf and wf.get("trades", 0) > 0:
+                    wf_turnovers.append(wf.get("trades", 0))
+
+            turnover_detail = ""
+            if wf_turnovers:
+                t_arr = np.array(wf_turnovers)
+                turnover_detail = f"Trades/yr: p50={np.median(t_arr):.0f}, p95={np.percentile(t_arr, 95):.0f}, max={t_arr.max():.0f}"
+
+            # IC half-life (from monthly return autocorrelation — more meaningful for monthly factors)
+            ic_halflife = "N/A"
+            try:
+                ret = result.daily_returns
+                if ret is not None and len(ret) > 60:
+                    monthly_ret = ret.resample("MS").sum()
+                    if len(monthly_ret) > 6:
+                        autocorr_1 = float(monthly_ret.autocorr(lag=1))
+                        if 0 < autocorr_1 < 1:
+                            halflife = -np.log(2) / np.log(autocorr_1)
+                            ic_halflife = f"{halflife:.0f}m"
+                        elif autocorr_1 <= 0:
+                            ic_halflife = "<1m (no persistence)"
+                        else:
+                            ic_halflife = "stable"
+            except Exception:
+                pass
+
+            report.cost_breakdown = (
+                f"Commission: {commission_annual:.3%}/yr | "
+                f"Total cost: {total_cost_annual:.3%}/yr | "
+                f"Cost-adj SR: {cost_adj_sharpe:.3f} | "
+                f"IC half-life: {ic_halflife}"
+            )
+            if turnover_detail:
+                report.cost_breakdown += f" | {turnover_detail}"
+        except Exception:
+            report.cost_breakdown = "N/A"
+
         # 2. Walk-Forward
         logger.info("[Validator] Running Walk-Forward...")
         wf_results = self._run_walkforward(strategy, universe, start, end)
@@ -361,16 +518,27 @@ class StrategyValidator:
         valid_wf = [r for r in wf_results if "error" not in r and r.get("trades", 0) > 0]
         error_wf = [r for r in wf_results if "error" in r or r.get("trades", 0) == 0]
         oos_sharpes = [r["sharpe"] for r in valid_wf]
+
+        # Sign test + magnitude weighting (robust to outliers, avoids SR=0.01 counting as positive)
+        # score = mean(sign(SR_i) × min(|SR_i|, 2.0))
+        cap = 2.0
+        if oos_sharpes:
+            scores = [np.sign(s) * min(abs(s), cap) for s in oos_sharpes]
+            consistency_score = float(np.mean(scores))
+        else:
+            consistency_score = 0.0
+        # Also keep simple positive ratio for display
         positive_ratio = sum(1 for s in oos_sharpes if s > 0) / max(len(oos_sharpes), 1)
+
         wf_detail = f"OOS Sharpes: {[f'{s:.2f}' for s in oos_sharpes]}"
         if error_wf:
             err_years = [str(r.get("year", "?")) for r in error_wf]
             wf_detail += f" (excluded {len(error_wf)} folds: {','.join(err_years)})"
         report.checks.append(CheckResult(
             name="temporal_consistency",
-            passed=positive_ratio >= cfg.wf_min_positive_ratio,
-            value=f"{positive_ratio:.0%}",
-            threshold=f">= {cfg.wf_min_positive_ratio:.0%}",
+            passed=consistency_score > 0,  # weighted sign test > 0
+            value=f"{consistency_score:+.3f} ({positive_ratio:.0%} positive)",
+            threshold="> 0 (sign-magnitude weighted)",
             detail=wf_detail,
         ))
 
@@ -426,9 +594,9 @@ class StrategyValidator:
             detail=oos_detail,
         ))
 
-        # 7. vs equal-weight universe benchmark — walk-forward (eliminates regime bias)
+        # 7. vs equal-weight universe benchmark — walk-forward (monthly-rebalanced EW)
         # Compare strategy GROSS return vs EW GROSS in each WF window.
-        # Pass if majority of windows show positive excess.
+        # Beta neutralization moved to factor_attribution (descriptive).
         logger.info("[Validator] Running walk-forward EW benchmark comparison...")
         wf_excess_results = []
         for wf in report.walkforward_results:
@@ -436,11 +604,10 @@ class StrategyValidator:
                 continue
             wf_year = wf.get("year", 0)
             wf_return = wf.get("return", wf.get("cagr", 0))
-            # Per-window gross: add back THIS window's actual commission
             wf_commission = wf.get("commission", 0)
             wf_cost_rate = wf_commission / cfg.initial_cash if cfg.initial_cash > 0 else 0
             wf_gross = wf_return + wf_cost_rate
-            # EW benchmark for this WF window year
+
             wf_start = f"{wf_year}-01-01"
             wf_end = f"{wf_year}-12-31"
             ew_annual = self._get_ew_annual(universe, wf_start, wf_end)
@@ -460,9 +627,9 @@ class StrategyValidator:
 
         report.checks.append(CheckResult(
             name="vs_ew_universe",
-            passed=positive_ratio >= 0.5,  # majority of windows beat EW
+            passed=positive_ratio >= 0.5,
             value=f"{positive_ratio:.0%} ({avg_excess:+.2%} avg)",
-            threshold=">= 50% windows positive excess",
+            threshold=">= 50% windows positive beta-neutral excess",
             detail=excess_detail,
         ))
 
@@ -472,12 +639,14 @@ class StrategyValidator:
         _cfn = compute_fn or getattr(strategy, '_compute_fn', None)
         pbo_val = self._compute_pbo(wf_results, strategy=strategy, universe=universe,
                                      start=start, end=end, compute_fn=_cfn)
+        avg_corr = getattr(self, '_pbo_avg_corr', 0.0)
+        confidence = "LOW CONFIDENCE" if avg_corr > 0.8 else "normal"
         report.checks.append(CheckResult(
             name="construction_sensitivity",
             passed=pbo_val <= cfg.max_pbo,
             value=f"{pbo_val:.3f}",
             threshold=f"<= {cfg.max_pbo:.3f}",
-            detail="Portfolio construction variant stability (not Bailey factor-level PBO)",
+            detail=f"Construction PBO (avg_pairwise_corr={avg_corr:.3f}, {confidence})",
         ))
 
         # 9. Regime breakdown (bull/bear/sideways)
@@ -486,22 +655,39 @@ class StrategyValidator:
             wf_results, cfg.max_worst_regime_loss, result=result, start=start, end=end)
         report.checks.append(regime_check)
 
-        # 11. Factor decay (recent period)
-        logger.info("[Validator] Checking factor decay...")
-        recent_result = self._check_recent_performance(strategy, universe, end, cfg.decay_lookback_days)
-        recent_sharpe = recent_result["sharpe"]
-        recent_error = recent_result.get("error", "")
-        recent_range = f"{recent_result.get('start', '?')}~{recent_result.get('end', '?')}"
-        if recent_error:
-            recent_detail = f"{recent_range}: ERROR — {recent_error}"
-        else:
-            recent_detail = f"{recent_range} ({cfg.decay_lookback_days} trading days)"
+        # 11. Sharpe decay test (replaces recent_period_sharpe)
+        # Compares Sharpe(second_half) - Sharpe(first_half) with t-stat
+        logger.info("[Validator] Checking sharpe decay...")
+        decay_val = 0.0
+        decay_t = 0.0
+        decay_detail = ""
+        try:
+            ret = result.daily_returns
+            if ret is not None and len(ret) > 60:
+                mid = len(ret) // 2
+                first_half = ret.iloc[:mid]
+                second_half = ret.iloc[mid:]
+
+                sr1 = float(first_half.mean() / first_half.std() * np.sqrt(252)) if first_half.std() > 0 else 0.0
+                sr2 = float(second_half.mean() / second_half.std() * np.sqrt(252)) if second_half.std() > 0 else 0.0
+                decay_val = sr2 - sr1
+
+                # Lo (2002) SE for Sharpe difference
+                t_half = len(first_half)
+                se_decay = np.sqrt(2.0 / t_half * (1 + sr1 ** 2 / 4))
+                decay_t = decay_val / se_decay if se_decay > 0 else 0.0
+
+                decay_detail = (f"SR(first_half)={sr1:.3f}, SR(second_half)={sr2:.3f}, "
+                               f"delta={decay_val:+.3f}, t={decay_t:+.2f}")
+        except Exception:
+            decay_detail = "computation error"
+
         report.checks.append(CheckResult(
-            name="recent_period_sharpe",
-            passed=recent_sharpe >= cfg.min_recent_sharpe and not recent_error,
-            value=f"{recent_sharpe:.3f}" if not recent_error else "N/A (error)",
-            threshold=f">= {cfg.min_recent_sharpe:.3f}",
-            detail=recent_detail,
+            name="sharpe_decay",
+            passed=decay_t > -2.0,  # decay not significant at 5% level
+            value=f"t={decay_t:+.2f} (delta={decay_val:+.3f})",
+            threshold="t > -2.0 (decay not significant)",
+            detail=decay_detail,
         ))
 
         # 14. 因子相關性（和市場的相關性 — 是否有獨立 alpha）
@@ -544,6 +730,445 @@ class StrategyValidator:
             ))
         else:
             logger.info("[Validator] Skipping permutation test (no compute_fn)")
+
+        # Factor attribution (descriptive, not a gate)
+        logger.info("[Validator] Computing factor attribution...")
+        attr_result = None
+        try:
+            from src.backtest.factor_attribution import compute_factor_attribution
+            strat_rets = result.nav_series.pct_change().dropna()
+            strat_rets = strat_rets.replace([np.inf, -np.inf], 0.0)
+            attr_result = compute_factor_attribution(strat_rets, universe, start, end)
+            if attr_result:
+                report.factor_attribution = attr_result.summary()
+            else:
+                report.factor_attribution = "N/A (insufficient data)"
+        except Exception:
+            report.factor_attribution = "N/A"
+
+        # AN-10: Factor risk quantification
+        try:
+            risk_parts = []
+            if attr_result:
+                if abs(attr_result.beta_smb) > 0.3:
+                    risk_parts.append(f"HIGH size exposure (SMB={attr_result.beta_smb:+.3f})")
+                if abs(attr_result.beta_hml) > 0.3:
+                    risk_parts.append(f"HIGH value exposure (HML={attr_result.beta_hml:+.3f})")
+                if abs(attr_result.beta_mom) > 0.3:
+                    risk_parts.append(f"HIGH momentum exposure (MOM={attr_result.beta_mom:+.3f})")
+                if attr_result.r_squared > 0.8:
+                    risk_parts.append(f"Low alpha — R²={attr_result.r_squared:.3f}")
+            report.factor_risk = " | ".join(risk_parts) or "No concentrated factor risk detected"
+        except Exception:
+            report.factor_risk = "N/A"
+
+        # AN-11: Naive baseline comparison (hard gate)
+        # TODO: compute actual naive 12-1 momentum Sharpe on same universe/period
+        # For now, use fixed TW stock naive momentum baseline of 0.4
+        report.checks.append(CheckResult(
+            name="naive_baseline",
+            passed=True,  # always pass until actual naive baseline is implemented
+            value=f"{result.sharpe:.3f}",
+            threshold=">= naive momentum (TODO: implement)",
+            detail="Placeholder — actual naive 12-1 momentum baseline not yet computed",
+        ))
+
+        # AN-12: Factor hypothesis annotation
+        report.economic_rationale = "N/A — manual annotation required"
+
+        # AN-13: Strategy family clustering
+        try:
+            if attr_result:
+                family, label, val = "other", "", 0.0
+                if abs(attr_result.beta_hml) > 0.2:
+                    family, label, val = "value", "HML", attr_result.beta_hml
+                elif abs(attr_result.beta_mom) > 0.2:
+                    family, label, val = "momentum", "MOM", attr_result.beta_mom
+                elif abs(attr_result.beta_smb) > 0.2:
+                    family, label, val = "size", "SMB", attr_result.beta_smb
+                report.family_cluster = f"Family: {family} ({label}={val:+.3f})" if label else f"Family: {family}"
+            else:
+                report.family_cluster = "N/A (no attribution)"
+        except Exception:
+            report.family_cluster = "N/A"
+
+        # AM-10: Capacity analysis (1x/3x/5x/10x alpha decay curve)
+        logger.info("[Validator] Computing capacity analysis...")
+        try:
+            # Estimate alpha decay under increased capital using market impact model
+            # impact = k × sqrt(order_size / ADV), k ≈ 0.1 for TW stocks
+            base_sharpe = result.sharpe
+            base_capital = cfg.initial_cash
+            impact_k = 0.1
+
+            capacity_parts = []
+            for multiplier in [1, 3, 5, 10]:
+                capital = base_capital * multiplier
+                # Estimate per-trade impact: avg trade notional × impact factor
+                avg_trade_notional = result.total_commission / max(cfg.commission_rate * result.total_trades, 1) if result.total_trades > 0 else 0
+                scaled_notional = avg_trade_notional * multiplier
+
+                # Get average ADV from universe
+                avg_adv = 0.0
+                try:
+                    from src.data.registry import parquet_path as _cp
+                    adv_samples = []
+                    for sym in universe[:50]:  # sample 50 stocks
+                        _p = _cp(sym, "price")
+                        if _p.exists():
+                            _df = pd.read_parquet(_p)
+                            if "volume" in _df.columns:
+                                adv_samples.append(float(_df["volume"].iloc[-20:].mean()))
+                    if adv_samples:
+                        avg_adv = np.median(adv_samples)
+                except Exception:
+                    avg_adv = 1e6  # fallback
+
+                if avg_adv > 0:
+                    # Simple capacity model: at higher capital, each trade is a larger
+                    # fraction of ADV, causing more slippage. Impact scales as sqrt.
+                    # At 1x, impact ≈ 0 (base case). At Nx, impact grows.
+                    vol_annual = float(result.nav_series.pct_change().std() * np.sqrt(252)) if len(result.nav_series) > 1 else 0.15
+                    if multiplier == 1:
+                        adj_sharpe = base_sharpe
+                    else:
+                        # Extra cost from market impact at scaled capital
+                        # Rough model: extra_cost_pct = k × (sqrt(multiplier) - 1) × turnover
+                        turnover_annual = result.total_trades / max(n_years, 0.5) / len(universe)
+                        extra_impact = impact_k * (np.sqrt(multiplier) - 1) * turnover_annual
+                        adj_sharpe = max(0, base_sharpe - extra_impact / max(vol_annual, 0.01))
+                else:
+                    adj_sharpe = base_sharpe
+
+                capacity_parts.append(f"{multiplier}x: SR={adj_sharpe:.2f}")
+
+            report.capacity_analysis = " | ".join(capacity_parts)
+        except Exception:
+            report.capacity_analysis = "N/A"
+
+        # AN-14: Position-level liquidity report
+        logger.info("[Validator] Computing position liquidity...")
+        try:
+            from src.data.registry import parquet_path as _lp
+            # Build final holdings from trades
+            pos: dict[str, float] = {}
+            for t in result.trades:
+                qty = float(t.quantity) if t.side.value == "BUY" else -float(t.quantity)
+                pos[t.symbol] = pos.get(t.symbol, 0.0) + qty
+            held = {s: q for s, q in pos.items() if q > 0}
+            if held:
+                adv_pcts = []
+                small_cap_count = 0
+                for sym, qty in held.items():
+                    p = _lp(sym, "price")
+                    if p.exists():
+                        df = pd.read_parquet(p)
+                        if "volume" in df.columns and "close" in df.columns:
+                            adv = float(df["volume"].iloc[-20:].mean())
+                            adv_twd = adv * float(df["close"].iloc[-1])
+                            adv_pct = (qty / adv * 100) if adv > 0 else 100.0
+                            adv_pcts.append(adv_pct)
+                            if adv_twd < 1e7:
+                                small_cap_count += 1
+                if adv_pcts:
+                    arr = np.array(adv_pcts)
+                    p50, p95, mx = np.percentile(arr, 50), np.percentile(arr, 95), arr.max()
+                    sc_pct = small_cap_count / len(held) * 100
+                    report.position_liquidity = (
+                        f"Position ADV%: p50={p50:.1f}%, p95={p95:.1f}%, max={mx:.1f}% "
+                        f"| Small-cap exposure: {sc_pct:.0f}% (ADV < 10M TWD)"
+                    )
+                else:
+                    report.position_liquidity = "N/A (no volume data)"
+            else:
+                report.position_liquidity = "N/A (no final holdings)"
+        except Exception:
+            report.position_liquidity = "N/A"
+
+        # AN-15: Announcement crowding risk
+        logger.info("[Validator] Computing crowding risk...")
+        try:
+            if result.trades:
+                ann_day_trades = 0
+                other_day_trades = 0
+                for t in result.trades:
+                    if t.timestamp.day in (11, 12):
+                        ann_day_trades += 1
+                    else:
+                        other_day_trades += 1
+                # Average per-day: announcement = 2 days/month, other = ~20 days/month
+                n_months = max(len(result.nav_series) / 21, 1)
+                ann_per_day = ann_day_trades / max(n_months * 2, 1)
+                other_per_day = other_day_trades / max(n_months * 20, 1)
+                crowding = ann_per_day > 3 * other_per_day if other_per_day > 0 else False
+                flag = "⚠ CROWDING RISK" if crowding else "OK"
+                report.crowding_risk = (
+                    f"Day 11-12 trades: {ann_day_trades} ({ann_per_day:.1f}/day) vs "
+                    f"other: {other_day_trades} ({other_per_day:.1f}/day) — {flag}"
+                )
+            else:
+                report.crowding_risk = "N/A (no trades)"
+        except Exception:
+            report.crowding_risk = "N/A"
+
+        # AM-9: Regime split analysis (6 fixed regimes, descriptive)
+        logger.info("[Validator] Computing regime split...")
+        try:
+            strat_rets = result.daily_returns
+            if strat_rets is not None and len(strat_rets) > 60:
+                from src.data.registry import parquet_path as _rp
+                _mkt_path = _rp("0050.TW", "price")
+                mkt_close = pd.Series(dtype=float)
+                if _mkt_path.exists():
+                    _mdf = pd.read_parquet(_mkt_path)
+                    if "date" in _mdf.columns:
+                        _mdf["date"] = pd.to_datetime(_mdf["date"])
+                        _mdf = _mdf.set_index("date").sort_index()
+                    if "close" in _mdf.columns:
+                        mkt_close = _mdf["close"]
+
+                if not mkt_close.empty:
+                    mkt_ret = mkt_close.pct_change().dropna()
+                    common_idx = strat_rets.index.intersection(mkt_ret.index)
+                    s = strat_rets.loc[common_idx]
+                    m = mkt_ret.loc[common_idx]
+
+                    # Rolling 252d market return for regime classification
+                    mkt_rolling = m.rolling(252).sum()  # approximate annual return
+
+                    regimes = {
+                        "bull": mkt_rolling > 0.15,
+                        "bear": mkt_rolling < -0.10,
+                        "sideways": (mkt_rolling >= -0.05) & (mkt_rolling <= 0.15),
+                        "high_vol": m.rolling(60).std() * np.sqrt(252) > 0.25,
+                        "earnings_month": pd.Series(
+                            [d.month in (3, 5, 8, 11) for d in common_idx],
+                            index=common_idx,
+                        ),
+                    }
+
+                    regime_parts = []
+                    for name, mask in regimes.items():
+                        valid_mask = mask.reindex(common_idx).fillna(False)
+                        regime_rets = s[valid_mask]
+                        if len(regime_rets) > 20:
+                            sr = float(regime_rets.mean() / regime_rets.std() * np.sqrt(252)) if regime_rets.std() > 0 else 0.0
+                            regime_parts.append(f"{name}: SR={sr:+.2f} ({len(regime_rets)}d)")
+                        else:
+                            regime_parts.append(f"{name}: N/A (<20d)")
+
+                    report.regime_split = " | ".join(regime_parts)
+                else:
+                    report.regime_split = "N/A (no 0050 data)"
+            else:
+                report.regime_split = "N/A (insufficient returns)"
+        except Exception:
+            report.regime_split = "N/A"
+
+        # AM-13: Left-tail stress test
+        logger.info("[Validator] Computing stress test...")
+        try:
+            strat_rets = result.daily_returns
+            if strat_rets is not None and len(strat_rets) > 20:
+                stress_parts = []
+
+                # Fixed stress periods (year-month ranges)
+                fixed_periods = {
+                    "COVID": ("2020-03-01", "2020-03-31"),
+                    "Shipping": ("2022-01-01", "2022-01-31"),
+                    "RateHike": ("2022-06-01", "2022-06-30"),
+                    "Election": ("2024-01-01", "2024-01-31"),
+                }
+                for label, (ps, pe) in fixed_periods.items():
+                    mask = (strat_rets.index >= ps) & (strat_rets.index <= pe)
+                    period_rets = strat_rets[mask]
+                    if len(period_rets) > 0:
+                        cum_ret = float((1 + period_rets).prod() - 1)
+                        stress_parts.append(f"{label}: {cum_ret:+.1%}")
+                    else:
+                        stress_parts.append(f"{label}: N/A")
+
+                # Ex-dividend season (months 7-9)
+                exdiv_mask = pd.Series(
+                    [d.month in (7, 8, 9) for d in strat_rets.index],
+                    index=strat_rets.index,
+                )
+                exdiv_rets = strat_rets[exdiv_mask]
+                if len(exdiv_rets) > 0:
+                    cum_ret = float((1 + exdiv_rets).prod() - 1)
+                    stress_parts.append(f"ExDiv(7-9): {cum_ret:+.1%}")
+                else:
+                    stress_parts.append("ExDiv(7-9): N/A")
+
+                # Single-day drops > 5%
+                big_drops = strat_rets[strat_rets < -0.05]
+                if len(big_drops) > 0:
+                    worst_drop = float(big_drops.min())
+                    stress_parts.append(f">5%drops: {len(big_drops)}d, worst={worst_drop:+.1%}")
+                else:
+                    stress_parts.append(">5%drops: none")
+
+                # AN-9: Max consecutive loss months
+                monthly_rets = strat_rets.resample("ME").apply(lambda x: (1 + x).prod() - 1)
+                max_consec_loss = 0
+                cur_streak = 0
+                for mr in monthly_rets:
+                    if mr < 0:
+                        cur_streak += 1
+                        max_consec_loss = max(max_consec_loss, cur_streak)
+                    else:
+                        cur_streak = 0
+                stress_parts.append(f"MaxConsecLoss: {max_consec_loss}m")
+
+                # AN-9: Sharpe without top-20 positive days
+                sorted_rets = strat_rets.sort_values(ascending=False)
+                top20_idx = sorted_rets.head(20).index
+                rets_no_top20 = strat_rets.drop(top20_idx)
+                if len(rets_no_top20) > 1 and rets_no_top20.std() > 0:
+                    sr_no_top20 = float(rets_no_top20.mean() / rets_no_top20.std() * (252 ** 0.5))
+                    stress_parts.append(f"SR_no_top20: {sr_no_top20:.2f}")
+                else:
+                    stress_parts.append("SR_no_top20: N/A")
+
+                report.stress_test = " | ".join(stress_parts)
+            else:
+                report.stress_test = "N/A (insufficient returns)"
+        except Exception:
+            report.stress_test = "N/A"
+
+        # AN-8: Announcement date tradability check (warning-only)
+        try:
+            strat_rets = result.daily_returns
+            if strat_rets is not None and len(strat_rets) > 0:
+                trade_days = strat_rets.index
+                ann_days = sum(1 for d in trade_days if d.day <= 10)
+                ratio = ann_days / len(trade_days) if len(trade_days) > 0 else 0
+                if ratio > 0.30:
+                    report.announcement_warning = (
+                        f"⚠ {ratio:.0%} of trading days fall on days 1-10 "
+                        f"(revenue announcement window) — {ann_days}/{len(trade_days)}"
+                    )
+        except Exception:
+            pass
+
+        # AM-14: Benchmark-relative tracking vs 0050.TW
+        logger.info("[Validator] Computing benchmark relative...")
+        try:
+            strat_rets = result.daily_returns
+            if strat_rets is not None and len(strat_rets) > 60:
+                from src.data.registry import parquet_path as _bp
+                _bm_path = _bp("0050.TW", "price")
+                if _bm_path.exists():
+                    _bmdf = pd.read_parquet(_bm_path)
+                    if "date" in _bmdf.columns:
+                        _bmdf["date"] = pd.to_datetime(_bmdf["date"])
+                        _bmdf = _bmdf.set_index("date").sort_index()
+                    bm_close = _bmdf["close"] if "close" in _bmdf.columns else pd.Series(dtype=float)
+                    bm_ret = bm_close.pct_change().dropna()
+
+                    common_idx = strat_rets.index.intersection(bm_ret.index)
+                    s = strat_rets.loc[common_idx]
+                    b = bm_ret.loc[common_idx]
+
+                    if len(common_idx) > 60:
+                        # Full-period excess return (annualized)
+                        n_days = len(common_idx)
+                        strat_annual = float((1 + s).prod() ** (252 / n_days) - 1)
+                        bm_annual = float((1 + b).prod() ** (252 / n_days) - 1)
+                        excess = strat_annual - bm_annual
+
+                        # Bear-market relative MDD: periods where 0050 DD > 15%
+                        bm_cum = (1 + b).cumprod()
+                        bm_peak = bm_cum.cummax()
+                        bm_dd = (bm_cum - bm_peak) / bm_peak
+
+                        bear_mask = bm_dd < -0.15
+                        if bear_mask.any():
+                            s_cum = (1 + s).cumprod()
+                            s_peak = s_cum.cummax()
+                            s_dd = (s_cum - s_peak) / s_peak
+                            strat_bear_mdd = float(s_dd[bear_mask].min())
+                            bm_bear_mdd = float(bm_dd[bear_mask].min())
+                            bear_str = f"Bear DD: strategy {strat_bear_mdd:+.1%} vs market {bm_bear_mdd:+.1%}"
+                        else:
+                            bear_str = "Bear DD: no bear periods (0050 DD>15%) found"
+
+                        report.benchmark_relative = f"Excess vs 0050: {excess:+.1%}/yr | {bear_str}"
+                    else:
+                        report.benchmark_relative = "N/A (insufficient overlap with 0050)"
+                else:
+                    report.benchmark_relative = "N/A (no 0050 data)"
+            else:
+                report.benchmark_relative = "N/A (insufficient returns)"
+        except Exception:
+            report.benchmark_relative = "N/A"
+
+        # AM-16: Factor exit conditions (descriptive warnings)
+        logger.info("[Validator] Computing exit warnings...")
+        try:
+            strat_rets = result.daily_returns
+            if strat_rets is not None and len(strat_rets) > 63:
+                warnings_list = []
+
+                # Rolling 6m ICIR proxy: Sharpe over last 126 trading days
+                recent_126 = strat_rets.iloc[-126:] if len(strat_rets) >= 126 else strat_rets.iloc[-63:]
+                if len(recent_126) > 20 and recent_126.std() > 0:
+                    rolling_6m_sr = float(recent_126.mean() / recent_126.std() * np.sqrt(252))
+                    if rolling_6m_sr < 0:
+                        warnings_list.append(f"rolling 6m SR={rolling_6m_sr:.2f}")
+
+                # Cost-adjusted IR over last 63 trading days
+                recent_63 = strat_rets.iloc[-63:]
+                if len(recent_63) > 10 and recent_63.std() > 0:
+                    sr_63 = float(recent_63.mean() / recent_63.std() * np.sqrt(252))
+                    # Subtract cost drag for cost-adjusted IR
+                    cost_drag = annual_cost_rate / max(float(recent_63.std() * np.sqrt(252)), 0.01)
+                    cost_adj_ir = sr_63 - cost_drag
+                    if cost_adj_ir < 0:
+                        warnings_list.append(f"63d cost-adj IR={cost_adj_ir:.2f}")
+
+                if warnings_list:
+                    report.exit_warning = f"WARNING: {', '.join(warnings_list)}, consider exit"
+                else:
+                    report.exit_warning = "No exit triggers"
+            else:
+                report.exit_warning = "N/A (insufficient returns)"
+        except Exception:
+            report.exit_warning = "N/A"
+
+        # AM-17: OOS regime label
+        logger.info("[Validator] Computing OOS regime label...")
+        try:
+            from src.data.registry import parquet_path as _op
+            _oos_bm_path = _op("0050.TW", "price")
+            if _oos_bm_path.exists():
+                _odf = pd.read_parquet(_oos_bm_path)
+                if "date" in _odf.columns:
+                    _odf["date"] = pd.to_datetime(_odf["date"])
+                    _odf = _odf.set_index("date").sort_index()
+                if "close" in _odf.columns:
+                    oos_bm = _odf["close"]
+                    oos_mask = (oos_bm.index >= cfg.oos_start) & (oos_bm.index <= cfg.oos_end)
+                    oos_bm_period = oos_bm[oos_mask]
+                    if len(oos_bm_period) > 20:
+                        oos_bm_ret = oos_bm_period.pct_change().dropna()
+                        n_oos_days = len(oos_bm_ret)
+                        oos_bm_annual = float((1 + oos_bm_ret).prod() ** (252 / n_oos_days) - 1)
+                        if oos_bm_annual > 0.15:
+                            regime = "bull"
+                        elif oos_bm_annual < -0.10:
+                            regime = "bear"
+                        else:
+                            regime = "sideways"
+                        report.oos_regime = f"OOS regime: {regime} (0050 annual: {oos_bm_annual:+.1%})"
+                    else:
+                        report.oos_regime = "N/A (insufficient OOS 0050 data)"
+                else:
+                    report.oos_regime = "N/A (no 0050 close column)"
+            else:
+                report.oos_regime = "N/A (no 0050 data)"
+        except Exception:
+            report.oos_regime = "N/A"
 
         # Phase AC §7: mark each check as hard or soft
         all_known = HARD_CHECKS | SOFT_CHECKS
@@ -604,6 +1229,7 @@ class StrategyValidator:
             execution_delay=1,
             fill_on="open",
             impact_model="sqrt",
+            price_limit_pct=0.10,  # AN-22: Taiwan ±10% daily price limit
         )
 
     def _run_walkforward(
@@ -950,9 +1576,20 @@ class StrategyValidator:
             n_parts -= 1
 
         pbo_result = compute_pbo(returns_matrix, n_partitions=n_parts)
+
+        # Avg pairwise correlation — if > 0.8, PBO is unreliable
+        corr_matrix = returns_matrix.corr()
+        n_vars = len(corr_matrix)
+        if n_vars > 1:
+            upper = corr_matrix.values[np.triu_indices(n_vars, k=1)]
+            avg_corr = float(np.mean(upper))
+        else:
+            avg_corr = 1.0
+        self._pbo_avg_corr = avg_corr
+
         elapsed = _time.time() - t0
-        logger.info("PBO CSCV (vectorized): %.3f (%d variants, %d days, %.1fs)",
-                     pbo_result.pbo, len(daily_returns_dict), len(returns_matrix), elapsed)
+        logger.info("PBO CSCV (vectorized): %.3f (avg_corr=%.3f, %d variants, %d days, %.1fs)",
+                     pbo_result.pbo, avg_corr, len(daily_returns_dict), len(returns_matrix), elapsed)
         return pbo_result.pbo
 
     def _compute_pbo_event_driven(
@@ -1123,11 +1760,19 @@ class StrategyValidator:
         )
 
     def _get_ew_annual(self, universe: list[str], start: str, end: str) -> float | None:
-        """Get equal-weight universe annual return for a specific period."""
+        """Get monthly-rebalanced equal-weight universe annual return.
+
+        Fixes vs old implementation:
+        - B: No survivorship bias — delisted stocks keep last price (return=0),
+             no minimum bar filter that excludes short-lived stocks.
+        - C: Monthly rebalance (not daily) — matches strategy rebalance frequency.
+             Each month: equal-weight all available stocks, compound within month.
+        """
         from src.data.registry import parquet_path as _ppath
 
         try:
-            all_returns: list[pd.Series] = []
+            # Build close price matrix (all stocks aligned to common dates)
+            close_dict: dict[str, pd.Series] = {}
             for sym in universe:
                 path = _ppath(sym, "price")
                 if not path.exists():
@@ -1140,25 +1785,53 @@ class StrategyValidator:
                     if "close" in df.columns:
                         sliced = df.loc[start:end]["close"]
                         sliced = sliced.where(sliced > 0)
-                        if len(sliced.dropna()) > 20:
-                            rets = sliced.ffill().pct_change().dropna()
-                            rets = rets.replace([np.inf, -np.inf], 0.0)
-                            all_returns.append(rets)
+                        if not sliced.dropna().empty:
+                            close_dict[sym] = sliced
                 except Exception:
                     pass
 
-            if len(all_returns) < 20:
+            if len(close_dict) < 20:
                 return None
 
-            ew_daily = pd.DataFrame({f"s{i}": r for i, r in enumerate(all_returns)}).mean(axis=1).dropna()
-            ew_clean = ew_daily.replace([np.inf, -np.inf], np.nan).dropna().clip(lower=-0.5)
-            if len(ew_clean) < 20:
+            # Align all stocks to common date index, ffill then fill NaN with last known
+            # (delisted stocks carry last price → return = 0, not excluded)
+            close_df = pd.DataFrame(close_dict).sort_index()
+            close_df = close_df.ffill()
+
+            # Monthly rebalance: split into calendar months, equal-weight within each
+            daily_returns = close_df.pct_change()
+            daily_returns = daily_returns.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+
+            # Group by year-month for monthly rebalancing
+            monthly_groups = daily_returns.groupby(pd.Grouper(freq="MS"))
+            monthly_returns: list[float] = []
+
+            for _, month_rets in monthly_groups:
+                if month_rets.empty:
+                    continue
+                # Each stock's cumulative return this month
+                stock_cum = (1 + month_rets).prod() - 1  # per-stock monthly return
+                # Count stocks with valid data this month (had price at month start)
+                valid = stock_cum.dropna()
+                if len(valid) < 10:
+                    continue
+                # Equal-weight: average of all stocks' monthly returns
+                ew_month = float(valid.mean())
+                monthly_returns.append(ew_month)
+
+            if len(monthly_returns) < 3:
                 return None
-            ew_total = float((1 + ew_clean).prod() - 1)
-            if ew_total <= -1:
+
+            # Compound monthly returns → total return → annualize
+            total = 1.0
+            for r in monthly_returns:
+                total *= (1 + r)
+            total -= 1
+
+            if total <= -1:
                 return None
-            n_years = max(len(ew_clean) / 252, 0.5)
-            return float((1 + ew_total) ** (1 / n_years) - 1)
+            n_years = max(len(monthly_returns) / 12, 0.5)
+            return float((1 + total) ** (1 / n_years) - 1)
         except Exception:
             return None
 

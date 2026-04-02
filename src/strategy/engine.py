@@ -140,10 +140,18 @@ def weights_to_orders(
         notional_per_unit = price * multiplier
         qty = abs(target_value / notional_per_unit)
 
-        # 取整到 lot_size（市場感知）
+        # 取整到 lot_size（市場感知）+ 零股補單
         lot_size = _get_lot_size(symbol, inst, market_lot_sizes, fractional_shares)
-        if lot_size > 0:
-            qty = (qty // Decimal(str(lot_size))) * Decimal(str(lot_size))
+        odd_lot_qty = Decimal("0")
+        if lot_size > 1:
+            lot_d = Decimal(str(lot_size))
+            rounded = (qty // lot_d) * lot_d
+            remainder = int(qty - rounded)
+            if remainder > 0:
+                odd_lot_qty = Decimal(str(remainder))
+            qty = rounded
+        elif lot_size > 0:
+            qty = qty.to_integral_value()
 
         # Volume cap: max 10% of 20-day ADV to limit market impact
         if volumes and symbol in volumes:
@@ -155,7 +163,7 @@ def weights_to_orders(
                 if qty > max_qty and max_qty > 0:
                     qty = max_qty
 
-        if qty <= 0:
+        if qty <= 0 and odd_lot_qty <= 0:
             continue
 
         side = Side.BUY if diff_w > 0 else Side.SELL
@@ -173,15 +181,47 @@ def weights_to_orders(
             # Reduce remaining available cash for subsequent buy orders
             available_cash -= qty * notional_per_unit
 
-        order = Order(
-            id=uuid.uuid4().hex[:12],
-            instrument=inst,
-            side=side,
-            order_type=OrderType.MARKET,
-            quantity=qty,
-            price=price,  # 用於風控計算，實際用市價成交
-            strategy_id="",
-        )
-        orders.append(order)
+        if qty > 0:
+            order = Order(
+                id=uuid.uuid4().hex[:12],
+                instrument=inst,
+                side=side,
+                order_type=OrderType.MARKET,
+                quantity=qty,
+                price=price,  # 用於風控計算，實際用市價成交
+                strategy_id="",
+            )
+            orders.append(order)
+
+        # Odd-lot order for remainder (BUY: reduce cash drag, SELL: fully close)
+        if odd_lot_qty > 0 and side == Side.BUY:
+            if available_cash is not None:
+                odd_cost = odd_lot_qty * notional_per_unit
+                if odd_cost > available_cash:
+                    odd_lot_qty = Decimal("0")
+                else:
+                    available_cash -= odd_cost
+            if odd_lot_qty > 0:
+                odd_order = Order(
+                    id=uuid.uuid4().hex[:12],
+                    instrument=inst,
+                    side=side,
+                    order_type=OrderType.MARKET,
+                    quantity=odd_lot_qty,
+                    price=price,
+                    strategy_id="",
+                )
+                orders.append(odd_order)
+        elif odd_lot_qty > 0 and side == Side.SELL:
+            odd_order = Order(
+                id=uuid.uuid4().hex[:12],
+                instrument=inst,
+                side=side,
+                order_type=OrderType.MARKET,
+                quantity=odd_lot_qty,
+                price=price,
+                strategy_id="",
+            )
+            orders.append(odd_order)
 
     return orders

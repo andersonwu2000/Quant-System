@@ -526,7 +526,9 @@ async def compute_attribution(
             s.index = pd.to_datetime(s.index)
             factor_ret[name] = s
 
-        result = attribute_returns(comp, factor_ret, req.composite_weights, method=req.method)
+        from src.api.routes import validate_weights
+        validated_weights = validate_weights(req.composite_weights)
+        result = attribute_returns(comp, factor_ret, validated_weights, method=req.method)
 
         return AttributionResponse(
             total_return=result.total_return,

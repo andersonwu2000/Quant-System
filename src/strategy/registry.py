@@ -1,5 +1,13 @@
 """
-策略註冊表 — 集中管理策略名稱到類別的對應，供 API 和 CLI 共用。
+策略註冊表 — decorator-based registration + legacy map fallback.
+
+Usage:
+    @register_strategy("my_strategy")
+    class MyStrategy(Strategy):
+        ...
+
+    # Then resolve by name:
+    strategy = resolve_strategy("my_strategy")
 """
 
 from __future__ import annotations
@@ -14,10 +22,22 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from src.strategy.base import Strategy
 
+# Decorator-based registry: strategies register themselves on import
+_REGISTRY: dict[str, type[Strategy]] = {}
+
+
+def register_strategy(name: str):
+    """Decorator to register a strategy class by name."""
+    def decorator(cls: type[Strategy]) -> type[Strategy]:
+        _REGISTRY[name] = cls
+        return cls
+    return decorator
+
 
 @functools.lru_cache(maxsize=1)
 def _load_strategy_map() -> dict[str, type[Strategy]]:
-    """Lazy import 所有策略類別（結果快取，只執行一次）。"""
+    """Load all strategies: decorator-registered + legacy imports."""
+    # Legacy imports (kept for backward compat until all strategies use @register_strategy)
     from strategies.ma_crossover import MaCrossoverStrategy
     from strategies.mean_reversion import MeanReversionStrategy
     from strategies.momentum import MomentumStrategy
@@ -32,7 +52,7 @@ def _load_strategy_map() -> dict[str, type[Strategy]]:
     from src.alpha.strategy import AlphaStrategy
     from src.strategy.multi_asset import MultiAssetStrategy
 
-    return {
+    legacy = {
         "momentum_12_1": MomentumStrategy,
         "mean_reversion": MeanReversionStrategy,
         "rsi_oversold": RsiOversoldStrategy,
@@ -47,6 +67,9 @@ def _load_strategy_map() -> dict[str, type[Strategy]]:
         "alpha": AlphaStrategy,
         "multi_asset": MultiAssetStrategy,
     }
+
+    # Decorator-registered strategies take precedence over legacy
+    return {**legacy, **_REGISTRY}
 
 
 # 別名：供 CLI / backtest 向後相容，不出現在策略列表中

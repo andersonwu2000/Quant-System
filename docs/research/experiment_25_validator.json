@@ -1,0 +1,256 @@
+[
+  {
+    "factor": "revenue_acceleration",
+    "passed": true,
+    "hard_pass": 7,
+    "hard_total": 7,
+    "soft_pass": 7,
+    "soft_total": 9,
+    "total_pass": 14,
+    "total_checks": 16,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "200",
+        "threshold": ">= 50",
+        "hard": false,
+        "detail": ""
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+18.99%",
+        "threshold": ">= +8.00%",
+        "hard": true,
+        "detail": ""
+      },
+      "sharpe": {
+        "passed": true,
+        "value": "1.174",
+        "threshold": ">= 0.700",
+        "hard": false,
+        "detail": ""
+      },
+      "max_drawdown": {
+        "passed": false,
+        "value": "+44.35%",
+        "threshold": "<= 40%",
+        "hard": false,
+        "detail": ""
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "3%",
+        "threshold": "< 50% of gross",
+        "hard": true,
+        "detail": "Annual cost: 0.68%, Gross CAGR: 19.67%, Net CAGR: 18.99%"
+      },
+      "cost_2x_safety": {
+        "passed": true,
+        "value": "18.32%",
+        "threshold": "> 0% CAGR after 2× cost",
+        "hard": true,
+        "detail": "Gross: 19.67%, 2× cost: 1.35%, Net(2×): 18.32%"
+      },
+      "temporal_consistency": {
+        "passed": true,
+        "value": "+1.532 (100% positive)",
+        "threshold": "> 0 (sign-magnitude weighted)",
+        "hard": true,
+        "detail": "OOS Sharpes: ['1.49', '2.30', '0.64', '2.89'] (excluded 2 folds: 2024,2025)"
+      },
+      "deflated_sharpe": {
+        "passed": true,
+        "value": "0.887",
+        "threshold": ">= 0.700",
+        "hard": true,
+        "detail": ""
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "99.5%",
+        "threshold": ">= 80%",
+        "hard": false,
+        "detail": ""
+      },
+      "oos_sharpe": {
+        "passed": true,
+        "value": "0.652",
+        "threshold": ">= 0.300",
+        "hard": false,
+        "detail": "OOS 2025-07-01~2026-04-01, return=+5.98%"
+      },
+      "vs_ew_universe": {
+        "passed": false,
+        "value": "25% (-6.31% avg)",
+        "threshold": ">= 50% windows positive beta-neutral excess",
+        "hard": false,
+        "detail": "WF: 1/4 windows positive, avg excess -6.31%"
+      },
+      "construction_sensitivity": {
+        "passed": true,
+        "value": "0.544",
+        "threshold": "<= 0.600",
+        "hard": true,
+        "detail": "Construction PBO (avg_pairwise_corr=0.000, normal)"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "+10.87%",
+        "threshold": ">= -30%",
+        "hard": false,
+        "detail": "Cumulative return during 294 market crisis days (0050 DD > 15%)"
+      },
+      "sharpe_decay": {
+        "passed": "True",
+        "value": "t=+28.97 (delta=+1.410)",
+        "threshold": "t > -2.0 (decay not significant)",
+        "hard": false,
+        "detail": "SR(first_half)=0.548, SR(second_half)=1.958, delta=+1.410, t=+28.97"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.574",
+        "threshold": "|corr| <= 0.80",
+        "hard": true,
+        "detail": "Daily return correlation with 0050.TW (high = no independent alpha)"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-2.46%",
+        "threshold": ">= -5.00%",
+        "hard": false,
+        "detail": "Daily CVaR(95%): expected shortfall in worst 5% of days"
+      }
+    },
+    "elapsed": 115.7,
+    "n_trials": 15,
+    "timestamp": "2026-04-02T08:09:18.175214"
+  },
+  {
+    "factor": "per_value",
+    "passed": false,
+    "hard_pass": 5,
+    "hard_total": 7,
+    "soft_pass": 7,
+    "soft_total": 9,
+    "total_pass": 12,
+    "total_checks": 16,
+    "checks": {
+      "universe_size": {
+        "passed": true,
+        "value": "200",
+        "threshold": ">= 50",
+        "hard": false,
+        "detail": ""
+      },
+      "cagr": {
+        "passed": true,
+        "value": "+11.40%",
+        "threshold": ">= +8.00%",
+        "hard": true,
+        "detail": ""
+      },
+      "sharpe": {
+        "passed": false,
+        "value": "0.651",
+        "threshold": ">= 0.700",
+        "hard": false,
+        "detail": ""
+      },
+      "max_drawdown": {
+        "passed": true,
+        "value": "+29.27%",
+        "threshold": "<= 40%",
+        "hard": false,
+        "detail": ""
+      },
+      "annual_cost_ratio": {
+        "passed": true,
+        "value": "7%",
+        "threshold": "< 50% of gross",
+        "hard": true,
+        "detail": "Annual cost: 0.86%, Gross CAGR: 12.26%, Net CAGR: 11.40%"
+      },
+      "cost_2x_safety": {
+        "passed": true,
+        "value": "10.54%",
+        "threshold": "> 0% CAGR after 2× cost",
+        "hard": true,
+        "detail": "Gross: 12.26%, 2× cost: 1.73%, Net(2×): 10.54%"
+      },
+      "temporal_consistency": {
+        "passed": true,
+        "value": "+0.870 (75% positive)",
+        "threshold": "> 0 (sign-magnitude weighted)",
+        "hard": true,
+        "detail": "OOS Sharpes: ['0.42', '1.60', '-0.54', '2.66'] (excluded 2 folds: 2024,2025)"
+      },
+      "deflated_sharpe": {
+        "passed": false,
+        "value": "0.476",
+        "threshold": ">= 0.700",
+        "hard": true,
+        "detail": ""
+      },
+      "bootstrap_p_sharpe_positive": {
+        "passed": true,
+        "value": "95.7%",
+        "threshold": ">= 80%",
+        "hard": false,
+        "detail": ""
+      },
+      "oos_sharpe": {
+        "passed": true,
+        "value": "2.802",
+        "threshold": ">= 0.300",
+        "hard": false,
+        "detail": "OOS 2025-07-01~2026-04-01, return=+60.44%"
+      },
+      "vs_ew_universe": {
+        "passed": false,
+        "value": "0% (-13.95% avg)",
+        "threshold": ">= 50% windows positive beta-neutral excess",
+        "hard": false,
+        "detail": "WF: 0/4 windows positive, avg excess -13.95%"
+      },
+      "construction_sensitivity": {
+        "passed": false,
+        "value": "0.898",
+        "threshold": "<= 0.600",
+        "hard": true,
+        "detail": "Construction PBO (avg_pairwise_corr=0.000, normal)"
+      },
+      "worst_regime": {
+        "passed": true,
+        "value": "-14.40%",
+        "threshold": ">= -30%",
+        "hard": false,
+        "detail": "Cumulative return during 294 market crisis days (0050 DD > 15%)"
+      },
+      "sharpe_decay": {
+        "passed": "True",
+        "value": "t=+8.02 (delta=+0.386)",
+        "threshold": "t > -2.0 (decay not significant)",
+        "hard": false,
+        "detail": "SR(first_half)=0.451, SR(second_half)=0.837, delta=+0.386, t=+8.02"
+      },
+      "market_correlation": {
+        "passed": true,
+        "value": "0.717",
+        "threshold": "|corr| <= 0.80",
+        "hard": true,
+        "detail": "Daily return correlation with 0050.TW (high = no independent alpha)"
+      },
+      "cvar_95": {
+        "passed": true,
+        "value": "-3.15%",
+        "threshold": ">= -5.00%",
+        "hard": false,
+        "detail": "Daily CVaR(95%): expected shortfall in worst 5% of days"
+      }
+    },
+    "elapsed": 83.0,
+    "n_trials": 15,
+    "timestamp": "2026-04-02T08:10:41.203758"
+  }
+]

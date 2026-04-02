@@ -32,8 +32,8 @@ install-apps:
 web:
 	cd apps/web && bun run dev
 
-mobile:
-	cd apps/mobile && bun start
+android:
+	cd apps/android && ./gradlew.bat assembleDebug
 
 web-build:
 	cd apps/web && bun run build
@@ -44,8 +44,8 @@ web-typecheck:
 web-test:
 	cd apps/web && bun run test
 
-mobile-typecheck:
-	cd apps/mobile && bun run typecheck
+android-lint:
+	cd apps/android && ./gradlew.bat lintDebug
 
 # === Full stack ===
 

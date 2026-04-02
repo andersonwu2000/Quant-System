@@ -6,6 +6,7 @@ from src.portfolio.optimizer import (
     OptimizerConfig,
     PortfolioOptimizer,
 )
+from src.portfolio.risk_budget import RiskBudgetConfig, RiskBudgetResult, compute_risk_budget
 from src.portfolio.risk_model import RiskModel
 
 __all__ = [
@@ -14,5 +15,8 @@ __all__ = [
     "OptimizationMethod",
     "OptimizerConfig",
     "PortfolioOptimizer",
+    "RiskBudgetConfig",
+    "RiskBudgetResult",
     "RiskModel",
+    "compute_risk_budget",
 ]

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -84,6 +85,7 @@ class ExecutionService:
             self._startup_warmup_seconds = _tc.startup_warmup_seconds
             self._max_orders_per_minute = _tc.max_orders_per_minute
         except Exception:
+            # expected: config module not available (tests, early init)
             self._emergency_halt_file = "data/emergency_halt.flag"
             self._startup_warmup_seconds = 120
             self._max_orders_per_minute = 10
@@ -102,7 +104,6 @@ class ExecutionService:
         Returns:
             是否初始化成功。
         """
-        import time
         self._startup_time = time.monotonic()
 
         mode = self._config.mode
@@ -238,11 +239,11 @@ class ExecutionService:
             except TradingInvariantError:
                 raise
             except Exception:
-                pass  # ADV unavailable — skip I15 gracefully
+                # data-quality: ADV data unavailable — skip I15 gracefully
+                logger.debug("I15 ADV check skipped for %s: data unavailable", o.instrument.symbol, exc_info=True)
 
     def _check_safety_gates(self, orders: list[Order]) -> bool:
         """Run pre-trade safety gates. Returns True if orders were rejected."""
-        import time
         from pathlib import Path
 
         # Gate 0: Order invariants (AL-2)
@@ -263,7 +264,8 @@ class ExecutionService:
                     o.reject_reason = "Heartbeat paused: tick data stale >5 min"
                 return True
         except Exception:
-            pass  # app_state not available (tests, backtest)
+            # expected: app_state not available (tests, backtest mode)
+            logger.debug("Heartbeat check skipped: app_state unavailable", exc_info=True)
 
         # Gate 1: Emergency halt file
         halt_path = Path(self._emergency_halt_file)
@@ -347,6 +349,7 @@ class ExecutionService:
                     state = get_app_state()
                     state.kill_switch_fired = True
                 except Exception:
+                    # expected: app_state not available in tests
                     logger.debug("Suppressed exception", exc_info=True)
                 raise
             if rejected:
@@ -400,8 +403,17 @@ class ExecutionService:
         assert self._broker is not None
         broker_trades: list[Trade] = []
         ts = timestamp or datetime.now(timezone.utc)
+        _submit_start = time.monotonic()  # AN-21: timeout guard
 
         for i, order in enumerate(orders):
+            # AN-21: 30 second timeout for entire submit_orders batch
+            if time.monotonic() - _submit_start > 30:
+                logger.error("submit_orders exceeded 30s timeout after %d/%d orders", i, len(orders))
+                for r in orders[i:]:
+                    r.status = OrderStatus.REJECTED
+                    r.reject_reason = "submit_orders timeout (30s)"
+                break
+
             # LT-9: check broker connection before each order (live mode)
             if not self._fallback_mode and hasattr(self._broker, 'is_connected'):
                 if not self._broker.is_connected():
@@ -575,6 +587,7 @@ class ExecutionService:
                 if isinstance(self._broker, SinopacBroker):
                     self._broker.disconnect()
             except ImportError:
+                # expected: shioaji not installed (dev/test environment)
                 logger.debug("Suppressed exception", exc_info=True)
         self._initialized = False
         logger.info("ExecutionService shutdown")

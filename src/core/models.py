@@ -206,6 +206,11 @@ class Portfolio:
     initial_cash: Decimal = Decimal("1000000")
     nav_sod: Decimal = Decimal("0")  # start-of-day NAV（回測引擎更新）
     pending_settlements: list[tuple[str, Decimal]] = field(default_factory=list)  # (settle_date_str, amount)
+    # Lock ordering (to prevent deadlocks):
+    # 1. state.mutation_lock (asyncio.Lock) — acquired first for async routes
+    # 2. portfolio.lock (threading.Lock) — acquired second for portfolio mutations
+    # Never acquire portfolio.lock then mutation_lock (reverse order = deadlock risk)
+    # Shioaji tick callback thread: only acquires portfolio.lock (no mutation_lock)
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)  # #1: cross-thread safety
 
     def __deepcopy__(self, memo: dict[int, object]) -> "Portfolio":

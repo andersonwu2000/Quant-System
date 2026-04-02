@@ -159,6 +159,12 @@ class SinopacBroker(BrokerAdapter):
     def disconnect(self) -> None:
         """斷開 Shioaji 連線。"""
         self._stop_reconnect.set()
+        # AN-28: Wait for reconnect thread to finish before teardown
+        if self._reconnect_thread is not None and self._reconnect_thread.is_alive():
+            self._reconnect_thread.join(timeout=5)
+            if self._reconnect_thread.is_alive():
+                logger.warning("Reconnect thread did not stop within 5s")
+        self._reconnect_thread = None
         if self._api is not None:
             try:
                 self._api.logout()
@@ -601,12 +607,9 @@ class SinopacBroker(BrokerAdapter):
                 if attempts <= 10:
                     logger.debug("Reconnect attempt %d failed", attempts)
 
-            # Exponential backoff: 5s → 10s → 20s → 40s → 60s → 300s (cap)
-            if attempts <= 5:
-                wait = min(self._config.reconnect_interval * (2 ** (attempts - 1)), 60.0)
-            else:
-                wait = 300.0  # 5 分鐘
-            self._stop_reconnect.wait(wait)
+            # AN-26: Exponential backoff: 30s, 60s, 120s, 240s, max 300s
+            backoff = min(30 * (2 ** attempts), 300)
+            self._stop_reconnect.wait(backoff)
 
     # ── 內部工具 ──────────────────────────────────────────
 

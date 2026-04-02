@@ -34,6 +34,12 @@
 |--------|---------------|-------------|
 | [code-quality/BUG_HUNT_20260330.md](code-quality/BUG_HUNT_20260330.md) | Post-update bug scan: scheduler, oms, engine, evaluate, watchdog, risk | 4C+5H+9M → 2C verified not-bug, 2C+5H+8M fixed. 1M fixed prior session. **All resolved** |
 
+## 2026-04-02 Full Review
+
+| Report | What it covers | Key findings |
+|--------|---------------|-------------|
+| [system/FULL_PROJECT_REVIEW_20260402.md](system/FULL_PROJECT_REVIEW_20260402.md) | Full codebase audit: engineering (7.5/10) + financial methodology (8/10) | E-1 smoke test fail-open 🔴, E-2 lock mismatch 🔴, factor concentration 🟠, survivorship bias 🟠. 20 prioritized action items |
+
 ## Archive
 
 Superseded reports moved to `archive/`. Historical reference only.

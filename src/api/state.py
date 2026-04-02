@@ -29,6 +29,17 @@ from src.risk.engine import RiskEngine
 
 logger = logging.getLogger(__name__)
 
+# Lock ordering (to prevent deadlocks):
+# 1. state.mutation_lock (asyncio.Lock) — acquired first for async routes
+# 2. portfolio.lock (threading.Lock) — acquired second for portfolio mutations
+# Never acquire portfolio.lock then mutation_lock (reverse order = deadlock risk)
+# Shioaji tick callback thread: only acquires portfolio.lock (no mutation_lock)
+#
+# WARNING: mutation_lock is asyncio.Lock, portfolio.lock is threading.Lock.
+# These are different runtime types — do NOT await mutation_lock from sync code
+# or acquire portfolio.lock from async code without run_in_executor.
+# Future: AN-37 plans to unify via responsibility split (option C).
+
 # ── Portfolio persistence ────────────────────────────────────────
 _PERSIST_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "paper_trading"
 _PERSIST_PATH = _PERSIST_DIR / "portfolio_state.json"

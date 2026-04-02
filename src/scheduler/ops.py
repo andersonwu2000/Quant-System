@@ -55,9 +55,37 @@ async def daily_ops(config: object) -> dict:
     if today.weekday() == 4:  # Friday
         await _tdcc_weekly_snapshot()
 
+    # ── AL-6: Daily smoke test (before any trading) ────────────────
+    smoke_passed = True
+    try:
+        from scripts.daily_smoke_test import run_smoke_test
+        import json
+        from pathlib import Path
+
+        smoke_result = run_smoke_test()
+        smoke_passed = smoke_result.get("passed", False)
+
+        # Save result
+        smoke_dir = Path("data/smoke_test")
+        smoke_dir.mkdir(parents=True, exist_ok=True)
+        (smoke_dir / f"{today.isoformat()}.json").write_text(
+            json.dumps(smoke_result, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+        if smoke_passed:
+            logger.info("Smoke test PASSED — trading allowed")
+        else:
+            logger.error("Smoke test FAILED — blocking today's trading")
+            await heartbeat("error", "Smoke test FAILED — trading blocked")
+    except Exception:
+        smoke_passed = False
+        logger.exception("Smoke test script error — trading BLOCKED (fail-closed for script errors)")
+
     # ── Trading ──────────────────────────────────────────────────────
     pipeline_result = None
-    if _is_rebalance_day(today, config):
+    if not smoke_passed:
+        await heartbeat("blocked", "Trading blocked by smoke test failure")
+    elif _is_rebalance_day(today, config):
         from src.scheduler.jobs import execute_pipeline
         pipeline_result = await execute_pipeline(config)
         n_trades = pipeline_result.n_trades if pipeline_result else 0

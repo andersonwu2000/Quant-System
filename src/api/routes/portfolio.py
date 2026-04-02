@@ -497,7 +497,8 @@ async def portfolio_risk_analysis(req: RiskAnalysisRequest, api_key: str = Depen
         cov = rm.estimate_covariance(returns_df)
         corr = rm.estimate_correlation(returns_df)
 
-        weights = req.weights or {s: 1.0 / len(req.symbols) for s in req.symbols}
+        from src.api.routes import validate_weights
+        weights = validate_weights(req.weights) if req.weights else {s: 1.0 / len(req.symbols) for s in req.symbols}
         port_risk = rm.portfolio_risk(weights, cov)
         risk_contrib = rm.risk_contribution(weights, cov)
 

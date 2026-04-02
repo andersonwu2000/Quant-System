@@ -133,6 +133,9 @@ def main():
         # 9. Factor-Level PBO (Phase AB): compute when enough factors accumulated
         _compute_factor_level_pbo()
 
+        # 10. Deploy ACK verification: check that host acknowledged queued factors
+        _check_deploy_acks()
+
 
 def _process_pending():
     """Pick up pending validation markers, run Validator, write reports."""
@@ -359,10 +362,69 @@ def _queue_for_deployment(results: dict, validator_report: dict, factor_code: st
     marker_path = deploy_dir / f"{ts}.json"
     marker_path.write_text(json.dumps(marker, indent=2, default=str), encoding="utf-8")
 
+    # Verify write succeeded (catch silent volume mount failures)
+    if not marker_path.exists():
+        log(f"DEPLOY ERROR: marker {marker_path.name} not found after write — volume mount broken?")
+        return
+    readback = marker_path.read_text(encoding="utf-8")
+    if code_hash not in readback:
+        log(f"DEPLOY ERROR: marker {marker_path.name} readback mismatch — disk corruption?")
+        marker_path.unlink(missing_ok=True)
+        return
+
     # Record hash
     submitted[code_hash] = ts
     submitted_path.write_text(json.dumps(submitted, indent=2), encoding="utf-8")
     log(f"Deploy: queued {marker_path.name} (hash={code_hash})")
+
+
+def _check_deploy_acks():
+    """Verify host acknowledged deployed factors. Alert on stale markers."""
+    deploy_dir = WATCHDOG_DATA / "deploy_queue"
+    if not deploy_dir.exists():
+        return
+
+    ack_dir = deploy_dir / "ack"
+    stale_threshold = 86400  # 24 hours — host runs daily_ops once per day
+
+    for marker_path in sorted(deploy_dir.glob("*.json")):
+        age = time.time() - marker_path.stat().st_mtime
+        if age > stale_threshold:
+            log(f"DEPLOY ALERT: marker {marker_path.name} unprocessed for "
+                f"{age / 3600:.0f}h — host may not be reading deploy_queue/")
+
+    # Verify ACKs match submitted
+    if ack_dir.exists():
+        submitted_path = WATCHDOG_DATA / "submitted_factors.json"
+        submitted = {}
+        if submitted_path.exists():
+            try:
+                submitted = json.loads(submitted_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        ack_hashes = set()
+        for ack_path in ack_dir.glob("*.json"):
+            try:
+                ack = json.loads(ack_path.read_text(encoding="utf-8"))
+                ack_hashes.add(ack.get("code_hash", ""))
+            except Exception:
+                pass
+
+        # Check for submitted but never ACKed (older than 48h)
+        for code_hash, ts_str in submitted.items():
+            if code_hash not in ack_hashes:
+                try:
+                    import datetime as _dt
+                    submitted_time = _dt.datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+                    age_hours = (
+                        _dt.datetime.now() - submitted_time
+                    ).total_seconds() / 3600
+                    if age_hours > 48:
+                        log(f"DEPLOY ALERT: factor hash={code_hash[:8]} submitted "
+                            f"{age_hours:.0f}h ago but no ACK from host")
+                except Exception:
+                    pass
 
 
 def _run_background_validator(results: dict, factor_code: str) -> dict | None:
@@ -728,10 +790,21 @@ def _compute_factor_level_pbo():
         # Write to a file for status.ps1 to pick up
         pbo_path = WATCHDOG_DATA / "factor_pbo.json"
         import json
+        # Count total experiments from results.tsv for DSR multiple testing
+        _n_experiments = n_raw
+        try:
+            _results_tsv = WORK_DIR / "results.tsv"
+            if _results_tsv.exists():
+                _lines = _results_tsv.read_text(encoding="utf-8", errors="ignore").strip().splitlines()
+                _n_experiments = max(n_raw, len(_lines) - 1)  # subtract header
+        except Exception:
+            pass
+
         pbo_path.write_text(json.dumps({
             "factor_pbo": round(result.pbo, 4),
             "n_independent": n_independent,
             "n_total_factors": n_raw,
+            "n_total_experiments": _n_experiments,
             "n_clusters": len(clusters),
             "n_days": len(returns_matrix),
             "n_combinations": result.n_combinations,

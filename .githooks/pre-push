@@ -103,10 +103,10 @@ if [[ "${SKIP_LINT:-0}" == "1" ]]; then
 elif command -v bun &>/dev/null && [[ -f "apps/package.json" ]]; then
     run_step "web   tsc --noEmit" "cd '$PROJECT_ROOT/apps/web' && bun run typecheck 2>&1"
     # mobile 僅在 package.json 存在時才執行
-    if [[ -f "$PROJECT_ROOT/apps/mobile/package.json" ]]; then
-        run_step "mobile tsc --noEmit" "cd '$PROJECT_ROOT/apps/mobile' && bun run typecheck 2>&1"
+    if [[ -f "$PROJECT_ROOT/apps/android/build.gradle.kts" ]]; then
+        run_step "android lint" "cd '$PROJECT_ROOT/apps/android' && ./gradlew lintDebug 2>&1"
     else
-        skip_step "mobile typecheck (package.json 不存在)"
+        skip_step "android lint (not found)"
     fi
 else
     skip_step "web typecheck (bun 未安裝)"

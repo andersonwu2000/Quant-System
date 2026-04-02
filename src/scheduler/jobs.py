@@ -54,6 +54,7 @@ def _write_pipeline_record(
             existing = json.loads(path.read_text(encoding="utf-8"))
             record["started_at"] = existing.get("started_at")
         except Exception:
+            # data-quality: corrupted JSON in pipeline record — non-critical
             logger.debug("Suppressed exception", exc_info=True)
     path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
@@ -75,6 +76,7 @@ def _has_completed_run_today() -> bool:
             if record.get("status") in ("completed", "ok"):
                 return True
         except Exception:
+            # data-quality: corrupted run record — skip and check next
             continue
     return False
 
@@ -93,6 +95,7 @@ def _has_completed_run_this_month() -> bool:
             if record.get("status") in ("completed", "ok") and record.get("n_trades", 0) > 0:
                 return True
         except Exception:
+            # data-quality: corrupted run record — skip and check next
             continue
     return False
 
@@ -119,6 +122,7 @@ def check_crashed_runs() -> list[dict[str, Any]]:
                     encoding="utf-8",
                 )
         except Exception:
+            # data-quality: corrupted run record — skip
             continue
     return crashed
 
@@ -160,6 +164,7 @@ async def monthly_revenue_update(max_retries: int = 1) -> bool:
                     result.stderr[-500:] if result.stderr else "unknown",
                 )
         except Exception:
+            # expected: external subprocess / network failure
             logger.exception("Revenue data update exception (attempt %d/%d)", attempt + 1, max_retries + 1)
 
     logger.error("Revenue data update exhausted all retries")
@@ -343,6 +348,7 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
             if notifier.is_configured():
                 await notifier.send("Pipeline Timeout", msg)
         except Exception:
+            # expected: external API failure (notification service)
             logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
 
@@ -359,6 +365,7 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
                 state = get_app_state()
                 state.kill_switch_fired = True
             except Exception:
+                # expected: app_state not available in tests
                 logger.debug("Suppressed exception", exc_info=True)
             try:
                 from src.notifications.factory import create_notifier
@@ -366,6 +373,7 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
                 if notifier.is_configured():
                     await notifier.send("INVARIANT VIOLATION", f"Pipeline stopped: {exc}")
             except Exception:
+                # expected: external API failure (notification service)
                 logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
 
@@ -396,6 +404,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                 return PipelineResult(status="skipped", strategy_name=config.active_strategy,
                                      error=f"Non-trading day: {now.date()}")
         except Exception:
+            # expected: calendar module may not have data — proceed conservatively
             logger.debug("Calendar check failed, proceeding anyway", exc_info=True)
         # 台股 09:00-13:30，允許 08:00-14:00 的寬鬆時段
         if not (8 <= now.hour <= 14):
@@ -452,6 +461,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                     try:
                         await notifier.send("Pipeline Error", msg)
                     except Exception:
+                        # expected: external API failure (notification service)
                         logger.debug("Suppressed exception", exc_info=True)
                 return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
 
@@ -465,6 +475,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             try:
                 await notifier.send("🚫 Quality Gate BLOCKED", msg)
             except Exception:
+                # expected: external API failure (notification service)
                 logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
     if gate.warnings:
@@ -546,6 +557,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             if bars is not None and len(bars) >= 20:
                 volumes[s] = Decimal(str(int(bars["volume"].iloc[-20:].mean())))
         except Exception:
+            # data-quality: individual symbol data fetch failure — skip symbol
             missing_prices.append(s)
     if missing_prices:
         logger.warning(
@@ -592,6 +604,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                             elif _pb is not None and len(_pb) >= 1:
                                 _prev = float(_pb["close"].iloc[-1])
                         except Exception:
+                            # data-quality: parquet prev_close lookup failure
                             logger.debug("Suppressed exception", exc_info=True)
                         current_bars[s] = {
                             "open": float(_r.get("Open", _r.get("Close", 0))),
@@ -603,8 +616,10 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                         }
                         _realtime_fetched += 1
                 except Exception:
+                    # expected: external API failure (yfinance per-symbol)
                     logger.debug("Suppressed exception", exc_info=True)
         except ImportError:
+            # expected: yfinance not installed
             logger.debug("Suppressed exception", exc_info=True)
         # Fall back to parquet for symbols not fetched
         for s in _all_syms:
@@ -623,6 +638,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                             "prev_close": _prev,
                         }
                 except Exception:
+                    # data-quality: parquet bar lookup failure for individual symbol
                     logger.debug("Suppressed exception", exc_info=True)
         logger.info("Paper SimBroker: %d realtime + %d parquet fallback = %d current_bars",
                     _realtime_fetched, len(current_bars) - _realtime_fetched, len(current_bars))
@@ -641,6 +657,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                     deployer.stop(d.name, reason="main_kill_switch")
                     logger.warning("Auto strategy %s stopped due to main kill switch", d.name)
             except Exception:
+                # expected: PaperDeployer may not be initialized
                 logger.debug("Suppressed exception", exc_info=True)
             return PipelineResult(status="aborted", strategy_name=strategy.name(), error="Kill switch fired")
         # Log trade intents before execution (crash recovery for live mode)
@@ -658,7 +675,8 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                         run_id=run_id,
                     )
         except Exception:
-            pass  # intent logging failure must not block trading
+            # expected: trade_ledger module may not exist yet — must not block trading
+            logger.debug("Intent logging failed (non-blocking)", exc_info=True)
 
         trades = execute_from_weights(
             target_weights=target_weights,
@@ -684,6 +702,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                 from src.execution.trade_ledger import get_today_entries
                 n_orders = sum(1 for e in get_today_entries() if e.get("type") == "intent")
             except Exception:
+                # expected: trade_ledger module may not exist
                 n_orders = len(target_weights)  # fallback
             if n_orders > 0:
                 logger.info("Live mode: waiting up to 60s for %d async fills...", n_orders)
@@ -697,6 +716,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                             logger.info("Live mode: %d/%d fills received", len(fills), n_orders)
                             break
                     except Exception:
+                        # expected: trade_ledger query failure during poll
                         logger.debug("Suppressed exception", exc_info=True)
                 else:
                     logger.warning("Live mode: timeout waiting for fills (%d orders submitted)", n_orders)
@@ -740,6 +760,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                         f"Top: {', '.join(d['symbol'] for d in deviations[:3])}",
                     ))
             except Exception:
+                # expected: external API failure (notification service)
                 logger.debug("Reconciliation notification failed", exc_info=True)
 
     # 6. T2: 記錄回測比較數據（用於未來 R² 計算）
@@ -763,6 +784,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         try:
             await notifier.send("Trading Pipeline", summary)
         except Exception:
+            # expected: external API failure (notification service)
             logger.debug("Notification failed", exc_info=True)
 
     # P1: 主動存 NAV snapshot（不依賴 asyncio task 的時間窗口）
@@ -798,6 +820,7 @@ def _save_nav_snapshot(portfolio: "Portfolio") -> None:
         path.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.info("NAV snapshot saved: %s (NAV=%s)", today, snap["nav"])
     except Exception:
+        # data-quality: file write failure — non-critical logging
         logger.debug("NAV snapshot save failed", exc_info=True)
 
 
@@ -830,6 +853,7 @@ def _write_daily_report(
             if _prev_nav > 0 and 0.1 < nav / _prev_nav < 10:
                 prev_nav = _prev_nav
         except Exception:
+            # data-quality: corrupted snapshot JSON
             logger.debug("Suppressed exception", exc_info=True)
     daily_ret = (nav / prev_nav - 1) * 100 if prev_nav > 0 else 0
 
@@ -838,6 +862,7 @@ def _write_daily_report(
         from src.core.config import get_config
         initial_cash = get_config().backtest_initial_cash
     except Exception:
+        # expected: config not available in isolated context
         initial_cash = nav  # fallback: assume starting from current NAV
     cum_ret = (nav / initial_cash - 1) * 100 if initial_cash > 0 else 0
 
@@ -875,6 +900,7 @@ def _write_daily_report(
         path.write_text("\n".join(lines), encoding="utf-8")
         logger.info("Daily report written: %s", path)
     except Exception:
+        # data-quality: file write failure — non-critical reporting
         logger.debug("Daily report write failed", exc_info=True)
 
 
@@ -942,6 +968,8 @@ async def update_portfolio_market_prices() -> None:
                     pos.market_price = latest_close
                     updated += 1
         except Exception:
+            # data-quality: individual symbol price lookup failure
+            logger.debug("Price update failed for %s", sym, exc_info=True)
             continue
 
     if updated > 0:
@@ -974,6 +1002,7 @@ def _record_backtest_comparison(
         path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.info("Backtest comparison record: %s", path)
     except Exception:
+        # data-quality: file write failure — non-critical logging
         logger.warning("Failed to save backtest comparison", exc_info=True)
 
 
@@ -1078,6 +1107,7 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
             RECONCILE_RUNS.labels(status=status).inc()
             RECONCILE_MISMATCHES.set(len(result.mismatched))
         except Exception:
+            # expected: prometheus metrics not available
             logger.debug("Suppressed exception", exc_info=True)
 
         if not result.is_clean and notifier.is_configured():
@@ -1102,6 +1132,7 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
             from src.metrics import RECONCILE_RUNS
             RECONCILE_RUNS.labels(status="error").inc()
         except Exception:
+            # expected: prometheus metrics not available
             logger.debug("Suppressed exception", exc_info=True)
         if notifier.is_configured():
             try:
@@ -1113,5 +1144,6 @@ async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
                     f"Positions: {len(state.portfolio.positions)}",
                 )
             except Exception:
+                # expected: external API failure (notification service)
                 logger.debug("Suppressed exception", exc_info=True)
         return {"status": "error"}

@@ -156,6 +156,17 @@ class BacktestEngine:
                 logger.warning("PRICE OUTLIER: %s", w)
 
         # 載入股利數據（如果啟用）
+        # Guard: auto_adjust prices already include dividends — injecting again = double-count
+        if config.enable_dividends and not config.fractional_shares:
+            # Check if price data is already dividend-adjusted (Yahoo default)
+            from src.data.sources.yahoo import YAHOO_AUTO_ADJUST
+            if YAHOO_AUTO_ADJUST:
+                raise ValueError(
+                    "enable_dividends=True conflicts with auto_adjust=True (Yahoo default). "
+                    "Dividend-adjusted prices already reflect dividends — enabling both "
+                    "causes double-counting. Either set enable_dividends=False or use "
+                    "unadjusted price data."
+                )
         self._dividend_data: dict[str, dict[str, float]] = {}
         if config.enable_dividends:
             self._dividend_data = self._load_dividends(config)

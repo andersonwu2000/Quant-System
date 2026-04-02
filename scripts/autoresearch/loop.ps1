@@ -135,7 +135,7 @@ try {
                 -e "HOME=/home/researcher" `
                 -e "CLAUDE_CONFIG_DIR=/home/researcher/.claude" `
                 autoresearch-agent `
-                claude -p $dockerPrompt --dangerously-skip-permissions --max-turns 200
+                claude -p $dockerPrompt --dangerously-skip-permissions --max-turns 200 --model claude-sonnet-4-6
         }
 
         # Detect auth failure — back off instead of crash-loop

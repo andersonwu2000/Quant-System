@@ -13,8 +13,10 @@ from decimal import Decimal
 from typing import Any
 
 from src.core.models import Instrument, Portfolio, Trade, TradingInvariantError
+from src.execution.broker.base import OrderExecutor
 from src.execution.broker.simulated import SimBroker
 from src.execution.oms import apply_trades
+from src.portfolio.overlay import OverlayConfig, apply_overlay
 from src.risk.engine import RiskEngine
 from src.risk.rules import MarketState
 from src.strategy.base import Context, Strategy
@@ -31,7 +33,7 @@ def execute_one_bar(
     prices: dict[str, Decimal],
     volumes: dict[str, Decimal] | None = None,
     current_bars: dict[str, dict[str, Any]] | None = None,
-    broker: Any | None = None,
+    broker: OrderExecutor | None = None,
     sim_broker: SimBroker | None = None,  # deprecated, use broker=
     instruments: dict[str, Instrument] | None = None,
     available_cash: Decimal | None = None,
@@ -39,6 +41,9 @@ def execute_one_bar(
     fractional_shares: bool = False,
     timestamp: Any = None,
     check_invariants: bool = False,
+    overlay_config: OverlayConfig | None = None,
+    market_returns: Any = None,
+    sector_map: dict[str, str] | None = None,
 ) -> list[Trade]:
     """Execute one bar: strategy → weights → orders → risk → broker → apply_trades.
 
@@ -78,6 +83,9 @@ def execute_one_bar(
         fractional_shares=fractional_shares,
         timestamp=timestamp,
         check_invariants=check_invariants,
+        overlay_config=overlay_config,
+        market_returns=market_returns,
+        sector_map=sector_map,
     )
 
 
@@ -88,13 +96,16 @@ def execute_from_weights(
     prices: dict[str, Decimal],
     volumes: dict[str, Decimal] | None = None,
     current_bars: dict[str, dict[str, Any]] | None = None,
-    broker: Any | None = None,
+    broker: OrderExecutor | None = None,
     instruments: dict[str, Instrument] | None = None,
     available_cash: Decimal | None = None,
     market_lot_sizes: dict[str, int] | None = None,
     fractional_shares: bool = False,
     timestamp: Any = None,
     check_invariants: bool = False,
+    overlay_config: OverlayConfig | None = None,
+    market_returns: Any = None,
+    sector_map: dict[str, str] | None = None,
 ) -> list[Trade]:
     """Execute from pre-computed weights: orders → risk → broker → apply_trades.
 
@@ -105,9 +116,24 @@ def execute_from_weights(
         target_weights: {symbol: weight} from strategy.
         broker: Any object with execute(orders, current_bars, timestamp) → list[Trade].
                 SimBroker (backtest), ExecutionService (paper/live), or None.
+        overlay_config: If provided, apply portfolio overlay before weights_to_orders.
+        market_returns: Market index daily returns for beta calculation.
+        sector_map: {symbol: sector} for sector cap enforcement.
     """
     if not target_weights:
         return []
+
+    # 0. Portfolio overlay (after weights, before orders)
+    if overlay_config is not None:
+        target_weights = apply_overlay(
+            weights=target_weights,
+            prices=prices,
+            market_returns=market_returns,
+            sector_map=sector_map,
+            config=overlay_config,
+        )
+        if not target_weights:
+            return []
 
     # 1. Convert weights to orders
     orders = weights_to_orders(
