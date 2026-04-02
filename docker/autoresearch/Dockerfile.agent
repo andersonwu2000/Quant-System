@@ -27,10 +27,20 @@ ENV CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 # Git safe directory (volume mount ownership mismatch) — must run BEFORE wrapper
 RUN git config --global --add safe.directory /app/work
 
-# Git wrapper: block destructive commands (reset --hard, clean -fd)
+# AP-12: Git wrapper — allowlist (not blocklist) to prevent escape
 USER root
 RUN mkdir -p /usr/local/lib/git-safe && \
     ln -s /usr/bin/git /usr/local/lib/git-safe/git && \
-    printf '#!/bin/sh\ncase "$*" in *reset*--hard*|*clean*-f*) echo "blocked: destructive git operation" >&2; exit 1;; esac\nexec /usr/local/lib/git-safe/git "$@"\n' > /usr/local/bin/git && \
+    printf '#!/bin/sh\n\
+CMD="$1"\n\
+case "$CMD" in\n\
+  add|commit|tag|log|diff|status|show|rev-parse) exec /usr/local/lib/git-safe/git "$@" ;;\n\
+  checkout)\n\
+    case "$*" in\n\
+      *HEAD~1*--*factor.py*) exec /usr/local/lib/git-safe/git "$@" ;;\n\
+      *) echo "blocked: only checkout HEAD~1 -- factor.py allowed" >&2; exit 1 ;;\n\
+    esac ;;\n\
+  *) echo "blocked: git $CMD not in allowlist" >&2; exit 1 ;;\n\
+esac\n' > /usr/local/bin/git && \
     chmod +x /usr/local/bin/git
 USER researcher

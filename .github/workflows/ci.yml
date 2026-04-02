@@ -18,6 +18,19 @@ jobs:
       - run: ruff check src/ tests/
       - run: mypy src/
 
+  backend-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ".[dev]" pip-audit bandit
+      - name: Dependency vulnerability scan
+        run: pip-audit --strict --desc
+      - name: Static security analysis
+        run: bandit -r src/ -ll -q
+
   backend-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -113,6 +126,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs:
       - backend-lint
+      - backend-security
       - backend-test
       - web-typecheck
       - web-test

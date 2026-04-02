@@ -69,11 +69,11 @@ class TestValidationConfig:
         assert cfg.min_sharpe == 0.7
         assert cfg.min_cagr == 0.08
         assert cfg.max_drawdown == 0.40
-        assert cfg.max_pbo == 0.50
+        assert cfg.max_pbo == 0.60
         assert cfg.min_prob_sharpe_positive == 0.80
         assert cfg.max_annual_turnover == 0.80
         assert cfg.min_universe_size == 50
-        assert cfg.max_market_corr == 0.80
+        assert cfg.max_market_corr == 0.65
         assert cfg.max_cvar_95 == -0.05
 
     def test_custom_thresholds(self) -> None:
@@ -156,9 +156,9 @@ class TestChecklistCompleteness:
 
         # oos_end should be yesterday (±1 day tolerance)
         assert abs((oos_end - (today - timedelta(days=1))).days) <= 1
-        # oos window should be ~549 days
+        # OOS2 (second half): ~274 days (Phase AM: split 549d into L5+Validator)
         window = (oos_end - oos_start).days
-        assert 547 <= window <= 550
+        assert 273 <= window <= 276
 
     def test_default_thresholds_match_phase_ac(self) -> None:
         """Frozen thresholds from Phase AC must not drift."""
@@ -166,12 +166,12 @@ class TestChecklistCompleteness:
         assert cfg.min_cagr == 0.08
         assert cfg.min_sharpe == 0.7
         assert cfg.max_drawdown == 0.40
-        assert cfg.max_pbo == 0.50
+        assert cfg.max_pbo == 0.60
         assert cfg.min_dsr == 0.70
         assert cfg.min_prob_sharpe_positive == 0.80
         assert cfg.oos_min_sharpe == 0.3
         assert cfg.min_excess_return == 0.0
-        assert cfg.max_market_corr == 0.80
+        assert cfg.max_market_corr == 0.65
         assert cfg.max_cvar_95 == -0.05
 
 

@@ -102,7 +102,8 @@ src/
 │   ├── analytics.py          # 40+ 績效指標計算
 │   ├── validation.py         # 回測合理性檢查
 │   ├── experiment.py         # 平行網格回測
-│   └── validator.py          # StrategyValidator（11 項強制驗證閘門）
+│   ├── validator.py          # StrategyValidator orchestrator（AN-3: check methods moved to checks/）
+│   └── checks/               # statistical.py, economic.py, descriptive.py
 ├── api/
 │   ├── app.py                # FastAPI 應用工廠（CORS、路由、WebSocket）
 │   ├── auth.py               # API Key + JWT + 角色存取控制

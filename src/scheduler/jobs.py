@@ -4,16 +4,18 @@ Jobs:
 - execute_pipeline: 統一交易管線（Phase S）
 - execute_daily_reconcile: 收盤後自動對帳（broker vs system）
 - monthly_revenue_update: 月度營收數據更新
+
+Implementation split (AN-3):
+- pipeline/records.py: pipeline run records, trade logs, NAV snapshots
+- pipeline/reconcile.py: daily/backtest reconciliation
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 import pandas as pd
@@ -24,259 +26,29 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# ── Pipeline execution record helpers ──────────────────────────
-
-PIPELINE_RUNS_DIR = Path("data/paper_trading/pipeline_runs")
-
-
-def _write_pipeline_record(
-    run_id: str,
-    status: str,
-    strategy: str = "",
-    error: str = "",
-    n_trades: int = 0,
-) -> Path:
-    """Write or update a pipeline execution record as JSON."""
-    PIPELINE_RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    path = PIPELINE_RUNS_DIR / f"{run_id}.json"
-    record = {
-        "run_id": run_id,
-        "status": status,
-        "strategy": strategy,
-        "started_at": datetime.now().isoformat() if status == "started" else None,
-        "finished_at": datetime.now().isoformat() if status != "started" else None,
-        "n_trades": n_trades,
-        "error": error,
-    }
-    # Merge with existing record to preserve started_at
-    if path.exists() and status != "started":
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-            record["started_at"] = existing.get("started_at")
-        except Exception:
-            # data-quality: corrupted JSON in pipeline record — non-critical
-            logger.debug("Suppressed exception", exc_info=True)
-    path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
-    return path
-
-
-def _today_run_id() -> str:
-    """Generate a run ID for the current execution: YYYY-MM-DD_HHMM."""
-    return datetime.now().strftime("%Y-%m-%d_%H%M")
-
-
-def _has_completed_run_today() -> bool:
-    """Check if a completed pipeline run already exists for today (idempotency)."""
-    today_prefix = datetime.now().strftime("%Y-%m-%d")
-    if not PIPELINE_RUNS_DIR.exists():
-        return False
-    for path in PIPELINE_RUNS_DIR.glob(f"{today_prefix}*.json"):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-            if record.get("status") in ("completed", "ok"):
-                return True
-        except Exception:
-            # data-quality: corrupted run record — skip and check next
-            continue
-    return False
-
-
-def _has_completed_run_this_month() -> bool:
-    """#2: 月度策略用 — 檢查本月是否已完成過 pipeline（防重啟後重複再平衡）。
-
-    P-2 fix: 只擋有實際交易的 completed，不擋 0-trade 的結果（可能是數據問題）。
-    """
-    month_prefix = datetime.now().strftime("%Y-%m")
-    if not PIPELINE_RUNS_DIR.exists():
-        return False
-    for path in PIPELINE_RUNS_DIR.glob(f"{month_prefix}*.json"):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-            if record.get("status") in ("completed", "ok") and record.get("n_trades", 0) > 0:
-                return True
-        except Exception:
-            # data-quality: corrupted run record — skip and check next
-            continue
-    return False
-
-
-def check_crashed_runs() -> list[dict[str, Any]]:
-    """Check for pipeline runs with status='started' (indicates a crash).
-
-    Returns list of crashed run records. Called on scheduler startup.
-    """
-    crashed: list[dict[str, Any]] = []
-    if not PIPELINE_RUNS_DIR.exists():
-        return crashed
-    for path in PIPELINE_RUNS_DIR.glob("*.json"):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-            if record.get("status") == "started":
-                crashed.append(record)
-                # Mark as crashed so we don't warn again next time
-                record["status"] = "crashed"
-                record["finished_at"] = datetime.now().isoformat()
-                record["error"] = "Process terminated unexpectedly (detected on startup)"
-                path.write_text(
-                    json.dumps(record, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-        except Exception:
-            # data-quality: corrupted run record — skip
-            continue
-    return crashed
-
-
-
-# execute_rebalance() removed — replaced by execute_pipeline() (Phase S)
-
-
-async def monthly_revenue_update(max_retries: int = 1) -> bool:
-    """每月營收數據更新。回傳 True 表示成功。
-
-    使用 asyncio.to_thread 避免 subprocess.run 阻塞 event loop。
-    """
-    import asyncio
-    import subprocess
-    import sys
-    from datetime import datetime, timedelta
-
-    start_date = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")
-    logger.info("Monthly revenue data update triggered (start=%s)", start_date)
-
-    def _run_sync() -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, "-m", "scripts.download_finmind_data",
-             "--symbols-from-market", "--dataset", "revenue", "--start", start_date],
-            capture_output=True, text=True, timeout=600,
-        )
-
-    for attempt in range(max_retries + 1):
-        try:
-            result = await asyncio.to_thread(_run_sync)
-            if result.returncode == 0:
-                logger.info("Revenue data update completed successfully (attempt %d)", attempt + 1)
-                return True
-            else:
-                logger.error(
-                    "Revenue data update failed (attempt %d/%d): %s",
-                    attempt + 1, max_retries + 1,
-                    result.stderr[-500:] if result.stderr else "unknown",
-                )
-        except Exception:
-            # expected: external subprocess / network failure
-            logger.exception("Revenue data update exception (attempt %d/%d)", attempt + 1, max_retries + 1)
-
-    logger.error("Revenue data update exhausted all retries")
-    return False
-
-
-
-# monthly_revenue_rebalance() removed — replaced by execute_pipeline() (Phase S)
-
-
-def _get_tw_universe_fallback() -> list[str]:
-    """從所有來源目錄建立台股 universe（排除 ETF 00xx）。(R10.4)"""
-    from src.data.data_catalog import get_catalog
-
-    catalog = get_catalog()
-    all_syms = catalog.available_symbols("price")
-    # Exclude ETFs (00xx)
-    def bare_filter(s):
-        return not s.replace(".TW", "").replace(".TWO", "").startswith("00")
-    universe = sorted(s for s in all_syms if ".TW" in s and bare_filter(s))
-    return universe
-
-
-def _save_selection_log_legacy(weights: dict[str, float]) -> None:
-    """[deprecated] 舊版 selection log。"""
-    import json
-    from pathlib import Path
-
-    out_dir = Path("data/paper_trading/selections")
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    today = datetime.now().strftime("%Y-%m-%d")
-    log = {
-        "date": today,
-        "strategy": "revenue_momentum_hedged",
-        "n_targets": len(weights),
-        "weights": {k: round(v, 4) for k, v in sorted(weights.items(), key=lambda x: -x[1])},
-    }
-
-    path = out_dir / f"{today}.json"
-    with open(path, "w") as f:
-        json.dump(log, f, indent=2, ensure_ascii=False)
-    logger.info("Selection log saved: %s", path)
-
-
-def _save_trade_log(
-    trades: list[Any],
-    strategy_name: str,
-    signal_prices: dict[str, Any] | None = None,
-) -> None:
-    """記錄每次 rebalance 的交易結果（含 run_id + 滑價追蹤）。
-
-    signal_prices: 策略計算時的價格（最新收盤價）。
-    fill_price vs signal_price 的差距 = implementation shortfall。
-    """
-    out_dir = Path("data/paper_trading/trades")
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    today = datetime.now().strftime("%Y-%m-%d_%H%M")
-    trade_records = []
-    total_shortfall_bps = 0.0
-    n_with_prices = 0
-
-    for t in trades:
-        sym = str(getattr(t, "symbol", getattr(getattr(t, "instrument", None), "symbol", "?")))
-        fill_price = float(getattr(t, "price", 0))
-        sig_price = float(signal_prices.get(sym, 0)) if signal_prices else 0
-        side = str(getattr(t, "side", ""))
-        commission = float(getattr(t, "commission", 0))
-        qty = float(getattr(t, "quantity", 0))
-
-        # Implementation shortfall: (fill - signal) / signal × 10000 bps
-        shortfall_bps = 0.0
-        if sig_price > 0 and fill_price > 0:
-            if "BUY" in side.upper():
-                shortfall_bps = (fill_price - sig_price) / sig_price * 10000
-            else:
-                shortfall_bps = (sig_price - fill_price) / sig_price * 10000
-            total_shortfall_bps += shortfall_bps
-            n_with_prices += 1
-
-        trade_records.append({
-            "symbol": sym,
-            "side": side,
-            "quantity": str(getattr(t, "quantity", "")),
-            "fill_price": f"{fill_price:.4f}",
-            "signal_price": f"{sig_price:.4f}" if sig_price > 0 else "",
-            "shortfall_bps": round(shortfall_bps, 2),
-            "commission": f"{commission:.2f}",
-            "notional": f"{fill_price * qty:.0f}" if fill_price > 0 else "",
-        })
-
-    avg_shortfall = total_shortfall_bps / n_with_prices if n_with_prices > 0 else 0.0
-    total_commission = sum(float(r["commission"]) for r in trade_records)
-
-    log = {
-        "date": today,
-        "run_id": _today_run_id(),
-        "strategy": strategy_name,
-        "n_trades": len(trades),
-        "avg_shortfall_bps": round(avg_shortfall, 2),
-        "total_commission": round(total_commission, 2),
-        "trades": trade_records,
-    }
-
-    path = out_dir / f"{today}.json"
-    with open(path, "w") as f:
-        json.dump(log, f, indent=2, ensure_ascii=False)
-    logger.info(
-        "Trade log saved: %s (%d trades, avg shortfall=%.1f bps, commission=%.0f)",
-        path, len(trades), avg_shortfall, total_commission,
-    )
+# Re-export from submodules for backward compatibility
+from src.scheduler.pipeline.records import (  # noqa: E402, F401
+    PIPELINE_RUNS_DIR,
+    _write_pipeline_record,
+    _today_run_id,
+    _has_completed_run_today,
+    _has_completed_run_this_month,
+    check_crashed_runs,
+    monthly_revenue_update,
+    _get_tw_universe_fallback,
+    _save_selection_log_legacy,
+    _save_trade_log,
+    _save_selection_log,
+    _save_nav_snapshot,
+    _write_daily_report,
+    _record_backtest_comparison,
+)
+from src.scheduler.pipeline.reconcile import (  # noqa: E402, F401
+    _reconcile,
+    update_portfolio_market_prices,
+    execute_backtest_reconcile,
+    execute_daily_reconcile,
+)
 
 
 # ── Phase S: 統一交易管線 ─────────────────────────────────────
@@ -291,11 +63,8 @@ class PipelineResult:
     error: str = ""
 
 
-async def execute_pipeline(config: TradingConfig) -> PipelineResult:
+async def execute_pipeline(config: "TradingConfig") -> PipelineResult:
     """統一交易管線 — 更新數據 → 執行策略 → 風控 → 下單 → 持久化 → 通知。
-
-    取代 execute_rebalance() 和 monthly_revenue_rebalance()。
-    根據 config.active_strategy 決定跑哪個策略和需要哪些數據。
 
     Features:
     - Timeout: enforced via asyncio.wait_for (default: config.backtest_timeout)
@@ -304,7 +73,7 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
     """
     import asyncio
 
-    # #2: 月度策略防重複再平衡（crash recovery 後不會重跑）
+    # #2: 月度策略防重複再平衡
     monthly_strategies = {"revenue_momentum", "revenue_momentum_hedged", "trust_follow"}
     if config.active_strategy in monthly_strategies:
         if _has_completed_run_this_month():
@@ -315,9 +84,8 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
         return PipelineResult(status="ok", strategy_name=config.active_strategy)
 
     run_id = _today_run_id()
-    timeout_secs = config.backtest_timeout  # default 1800s
+    timeout_secs = config.backtest_timeout
 
-    # Write "started" record before doing anything
     _write_pipeline_record(run_id, status="started", strategy=config.active_strategy)
     logger.info("Pipeline triggered: strategy=%s, run_id=%s, timeout=%ds",
                 config.active_strategy, run_id, timeout_secs)
@@ -327,7 +95,6 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
             _execute_pipeline_inner(config),
             timeout=timeout_secs,
         )
-        # Write completion record
         _write_pipeline_record(
             run_id,
             status="completed" if result.status == "ok" else result.status,
@@ -341,14 +108,12 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
         msg = f"Pipeline timed out after {timeout_secs}s"
         logger.error(msg)
         _write_pipeline_record(run_id, status="failed", strategy=config.active_strategy, error=msg)
-        # Best-effort notification
         try:
             from src.notifications.factory import create_notifier
             notifier = create_notifier(config)
             if notifier.is_configured():
                 await notifier.send("Pipeline Timeout", msg)
         except Exception:
-            # expected: external API failure (notification service)
             logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
 
@@ -356,7 +121,6 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
         msg = f"Pipeline crashed: {exc}"
         logger.exception("Pipeline failed")
         _write_pipeline_record(run_id, status="failed", strategy=config.active_strategy, error=msg)
-        # AL-1/3: TradingInvariantError → trigger kill switch + P0 notification
         from src.core.models import TradingInvariantError
         if isinstance(exc, TradingInvariantError):
             logger.critical("INVARIANT VIOLATION in pipeline: %s — triggering kill switch", exc)
@@ -365,7 +129,6 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
                 state = get_app_state()
                 state.kill_switch_fired = True
             except Exception:
-                # expected: app_state not available in tests
                 logger.debug("Suppressed exception", exc_info=True)
             try:
                 from src.notifications.factory import create_notifier
@@ -373,17 +136,12 @@ async def execute_pipeline(config: TradingConfig) -> PipelineResult:
                 if notifier.is_configured():
                     await notifier.send("INVARIANT VIOLATION", f"Pipeline stopped: {exc}")
             except Exception:
-                # expected: external API failure (notification service)
                 logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="error", strategy_name=config.active_strategy, error=msg)
 
 
-async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
-    """Core pipeline logic (extracted for timeout wrapping).
-
-    P2: Also writes pipeline_runs record (not just execute_pipeline outer wrapper).
-    """
-    # H1 fix: 不在內層重複寫 "started"（外層 execute_pipeline 已寫）
+async def _execute_pipeline_inner(config: "TradingConfig") -> PipelineResult:
+    """Core pipeline logic (extracted for timeout wrapping)."""
     run_id = _today_run_id()
     from src.api.state import get_app_state
     from src.data.sources import create_fundamentals
@@ -391,7 +149,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     from src.strategy.base import Context
     from src.strategy.registry import resolve_strategy
 
-    # T1 + P6: 市場時段檢查（live mode only — paper mode 模擬成交不需要）
+    # T1 + P6: 市場時段檢查（live mode only）
     if config.mode == "live":
         from datetime import timedelta as _td, timezone as _tz
         _tw_tz = _tz(_td(hours=8))
@@ -404,9 +162,7 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                 return PipelineResult(status="skipped", strategy_name=config.active_strategy,
                                      error=f"Non-trading day: {now.date()}")
         except Exception:
-            # expected: calendar module may not have data — proceed conservatively
             logger.debug("Calendar check failed, proceeding anyway", exc_info=True)
-        # 台股 09:00-13:30，允許 08:00-14:00 的寬鬆時段
         if not (8 <= now.hour <= 14):
             logger.info("Pipeline skipped: outside trading hours (%d:00)", now.hour)
             return PipelineResult(status="skipped", strategy_name=config.active_strategy,
@@ -415,8 +171,6 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     state = get_app_state()
     notifier = create_notifier(config)
 
-    # #8: 確保 nav_sod 有設定（實盤管線不像回測引擎會自動設）
-    # Acquire mutation_lock for portfolio mutation to prevent race with kill switch
     async with state.mutation_lock:
         if state.portfolio.nav_sod == 0 and state.portfolio.nav > 0:
             state.portfolio.nav_sod = state.portfolio.nav
@@ -433,7 +187,6 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         return PipelineResult(status="error", error=f"Strategy resolution failed: {e}")
 
     # 1. 數據更新 + 品質閘門
-    # 先取 universe（refresh 和 quality gate 都需要）
     universe = _get_tw_universe_fallback()
     if not universe:
         universe = list(state.portfolio.positions.keys())
@@ -443,13 +196,11 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     if config.pipeline_data_update:
         from src.data.refresh import refresh_all_trading_data
 
-        # 1a. 決定需要更新的數據集
         datasets_to_refresh = ["price"]
         revenue_strategies = {"revenue_momentum", "revenue_momentum_hedged", "trust_follow"}
         if strategy.name() in revenue_strategies:
             datasets_to_refresh.append("revenue")
 
-        # 1b. 增量更新
         logger.info("Refreshing datasets: %s", datasets_to_refresh)
         reports = await refresh_all_trading_data(symbols=universe, datasets=datasets_to_refresh)
         for r in reports:
@@ -461,11 +212,9 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                     try:
                         await notifier.send("Pipeline Error", msg)
                     except Exception:
-                        # expected: external API failure (notification service)
                         logger.debug("Suppressed exception", exc_info=True)
                 return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
 
-    # 1c. Pre-trade quality gate (always runs, even if data update is off)
     from src.data.quality_gate import pre_trade_quality_gate
     gate = pre_trade_quality_gate(universe)
     if not gate.passed:
@@ -473,49 +222,49 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         logger.error(msg)
         if notifier.is_configured():
             try:
-                await notifier.send("🚫 Quality Gate BLOCKED", msg)
+                await notifier.send("Quality Gate BLOCKED", msg)
             except Exception:
-                # expected: external API failure (notification service)
                 logger.debug("Suppressed exception", exc_info=True)
         return PipelineResult(status="data_failed", strategy_name=strategy.name(), error=msg)
     if gate.warnings:
         logger.warning("Quality gate warnings: %s", gate.warnings)
 
-    # 2. 建立 Context（用 DataCatalog 讀本地數據，refresh 已在上面更新過）
-
-    from src.data.data_catalog import get_catalog
+    # 2. 建立 Context
+    from src.data.data_catalog import get_catalog, require_df, DataNotAvailableError
     from src.data.feed import HistoricalFeed
     _catalog = get_catalog()
     feed = HistoricalFeed()
     for _sym in universe:
-        _df = _catalog.get("price", _sym)
-        if not _df.empty and "close" in _df.columns:
+        try:
+            _result = _catalog.get_result("price", _sym)
+            _df = require_df(_result)
+            if "close" not in _df.columns:
+                logger.warning("Price data for %s has no 'close' column — skipping", _sym)
+                continue
             if not isinstance(_df.index, pd.DatetimeIndex):
                 _df.index = pd.to_datetime(_df.index)
             feed.load(_sym, _df)
+        except DataNotAvailableError as exc:
+            logger.warning("Price data unavailable for %s: %s — skipping", _sym, exc)
     fundamentals = create_fundamentals(config.data_source)
-    # 用 tz-naive 當前時間（和 backtest Context 一致，避免 tz-aware vs tz-naive 衝突）
     import datetime as _dt
     ctx = Context(
         feed=feed, portfolio=state.portfolio,
         fundamentals_provider=fundamentals,
-        current_time=_dt.datetime.now(),  # tz-naive, consistent with backtest
+        current_time=_dt.datetime.now(),
     )
 
     # 3. 執行策略
     target_weights = strategy.on_bar(ctx)
 
-    # AL-3: Pipeline invariant checks (I12-I14) + NaN firewall
+    # AL-3: Pipeline invariant checks
     if target_weights:
         import math
         from src.core.models import TradingInvariantError
 
-        # I13: 權重中不得有 NaN 或 Inf (check first, before summing)
         for sym, w in target_weights.items():
             if math.isnan(w) or math.isinf(w):
                 raise TradingInvariantError(f"I13: Weight for {sym} is {w}")
-
-        # I12: 策略回傳的權重總和不超過 1.05（含容差）
         total_weight = sum(abs(w) for w in target_weights.values())
         if total_weight > 1.05:
             raise TradingInvariantError(f"I12: Total weight {total_weight:.2f} > 1.05")
@@ -523,16 +272,14 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     if not target_weights:
         has_positions = bool(state.portfolio.positions)
         if has_positions:
-            # PT-3: empty weights with existing positions → sell all (strategy wants 0% exposure)
             logger.warning(
                 "Strategy %s returned empty weights but portfolio has %d positions — will liquidate.",
                 strategy.name(), len(state.portfolio.positions),
             )
-            target_weights = {}  # proceed to execute_from_weights which will generate SELL orders
+            target_weights = {}
         else:
             logger.warning(
-                "Strategy %s returned empty weights (universe=%d symbols, date=%s). "
-                "Possible causes: no stocks pass filters, revenue data stale, or data feed issue.",
+                "Strategy %s returned empty weights (universe=%d symbols, date=%s).",
                 strategy.name(), len(universe), ctx.now().strftime("%Y-%m-%d") if ctx.now() else "unknown",
             )
             return PipelineResult(status="no_weights", strategy_name=strategy.name())
@@ -541,10 +288,9 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     _save_selection_log(target_weights, strategy.name())
 
     # 4. 風控 + 下單
-    # 取 target + 現有持倉的價格（持倉不在 target 時需要 price 才能產生 SELL 訂單）
     all_needed = set(target_weights.keys()) | set(state.portfolio.positions.keys())
-    prices = {}
-    volumes = {}
+    prices: dict[str, Any] = {}
+    volumes: dict[str, Any] = {}
     missing_prices: list[str] = []
     for s in all_needed:
         try:
@@ -557,125 +303,56 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             if bars is not None and len(bars) >= 20:
                 volumes[s] = Decimal(str(int(bars["volume"].iloc[-20:].mean())))
         except Exception:
-            # data-quality: individual symbol data fetch failure — skip symbol
             missing_prices.append(s)
     if missing_prices:
         logger.warning(
-            "Missing prices for %d/%d symbols (will not be traded): %s",
+            "Missing prices for %d/%d symbols: %s",
             len(missing_prices), len(all_needed), missing_prices[:10],
         )
 
-    # U1: 使用統一執行路徑（和回測共用 execute_from_weights）
     from src.core.trading_pipeline import execute_from_weights
 
-    # Paper mode: use SimBroker (same as backtest) for realistic fills
-    # Live mode: use SinopacBroker (real orders)
     if config.mode == "paper":
         from src.execution.broker.simulated import SimBroker, SimConfig
         _sim_config = SimConfig(
             commission_rate=config.commission_rate,
             tax_rate=config.tax_rate,
             slippage_bps=config.default_slippage_bps,
-            price_limit_pct=0.10,  # Taiwan ±10% limit
-            partial_fill=True,     # simulate odd-lot partial fills
-            check_odd_lot_session=True,  # reject odd-lot orders outside 09:10-13:30
+            price_limit_pct=0.10,
+            partial_fill=True,
+            check_odd_lot_session=True,
         )
         _broker = SimBroker(_sim_config)
-        # Build current_bars: try real-time first, fall back to latest parquet bar
-        current_bars: dict[str, dict] = {}
-        _all_syms = set(target_weights.keys()) | set(state.portfolio.positions.keys())
-        # Attempt real-time fetch for today's prices
-        _realtime_fetched = 0
-        try:
-            import yfinance as _yf
-            _today = datetime.now().strftime("%Y-%m-%d")
-            for s in _all_syms:
-                try:
-                    _t = _yf.Ticker(s)
-                    _d = _t.history(period="1d")
-                    if _d is not None and not _d.empty:
-                        _r = _d.iloc[-1]
-                        # Get prev_close from parquet (yesterday's close)
-                        _prev = 0.0
-                        try:
-                            _pb = feed.get_bars(s, start=None, end=None)
-                            if _pb is not None and len(_pb) >= 2:
-                                _prev = float(_pb["close"].iloc[-2])  # yesterday's close, not today's
-                            elif _pb is not None and len(_pb) >= 1:
-                                _prev = float(_pb["close"].iloc[-1])
-                        except Exception:
-                            # data-quality: parquet prev_close lookup failure
-                            logger.debug("Suppressed exception", exc_info=True)
-                        current_bars[s] = {
-                            "open": float(_r.get("Open", _r.get("Close", 0))),
-                            "high": float(_r.get("High", _r.get("Close", 0))),
-                            "low": float(_r.get("Low", _r.get("Close", 0))),
-                            "close": float(_r.get("Close", 0)),
-                            "volume": float(_r.get("Volume", 0)),
-                            "prev_close": _prev,
-                        }
-                        _realtime_fetched += 1
-                except Exception:
-                    # expected: external API failure (yfinance per-symbol)
-                    logger.debug("Suppressed exception", exc_info=True)
-        except ImportError:
-            # expected: yfinance not installed
-            logger.debug("Suppressed exception", exc_info=True)
-        # Fall back to parquet for symbols not fetched
-        for s in _all_syms:
-            if s not in current_bars:
-                try:
-                    b = feed.get_bars(s, start=None, end=None)
-                    if b is not None and len(b) >= 1:
-                        last = b.iloc[-1]
-                        _prev = float(b["close"].iloc[-2]) if len(b) >= 2 else float(last["close"])
-                        current_bars[s] = {
-                            "open": float(last.get("open", last["close"])),
-                            "high": float(last.get("high", last["close"])),
-                            "low": float(last.get("low", last["close"])),
-                            "close": float(last["close"]),
-                            "volume": float(last.get("volume", 0)),
-                            "prev_close": _prev,
-                        }
-                except Exception:
-                    # data-quality: parquet bar lookup failure for individual symbol
-                    logger.debug("Suppressed exception", exc_info=True)
-        logger.info("Paper SimBroker: %d realtime + %d parquet fallback = %d current_bars",
-                    _realtime_fetched, len(current_bars) - _realtime_fetched, len(current_bars))
+        current_bars = _build_current_bars(all_needed, feed)
     else:
         _broker = state.execution_service
         current_bars = None
 
     async with state.mutation_lock:
-        # H-6: kill switch 可能在策略計算期間觸發，重新檢查
         if hasattr(state, 'kill_switch_fired') and state.kill_switch_fired:
-            logger.warning("Kill switch fired during strategy calculation — aborting trade execution")
+            logger.warning("Kill switch fired during strategy calculation — aborting")
             try:
                 from src.alpha.auto.paper_deployer import PaperDeployer
                 deployer = PaperDeployer.get_instance()
                 for d in deployer.get_active():
                     deployer.stop(d.name, reason="main_kill_switch")
-                    logger.warning("Auto strategy %s stopped due to main kill switch", d.name)
             except Exception:
-                # expected: PaperDeployer may not be initialized
                 logger.debug("Suppressed exception", exc_info=True)
             return PipelineResult(status="aborted", strategy_name=strategy.name(), error="Kill switch fired")
-        # Log trade intents before execution (crash recovery for live mode)
+
         try:
             from src.execution.trade_ledger import log_intent
-            run_id = _today_run_id()
             for sym, weight in target_weights.items():
                 if sym in prices and prices[sym] > 0:
                     log_intent(
                         symbol=sym,
                         side="BUY" if weight > 0 else "SELL",
-                        quantity=0,  # actual qty determined by execute_from_weights
+                        quantity=0,
                         expected_price=float(prices[sym]),
                         strategy=strategy.name(),
                         run_id=run_id,
                     )
         except Exception:
-            # expected: trade_ledger module may not exist yet — must not block trading
             logger.debug("Intent logging failed (non-blocking)", exc_info=True)
 
         trades = execute_from_weights(
@@ -688,27 +365,24 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
             current_bars=current_bars,
             market_lot_sizes=config.market_lot_sizes,
             fractional_shares=config.fractional_shares,
-            check_invariants=True,  # AL-1: enable portfolio invariant checks for paper/live
+            check_invariants=True,
         )
         if trades:
             _save_trade_log(trades, strategy.name(), signal_prices=prices)
 
-        # Live mode: wait for async fills (SinopacBroker fills via background callback)
+        # Live mode: wait for async fills
         if config.mode == "live" and not trades:
             import asyncio as _aio
-            # Count intent logs for today (actual orders submitted, not target weights)
             n_orders = 0
             try:
                 from src.execution.trade_ledger import get_today_entries
                 n_orders = sum(1 for e in get_today_entries() if e.get("type") == "intent")
             except Exception:
-                # expected: trade_ledger module may not exist
-                n_orders = len(target_weights)  # fallback
+                n_orders = len(target_weights)
             if n_orders > 0:
                 logger.info("Live mode: waiting up to 60s for %d async fills...", n_orders)
-                for _ in range(12):  # 12 × 5s = 60s max
+                for _ in range(12):
                     await _aio.sleep(5)
-                    # Check ledger for today's fills
                     try:
                         from src.execution.trade_ledger import get_today_entries
                         fills = [e for e in get_today_entries() if e.get("type") == "fill"]
@@ -716,16 +390,14 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
                             logger.info("Live mode: %d/%d fills received", len(fills), n_orders)
                             break
                     except Exception:
-                        # expected: trade_ledger query failure during poll
                         logger.debug("Suppressed exception", exc_info=True)
                 else:
-                    logger.warning("Live mode: timeout waiting for fills (%d orders submitted)", n_orders)
+                    logger.warning("Live mode: timeout waiting for fills (%d orders)", n_orders)
 
-        # #9: log rejected orders (SimBroker rejects missing current_bars)
         if hasattr(_broker, 'rejected_log') and _broker.rejected_log:
             for rej in _broker.rejected_log:
                 logger.warning("Order REJECTED: %s — %s", rej.instrument.symbol, rej.reject_reason)
-        # nav_sod + persistence inside lock (prevent race with realtime monitor)
+
         state.portfolio.nav_sod = state.portfolio.nav
         from src.api.state import save_portfolio
         save_portfolio(state.portfolio)
@@ -734,36 +406,24 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
     n_targets = len(target_weights)
     logger.info("Pipeline done: %d trades (of %d targets), NAV=%s", n_trades, n_targets, state.portfolio.nav)
     if n_trades < n_targets:
-        skipped = n_targets - n_trades
         logger.warning(
-            "Pipeline: %d/%d targets skipped (likely stock price > per-stock allocation, "
-            "or missing price data). Consider reducing max_holdings or increasing capital.",
-            skipped, n_targets,
+            "Pipeline: %d/%d targets skipped (likely price > allocation or missing data).",
+            n_targets - n_trades, n_targets,
         )
 
-    # 5. T3: 自動對帳 — 比對策略目標 vs 實際持倉
     deviations = _reconcile(target_weights, state.portfolio)
     if deviations:
-        logger.warning(
-            "Reconciliation: %d deviations > 2%%: %s",
-            len(deviations),
-            [(d["symbol"], f"{d['deviation']:.1%}") for d in deviations[:5]],
-        )
-        # 偏差過多時發送告警通知
-        if len(deviations) >= 5:
+        logger.warning("Reconciliation: %d deviations > 2%%", len(deviations))
+        if len(deviations) >= 5 and notifier.is_configured():
             try:
-                if notifier.is_configured():
-                    import asyncio as _aio
-                    _aio.ensure_future(notifier.send(
-                        "Reconciliation Alert",
-                        f"{len(deviations)} positions deviate > 2% from target. "
-                        f"Top: {', '.join(d['symbol'] for d in deviations[:3])}",
-                    ))
+                import asyncio as _aio
+                _aio.ensure_future(notifier.send(
+                    "Reconciliation Alert",
+                    f"{len(deviations)} positions deviate > 2% from target.",
+                ))
             except Exception:
-                # expected: external API failure (notification service)
                 logger.debug("Reconciliation notification failed", exc_info=True)
 
-    # 6. T2: 記錄回測比較數據（用於未來 R² 計算）
     _record_backtest_comparison(
         strategy_name=strategy.name(),
         paper_nav=float(state.portfolio.nav),
@@ -771,11 +431,8 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         target_weights=target_weights,
     )
 
-    # 7. 通知（含對帳結果）
     if notifier.is_configured():
-        deviation_text = ""
-        if deviations:
-            deviation_text = f"\nDeviations: {len(deviations)} symbols > 2%"
+        deviation_text = f"\nDeviations: {len(deviations)} symbols > 2%" if deviations else ""
         summary = (
             f"Pipeline [{strategy.name()}]: {n_trades} trades, "
             f"{len(target_weights)} targets, NAV={float(state.portfolio.nav):,.0f}"
@@ -784,366 +441,67 @@ async def _execute_pipeline_inner(config: TradingConfig) -> PipelineResult:
         try:
             await notifier.send("Trading Pipeline", summary)
         except Exception:
-            # expected: external API failure (notification service)
             logger.debug("Notification failed", exc_info=True)
 
-    # P1: 主動存 NAV snapshot（不依賴 asyncio task 的時間窗口）
     _save_nav_snapshot(state.portfolio)
-
-    # P2: completion record written by outer execute_pipeline (avoid duplicate)
-
-    # P3: Write human-readable daily report
     _write_daily_report(state.portfolio, strategy.name(), n_trades, target_weights)
 
     return PipelineResult(status="ok", n_trades=n_trades, strategy_name=strategy.name())
 
 
-def _save_nav_snapshot(portfolio: "Portfolio") -> None:
-    """P1: Pipeline 執行後主動存一次 NAV snapshot。"""
-    snap_dir = Path("data/paper_trading/snapshots")
-    snap_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y-%m-%d")
-    path = snap_dir / f"{today}.json"
-    if path.exists():
-        return  # 今天已存過
-    snap = {
-        "date": today,
-        "nav": float(portfolio.nav),
-        "cash": float(portfolio.cash),
-        "n_positions": len(portfolio.positions),
-        "positions": {
-            s: {"qty": float(p.quantity), "price": float(p.market_price)}
-            for s, p in portfolio.positions.items()
-        },
-    }
+def _build_current_bars(symbols: set[str], feed: Any) -> dict[str, dict]:
+    """Build current_bars for SimBroker: try realtime (yfinance) first, fall back to parquet."""
+    current_bars: dict[str, dict] = {}
+    _realtime_fetched = 0
     try:
-        path.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
-        logger.info("NAV snapshot saved: %s (NAV=%s)", today, snap["nav"])
-    except Exception:
-        # data-quality: file write failure — non-critical logging
-        logger.debug("NAV snapshot save failed", exc_info=True)
-
-
-def _write_daily_report(
-    portfolio: "Portfolio",
-    strategy_name: str,
-    n_trades: int,
-    target_weights: dict[str, float],
-) -> None:
-    """P3: Write human-readable daily report to docs/paper-trading/daily/."""
-    report_dir = Path("docs/paper-trading/daily")
-    report_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y-%m-%d")
-    path = report_dir / f"{today}.md"
-
-    nav = float(portfolio.nav)
-    cash = float(portfolio.cash)
-    n_pos = len(portfolio.positions)
-    cash_pct = cash / nav * 100 if nav > 0 else 0
-
-    # Daily return: compare with previous snapshot (same NAV scale only)
-    snap_dir = Path("data/paper_trading/snapshots")
-    prev_nav = nav
-    snaps = sorted(snap_dir.glob("*.json")) if snap_dir.exists() else []
-    if len(snaps) >= 2:
-        try:
-            prev = json.loads(snaps[-2].read_text(encoding="utf-8"))
-            _prev_nav = prev.get("nav", 0)
-            # Sanity: only use if same order of magnitude (prevents stale 10M vs new 10K)
-            if _prev_nav > 0 and 0.1 < nav / _prev_nav < 10:
-                prev_nav = _prev_nav
-        except Exception:
-            # data-quality: corrupted snapshot JSON
-            logger.debug("Suppressed exception", exc_info=True)
-    daily_ret = (nav / prev_nav - 1) * 100 if prev_nav > 0 else 0
-
-    # Cumulative return: use configured initial cash
-    try:
-        from src.core.config import get_config
-        initial_cash = get_config().backtest_initial_cash
-    except Exception:
-        # expected: config not available in isolated context
-        initial_cash = nav  # fallback: assume starting from current NAV
-    cum_ret = (nav / initial_cash - 1) * 100 if initial_cash > 0 else 0
-
-    lines = [
-        f"# Paper Trading Daily Report — {today}",
-        "",
-        f"**Strategy**: {strategy_name}",
-        f"**Trades today**: {n_trades}",
-        "",
-        "## Portfolio",
-        "",
-        "| Metric | Value |",
-        "|--------|-------|",
-        f"| NAV | {nav:,.0f} |",
-        f"| Cash | {cash:,.0f} ({cash_pct:.1f}%) |",
-        f"| Positions | {n_pos} |",
-        f"| Daily Return | {daily_ret:+.2f}% |",
-        f"| Cumulative Return | {cum_ret:+.2f}% |",
-        "",
-        "## Holdings",
-        "",
-        "| Symbol | Qty | Price | Value | Weight |",
-        "|--------|----:|------:|------:|-------:|",
-    ]
-
-    for sym, pos in sorted(portfolio.positions.items(), key=lambda x: -float(x[1].market_price * x[1].quantity)):
-        mv = float(pos.quantity * pos.market_price)
-        w = mv / nav * 100 if nav > 0 else 0
-        target = target_weights.get(sym, 0) * 100
-        lines.append(f"| {sym} | {float(pos.quantity):.0f} | {float(pos.market_price):,.1f} | {mv:,.0f} | {w:.1f}% (target {target:.1f}%) |")
-
-    lines.extend(["", "---", f"*Generated at {datetime.now().strftime('%H:%M:%S')}*"])
-
-    try:
-        path.write_text("\n".join(lines), encoding="utf-8")
-        logger.info("Daily report written: %s", path)
-    except Exception:
-        # data-quality: file write failure — non-critical reporting
-        logger.debug("Daily report write failed", exc_info=True)
-
-
-def _reconcile(
-    target_weights: dict[str, float],
-    portfolio: "Portfolio",
-    threshold: float = 0.02,
-) -> list[dict[str, Any]]:
-    """T3: 比對策略目標 vs 實際持倉，回傳偏差 > threshold 的股票。"""
-    deviations: list[dict[str, Any]] = []
-    all_symbols = set(target_weights.keys()) | set(portfolio.positions.keys())
-    for sym in all_symbols:
-        target_w = target_weights.get(sym, 0.0)
-        actual_w = float(portfolio.get_position_weight(sym))
-        diff = abs(target_w - actual_w)
-        if diff > threshold:
-            deviations.append({
-                "symbol": sym,
-                "target": round(target_w, 4),
-                "actual": round(actual_w, 4),
-                "deviation": round(diff, 4),
-            })
-    deviations.sort(key=lambda d: d["deviation"], reverse=True)
-
-    # 存檔（含 run_id）
-    recon_dir = Path("data/paper_trading/reconciliation")
-    recon_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y-%m-%d")
-    recon_record = {
-        "date": today,
-        "run_id": _today_run_id(),  # P3: 關聯
-        "n_deviations": len(deviations),
-        "deviations": deviations,
-    }
-    path = recon_dir / f"{today}.json"
-    path.write_text(json.dumps(recon_record, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    return deviations
-
-
-async def update_portfolio_market_prices() -> None:
-    """Update portfolio positions' market_price from latest data.
-
-    Paper trading NAV is frozen between rebalances because market_price = fill_price.
-    This function reads latest close from parquet and updates market_price,
-    enabling correct daily_drawdown / kill_switch calculation.
-    """
-    from src.api.state import get_app_state, save_portfolio
-    from src.data.data_catalog import get_catalog
-    from decimal import Decimal
-
-    state = get_app_state()
-    if not state.portfolio.positions:
-        return
-
-    catalog = get_catalog()
-    updated = 0
-
-    for sym, pos in state.portfolio.positions.items():
-        try:
-            df = catalog.get("price", sym)
-            if not df.empty and "close" in df.columns:
-                latest_close = Decimal(str(float(df["close"].iloc[-1])))
-                if latest_close > 0:
-                    pos.market_price = latest_close
-                    updated += 1
-        except Exception:
-            # data-quality: individual symbol price lookup failure
-            logger.debug("Price update failed for %s", sym, exc_info=True)
-            continue
-
-    if updated > 0:
-        state.portfolio.nav_sod = state.portfolio.nav
-        save_portfolio(state.portfolio)
-        logger.info("Portfolio prices updated: %d/%d positions, NAV=%s",
-                    updated, len(state.portfolio.positions), state.portfolio.nav)
-
-
-def _record_backtest_comparison(
-    strategy_name: str,
-    paper_nav: float,
-    paper_trades: int,
-    target_weights: dict[str, float],
-) -> None:
-    """T2: 記錄每次 pipeline 的 NAV，供未來計算回測 vs Paper Trading R²。"""
-    comp_dir = Path("data/paper_trading/backtest_comparison")
-    comp_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y-%m-%d")
-    record = {
-        "date": today,
-        "strategy": strategy_name,
-        "paper_nav": paper_nav,
-        "paper_trades": paper_trades,
-        "n_targets": len(target_weights),
-        "top_targets": dict(sorted(target_weights.items(), key=lambda x: -x[1])[:5]),
-    }
-    path = comp_dir / f"{today}.json"
-    try:
-        path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
-        logger.info("Backtest comparison record: %s", path)
-    except Exception:
-        # data-quality: file write failure — non-critical logging
-        logger.warning("Failed to save backtest comparison", exc_info=True)
-
-
-# _async_price_update and _async_revenue_update removed — replaced by
-# refresh engine (src.data.refresh) integrated in execute_pipeline()
-
-
-async def execute_backtest_reconcile() -> dict[str, Any]:
-    """EOD: compare paper trading vs backtest expectation.
-
-    Runs after market close. Compares today's actual NAV change
-    against what the portfolio's holdings should have returned.
-    Alerts on drift > 50bps.
-    """
-    from src.reconciliation.daily import reconcile_date, save_reconciliation
-
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    try:
-        result = reconcile_date(today)
-        save_reconciliation(result)
-        logger.info("Backtest reconcile: %s", result.summary())
-
-        if result.status == "drift":
-            from src.core.config import get_config
-            from src.notifications.factory import create_notifier
-            config = get_config()
-            notifier = create_notifier(config)
-            if notifier.is_configured():
-                await notifier.send(
-                    "Backtest Reconcile DRIFT",
-                    result.summary() + "\n" + "\n".join(result.warnings),
-                )
-
-        return {
-            "status": result.status,
-            "return_diff_bps": round(result.return_diff_bps, 2),
-            "weight_drift_bps": round(result.weight_drift_bps, 2),
-        }
-    except Exception as exc:
-        logger.exception("Backtest reconcile failed")
-        return {"status": "error", "error": str(exc)}
-
-
-def _save_selection_log(weights: dict[str, float], strategy_name: str = "") -> None:
-    """記錄選股結果（含 run_id 用於追溯）。"""
-    out_dir = Path("data/paper_trading/selections")
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    today = datetime.now().strftime("%Y-%m-%d")
-    log = {
-        "date": today,
-        "run_id": _today_run_id(),  # P3: 關聯 selection → trade → reconciliation
-        "strategy": strategy_name,
-        "n_targets": len(weights),
-        "weights": {k: round(v, 4) for k, v in sorted(weights.items(), key=lambda x: -x[1])},
-    }
-
-    path = out_dir / f"{today}.json"
-    path.write_text(json.dumps(log, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.info("Selection log saved: %s", path)
-
-
-async def execute_daily_reconcile(config: TradingConfig) -> dict[str, Any]:
-    """收盤後自動對帳：比對系統持倉與券商端持倉。
-
-    只在 paper/live mode 且 broker 已初始化時執行。
-    如有差異，透過通知系統（Discord/LINE/Telegram）告警。
-    """
-    from src.api.state import get_app_state
-    from src.execution.reconcile import reconcile
-    from src.notifications.factory import create_notifier
-
-    state = get_app_state()
-    notifier = create_notifier(config)
-
-    # Broker reconciliation 只在 live mode 有意義：
-    # - paper mode：系統有模擬持倉，券商帳戶空的（或有手動部位），比對必定不一致
-    # - live mode：系統下真單，券商持倉應與系統一致，差異才是真正的告警
-    if not config.enable_reconciliation:
-        logger.debug("Daily reconcile skipped: mode=%s (only runs in live)", config.mode)
-        return {"status": "skipped", "reason": "not live mode"}
-
-    # Update market prices before reconcile (fixes frozen NAV / kill switch)
-    await update_portfolio_market_prices()
-
-    exec_svc = state.execution_service
-    if not exec_svc.is_initialized or exec_svc.broker is None:
-        logger.warning("Daily reconcile skipped: broker not initialized")
-        return {"status": "skipped", "reason": "broker not initialized"}
-
-    try:
-        broker_positions = exec_svc.broker.query_positions()
-        result = reconcile(state.portfolio, broker_positions)
-
-        summary = result.summary()
-        logger.info("Daily reconcile completed:\n%s", summary)
-
-        status = "clean" if result.is_clean else "discrepancy"
-        try:
-            from src.metrics import RECONCILE_RUNS, RECONCILE_MISMATCHES
-            RECONCILE_RUNS.labels(status=status).inc()
-            RECONCILE_MISMATCHES.set(len(result.mismatched))
-        except Exception:
-            # expected: prometheus metrics not available
-            logger.debug("Suppressed exception", exc_info=True)
-
-        if not result.is_clean and notifier.is_configured():
-            await notifier.send(
-                "Reconciliation Discrepancy",
-                f"{len(result.mismatched)} mismatched, "
-                f"{len(result.system_only)} system-only, "
-                f"{len(result.broker_only)} broker-only positions.\n\n"
-                + summary,
-            )
-
-        return {
-            "status": status,
-            "matched": len(result.matched),
-            "mismatched": len(result.mismatched),
-            "system_only": len(result.system_only),
-            "broker_only": len(result.broker_only),
-        }
-    except Exception as exc:
-        logger.exception("Daily reconcile failed")
-        try:
-            from src.metrics import RECONCILE_RUNS
-            RECONCILE_RUNS.labels(status="error").inc()
-        except Exception:
-            # expected: prometheus metrics not available
-            logger.debug("Suppressed exception", exc_info=True)
-        if notifier.is_configured():
+        import yfinance as _yf
+        for s in symbols:
             try:
-                await notifier.send(
-                    "Reconcile Error",
-                    f"Daily reconciliation failed.\n"
-                    f"Error: {type(exc).__name__}: {exc}\n"
-                    f"Mode: {config.mode}\n"
-                    f"Positions: {len(state.portfolio.positions)}",
-                )
+                _t = _yf.Ticker(s)
+                _d = _t.history(period="1d")
+                if _d is not None and not _d.empty:
+                    _r = _d.iloc[-1]
+                    _prev = 0.0
+                    try:
+                        _pb = feed.get_bars(s, start=None, end=None)
+                        if _pb is not None and len(_pb) >= 2:
+                            _prev = float(_pb["close"].iloc[-2])
+                        elif _pb is not None and len(_pb) >= 1:
+                            _prev = float(_pb["close"].iloc[-1])
+                    except Exception:
+                        logger.debug("Suppressed exception", exc_info=True)
+                    current_bars[s] = {
+                        "open": float(_r.get("Open", _r.get("Close", 0))),
+                        "high": float(_r.get("High", _r.get("Close", 0))),
+                        "low": float(_r.get("Low", _r.get("Close", 0))),
+                        "close": float(_r.get("Close", 0)),
+                        "volume": float(_r.get("Volume", 0)),
+                        "prev_close": _prev,
+                    }
+                    _realtime_fetched += 1
             except Exception:
-                # expected: external API failure (notification service)
                 logger.debug("Suppressed exception", exc_info=True)
-        return {"status": "error"}
+    except ImportError:
+        logger.debug("Suppressed exception", exc_info=True)
+
+    for s in symbols:
+        if s not in current_bars:
+            try:
+                b = feed.get_bars(s, start=None, end=None)
+                if b is not None and len(b) >= 1:
+                    last = b.iloc[-1]
+                    _prev = float(b["close"].iloc[-2]) if len(b) >= 2 else float(last["close"])
+                    current_bars[s] = {
+                        "open": float(last.get("open", last["close"])),
+                        "high": float(last.get("high", last["close"])),
+                        "low": float(last.get("low", last["close"])),
+                        "close": float(last["close"]),
+                        "volume": float(last.get("volume", 0)),
+                        "prev_close": _prev,
+                    }
+            except Exception:
+                logger.debug("Suppressed exception", exc_info=True)
+
+    logger.info("Paper SimBroker: %d realtime + %d parquet = %d current_bars",
+                _realtime_fetched, len(current_bars) - _realtime_fetched, len(current_bars))
+    return current_bars

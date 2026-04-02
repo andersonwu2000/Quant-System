@@ -96,7 +96,7 @@ class TestPipelineIdempotency:
             "n_trades": 9,
         }))
 
-        with patch("src.scheduler.jobs.PIPELINE_RUNS_DIR", runs_dir):
+        with patch("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", runs_dir):
             assert _has_completed_run_today() is True
 
     def test_no_run_today(self, tmp_path):
@@ -106,7 +106,7 @@ class TestPipelineIdempotency:
         runs_dir = tmp_path / "pipeline_runs"
         runs_dir.mkdir()
 
-        with patch("src.scheduler.jobs.PIPELINE_RUNS_DIR", runs_dir):
+        with patch("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", runs_dir):
             assert _has_completed_run_today() is False
 
     def test_has_completed_run_this_month(self, tmp_path):
@@ -126,7 +126,7 @@ class TestPipelineIdempotency:
             "n_trades": 5,
         }))
 
-        with patch("src.scheduler.jobs.PIPELINE_RUNS_DIR", runs_dir):
+        with patch("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", runs_dir):
             assert _has_completed_run_this_month() is True
 
     def test_failed_run_does_not_block(self, tmp_path):
@@ -145,7 +145,7 @@ class TestPipelineIdempotency:
             "n_trades": 0,
         }))
 
-        with patch("src.scheduler.jobs.PIPELINE_RUNS_DIR", runs_dir):
+        with patch("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", runs_dir):
             assert _has_completed_run_today() is False
 
 

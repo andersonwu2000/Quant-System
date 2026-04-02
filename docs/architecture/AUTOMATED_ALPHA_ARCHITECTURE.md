@@ -203,7 +203,7 @@ config = FilterStrategyConfig(
 | Research Agent | ✅ `scripts/alpha_research_agent.py` | — |
 | Experience Memory | ✅ `src/alpha/auto/experience_memory.py` | — |
 | Factor Evaluator (L1-L5) | ✅ `src/alpha/auto/factor_evaluator.py` | — |
-| StrategyValidator (13 項) | ✅ `src/backtest/validator.py` | — |
+| StrategyValidator (13 項) | ✅ `src/backtest/validator.py` (AN-3: check methods now in `src/backtest/checks/`) | — |
 | FilterStrategy | ✅ `src/alpha/filter_strategy.py` | — |
 | Monthly Scheduler | ✅ `src/scheduler/jobs.py` | — |
 | Notification | ✅ `src/notifications/` | — |

@@ -38,6 +38,7 @@ def tmp_pipeline_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect PIPELINE_RUNS_DIR to a temp directory."""
     runs_dir = tmp_path / "pipeline_runs"
     runs_dir.mkdir()
+    monkeypatch.setattr("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", runs_dir)
     monkeypatch.setattr("src.scheduler.jobs.PIPELINE_RUNS_DIR", runs_dir)
     return runs_dir
 
@@ -110,7 +111,7 @@ class TestWritePipelineRecord:
     def test_creates_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should create the runs directory if it does not exist."""
         runs_dir = tmp_path / "new_runs_dir"
-        monkeypatch.setattr("src.scheduler.jobs.PIPELINE_RUNS_DIR", runs_dir)
+        monkeypatch.setattr("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", runs_dir)
         assert not runs_dir.exists()
         _write_pipeline_record("test_run", status="started")
         assert runs_dir.exists()
@@ -179,7 +180,7 @@ class TestIdempotency:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            "src.scheduler.jobs.PIPELINE_RUNS_DIR", tmp_path / "nonexistent",
+            "src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", tmp_path / "nonexistent",
         )
         assert _has_completed_run_today() is False
         assert _has_completed_run_this_month() is False
@@ -231,7 +232,7 @@ class TestCrashDetection:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            "src.scheduler.jobs.PIPELINE_RUNS_DIR", tmp_path / "nonexistent",
+            "src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", tmp_path / "nonexistent",
         )
         assert check_crashed_runs() == []
 

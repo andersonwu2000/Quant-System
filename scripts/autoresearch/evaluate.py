@@ -60,16 +60,21 @@ def _compute_dates() -> tuple[str, str, str, str]:
 
 EVAL_END, OOS_START, OOS_MID, IS_END = _compute_dates()
 SAMPLE_FREQ_DAYS = 20          # Sample IC every 20 trading days
+# AP-11: Per-horizon sampling to avoid overlap bias
+# 60d returns with 20d sampling have 67% overlap → ICIR inflated
+HORIZON_SAMPLE_FREQ = {5: 20, 10: 20, 20: 20, 60: 60}
 FORWARD_HORIZONS = [5, 10, 20, 60]  # Forward return horizons (trading days)
 
 # L1-L4 gate thresholds (from legacy factor_evaluator.py)
 MIN_IC_L1 = 0.02              # L1: minimum |IC_20d| — fast reject
 MIN_IC_L1_SLOW = 0.03         # L1: slow-alpha bypass — |IC_60d| >= this also passes L1
-MIN_ICIR_L2 = 0.30            # L2: minimum median |ICIR| across horizons (no horizon bias)
-MAX_ICIR_L2 = 1.00            # L2: maximum median |ICIR| — above this is suspicious
+MIN_ICIR_L2 = 0.15            # AO-16: min median |ICIR| (was 0.30, academic 0.05-0.15 is excellent)
+MAX_ICIR_L2 = 0.50            # ICIR > this triggers ESS check (not hard block — ESS >= 30 still passes)
 MAX_CORRELATION = 0.65         # L3: max IC-series correlation (relaxed from 0.50 — TW factors cluster tightly)
 MIN_POSITIVE_YEARS = 4         # L3: minimum years with positive mean IC (IS=6.5yr)
 MIN_FITNESS = 3.0              # L4: minimum WorldQuant BRAIN fitness
+MAX_FAMILY_L4_PLUS = 3         # AO-2: max factors per family at L4+
+VALID_FAMILIES = {"revenue", "value", "quality", "low_vol", "momentum", "event", "other"}
 
 # L5: OOS validation thresholds (Phase X anti-overfitting)
 OOS_ICIR_DECAY_MAX = 0.60     # OOS |ICIR| must be >= IS |ICIR| * (1 - decay)
@@ -77,7 +82,8 @@ OOS_ICIR_DECAY_MAX = 0.60     # OOS |ICIR| must be >= IS |ICIR| * (1 - decay)
 # Thresholdout (Dwork et al. 2015): add noise to L5 pass/fail to preserve holdout validity
 # Safe budget ≈ τ² × n_oos_days. With τ=0.10, n=375 → B ≈ 3.75 (pure adaptive).
 # Thresholdout raises effective budget to O(n) by adding Laplace noise to comparisons.
-THRESHOLDOUT_NOISE_SCALE = 0.05   # Laplace scale for noisy L5 comparisons
+# AP-21: Dynamic noise scale proportional to IC distribution
+THRESHOLDOUT_NOISE_SCALE_FACTOR = 0.2  # noise = 0.2 * std(IC series)
 L5_QUERY_BUDGET = 200             # warn after this many L5 queries
 OOS_MIN_POSITIVE_RATIO = 0.50 # OOS months with positive IC >= 50%
 
@@ -641,13 +647,59 @@ def _check_dedup(ic_series_20d: list[float], known: dict[str, list[float]]) -> t
         min_len = min(len(new), len(existing_ics))
         if min_len < 10:
             continue
-        corr = float(new.iloc[:min_len].corr(pd.Series(existing_ics[:min_len])))
+        # AO-15: Use Spearman for dedup consistency (IC itself is Spearman rank corr)
+        corr = float(new.iloc[:min_len].corr(pd.Series(existing_ics[:min_len]), method="spearman"))
         if abs(corr) > MAX_CORRELATION:
             n_high += 1
         if abs(corr) > abs(max_corr):
             max_corr = corr
             max_name = name
     return max_corr, max_name, n_high
+
+
+def _detect_family(description: str) -> str:
+    """Detect factor family from commit message [family: xxx] tag or description."""
+    import re
+    m = re.search(r"\[family:\s*(\w+)\]", description, re.IGNORECASE)
+    if m:
+        fam = m.group(1).lower()
+        return fam if fam in VALID_FAMILIES else "other"
+    # Heuristic fallback from description keywords
+    desc_lower = description.lower()
+    if any(k in desc_lower for k in ("revenue", "營收", "sales", "growth")):
+        return "revenue"
+    if any(k in desc_lower for k in ("value", "per", "pbr", "valuation", "price-to")):
+        return "value"
+    if any(k in desc_lower for k in ("quality", "profitab", "roe", "roa", "margin")):
+        return "quality"
+    if any(k in desc_lower for k in ("vol", "volatil", "low_vol", "ivol")):
+        return "low_vol"
+    if any(k in desc_lower for k in ("momentum", "趨勢", "drift")):
+        return "momentum"
+    if any(k in desc_lower for k in ("event", "earning", "announce", "insider")):
+        return "event"
+    return "other"
+
+
+def _count_family_l4_plus(family: str) -> int:
+    """Count L4+ factors of the same family in results.tsv."""
+    results_path = Path(__file__).parent / "results.tsv"
+    if not results_path.exists():
+        return 0
+    count = 0
+    for line in results_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#") or line.startswith("commit"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 6:
+            continue
+        level = parts[3].strip() if len(parts) > 3 else ""
+        status = parts[4].strip() if len(parts) > 4 else ""
+        desc = parts[5] if len(parts) > 5 else ""
+        if level in ("L4", "L5") and status in ("keep", "L4_keep", "L5_keep", "passed"):
+            if _detect_family(desc) == family:
+                count += 1
+    return count
 
 
 def _get_match_count(factor_name: str) -> int:
@@ -761,6 +813,30 @@ def evaluate() -> dict:
     Stage 2 (if L5 passed): Large universe (865+ symbols) — confirmation
       Recompute ICIR on full universe, require ICIR(20d) >= 0.20
     """
+    global EVAL_END, OOS_START, OOS_MID, IS_END
+
+    # AP-18: Session-level OOS dates (deterministic within a research session)
+    _oos_config_path = Path("/app/watchdog_data/oos_config.json")
+    if _oos_config_path.exists():
+        try:
+            _oos_cfg = json.loads(_oos_config_path.read_text())
+            EVAL_END = _oos_cfg["eval_end"]
+            OOS_START = _oos_cfg["oos_start"]
+            OOS_MID = _oos_cfg["oos_mid"]
+            IS_END = _oos_cfg["is_end"]
+        except Exception:
+            pass  # fall back to computed dates
+    else:
+        # First evaluate in this session — save dates for consistency
+        try:
+            _oos_config_path.write_text(json.dumps({
+                "eval_end": EVAL_END, "oos_start": OOS_START,
+                "oos_mid": OOS_MID, "is_end": IS_END,
+                "computed_at": _dt.now().isoformat(),
+            }))
+        except Exception:
+            pass
+
     from factor import compute_factor
 
     # Complexity gate: reject overly complex factors (8.3 prevention)
@@ -832,8 +908,9 @@ def evaluate() -> dict:
         arr = np.array([vals[s] for s in syms])
         return {s: float(r / len(arr)) for s, r in zip(syms, rankdata(arr))}
 
-    NORM_VARIANTS = [("raw", _normalize_raw), ("rank", _normalize_rank), ("zscore", _normalize_zscore),
-                     ("winsorize", _normalize_winsorize), ("percentile_rank", _normalize_percentile_rank)]
+    # AP-14: Fix to rank normalization to avoid multiple comparison bias (5 variants → 1)
+    # Other variants retained in code but not tried by default
+    NORM_VARIANTS = [("rank", _normalize_rank)]
 
     # ── Stage 0: Pick best normalization (first 15 dates, fast) ──
     t0 = time.time()
@@ -954,7 +1031,11 @@ def evaluate() -> dict:
     q1_excess_list: list[float] = []  # L5b: top quintile excess vs universe mean
     quintile_returns_matrix: list[list[float]] = []  # L5c: each row = [Q1_ret, Q2_ret, ..., Q5_ret]
 
-    for as_of in sample_dates:
+    # AP-11: Pre-compute per-horizon sample indices to avoid overlap bias
+    _horizon_steps = {h: HORIZON_SAMPLE_FREQ.get(h, SAMPLE_FREQ_DAYS) // SAMPLE_FREQ_DAYS
+                      for h in FORWARD_HORIZONS}
+
+    for date_idx, as_of in enumerate(sample_dates):
         masked_data = _mask_data(data, as_of)
         active = [s for s in universe if s in bars and as_of in bars[s].index]
         if len(active) < MIN_SYMBOLS:
@@ -970,6 +1051,10 @@ def evaluate() -> dict:
         values = best_norm_fn(values)
 
         for h in FORWARD_HORIZONS:
+            # AP-11: Skip dates that don't align with horizon-specific frequency
+            step = _horizon_steps[h]
+            if step > 1 and date_idx % step != 0:
+                continue
             fwd = _compute_forward_returns(bars, as_of, h)
             ic = _compute_ic(values, fwd)
             if ic is not None:
@@ -1297,6 +1382,68 @@ def evaluate() -> dict:
 
     print(f"  L4 passed: ICIR={best_icir:.4f}, fitness={fitness:.2f}")
 
+    # AO-9: Capacity estimation at L4 (before family budget)
+    try:
+        from src.data.registry import parquet_path as _cap_pp
+        _adv_pcts = []
+        _entry_days_list = []
+        for _sym in symbols[:100]:
+            _p = _cap_pp(_sym, "price")
+            if _p.exists():
+                _pdf = pd.read_parquet(_p)
+                if "volume" in _pdf.columns and "close" in _pdf.columns:
+                    _adv = float(_pdf["volume"].iloc[-20:].mean())
+                    _close = float(_pdf["close"].iloc[-1])
+                    _adv_twd = _adv * _close
+                    if _adv_twd > 0:
+                        # Assume equal weight across top-15, 10M capital
+                        _pos_size = 10_000_000 / 15
+                        _adv_pct = _pos_size / _adv_twd * 100
+                        _adv_pcts.append(_adv_pct)
+                        _entry_days = _pos_size / (_adv_twd * 0.1) if _adv_twd > 0 else 99
+                        _entry_days_list.append(_entry_days)
+        if _adv_pcts:
+            _median_adv_pct = float(np.median(_adv_pcts))
+            _p95_adv_pct = float(np.percentile(_adv_pcts, 95))
+            _median_entry = float(np.median(_entry_days_list)) if _entry_days_list else 0
+            _cost_alpha = avg_turnover * 0.003 / max(abs(best_icir) * 0.01, 1e-6)  # rough cost/alpha
+            print(f"  Capacity: ADV% median={_median_adv_pct:.1f}% p95={_p95_adv_pct:.1f}% | "
+                  f"entry={_median_entry:.1f}d | cost/alpha={min(_cost_alpha, 999):.0f}%")
+            if _median_adv_pct > 5.0:
+                print(f"  AO-9: Capacity concern — median ADV% {_median_adv_pct:.1f}% > 5%")
+                return _make_result(
+                    level="L4", failure=f"L4_capacity: median ADV%={_median_adv_pct:.1f}% > 5%",
+                    ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+                    icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+                    fitness=fitness, positive_years=positive_years, total_years=total_years,
+                    elapsed=elapsed,
+                )
+    except Exception as _cap_err:
+        print(f"  Capacity check skipped: {_cap_err}")
+
+    # AO-2: Family budget check — max N factors per family at L4+
+    _description = ""
+    try:
+        import subprocess
+        _desc_result = subprocess.run(
+            ["git", "log", "-1", "--format=%s"], capture_output=True, text=True, timeout=5,
+        )
+        _description = _desc_result.stdout.strip() if _desc_result.returncode == 0 else ""
+    except Exception:
+        pass
+    _family = _detect_family(_description)
+    _family_count = _count_family_l4_plus(_family)
+    if _family_count >= MAX_FAMILY_L4_PLUS:
+        print(f"  AO-2: Family budget exceeded — {_family} has {_family_count} L4+ factors (max {MAX_FAMILY_L4_PLUS})")
+        return _make_result(
+            level="L3", failure=f"L3_family_budget: {_family} has {_family_count}/{MAX_FAMILY_L4_PLUS} L4+ factors",
+            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+            fitness=fitness, positive_years=positive_years, total_years=total_years,
+            elapsed=elapsed,
+        )
+    print(f"  Family: {_family} ({_family_count}/{MAX_FAMILY_L4_PLUS} L4+ slots used)")
+
     # ── L5: Out-of-Sample Validation (Phase X anti-overfitting) ──
     oos_ics_20d: list[float] = []
     oos_ic_by_month: dict[str, list[float]] = {}
@@ -1359,11 +1506,19 @@ def evaluate() -> dict:
     # Add Laplace noise to comparisons to preserve holdout validity.
     # Deterministic checks become noisy: agent gets ~0.7 bits per query instead of 1.0.
     l5_query_n = _increment_l5_query_count()
-    # Include factor code hash in seed — agent cannot predict noise without knowing seed
-    import hashlib as _hl
-    _factor_hash = int(_hl.sha256(open(Path(__file__).parent / "factor.py", "rb").read()).hexdigest()[:8], 16)
-    rng_l5 = np.random.default_rng(hash((ic_20d, best_icir, l5_query_n, _factor_hash)) % (2**31))
-    noise = lambda: float(rng_l5.laplace(0, THRESHOLDOUT_NOISE_SCALE))
+    # AP-21: Remove factor_hash from seed — prevents agent from manipulating noise
+    # Use session-level salt from oos_config (AP-18)
+    _session_salt = 0
+    try:
+        _salt_path = Path("/app/watchdog_data/oos_config.json")
+        if _salt_path.exists():
+            _session_salt = hash(json.loads(_salt_path.read_text()).get("computed_at", ""))
+    except Exception:
+        pass
+    rng_l5 = np.random.default_rng(hash((ic_20d, best_icir, l5_query_n, _session_salt)) % (2**31))
+    # AP-21: Dynamic noise scale proportional to OOS IC std (floor 0.02)
+    noise_scale = THRESHOLDOUT_NOISE_SCALE_FACTOR * max(np.std(oos_ics_20d), 0.02)
+    noise = lambda: float(rng_l5.laplace(0, noise_scale))
 
     l5_failure = False
     # Sub-check 1: IC sign consistency (add noise to sign comparison margin)
@@ -1374,10 +1529,20 @@ def evaluate() -> dict:
     elif oos_positive_ratio < OOS_MIN_POSITIVE_RATIO + noise() and oos_total_months >= 6:
         l5_failure = True
 
-    # Budget warning (printed to stderr, not visible to agent via tail -30)
+    # Budget hard block (AP-C3): exceeding L5 query budget → FAIL
     if l5_query_n > L5_QUERY_BUDGET:
         import sys
-        print(f"[WARN] L5 query budget exceeded: {l5_query_n}/{L5_QUERY_BUDGET}", file=sys.stderr)
+        print(f"[FAIL] L5 query budget exceeded: {l5_query_n}/{L5_QUERY_BUDGET}", file=sys.stderr)
+        return _make_result(
+            level="L5", failure=f"L5_budget_exceeded: {l5_query_n}/{L5_QUERY_BUDGET} queries used",
+            ic_20d=ic_20d, best_icir=best_icir, best_horizon=best_horizon,
+            icir_by_horizon=icir_by_horizon, avg_turnover=avg_turnover,
+            fitness=fitness, positive_years=positive_years, total_years=total_years,
+            max_correlation=max_corr, correlated_with=corr_with,
+            oos_icir=oos_icir, oos_positive_months=oos_positive_months,
+            oos_total_months=oos_total_months,
+            elapsed=time.time() - t0,
+        )
 
     # P-01: only show pass/fail — no reason, no direction, no magnitude
     print(f"  OOS validation: {'PASS' if not l5_failure else 'FAIL'}")
@@ -1482,6 +1647,14 @@ def evaluate() -> dict:
                         df["close"] = df["close"].where(df["close"] > 0)
                         if df["close"].isna().sum() / len(df) <= 0.10:
                             _data_cache["bars"][sym] = df
+
+            # AP-15: Rebuild close matrix after adding Stage 2 symbols
+            global _close_matrix
+            _close_matrix = None  # Force rebuild on next _compute_forward_returns call
+            close_series = {sym: df["close"] for sym, df in _data_cache["bars"].items() if "close" in df.columns}
+            if close_series:
+                _close_matrix = pd.DataFrame(close_series).sort_index()
+                print(f"  Close matrix rebuilt: {_close_matrix.shape[0]} dates × {_close_matrix.shape[1]} symbols")
 
             large_bars = _data_cache["bars"]
             large_data = _data_cache

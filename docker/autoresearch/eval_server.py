@@ -6,6 +6,8 @@ No IC values, no OOS data, no Validator details.
 import os
 import subprocess
 import json
+import logging
+import sys
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
@@ -32,7 +34,22 @@ def _extract(text: str, prefix: str) -> str:
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"})
+    # AP-17: Check data availability, not just process liveness
+    # evaluate.py runs as subprocess so no shared memory; probe its module cache
+    try:
+        sys.path.insert(0, "/app")
+        import evaluate as _eval_mod
+        cache = getattr(_eval_mod, "_data_cache", None)
+        data_ok = bool(cache and cache.get("bars"))
+        n_symbols = len(cache.get("bars", {})) if cache else 0
+    except Exception:
+        data_ok = False
+        n_symbols = 0
+    return jsonify({
+        "status": "ok" if data_ok else "degraded",
+        "data_loaded": data_ok,
+        "cache_symbols": n_symbols,
+    })
 
 
 @app.route("/learnings", methods=["GET"])
@@ -219,6 +236,14 @@ def evaluate():
     except Exception:
         pass
 
+    # Extract factor decomposition info (already printed by evaluate.py)
+    ic_source = _extract(stdout, "ic_source:") or "unknown"   # stock_alpha | mixed | industry_beta
+    ic_trend = _extract(stdout, "ic_trend:") or "unknown"     # stable | improving | declining
+    novelty = _extract(stdout, "novelty:") or "unknown"       # high | not_high
+
+    # Find best horizon (agent can learn which timeframe works)
+    best_horizon = _extract(stdout, "best_horizon:") or ""
+
     # Auto-save "near" and above factors to library for ensemble testing
     if median_icir >= ICIR_THRESHOLDS[3]:  # >= 0.20 ("near" or better)
         try:
@@ -257,15 +282,7 @@ def evaluate():
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)
         except Exception:
-            pass  # library save failure must not block evaluation
-
-    # Extract factor decomposition info (already printed by evaluate.py)
-    ic_source = _extract(stdout, "ic_source:") or "unknown"   # stock_alpha | mixed | industry_beta
-    ic_trend = _extract(stdout, "ic_trend:") or "unknown"     # stable | improving | declining
-    novelty = _extract(stdout, "novelty:") or "unknown"       # high | not_high
-
-    # Find best horizon (agent can learn which timeframe works)
-    best_horizon = _extract(stdout, "best_horizon:") or ""
+            logging.exception("Factor library save failed for icir=%s level=%s", icir_bucket, level)
 
     return jsonify({
         "passed": passed,
@@ -299,14 +316,18 @@ def factor_library():
 
 @app.route("/evaluate-ensemble", methods=["POST"])
 def evaluate_ensemble():
-    """Test rank composite of 2-3 library factors.
+    """DISABLED — ensemble evaluation bypasses L3-L5 gates (AP-C2).
 
-    Agent sends: curl -X POST http://evaluator:5000/evaluate-ensemble \
-      -H 'Content-Type: application/json' \
-      -d '{"factors": ["20260401_xxx_near.py", "20260401_yyy_near.py"]}'
-
-    Returns: composite IC/ICIR across horizons.
+    Only checks L2 (ICIR >= 0.30) but skips L3 dedup, L4 fitness, and L5 OOS,
+    which is the biggest overfitting backdoor. Re-enable only after L3+L5 gate
+    integration is complete.
     """
+    return jsonify({
+        "error": "Ensemble evaluation temporarily disabled — requires L3+L5 gate integration (AP-C2)",
+        "passed": False,
+    }), 501
+
+    # --- Original implementation below (dead code until gates are integrated) ---
     data = request.get_json(silent=True) or {}
     factor_names = data.get("factors", [])
 

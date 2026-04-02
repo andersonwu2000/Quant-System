@@ -190,8 +190,10 @@ def price_circuit_breaker(threshold: float = 0.10) -> RiskRule:
         symbol = order.instrument.symbol
         price = market.prices.get(symbol)
         prev_close = market.prev_close.get(symbol) if market.prev_close else None
-        if price is None or prev_close is None or prev_close <= 0:
+        if price is None:
             return RiskDecision.APPROVE()
+        if prev_close is None or prev_close <= 0:
+            return RiskDecision.REJECT("missing prev_close for circuit breaker check")
         change = abs(float(price - prev_close) / float(prev_close))
         if change > threshold:
             return RiskDecision.REJECT(

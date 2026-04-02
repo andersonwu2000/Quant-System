@@ -124,6 +124,17 @@ def execute_from_weights(
         return []
 
     # 0. Portfolio overlay (after weights, before orders)
+    # AO-7: Auto-apply default overlay for revenue strategies when none specified
+    if overlay_config is None:
+        from src.core.config import get_config
+        cfg = get_config()
+        if cfg.overlay_enabled:
+            overlay_config = OverlayConfig(
+                max_sector_weight=0.30,
+                target_beta=0.9,
+                min_net_exposure=0.7,
+                max_net_exposure=1.1,
+            )
     if overlay_config is not None:
         target_weights = apply_overlay(
             weights=target_weights,

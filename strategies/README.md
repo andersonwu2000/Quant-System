@@ -45,26 +45,20 @@ class MyStrategy(Strategy):
 
 ### 第二步：註冊策略
 
-在以下兩個檔案的 `_resolve_strategy()` 中加入你的策略：
+使用 `@register_strategy` decorator 自動註冊，不需手動修改其他檔案：
 
-**`src/cli/main.py`**（CLI 回測用）：
 ```python
-from strategies.my_strategy import MyStrategy
+# strategies/my_strategy.py
+from src.strategy.registry import register_strategy
 
-mapping = {
-    # ... 現有策略 ...
-    "my_strategy": MyStrategy,
-}
+@register_strategy("my_strategy")
+class MyStrategy(Strategy):
+    ...
 ```
 
-**`src/api/routes/backtest.py`**（API 回測用）：
-```python
-from strategies.my_strategy import MyStrategy
-
-strategy_map = {
-    # ... 現有策略 ...
-    "my_strategy": MyStrategy,
-}
+策略會自動被 CLI、API、scheduler 識別。確認註冊成功：
+```bash
+python -m src.cli.main factors  # 列出所有已註冊策略
 ```
 
 ### 第三步：執行回測

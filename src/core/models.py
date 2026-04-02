@@ -228,9 +228,12 @@ class Portfolio:
 
     @property
     def available_cash(self) -> Decimal:
-        """Cash available for new orders (excluding unsettled amounts)."""
-        pending = sum(amt for _, amt in self.pending_settlements)
-        return self.cash - pending
+        """Cash available for new orders.
+
+        A-10 fix: apply_trades() already deducts cash immediately on BUY.
+        pending_settlements tracks settlement dates but should NOT double-deduct.
+        """
+        return self.cash
 
     @property
     def nav(self) -> Decimal:

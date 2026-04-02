@@ -302,19 +302,28 @@ def compute_analytics(
     # 年化波動率
     volatility = float(daily_returns.std() * np.sqrt(252)) if len(daily_returns) > 1 else 0.0
 
-    # Sharpe Ratio — 算術年化（Sharpe 1994 標準）
-    # SR = mean(daily_return) / std(daily_return) × sqrt(252)
+    # AO-14: Risk-free rate — unified with optimizer (default 2%)
+    try:
+        from src.core.config import get_config
+        _rf_annual = get_config().risk_free_rate
+    except Exception:
+        _rf_annual = 0.02
+    _rf_daily = _rf_annual / 252
+
+    # Sharpe Ratio — excess return over risk-free (Sharpe 1994)
     if len(daily_returns) > 1 and daily_returns.std() > 0:
-        sharpe = float(daily_returns.mean() / daily_returns.std() * np.sqrt(252))
+        excess = daily_returns - _rf_daily
+        sharpe = float(excess.mean() / daily_returns.std() * np.sqrt(252))
     else:
         sharpe = 0.0
 
-    # Sortino Ratio — 下行偏差包含所有觀測值
-    # DD = sqrt(mean(min(r, 0)²)) × sqrt(252)
+    # Sortino Ratio — downside deviation below MAR (Sortino & Price 1994)
+    # MAR = risk-free rate; only returns below MAR count as downside
     if len(daily_returns) > 1:
-        downside = np.minimum(np.asarray(daily_returns.values), 0.0)
+        downside = np.minimum(np.asarray(daily_returns.values) - _rf_daily, 0.0)
         downside_vol = float(np.sqrt(np.mean(downside ** 2)) * np.sqrt(252))
-        sortino = float(daily_returns.mean() * 252 / downside_vol) if downside_vol > 0 else 0.0
+        excess_annual = float((daily_returns.mean() - _rf_daily) * 252)
+        sortino = excess_annual / downside_vol if downside_vol > 0 else 0.0
     else:
         downside_vol = 0.0
         sortino = 0.0

@@ -42,3 +42,22 @@ def setup_logging(log_level: str = "INFO", log_format: str = "text") -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+
+    # AN-30: Persistent file logging — rotate daily, keep 30 days
+    try:
+        from pathlib import Path
+        from logging.handlers import TimedRotatingFileHandler
+
+        log_dir = Path("logs")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = TimedRotatingFileHandler(
+            str(log_dir / "quant.log"),
+            when="midnight",
+            backupCount=30,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
+    except Exception:
+        # Non-critical: file logging is optional (Docker volumes may not be writable)
+        pass

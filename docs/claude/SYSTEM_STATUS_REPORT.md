@@ -1,7 +1,7 @@
 # 系統現況報告
 
 > **更新**: 2026-04-02
-> **版本**: v19.0（Phase AM + AN）
+> **版本**: v23.0（Phase AN+AO+AP 完成 — 架構重構 + 制度化 + AutoResearch 治理）
 
 ---
 
@@ -9,23 +9,23 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python | 175+ 檔 / 45,000+ LOC（+4,768 Phase AM/AN） |
-| 測試 | 130+ 檔 / 29,000+ LOC / **1,810 unit + 210 integration/e2e/security/resilience** tests (0 failed) |
-| CI | 9 jobs（lint + mypy + test + web + e2e + android + release） |
-| API 端點 | 120+（17 路由模組，新增 `/ops`） |
+| 後端 Python | 200+ 檔 / 50,000+ LOC（AN 拆分 + AO 制度化 + AP 治理） |
+| 測試 | 135+ 檔 / 30,000+ LOC / **1,820 unit + 218 integration/e2e/security/resilience** tests (0 failed) |
+| CI | **10** jobs（lint + **security(pip-audit+bandit)** + mypy + test + web + e2e + android + release） |
+| API 端點 | 130+（**18** 路由模組，新增 `/factor-research`） |
 | 因子 | 83（66 技術 + 17 基本面）+ 3 FinLab 品質因子 |
 | 策略 | 13（11 standalone + alpha + multi_asset） |
 | 最佳化方法 | 14 |
 | 風控規則 | 12 |
 | 數據源 | 6（Yahoo / FinMind / FRED / Shioaji / TWSE+TPEX / **FinLab**） |
 | 數據儲存 | 按來源分離（yahoo/ finmind/ twse/ finlab/）4,800+ files / 660+ MB |
-| 數據平台 | DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
+| 數據平台 | DataCatalog(**+CatalogResult strict mode**) + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
 | SecuritiesMaster | 3,936 家公司（2,241 active + 1,695 delisted）+ 39 產業分類 |
 | 運營架構 | daily_ops + eod_ops + Heartbeat + 通知分級 P0-P3 + Trade Ledger |
-| Autoresearch | 冷重啟後 8 實驗（1 L2 keep），行業中性化 IC + 5 normalization variant + 白名單 5 家族 |
-| 部署管線 | 日頻 paper trading + Validator v3.0-AM（7 hard + 9 soft + 6 descriptive）+ overlay + risk-budget |
+| Autoresearch | 冷重啟後 8 實驗（1 L2 keep），rank normalization（AP-14）+ family budget ≤3 + **AST code safety** + **API 分離(factor-research)** |
+| 部署管線 | 日頻 paper trading + Validator v3.0-AM（7 hard + 9 soft + 7 descriptive）+ overlay + risk-budget + **promotion artifact** |
 | 壓力測試 | 6 固定壓力情境 + capacity 1x/3x/5x/10x + 5 regime split + benchmark-relative |
-| Validator 版本 | v3.0-AM — DSR N=n_independent, OOS 切割, 行業中性化, promotion policy |
+| Validator 版本 | v3.0-AO — 雙維度分數(research/deployment) + loss attribution + 閾值校準(corr 0.65) |
 
 ---
 
@@ -54,6 +54,9 @@
 
 | Phase | 名稱 | 完成日期 |
 |-------|------|---------|
+| AP | AutoResearch 治理（25 項，92% 完成）— FactorDataBundle + AST + API 分離 | 04-02 |
+| AO | 制度化（17 項，82% 完成）— 雙分數 + 閾值校準 + overlay + DataCatalog strict | 04-02 |
+| AN | 架構重構（44 項，95% 完成）+ 安全修復 5 項 | 04-02 |
 | AM | Validator 方法論 + Alpha 可部署性（21 項） | 04-02 |
 | AC | Validator 方法論修正（16 項 + hard/soft 分離） | 04-01 |
 | AB | Factor-Level PBO | 03-29 |
@@ -77,7 +80,9 @@
 | AK | 整合測試體系 | 85% | AK-4 效能基準（上線後） |
 | AJ | 壓力測試 | 50% | 台股歷史情景 + 相關性壓力 |
 | AL | Trading Safety | 90% | 等 30 天 paper 數據累積（04-02 重啟） |
-| AN | 架構 + 金融品質（44 項） | 87% | 剩 5 項大型架構拆分 + 2 項 E2E/WebSocket |
+| AN | 架構 + 金融品質（44 項） | **95%** | AN-2(DI)/AN-4(OpenAPI)/AN-33(E2E) 延後 |
+| AO | 制度化與部署成熟度（17 項） | **82%** | 14/17 完成，AO-3/4/11 待 AL close |
+| AP | AutoResearch 治理（25 項） | **92%** | P0+P1 全完成（含 API 分離 + AST 安全 + KPI），剩 AP-20(universe 需數據) + P2(4項中期) |
 
 **延後或已取代的計畫：**
 
@@ -98,14 +103,15 @@
 | 問題 | 嚴重度 | 狀態 |
 |------|:------:|------|
 | OOS Sharpe 統計功效不足 | MEDIUM | SE=0.82，不可修正；已降級為 sanity check |
-| PBO 系統性惡化（0.78→0.99） | ✅ 已解決 | Rolling OOS + construction_sensitivity ≤ 0.50 + Factor-Level PBO |
 | event-driven PBO 的 ThreadPool + shared strategy state | MEDIUM | 並發呼叫 base.on_bar() 可能互相干擾 |
 | 3 個殘留 bug（realtime lock, idempotency tz, risk_parity short） | LOW | `docs/dev/CODE_REVIEW_REPORT.md` §10 |
-| 跨模組 data dict 不一致（#64-68） | ✅ 已解決 | 2026-04-01 修復 + 85 regression tests |
-| vectorized.py 死碼（#69-70） | ✅ 已解決 | 2026-04-01 修復 |
-| Reconciliation symbol 格式（#72） | ✅ 已解決 | .TW vs bare 自動 normalize |
-| Paper mode 假告警（#73） | ✅ 已解決 | Reconcile 僅 live mode 執行 |
-| Validator kill switch 過度觸發（#71） | ✅ 已解決 | enable_kill_switch=False in Validator |
+| AO-3/4/11 等待 AL close | DEFERRED | Pipeline 兩段式 + Lock helper + AppState 拆分 |
+| 結算現金雙重計入 | ✅ 已修 | available_cash 直接返回 cash（方案 A） |
+| 漲跌停 9.5% → 10% | ✅ 已修 | simulated.py 對齊台股實際規則 |
+| prev_close 缺失 fail-open | ✅ 已修 | 改為 Reject（fail-closed） |
+| /ops 端點無認證 | ✅ 已修 | 加 verify_api_key dependency |
+| /metrics 暴露敏感數據 | ✅ 已修 | 非 dev 不 expose |
+| admin 預設密碼可用於 prod | ✅ 已修 | 非 dev 拒絕 Admin1234 |
 
 ---
 
@@ -115,16 +121,16 @@
 
 | 模組 | 檔案 | LOC | 核心功能 |
 |------|:----:|----:|---------|
-| `src/api/` | 25 | 6,965 | REST + WebSocket + JWT/RBAC + 16 路由 |
-| `src/alpha/` | 31 | 6,663 | Alpha Pipeline + Auto-Alpha（9 子模組）+ FilterStrategy |
-| `src/backtest/` | 14 | 6,000+ | Engine + Validator(16項+6描述性) + PBO(CSCV) + WF + 向量化(Z1) + FactorAttribution |
+| `src/api/` | 30 | 7,200+ | REST + WebSocket + JWT/RBAC + **18** 路由 + bootstrap/ + **factor_research.py**(AP-5) |
+| `src/alpha/` | 34 | 7,000+ | Alpha Pipeline + Auto-Alpha + FilterStrategy + **promotion.py** + **code_safety.py**(AP-6) |
+| `src/backtest/` | 18 | 6,000+ | Engine + Validator(**checks/**(statistical/economic/descriptive)) + PBO(CSCV) + WF + 向量化(Z1) + FactorAttribution |
 | `src/strategy/` | 19 | 4,689 | 83 因子（tech+fundamental+kakushadze）+ optimizer + registry |
-| `src/data/` | 22 | 4,500+ | 6 數據源（+FinLab）+ DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
+| `src/data/` | 23 | 4,800+ | 6 數據源 + DataCatalog(CatalogResult) + **FactorDataBundle**(AP-1) + Registry + SecuritiesMaster + QualityGate + RefreshEngine |
 | `src/reconciliation/` | 3 | 450+ | 每日回測 vs 實盤比對 + 週報（G1）|
 | `src/execution/` | 15 | 2,900+ | SimBroker + Sinopac + TWAP + OMS + 零股分流 + **Trade Ledger**（intent log + fill log + crash replay）|
-| `src/portfolio/` | 6 | 1,800+ | 14 最佳化方法 + 風險模型(GARCH/PCA) + 幣別對沖 + **overlay**(beta/sector/exposure) + **risk_budget**(3桶inverse-vol) |
+| `src/portfolio/` | 10 | 1,800+ | 14 最佳化方法(**methods/**(basic/classical/advanced)) + 風險模型 + overlay + risk_budget |
 | `src/core/` | 7 | 1,215 | 統一模型 + Config + Logging + TradingCalendar + TradingPipeline |
-| `src/scheduler/` | 4 | 1,500+ | **daily_ops + eod_ops**（統一運營流程）+ Heartbeat + Trading Pipeline |
+| `src/scheduler/` | 7 | 1,500+ | daily_ops + eod_ops + Heartbeat + **pipeline/**(records/reconcile) |
 | `src/risk/` | 5 | 1,075 | 12 規則 + Kill Switch + RealtimeMonitor |
 | `src/allocation/` | 4 | 713 | 宏觀因子 + 跨資產信號 + 戰術配置 |
 | 其他 | 14 | 961 | CLI + Notifications + Instrument |
@@ -230,6 +236,16 @@ Autoresearch Pipeline（獨立）
 | `docs/reviews/CODE_REVIEW_REPORT.md` | 代碼審查（80+ bug） |
 | `docs/reviews/AUTORESEARCH_OPERATIONS_REVIEW_2026Q1.md` | Autoresearch 運營檢討 |
 | `docs/reviews/autoresearch-alpha/AUTO_ALPHA_PIPELINE_REVIEW.md` | 因子研究管線檢討 |
+| `docs/plans/phase-ao-institutionalization.md` | 制度化計畫（17 項） |
+| `docs/plans/phase-an-architecture.md` | 架構重構計畫（44 項） |
 | `docs/plans/phase-aa-strategy-construction.md` | 策略構建改進計畫 |
 | `docs/plans/phase-z-vectorized-backtest.md` | 向量化回測計畫 |
+| `docs/reviews/code-quality/SECURITY_REVIEW_20260402.md` | 安全審查（5 critical/high） |
+| `docs/reviews/methodology/DEEP_PROJECT_RECOMMENDATIONS_20260402.md` | 全專案深度檢視 |
+| `docs/reviews/system/PHASE_AO_PLAN_AUDIT_20260402.md` | AO 計畫審計 |
+| `docs/reviews/system/PHASE_AP_PLAN_AUDIT_20260402.md` | AP 計畫審計 |
+| `docs/reviews/system/AUTO_RESEARCH_REVIEW.md` | AutoResearch 全面審查 |
+| `docs/plans/phase-ap-autoresearch-governance.md` | AP 計畫（25 項） |
+| `docs/autoresearch/RUNBOOK.md` | AutoResearch 操作手冊 |
+| `docs/autoresearch/DATA_CONTRACT_INVENTORY.md` | 資料契約 6 入口點 inventory |
 | `docs/PHASE_TRACKER.md` | Phase 進度總覽 |

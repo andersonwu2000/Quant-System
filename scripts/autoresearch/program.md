@@ -22,7 +22,9 @@ Repeat until the human interrupts you:
    - Then choose what to try based on results.tsv + learnings + your knowledge
 2. **Edit `factor.py`** — implement your idea. You may ONLY edit `factor.py`. Do NOT touch `evaluate.py`.
    - The docstring of `compute_factor` MUST explain the **economic rationale** — WHY this signal should predict returns. Generic descriptions like "combined signal" or "optimized metric" are not acceptable.
-3. **Commit** — `git add factor.py && git commit -m "experiment: <description>"`
+3. **Commit** — `git add factor.py && git commit -m "experiment: <description> [family: <family>]"`
+   - Valid families: `revenue`, `value`, `quality`, `low_vol`, `momentum`, `event`, `other`
+   - The `[family: xxx]` tag is **mandatory** — evaluate.py uses it for family budget enforcement (max 3 per family at L4+)
 4. **Run** — `curl -s -X POST http://evaluator:5000/evaluate`
 5. **Parse** — extract ONLY these 4 values: `composite_score`, `best_icir`, `level`, `passed`. Do NOT try to extract or reason about OOS values, intermediate IC values, or any other metrics from the output.
 6. **Record** — append a row to results.tsv
@@ -127,13 +129,13 @@ Priority factor families — these have clear economic rationale and are more li
 
 | Family | Examples | ICIR threshold |
 |--------|----------|---------------|
-| Revenue trend | YoY growth, acceleration, surprise | 0.30 (standard) |
-| Valuation re-rating | PER/PBR change, earnings yield delta | 0.30 (standard) |
-| Quality | Gross margin stability, ROE trend, operating leverage | 0.30 (standard) |
-| Liquidity | Turnover ratio, Amihud illiquidity, bid-ask proxy | 0.30 (standard) |
-| Sentiment | Institutional flow momentum, margin balance change | 0.30 (standard) |
+| Revenue trend | YoY growth, acceleration, surprise | moderate ICIR |
+| Valuation re-rating | PER/PBR change, earnings yield delta | moderate ICIR |
+| Quality | Gross margin stability, ROE trend, operating leverage | moderate ICIR |
+| Liquidity | Turnover ratio, Amihud illiquidity, bid-ask proxy | moderate ICIR |
+| Sentiment | Institutional flow momentum, margin balance change | moderate ICIR |
 
-**Non-whitelist factors require ICIR > 0.40 to pass L2.** This guides the agent toward economically interpretable factors. If you discover a strong signal outside these families, the higher bar ensures it is robust enough to justify the lack of obvious economic story.
+**Non-whitelist factors require a higher ICIR to pass.** This guides the agent toward economically interpretable factors. If you discover a strong signal outside these families, the higher bar ensures it is robust enough to justify the lack of obvious economic story.
 
 ## Factor Dimensions to Explore
 
@@ -147,7 +149,7 @@ Known dead ends — don't waste time:
 - **`data["pe"]/["pb"]/["roe"]` are DISABLED** — use `data["per_history"]` for PER/PBR/dividend_yield time series, `data["financial_statement"]` for EPS/ROE/margins
 - **Single-stock patterns** — must work cross-sectionally across 50+ stocks
 - **Calendar effects** — too weak and well-arbitraged
-- **Exact clones** — the dedup check will catch `corr > 0.50` with known factors
+- **Exact clones** — the dedup check will catch factors that are not sufficiently different from known factors
 
 ## Research Strategy
 
@@ -175,11 +177,11 @@ If you run out of ideas:
 
 ## Ensemble Mode
 
-Factors with "near" ICIR (0.2-0.3) are automatically saved to a library. Two weak factors that are uncorrelated can pass L2 together.
+Factors with "near" ICIR are automatically saved to a library. Two weak factors that are uncorrelated can pass L2 together.
 
 1. Check library: `curl -s http://evaluator:5000/factor-library`
 2. If ≥ 2 factors available, test ensemble: `curl -s -X POST http://evaluator:5000/evaluate-ensemble -H 'Content-Type: application/json' -d '{"factors": ["factor_a.py", "factor_b.py"]}'`
-3. Ensemble that passes L2 (median ICIR ≥ 0.30) counts as a discovery
+3. Ensemble that passes L2 (moderate ICIR) counts as a discovery
 
 **Key**: the two factors should be from DIFFERENT economic dimensions (e.g. one price-based, one fundamental-based). Two momentum variants won't help.
 

@@ -330,7 +330,7 @@ async def eod_ops(config):
 | 1b | daily_ops 流程（交易日檢查→數據刷新→QG→pipeline→EOD） | `src/scheduler/ops.py` | ✅ 80 行，職責清晰 |
 | 1c | 每日數據刷新步驟（TWSE 快照 + Yahoo 增量） | `src/scheduler/ops.py` | ✅ _fetch_twse_snapshot() |
 | 1d | is_rebalance_day（月度/週度/日度可配） | `src/scheduler/ops.py` | ✅ weekly 用 ISO week 邏輯（O1 修正） |
-| 1e | SIGTERM handler（關機前存 portfolio） | `src/api/app.py` lifespan | ✅ FastAPI lifespan context manager |
+| 1e | SIGTERM handler（關機前存 portfolio） | `src/api/app.py` lifespan (AN-3: market setup → `src/api/bootstrap/market.py`, monitoring → `src/api/bootstrap/monitoring.py`) | ✅ FastAPI lifespan context manager |
 | 1f | Docker API healthcheck | `docker-compose.yml` | ✅ curl /system/health 30s interval |
 
 ### Phase 2：Heartbeat + 通知分級 + 日報（P1）✅ 已驗收

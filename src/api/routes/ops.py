@@ -12,11 +12,13 @@ import logging
 from datetime import date, datetime
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from src.api.auth import verify_api_key
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ops", tags=["Operations"])
+router = APIRouter(prefix="/ops", tags=["Operations"], dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/status")

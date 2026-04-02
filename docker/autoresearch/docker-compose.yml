@@ -19,7 +19,7 @@ services:
       - ../../data/twse:/app/data/twse:ro            # TWSE institutional data
       - ../../data/finlab:/app/data/finlab:ro        # FinLab panel data (incl. delisted)
       - ../../data/research:/app/data/research:ro    # universe.txt, baseline_ic
-      - ${CLAUDE_HOME:-C:/Users/ander/.claude}/.credentials.json:/home/researcher/.claude/.credentials.json  # rw: token refresh
+      - ${CLAUDE_HOME:-C:/Users/ander/.claude}/.credentials.json:/home/researcher/.claude/.credentials.json:ro  # AP-13: read-only, token refresh by host credJob
       - ${CLAUDE_HOME:-C:/Users/ander/.claude}/.claude.json:/home/researcher/.claude/.claude.json:ro  # config
       - ${CLAUDE_HOME:-C:/Users/ander/.claude}/settings.json:/home/researcher/.claude/settings.json:ro  # settings
     environment:
@@ -48,10 +48,11 @@ services:
       - ../../data:/app/data:ro                      # market + fundamental + research
       - ../../docs/research/autoresearch:/app/reports
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 60s
       timeout: 10s
       retries: 3
+      start_period: 30s
 
   # Watchdog: background Validator + Factor-Level PBO
   watchdog:

@@ -29,16 +29,26 @@ from src.risk.engine import RiskEngine
 
 logger = logging.getLogger(__name__)
 
-# Lock ordering (to prevent deadlocks):
-# 1. state.mutation_lock (asyncio.Lock) — acquired first for async routes
-# 2. portfolio.lock (threading.Lock) — acquired second for portfolio mutations
-# Never acquire portfolio.lock then mutation_lock (reverse order = deadlock risk)
-# Shioaji tick callback thread: only acquires portfolio.lock (no mutation_lock)
+# ── AN-18 + AN-37: Lock ordering & type documentation ────────────
 #
-# WARNING: mutation_lock is asyncio.Lock, portfolio.lock is threading.Lock.
-# These are different runtime types — do NOT await mutation_lock from sync code
-# or acquire portfolio.lock from async code without run_in_executor.
-# Future: AN-37 plans to unify via responsibility split (option C).
+# Lock ordering (to prevent deadlocks):
+#   1. state.mutation_lock (asyncio.Lock) — acquired first for async routes
+#   2. portfolio.lock (threading.Lock) — acquired second for portfolio mutations
+#   Never acquire portfolio.lock then mutation_lock (reverse = deadlock risk)
+#
+# Lock responsibility split (AN-37 option C):
+#   - mutation_lock (asyncio.Lock): protects async API operations that modify
+#     portfolio state (rebalance, kill switch path A). Only used in async context.
+#   - portfolio.lock (threading.Lock): protects portfolio data mutations
+#     (price updates from Shioaji tick thread, apply_trades). Used in sync context.
+#   - backtest_lock (threading.Lock): serializes CPU-intensive backtests.
+#   - alpha_lock (threading.Lock): serializes alpha research operations.
+#
+# These locks intentionally use different types because they serve different
+# runtimes. The asyncio.Lock yields control to the event loop while waiting;
+# threading.Lock blocks the OS thread. Do NOT:
+#   - await mutation_lock from sync/thread code
+#   - call portfolio.lock from async code without run_in_executor
 
 # ── Portfolio persistence ────────────────────────────────────────
 _PERSIST_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "paper_trading"

@@ -1,5 +1,9 @@
 """
 FastAPI Application — 量化交易系統的 API 入口。
+
+Startup logic split into bootstrap/ modules (AN-1):
+  - bootstrap/market.py: quote manager, realtime risk, price polling
+  - bootstrap/monitoring.py: monitoring loop, kill switch, scheduler, shutdown
 """
 
 from __future__ import annotations
@@ -22,17 +26,30 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from src.api.auth import verify_ws_token
 from src.core.models import Portfolio
 from src.api.middleware import AuditMiddleware
-from src.api.routes import admin, allocation, alpha, auth, auto_alpha, backtest, data, execution, orders, portfolio, risk, scanner, scheduler_routes, strategies, strategy_center, system
+from src.api.routes import admin, allocation, alpha, auth, auto_alpha, backtest, data, execution, factor_research, orders, portfolio, risk, scanner, scheduler_routes, strategies, strategy_center, system
 from src.api.ws import ws_manager
 from src.core.config import get_config
 from src.core.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 
-# Rate limiter（全域）
-# AN-32 TODO: Per-user rate limiting (currently global 60/min)
-# One bot can exhaust the entire rate limit budget
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+# Rate limiter — per-user when authenticated, per-IP otherwise (AN-32)
+def _rate_limit_key(request) -> str:
+    """Use authenticated username if available, else remote IP."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            from jose import jwt
+            config = get_config()
+            payload = jwt.decode(auth_header[7:], config.jwt_secret, algorithms=["HS256"])
+            username = payload.get("sub", "")
+            if username:
+                return f"user:{username}"
+        except Exception:
+            pass
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=_rate_limit_key, default_limits=["60/minute"])
 
 
 def _seed_admin(config: object) -> None:
@@ -47,7 +64,7 @@ def _seed_admin(config: object) -> None:
 
     store = get_user_store()
     if store.get_by_username("admin"):
-        return  # 已存在，跳過
+        return
 
     cfg = config if isinstance(config, TradingConfig) else get_config()
     pw_hash, pw_salt = hash_password(cfg.admin_password)
@@ -62,9 +79,7 @@ def create_app() -> FastAPI:
     """建立 FastAPI 應用。"""
     config = get_config()
 
-    # 初始化 structured logging
     # AN-30 TODO: Add file handler for persistent logging
-    # Currently stdout-only, logs lost on container restart
     setup_logging(config.log_level, config.log_format)
 
     @asynccontextmanager
@@ -76,14 +91,13 @@ def create_app() -> FastAPI:
         state = get_app_state()
         state.strategies = {name: {"status": "stopped", "pnl": 0.0} for name in list_strategies()}
 
-        # Restore paper-trading portfolio from disk (if available)
+        # Restore paper-trading portfolio from disk
         if config.mode in ("paper", "live"):
             persisted = load_portfolio()
             if persisted is not None:
                 state.portfolio = persisted
                 logger.info("Restored persisted portfolio on startup")
             else:
-                # No persisted state — create with config initial cash and save
                 from src.api.state import save_portfolio
                 initial_cash = Decimal(str(config.backtest_initial_cash))
                 state.portfolio = Portfolio(cash=initial_cash, initial_cash=initial_cash)
@@ -92,6 +106,7 @@ def create_app() -> FastAPI:
 
         _seed_admin(config)
 
+        # Execution service init
         from src.execution.service import ExecutionConfig, ExecutionService as ExecSvc
         exec_config = ExecutionConfig(
             mode=config.mode,
@@ -105,439 +120,33 @@ def create_app() -> FastAPI:
         )
         state.execution_service = ExecSvc(exec_config)
 
-        # ── Market channel + Realtime risk (paper/live only) ──
+        # Market feed + realtime risk (paper/live only)
         if config.mode in ("paper", "live"):
-            loop = asyncio.get_running_loop()
-
-            # LT-7: set_portfolio BEFORE initialize (connect may trigger fill callbacks)
-            # Pass mutation_lock so async fills don't race with API rebalance
-            state.execution_service.set_portfolio(state.portfolio, loop, state.mutation_lock)
-
-        state.execution_service.initialize()
-        logger.info("ExecutionService initialized: mode=%s", config.mode)
-
-        if config.mode in ("paper", "live"):
-            from src.execution.broker.sinopac import SinopacBroker
-            from src.execution.quote.sinopac import SinopacQuoteManager, TickData
-            from src.risk.realtime import RealtimeRiskMonitor
-
-            broker = state.execution_service.broker
-            quote_manager: SinopacQuoteManager | None = None
-
-            if isinstance(broker, SinopacBroker) and broker.api is not None:
-                quote_manager = SinopacQuoteManager(broker.api)
-                quote_manager.set_event_loop(loop)
-
-                # Broadcast ticks to WebSocket market channel
-                _qm = quote_manager  # bind for closure (always non-None here)
-
-                async def _ws_broadcast_tick(tick_data: TickData) -> None:
-                    payload = _qm.to_ws_payload(tick_data)
-                    await ws_manager.broadcast("market", payload)
-
-                quote_manager.set_broadcast_callback(_ws_broadcast_tick, loop)
-
-                # Subscribe to current portfolio positions
-                for symbol in list(state.portfolio.positions.keys()):
-                    quote_manager.subscribe(symbol)
-
-                logger.info(
-                    "Market channel: SinopacQuoteManager connected, %d symbols subscribed",
-                    len(state.portfolio.positions),
-                )
-
-            # Realtime risk monitor
-            realtime_risk = RealtimeRiskMonitor(
-                portfolio=state.portfolio,
-                risk_engine=state.risk_engine,
-                ws_manager=ws_manager,
-                loop=loop,
-                execution_service=state.execution_service,
-                app_state=state,
-                mode=config.mode,
-            )
-            state.realtime_risk_monitor = realtime_risk
-
-            if quote_manager is not None:
-                # Register price update callback for risk monitoring
-                def _risk_on_tick(tick_data: TickData) -> None:
-                    realtime_risk.on_price_update(tick_data.symbol, tick_data.price)
-
-                quote_manager.on_tick(_risk_on_tick)
-
-            state.quote_manager = quote_manager
-
-            # Fallback: poll prices when ticks are unavailable.
-            # Shioaji simulation mode has quote_manager but doesn't push ticks,
-            # so we also enable polling in simulation mode.
-            is_simulation = False
-            if isinstance(broker, SinopacBroker):
-                is_simulation = getattr(broker, "simulation", False)
-            elif getattr(state.execution_service, '_fallback_mode', False):
-                is_simulation = True
-            if quote_manager is None or is_simulation:
-                # P4: Simulation mode 用 ShioajiFeed.snapshot 取即時價（非 Yahoo 收盤價）
-                _poll_feed_source: Any = None
-                if is_simulation and isinstance(broker, SinopacBroker) and broker.api is not None:
-                    try:
-                        from src.data.sources.shioaji_feed import ShioajiFeed
-                        _poll_feed_source = ShioajiFeed(broker.api)
-                        logger.info("Price polling: using ShioajiFeed (snapshot API)")
-                    except Exception:
-                        # expected: ShioajiFeed init failure (simulation mode, no live API)
-                        logger.debug("ShioajiFeed init failed, falling back to config feed", exc_info=True)
-
-                from src.data.data_catalog import get_catalog
-                from src.data.feed import HistoricalFeed
-                import pandas as pd
-
-                def _build_catalog_feed(symbols: list[str]) -> HistoricalFeed:
-                    catalog = get_catalog()
-                    feed = HistoricalFeed()
-                    for sym in symbols:
-                        df = catalog.get("price", sym)
-                        if not df.empty:
-                            if not isinstance(df.index, pd.DatetimeIndex):
-                                df.index = pd.to_datetime(df.index)
-                            feed.load(sym, df)
-                    return feed
-
-                async def _price_poll_loop() -> None:
-                    """Poll latest prices every 60s when ticks unavailable."""
-                    _cached_feed = _poll_feed_source
-                    _cached_syms: list[str] = []
-                    while True:
-                        await asyncio.sleep(60)
-                        try:
-                            syms = sorted(state.portfolio.positions.keys())
-                            if not syms:
-                                continue
-                            # If no ShioajiFeed, fallback to catalog feed
-                            if _cached_feed is None or syms != _cached_syms:
-                                if _poll_feed_source is not None:
-                                    _cached_feed = _poll_feed_source
-                                else:
-                                    _cached_feed = _build_catalog_feed(syms)
-                                _cached_syms = syms
-                            if _cached_feed is not None:
-                                n_updated = realtime_risk.poll_prices_from_feed(_cached_feed)
-                                # ShioajiFeed 失敗 → fallback 到 catalog feed
-                                if n_updated == 0 and _poll_feed_source is not None and _cached_feed is _poll_feed_source:
-                                    logger.warning("ShioajiFeed returned 0 prices — falling back to catalog")
-                                    _cached_feed = _build_catalog_feed(syms)
-                                    _cached_syms = syms
-                                    if _cached_feed is not None:
-                                        realtime_risk.poll_prices_from_feed(_cached_feed, realtime=False)
-                        except Exception:
-                            # expected: external API failure (price feed)
-                            logger.warning("Price poll failed", exc_info=True)
-
-                asyncio.create_task(_price_poll_loop())
-                logger.info("Price polling fallback started (60s interval)")
-
-            # ── 整合監控：每小時快照 + 異常偵測 + 每日報告 ──
-            async def _monitoring_loop() -> None:
-                """Paper trading integrated monitor — runs inside API server."""
-                import json as _json
-                from pathlib import Path as _Path
-                from datetime import datetime as _dt, timedelta as _tdelta, timezone as _tz
-
-                _tw = _tz(_tdelta(hours=8))
-                snap_dir = _Path("data/paper_trading/snapshots")
-                snap_dir.mkdir(parents=True, exist_ok=True)
-                report_dir = _Path("docs/paper-trading")
-                report_dir.mkdir(parents=True, exist_ok=True)
-                _daily_report_done: str = ""
-
-                while True:
-                    await asyncio.sleep(3600)  # 每小時
-                    try:
-                        now = _dt.now(_tw)
-                        ts = now.strftime("%Y-%m-%d_%H%M")
-                        nav = float(state.portfolio.nav)
-                        cash = float(state.portfolio.cash)
-                        n_pos = len(state.portfolio.positions)
-
-                        # 1. 快照
-                        snap = {
-                            "timestamp": now.isoformat(),
-                            "nav": nav,
-                            "cash": cash,
-                            "n_positions": n_pos,
-                            "position_symbols": sorted(state.portfolio.positions.keys()),
-                        }
-                        (snap_dir / f"{ts}.json").write_text(
-                            _json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8"
-                        )
-                        logger.info("Monitor snapshot: NAV=%.0f, positions=%d", nav, n_pos)
-
-                        # 2. 異常偵測
-                        alerts = []
-                        # 檢查前一個快照的 NAV 變化
-                        prev_snaps = sorted(snap_dir.glob("*.json"))
-                        if len(prev_snaps) >= 2:
-                            try:
-                                prev = _json.loads(prev_snaps[-2].read_text(encoding="utf-8"))
-                                prev_nav = prev.get("nav", nav)
-                                if prev_nav > 0:
-                                    change = (nav - prev_nav) / prev_nav
-                                    if change < -0.03:
-                                        alerts.append(f"NAV dropped {change:.1%}")
-                            except Exception:
-                                # data-quality: corrupted snapshot JSON
-                                logger.debug("Suppressed exception", exc_info=True)
-                        if n_pos == 0 and nav > 100000:
-                            alerts.append("No positions but significant NAV")
-
-                        # 異常 → WebSocket + 通知
-                        for alert in alerts:
-                            logger.warning("MONITOR ANOMALY: %s", alert)
-                            await ws_manager.broadcast("alerts", {
-                                "type": "monitor_anomaly",
-                                "message": alert,
-                            })
-
-                        # 3. 每日報告（14:00 台股收盤後）
-                        today = now.strftime("%Y-%m-%d")
-                        if now.hour >= 14 and _daily_report_done != today:
-                            _daily_report_done = today
-                            # 收集今日快照
-                            today_snaps = []
-                            for p in sorted(snap_dir.glob(f"{today}_*.json")):
-                                try:
-                                    today_snaps.append(_json.loads(p.read_text(encoding="utf-8")))
-                                except Exception:
-                                    # data-quality: corrupted snapshot file — skip
-                                    continue
-                            if today_snaps:
-                                first_nav = today_snaps[0]["nav"]
-                                last_nav = today_snaps[-1]["nav"]
-                                daily_ret = (last_nav - first_nav) / first_nav if first_nav > 0 else 0
-                                total_ret = (last_nav - 10_000_000) / 10_000_000
-                                report_lines = [
-                                    f"# Paper Trading Daily Report - {today}",
-                                    "",
-                                    "| Metric | Value |",
-                                    "|--------|-------|",
-                                    f"| NAV | ${last_nav:,.0f} |",
-                                    f"| Daily Return | {daily_ret:+.2%} |",
-                                    f"| Total Return | {total_ret:+.2%} |",
-                                    f"| Positions | {today_snaps[-1].get('n_positions', 0)} |",
-                                    f"| Snapshots | {len(today_snaps)} |",
-                                ]
-                                (report_dir / f"{today}_daily.md").write_text(
-                                    "\n".join(report_lines), encoding="utf-8"
-                                )
-                                logger.info("Daily report generated: %s", today)
-
-                    except Exception:
-                        # expected: monitor iteration failure — non-critical, will retry next hour
-                        logger.debug("Monitor loop error", exc_info=True)
-
-            if config.mode in ("paper", "live"):
-                asyncio.create_task(_monitoring_loop())
-
-            logger.info("RealtimeRiskMonitor initialized")
-
-        state.kill_switch_fired = False  # D2: re-trigger guard, accessible via API
-
-        async def _kill_switch_monitor() -> None:
-            while True:
-                await asyncio.sleep(5)
-                try:
-                    # D2: skip if already fired (wait for manual reset via API)
-                    if state.kill_switch_fired:
-                        continue
-
-                    # AL-4: Heartbeat kill switch — check tick data freshness
-                    _rtm = getattr(state, 'realtime_risk_monitor', None)
-                    if _rtm is not None:
-                        _hb_status = _rtm.check_heartbeat()
-                        if _hb_status == "kill_switch" and "heartbeat_kill" not in _rtm._alerts_sent:
-                            _rtm._alerts_sent.add("heartbeat_kill")
-                            _rtm._heartbeat_paused = True
-                            logger.critical(
-                                "HEARTBEAT KILL SWITCH: No valid tick for >15 minutes during market hours"
-                            )
-                            async with state.mutation_lock:
-                                state.kill_switch_fired = True
-                            await ws_manager.broadcast("alerts", {
-                                "type": "heartbeat_kill_switch",
-                                "message": "No valid tick data for >15 minutes — all trading stopped",
-                            })
-                            try:
-                                from src.notifications.factory import create_notifier
-                                _notifier = create_notifier(config)
-                                if _notifier.is_configured():
-                                    await _notifier.send(
-                                        "HEARTBEAT KILL SWITCH",
-                                        "No valid tick data for >15 minutes during market hours. "
-                                        "All trading stopped. Manual restart required.",
-                                    )
-                            except Exception:
-                                # expected: external API failure (notification service)
-                                logger.debug("Heartbeat notification failed", exc_info=True)
-                            continue
-                        elif _hb_status == "paused" and not _rtm._heartbeat_paused:
-                            _rtm._heartbeat_paused = True
-                            logger.warning(
-                                "HEARTBEAT WARNING: No valid tick for >5 minutes — new orders paused"
-                            )
-                            await ws_manager.broadcast("alerts", {
-                                "type": "heartbeat_warning",
-                                "message": "No valid tick data for >5 minutes — new orders paused",
-                            })
-
-                    if state.risk_engine.kill_switch(state.portfolio, config.max_daily_drawdown_pct):
-                        # Sanity check: NAV vs SOD ratio must be reasonable
-                        _nav = float(state.portfolio.nav)
-                        _sod = float(state.portfolio.nav_sod) if state.portfolio.nav_sod > 0 else _nav
-                        if _sod > 0 and (_nav / _sod > 5.0 or _nav / _sod < 0.05):
-                            logger.warning(
-                                "Kill switch (path A) suppressed: NAV/SOD=%.1f unreasonable "
-                                "(NAV=%s, SOD=%s) — likely bad price data",
-                                _nav / _sod, _nav, _sod,
-                            )
-                            continue
-
-                        # B-7 fix: set flag and re-check inside lock to prevent double liquidation
-                        async with state.mutation_lock:
-                            if state.kill_switch_fired:
-                                continue  # another path already handled it
-                            state.kill_switch_fired = True
-                            for name in list(state.strategies):
-                                state.strategies[name]["status"] = "stopped"
-                            state.oms.cancel_all()
-
-                            # Kill switch liquidation controlled by config (paper=alert only)
-                            if config.enable_kill_switch_liquidation and state.execution_service.is_initialized:
-                                liq_orders = state.risk_engine.generate_liquidation_orders(
-                                    state.portfolio
-                                )
-                                if liq_orders:
-                                    logger.critical(
-                                        "Kill switch: submitting %d liquidation orders",
-                                        len(liq_orders),
-                                    )
-                                    trades = state.execution_service.submit_orders(
-                                        liq_orders, state.portfolio
-                                    )
-                                    if trades:
-                                        from src.execution.oms import apply_trades
-                                        apply_trades(state.portfolio, trades, check_invariants=True)
-                                        logger.critical(
-                                            "Kill switch: %d liquidation trades executed, NAV=%s",
-                                            len(trades), state.portfolio.nav,
-                                        )
-                            elif not config.enable_kill_switch_liquidation:
-                                logger.warning(
-                                    "Kill switch triggered in %s mode — alert only, no liquidation",
-                                    config.mode,
-                                )
-
-                        _dd_pct = float(state.portfolio.daily_drawdown) * 100
-                        _pos_list = ", ".join(
-                            f"{s}({float(p.quantity):.0f})"
-                            for s, p in list(state.portfolio.positions.items())[:5]
-                        )
-                        _ks_detail = (
-                            f"Trigger: daily drawdown {_dd_pct:.1f}% > 5%\n"
-                            f"NAV: {float(state.portfolio.nav):,.0f} "
-                            f"(SOD: {float(state.portfolio.nav_sod):,.0f})\n"
-                            f"Positions: {_pos_list or 'none'}"
-                        )
-
-                        await ws_manager.broadcast("alerts", {
-                            "type": "kill_switch",
-                            "message": f"Kill switch triggered — {_ks_detail}",
-                        })
-                        # Notify via Discord/LINE/Telegram
-                        try:
-                            from src.notifications.factory import create_notifier
-                            _notifier = create_notifier(config)
-                            if _notifier.is_configured():
-                                await _notifier.send(
-                                    "KILL SWITCH",
-                                    "All strategies stopped, positions liquidated.\n\n"
-                                    + _ks_detail,
-                                )
-                        except Exception:
-                            # expected: external API failure (notification service)
-                            logger.debug("Kill switch notification failed", exc_info=True)
-                except Exception:
-                    # invariant: kill switch monitor should not crash — log and continue
-                    logger.warning("Kill switch monitor error", exc_info=True)
-
-        kill_switch_task = asyncio.create_task(_kill_switch_monitor())
-        ws_manager.start_ping_task()
-
-        from src.scheduler import SchedulerService
-        scheduler = SchedulerService()
-        scheduler.start(config)
-        if not scheduler.is_running and config.scheduler_enabled:
-            logger.warning("Scheduler failed to start on first attempt, retrying...")
-            import time as _time
-            _time.sleep(1)
-            scheduler.start(config)
-        # Store scheduler in app state so /ops/status can check it
-        from src.api.state import get_app_state as _gs
-        _gs().scheduler = scheduler
-
-        if scheduler.is_running:
-            logger.info("Scheduler confirmed running")
+            from src.api.bootstrap.market import setup_market_feed
+            setup_market_feed(state, config, ws_manager)
         else:
-            logger.error("Scheduler failed to start — daily_ops/eod_ops will NOT run automatically")
+            state.execution_service.initialize()
+            logger.info("ExecutionService initialized: mode=%s", config.mode)
+
+        state.kill_switch_fired = False
+
+        # Background tasks: monitoring + kill switch + scheduler
+        from src.api.bootstrap.monitoring import start_background_tasks, shutdown_app
+        bg_tasks, scheduler = await start_background_tasks(state, config, ws_manager)
 
         yield
 
-        logger.info("Graceful shutdown initiated")
-        try:
-            scheduler.stop()
-            kill_switch_task.cancel()
-            ws_manager.stop_ping_task()
+        # Graceful shutdown
+        await shutdown_app(state, config, scheduler, bg_tasks, ws_manager)
 
-            from src.api.state import get_app_state as _get_state, save_portfolio
-            state = _get_state()
-
-            # Log pending orders before shutdown
-            try:
-                if state.execution_service and state.execution_service.is_initialized:
-                    open_orders = state.oms.get_open_orders()
-                    if open_orders:
-                        logger.warning(
-                            "Shutting down with %d pending orders", len(open_orders),
-                        )
-                    else:
-                        logger.info("No pending orders at shutdown")
-            except Exception:
-                # expected: OMS/execution service partially torn down
-                logger.warning("Failed to check pending orders", exc_info=True)
-
-            # Save portfolio state before shutdown (crash recovery)
-            try:
-                if state.portfolio:
-                    save_portfolio(state.portfolio)
-                    logger.info(
-                        "Portfolio saved on shutdown (%d positions)",
-                        len(state.portfolio.positions),
-                    )
-            except Exception:
-                # invariant: portfolio save should not fail — critical data loss risk
-                logger.exception("Failed to save portfolio on shutdown")
-
-            state.execution_service.shutdown()
-            await ws_manager.close_all()
-        except Exception:
-            # invariant: shutdown should complete cleanly — log full trace
-            logger.exception("Error during shutdown sequence")
-        logger.info("Shutdown complete")
-
+    # Disable Swagger/Redoc in non-dev environments
+    is_dev = config.env == "dev"
     app = FastAPI(
         title="Quant Trading System",
         description="量化交易平台 API",
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if is_dev else None,
+        redoc_url="/redoc" if is_dev else None,
         lifespan=lifespan,
     )
 
@@ -548,7 +157,7 @@ def create_app() -> FastAPI:
     # Audit logging middleware
     app.add_middleware(AuditMiddleware)
 
-    # CORS — 從配置讀取允許的來源
+    # CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.allowed_origins,
@@ -557,14 +166,18 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Prometheus metrics
-    Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+    # Prometheus metrics — only expose /metrics in dev mode
+    instrumentator = Instrumentator()
+    instrumentator.instrument(app)
+    if config.env == "dev":
+        instrumentator.expose(app, endpoint="/metrics")
 
-    # 註冊路由
+    # Routes
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(admin.router, prefix="/api/v1")
     app.include_router(alpha.router, prefix="/api/v1")
     app.include_router(auto_alpha.router, prefix="/api/v1")
+    app.include_router(factor_research.router, prefix="/api/v1")
     app.include_router(strategy_center.router, prefix="/api/v1")
     app.include_router(allocation.router, prefix="/api/v1")
     app.include_router(portfolio.router, prefix="/api/v1")
@@ -581,20 +194,18 @@ def create_app() -> FastAPI:
     from src.api.routes import ops
     app.include_router(ops.router, prefix="/api/v1")
 
-    # WebSocket 端點（需要 token 認證）
+    # WebSocket endpoint
     @app.websocket("/ws/{channel}")
     async def websocket_endpoint(
         websocket: WebSocket,
         channel: str,
         token: str | None = Query(default=None),
     ) -> None:
-        """WebSocket 連線端點。支持頻道：portfolio, alerts, orders, market"""
         valid_channels = {"portfolio", "alerts", "orders", "market"}
         if channel not in valid_channels:
             await websocket.close(code=4000, reason=f"Invalid channel: {channel}")
             return
 
-        # 認證：dev 模式下 token 可選，其他模式必須提供
         if config.env != "dev":
             if not token:
                 await websocket.close(code=4001, reason="Missing authentication token")
@@ -611,36 +222,30 @@ def create_app() -> FastAPI:
                 if data == "ping":
                     await websocket.send_text("pong")
         except WebSocketDisconnect:
-            # expected: client disconnected normally
             logger.debug("Suppressed exception", exc_info=True)
         except Exception:
-            # expected: WS transport error (client disconnect, network issue)
             logger.debug("WS error on channel=%s", channel, exc_info=True)
         finally:
             ws_manager.disconnect(websocket, channel)
 
-    # ── 全域例外處理器 ──────────────────────────────────
+    # Global exception handler
     from fastapi import Request
     from fastapi.responses import JSONResponse
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        """捕獲所有未處理的例外，避免洩漏堆疊資訊到客戶端。"""
-        logger.error("Unhandled exception: %s %s → %s", request.method, request.url.path, exc, exc_info=True)
+        logger.error("Unhandled exception: %s %s", request.method, request.url.path, exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
-    # ── Serve Web 前端靜態檔 ──────────────────────────
-    # 若 apps/web/dist 存在，則在 API 之後 mount SPA fallback
+    # Serve Web frontend static files
     from pathlib import Path
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse
 
     web_dist = Path(__file__).resolve().parent.parent.parent / "apps" / "web" / "dist"
     if web_dist.is_dir():
-        # 靜態資源（JS/CSS/images）
         app.mount("/assets", StaticFiles(directory=str(web_dist / "assets")), name="static-assets")
 
-        # SPA fallback: 所有非 /api 路由回傳 index.html
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str) -> FileResponse:
             file_path = (web_dist / full_path).resolve()
@@ -653,5 +258,5 @@ def create_app() -> FastAPI:
     return app
 
 
-# uvicorn 入口
+# uvicorn entry
 app = create_app()

@@ -275,11 +275,15 @@ class TestStepByStepPipeline:
             market_lot_sizes={".TW": 1000},
         )
 
-        assert len(orders) == 5
-        for order in orders:
+        # Phase AM: odd-lot orders may be generated for remainders
+        round_lot_orders = [o for o in orders if o.order_lot.value == "COMMON"]
+        odd_lot_orders = [o for o in orders if o.order_lot.value == "ODD_LOT"]
+        assert len(round_lot_orders) + len(odd_lot_orders) == len(orders)
+        assert len(round_lot_orders) <= 5
+        for order in round_lot_orders:
             assert order.side == Side.BUY
             assert order.quantity > 0
-            assert order.quantity % 1000 == 0, "TW stock orders must be in round lots"
+            assert order.quantity % 1000 == 0, "TW stock round-lot orders must be in round lots"
             assert order.order_type.value == "MARKET"
             assert order.instrument.symbol in TW50_SYMBOLS
 

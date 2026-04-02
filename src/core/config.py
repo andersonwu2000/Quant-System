@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import threading
 from typing import Literal
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 VALID_ROLES: frozenset[str] = frozenset({"viewer", "researcher", "trader", "risk_manager", "admin"})
 
@@ -60,6 +63,7 @@ class TradingConfig(BaseSettings):
     default_slippage_bps: float = 5.0
     commission_rate: float = 0.001425       # 台灣券商手續費
     tax_rate: float = 0.003                 # 台灣證交稅 (賣出)
+    risk_free_rate: float = 0.02           # 無風險利率（年化，台灣定存約 1.5-2%）
     startup_warmup_seconds: int = 120       # 啟動後冷卻期（秒），冷卻中不下單
     max_orders_per_minute: int = 10         # 每分鐘訂單上限
     emergency_halt_file: str = "data/emergency_halt.flag"  # 存在即停止所有交易
@@ -119,6 +123,9 @@ class TradingConfig(BaseSettings):
     # ── 數據快取 ──
     data_cache_size: int = 128                  # LRU memory cache 最大條目數
 
+    # ── Overlay ──
+    overlay_enabled: bool = True  # AO-7: auto-apply overlay for revenue strategies
+
     # ── 回測 ──
     backtest_initial_cash: float = 10_000_000.0
     backtest_start: str = "2020-01-01"
@@ -149,6 +156,8 @@ class TradingConfig(BaseSettings):
                 raise ValueError("QUANT_API_KEY must be set in non-dev environments (cannot use 'dev-key')")
             if self.jwt_secret == "change-me-in-production":
                 raise ValueError("QUANT_JWT_SECRET must be set in non-dev environments")
+            if self.admin_password == "Admin1234":
+                raise ValueError("QUANT_ADMIN_PASSWORD must be set in non-dev environments (cannot use default 'Admin1234')")
         for role in self.api_key_roles.values():
             if role not in VALID_ROLES:
                 raise ValueError(
@@ -165,7 +174,19 @@ class TradingConfig(BaseSettings):
                 raise ValueError("LIVE mode requires QUANT_SINOPAC_API_KEY")
             if not self.sinopac_ca_path:
                 raise ValueError("LIVE mode requires QUANT_SINOPAC_CA_PATH")
+        self._validate_profile()
         return self
+
+    def _validate_profile(self) -> None:
+        """AO-13: Enforce mode-specific requirements."""
+        if self.mode == "paper":
+            if not self.scheduler_enabled:
+                logger.warning("Paper mode: scheduler disabled — daily_ops will not run")
+        elif self.mode == "live":
+            if not self.sinopac_api_key or self.sinopac_api_key == "your-api-key":
+                raise ValueError("Live mode requires QUANT_SINOPAC_API_KEY")
+            if not self.sinopac_secret_key:
+                raise ValueError("Live mode requires QUANT_SINOPAC_SECRET_KEY")
 
     @property
     def enable_kill_switch_liquidation(self) -> bool:

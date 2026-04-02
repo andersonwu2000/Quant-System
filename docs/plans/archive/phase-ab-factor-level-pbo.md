@@ -160,7 +160,7 @@ Factor-Level PBO 寫入 status.md + 部署報告。
 | `scripts/autoresearch/evaluate.py` | L5 後加 daily returns 計算 + 存檔 | 低（新增功能，不改現有邏輯） |
 | `docker/autoresearch/watchdog.py` | 加 factor-level PBO 計算 | 低（新增檢查項） |
 | `src/backtest/vectorized.py` | 提取 `compute_daily_returns()` 為 public function | 低（重構，不改邏輯） |
-| `src/backtest/validator.py` | `_compute_pbo` 改名 `_construction_sensitivity` | 低（重命名） |
+| `src/backtest/validator.py` (AN-3: check methods now in `src/backtest/checks/statistical.py`) | `_compute_pbo` 改名 `_construction_sensitivity` | 低（重命名） |
 | `docker/autoresearch/docker-compose.yml` | 不改 | — |
 | `docs/claude/EXPERIMENT_STANDARDS.md` | 更新 PBO 定義 | — |
 

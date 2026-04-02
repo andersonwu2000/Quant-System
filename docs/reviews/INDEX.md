@@ -40,6 +40,14 @@
 |--------|---------------|-------------|
 | [system/FULL_PROJECT_REVIEW_20260402.md](system/FULL_PROJECT_REVIEW_20260402.md) | Full codebase audit: engineering (7.5/10) + financial methodology (8/10) | E-1 smoke test fail-open 🔴, E-2 lock mismatch 🔴, factor concentration 🟠, survivorship bias 🟠. 20 prioritized action items |
 
+| [methodology/DEEP_PROJECT_RECOMMENDATIONS_20260402.md](methodology/DEEP_PROJECT_RECOMMENDATIONS_20260402.md) | Deep follow-up review focused on next actions | Recommends family diversification, stricter deployment realism, AppState split, pipeline fail-closed staging, promotion artifact |
+| [code-quality/SECURITY_REVIEW_20260402.md](code-quality/SECURITY_REVIEW_20260402.md) | Static security review: auth, secrets, WebSocket | 3 Critical (ops auth, metrics, admin pw) + 2 High (WS scope, DB pw). **All Critical fixed.** |
+| [system/PHASE_AO_PLAN_AUDIT_20260402.md](system/PHASE_AO_PLAN_AUDIT_20260402.md) | Phase AO plan audit | 17 findings: scoring contract, promotion separation, three-state model, threshold risk |
+| [system/AUTO_RESEARCH_REVIEW.md](system/AUTO_RESEARCH_REVIEW.md) | AutoResearch full system review | Two parallel systems, data contract fragmentation, stub endpoints, host security |
+| [system/PHASE_AP_PLAN_AUDIT_20260402.md](system/PHASE_AP_PLAN_AUDIT_20260402.md) | Phase AP plan audit | 16 coverage gaps, priority re-ranking, 5 new items (AP-17~21) |
+
 ## Archive
+
+Superseded reports moved to `archive/`. Historical reference only.
 
 Superseded reports moved to `archive/`. Historical reference only.

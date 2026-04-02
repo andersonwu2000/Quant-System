@@ -10,6 +10,7 @@ DataCatalog searches source directories in priority order defined by Registry.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -20,6 +21,28 @@ from src.data.schemas import pit_filter
 from src.data.sources.finmind_common import strip_tw_suffix
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CatalogResult:
+    """Result of a DataCatalog lookup with status code."""
+    status: str  # "ok" | "missing_symbol" | "missing_dataset" | "read_error"
+    df: pd.DataFrame = field(default_factory=pd.DataFrame)
+    message: str = ""
+
+
+class DataNotAvailableError(Exception):
+    """Raised when required data is not available in strict mode."""
+    pass
+
+
+def require_df(result: CatalogResult) -> pd.DataFrame:
+    """Extract DataFrame from CatalogResult, raising if not ok."""
+    if result.status != "ok":
+        raise DataNotAvailableError(f"{result.status}: {result.message}")
+    if result.df.empty:
+        raise DataNotAvailableError("empty DataFrame")
+    return result.df
 
 
 class DataCatalog:
@@ -291,6 +314,45 @@ class DataCatalog:
             df = self._apply_adj_close(df, symbol)
 
         return df
+
+    def get_result(
+        self,
+        dataset: str,
+        symbol: str,
+        start: date | None = None,
+        end: date | None = None,
+        pit_date: date | None = None,
+        adjusted: bool = False,
+    ) -> CatalogResult:
+        """Get data for a single symbol, returning CatalogResult with status.
+
+        Same parameters as get(). Returns CatalogResult instead of raw DataFrame.
+        """
+        ds = REGISTRY.get(dataset)
+        if ds is None:
+            return CatalogResult(
+                status="missing_dataset",
+                message=f"Dataset '{dataset}' not registered in REGISTRY",
+            )
+
+        try:
+            df = self.get(
+                dataset=dataset, symbol=symbol,
+                start=start, end=end, pit_date=pit_date, adjusted=adjusted,
+            )
+        except Exception as exc:
+            return CatalogResult(
+                status="read_error",
+                message=f"Failed to read {dataset}/{symbol}: {exc}",
+            )
+
+        if df.empty:
+            return CatalogResult(
+                status="missing_symbol",
+                message=f"No data for {dataset}/{symbol}",
+            )
+
+        return CatalogResult(status="ok", df=df)
 
     def get_cross_section(
         self,

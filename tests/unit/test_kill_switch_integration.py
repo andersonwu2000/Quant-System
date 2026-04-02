@@ -321,12 +321,12 @@ class TestRebalanceIdempotency:
             "strategy": "test",
         }))
 
-        with patch("src.scheduler.jobs.PIPELINE_RUNS_DIR", tmp_path):
+        with patch("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", tmp_path):
             assert _has_completed_run_today() is True
 
     def test_no_run_today(self, tmp_path) -> None:
         """No completed run today allows execution."""
-        with patch("src.scheduler.jobs.PIPELINE_RUNS_DIR", tmp_path):
+        with patch("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", tmp_path):
             from src.scheduler.jobs import _has_completed_run_today
             assert _has_completed_run_today() is False
 
@@ -387,7 +387,7 @@ class TestRebalanceIdempotency:
             "strategy": "revenue_momentum_hedged",
         }))
 
-        with patch("src.scheduler.jobs.PIPELINE_RUNS_DIR", tmp_path):
+        with patch("src.scheduler.pipeline.records.PIPELINE_RUNS_DIR", tmp_path):
             crashed = check_crashed_runs()
             assert len(crashed) >= 1
             assert crashed[0]["status"] == "crashed"

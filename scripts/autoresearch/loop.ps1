@@ -35,40 +35,61 @@ $statusJob = Start-Job -ScriptBlock {
     }
 } -ArgumentList $StatusInterval, "$ScriptDir\status.ps1"
 
-# --- Start credentials refresher (background, every 30 min) ---
-# credentials is :ro mount — Claude Code in container can't refresh.
-# Host-side `claude --version` triggers token refresh via SDK.
-Write-Host "Starting credentials refresher (every 30 min)..." -ForegroundColor Yellow
-$credJob = Start-Job -ScriptBlock {
-    # Check immediately on startup, then every 10 min
-    while ($true) {
-        try {
-            $creds = Get-Content "$env:USERPROFILE\.claude\.credentials.json" -Raw | ConvertFrom-Json
-            $expiresMs = $creds.claudeAiOauth.expiresAt
-            $expiresAt = [DateTimeOffset]::FromUnixTimeMilliseconds($expiresMs).LocalDateTime
-            $remaining = ($expiresAt - (Get-Date)).TotalMinutes
-            if ($remaining -lt 120) {
-                # Proactive refresh: 2 hours before expiry (was 60 min — too late)
-                claude --version 2>$null
-                # Verify refresh worked
-                Start-Sleep -Seconds 3
-                $newCreds = Get-Content "$env:USERPROFILE\.claude\.credentials.json" -Raw | ConvertFrom-Json
-                $newMs = $newCreds.claudeAiOauth.expiresAt
-                $newAt = [DateTimeOffset]::FromUnixTimeMilliseconds($newMs).LocalDateTime
-                $newRemaining = ($newAt - (Get-Date)).TotalMinutes
-                if ($newRemaining -gt $remaining + 10) {
-                    Write-Output "[$(Get-Date -Format 'HH:mm:ss')] Credentials refreshed: $([int]$remaining)m -> $([int]$newRemaining)m"
-                } else {
-                    Write-Output "[$(Get-Date -Format 'HH:mm:ss')] WARNING: refresh may have failed (remaining=$([int]$newRemaining)m)"
-                }
-            }
-        } catch {
-            Write-Output "[$(Get-Date -Format 'HH:mm:ss')] Credentials check error: $_"
+# --- Credentials refresh function (inline, called before each session) ---
+# Background Start-Job is unreliable: output invisible, job can die silently.
+# Inline check runs before every session — no silent failures.
+function Refresh-Credentials {
+    try {
+        $credPath = "$env:USERPROFILE\.claude\.credentials.json"
+        if (-not (Test-Path $credPath)) {
+            Write-Host "  [CRED] No credentials file found" -ForegroundColor Red
+            return $false
         }
-        Start-Sleep -Seconds 600  # Check every 10 min (was 30 min)
+        $creds = Get-Content $credPath -Raw | ConvertFrom-Json
+        $expiresMs = $creds.claudeAiOauth.expiresAt
+        $expiresAt = [DateTimeOffset]::FromUnixTimeMilliseconds($expiresMs).LocalDateTime
+        $remaining = ($expiresAt - (Get-Date)).TotalMinutes
+
+        if ($remaining -lt 0) {
+            Write-Host "  [CRED] TOKEN EXPIRED ($([int]$remaining)m ago). Run: claude /login" -ForegroundColor Red
+            # Try non-interactive refresh
+            claude auth login 2>$null
+            Start-Sleep -Seconds 3
+            $newCreds = Get-Content $credPath -Raw | ConvertFrom-Json
+            $newMs = $newCreds.claudeAiOauth.expiresAt
+            $newAt = [DateTimeOffset]::FromUnixTimeMilliseconds($newMs).LocalDateTime
+            $newRemaining = ($newAt - (Get-Date)).TotalMinutes
+            if ($newRemaining -gt 0) {
+                Write-Host "  [CRED] Auto-refresh succeeded: $([int]$newRemaining)m remaining" -ForegroundColor Green
+                return $true
+            }
+            Write-Host "  [CRED] Auto-refresh FAILED. Manual login required." -ForegroundColor Red
+            return $false
+        }
+        elseif ($remaining -lt 120) {
+            Write-Host "  [CRED] Token expires in $([int]$remaining)m — proactive refresh..." -ForegroundColor Yellow
+            claude auth login 2>$null
+            Start-Sleep -Seconds 3
+            $newCreds = Get-Content $credPath -Raw | ConvertFrom-Json
+            $newMs = $newCreds.claudeAiOauth.expiresAt
+            $newAt = [DateTimeOffset]::FromUnixTimeMilliseconds($newMs).LocalDateTime
+            $newRemaining = ($newAt - (Get-Date)).TotalMinutes
+            if ($newRemaining -gt $remaining + 10) {
+                Write-Host "  [CRED] Refreshed: $([int]$remaining)m -> $([int]$newRemaining)m" -ForegroundColor Green
+            } else {
+                Write-Host "  [CRED] Refresh may have failed (remaining=$([int]$newRemaining)m)" -ForegroundColor Yellow
+            }
+            return $true
+        }
+        else {
+            Write-Host "  [CRED] Token OK ($([int]$remaining)m remaining)" -ForegroundColor Green
+            return $true
+        }
+    } catch {
+        Write-Host "  [CRED] Check error: $_" -ForegroundColor Red
+        return $true  # Don't block on check error, let session try
     }
 }
-Write-Host "  Credentials refresher running (Job $($credJob.Id))" -ForegroundColor Green
 
 Write-Host "  Status reporter running (Job $($statusJob.Id))" -ForegroundColor Green
 
@@ -127,6 +148,15 @@ try {
 
         powershell -ExecutionPolicy Bypass -File "$ScriptDir\status.ps1" 2>$null
 
+        # Inline credential check before each session
+        $credOk = Refresh-Credentials
+        if (-not $credOk) {
+            Write-Host "  Waiting 60s for manual login..." -ForegroundColor Red
+            Write-Host "  Run 'claude /login' in another terminal, then press Enter." -ForegroundColor Yellow
+            Start-Sleep -Seconds 60
+            continue
+        }
+
         $sessionStart = Get-Date
         if ($HostMode) {
             claude -p $hostPrompt --dangerously-skip-permissions --max-turns 200
@@ -160,8 +190,6 @@ try {
     Write-Host "`nStopping background jobs..." -ForegroundColor Yellow
     Stop-Job $statusJob -ErrorAction SilentlyContinue
     Remove-Job $statusJob -Force -ErrorAction SilentlyContinue
-    Stop-Job $credJob -ErrorAction SilentlyContinue
-    Remove-Job $credJob -Force -ErrorAction SilentlyContinue
     # Reset factor.py to neutral baseline (avoid half-written factor persisting)
     $baselineCode = @'
 """Alpha factor definition — the ONLY file the agent may edit."""

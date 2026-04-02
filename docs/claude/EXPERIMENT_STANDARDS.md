@@ -81,7 +81,7 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 | 4 | temporal_consistency | score > 0 | sign-magnitude weighted（取代簡單正率） |
 | 5 | deflated_sharpe | ≥ 0.70 | DSR，N = n_independent（和 PBO 統一） |
 | 6 | construction_sensitivity | ≤ 0.60 | 建構 PBO（放寬自 0.50，含 avg_pairwise_corr 可信度） |
-| 7 | market_correlation | \|corr\| ≤ 0.80 | 和 0050.TW 日報酬相關性 |
+| 7 | market_correlation | \|corr\| ≤ 0.65 | AO-16：和 0050.TW 日報酬相關性（從 0.80 收緊） |
 
 **Soft Gates（9 項，≥ 3 項 fail 阻擋部署）：**
 
@@ -117,14 +117,14 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 - In-Sample (IS)：2017-01-01 ~ `today - 90d - 549d`（L1-L4 使用）
 - Out-of-Sample OOS1：`today - 90d - 548d` ~ `today - 90d - 274d`（L5 使用，agent 不可見）
 - Out-of-Sample OOS2：`today - 275d` ~ `today - 1d`（Validator 使用，L5 未見過）
-- 例：2026-04-02 → IS ~2024-05, OOS1 ~2024-05~2025-07, OOS2 ~2025-07~2026-04
+- **AP-18**：OOS dates 在 session 啟動時固定（寫入 `oos_config.json`），同一 session 內不隨日期滾動
 
 **Universe：**
 - Core：200 支大中型股（依日均成交額排序，ADV ≥ 340M TWD）
 - Large：865+ 支全市場（Stage 2 用）
 - MIN_SYMBOLS：每日至少 50 支有效股票才計算 IC
 
-**因子自動 normalization：** 每個因子自動測試 [raw, rank, z-score] 三種 normalization，取 best |IC| 的版本進入 L1。
+**因子 normalization：** 固定使用 rank normalization（AP-14：消除 5-variant 多重比較偏差）。
 
 **行業中性化 IC：** IC 計算前對因子值和 forward return 各減去行業均值（FinMind industry_category）。
 
@@ -132,7 +132,7 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 |------|------|------|----------|
 | **L0** | factor.py ≤ 80 行 | 複雜度限制（防過擬合） | 直接拒絕 |
 | **L1** | \|IC(20d)\| ≥ 0.02 OR \|IC(60d)\| ≥ 0.03 | IS 前 30 日快篩 + slow-alpha bypass。要求 sign(IC_20d)==sign(IC_60d) | 換方向 |
-| **L2** | median\|ICIR\| ≥ 0.30, ≤ 1.00 | IS 全期間 median across 4 horizons | 訊號不穩 |
+| **L2** | median\|ICIR\| ≥ **0.15**；>**0.50** 觸發 ESS check | AO-16：放寬下限。高 ICIR 不硬擋但需 ESS≥30 才放行（過擬合篩選） | 訊號不穩 |
 | **L3a** | dedup corr ≤ **0.65** | IC-series 相關性（放寬自 0.50）。替換門檻 **1.15x** ICIR（放寬自 1.3x）。失敗標記 L3_dedup | clone |
 | **L3b** | rolling 12-month ≥ **50%** positive | 滾動窗口（取代固定年份）。失敗標記 L3_stability | regime 依賴 |
 | **L4** | fitness ≥ 3.0 | WorldQuant BRAIN 公式 | 綜合不足 |
@@ -142,11 +142,16 @@ Agent 在 Docker 容器中自主生成假說，透過 `scripts/autoresearch/prog
 | **Stage 2** | large ICIR(20d) | 全市場驗證（參考） | — |
 
 **防過擬合設計：**
-- L2 使用 median |ICIR| across 4 horizons（Method D），不取最佳也不固定單一 horizon，消除 selection bias 且不歧視長期因子
-- L5a/L5b/L5c 只向 agent 回報 pass/fail，不洩漏具體數值（P-01）
-- eval_server 回傳 bucketed ICIR（none/weak/moderate/strong），agent 無法做梯度式優化
-- Novelty indicator 回傳 bucketed corr（high/moderate/low），不洩漏精確 correlation
-- Thresholdout 加 Laplace 噪音降低每次 L5 查詢的資訊洩漏
+- L2 使用 median |ICIR| across 4 horizons（Method D）
+- L5a/L5b/L5c 只向 agent 回報 pass/fail，不洩漏具體數值
+- eval_server 回傳 bucketed ICIR（none/weak/moderate/strong）
+- Thresholdout：動態 Laplace noise（0.2×IC_std）+ session salt（AP-21），agent 無法操控 seed
+- L5 query budget = 200 次 hard block（AP-C3），超過直接 FAIL
+- OOS dates session-level 固定（AP-18），消除非確定性
+- Normalization 固定 rank（AP-14），消除 5-variant 多重比較
+- 60d horizon 取樣間距 60d（AP-11），消除 overlap bias
+- Family budget ≤ 3 per family at L4+（AO-2）
+- 容量估算在 L4 前移（AO-9），ADV% > 5% 直接攔截
 - 最終驗證靠 StrategyValidator + paper trading
 
 > **deflated_sharpe 說明**：N = n_independent（聚類後獨立方向數，和 factor-level PBO 統一）。N=15 時 DSR 0.70 對應 Sharpe ~1.3。N 過大（如用全部實驗數 262）會過度懲罰。
