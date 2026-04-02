@@ -1,7 +1,7 @@
 # 系統現況報告
 
-> **更新**: 2026-04-01
-> **版本**: v18.0
+> **更新**: 2026-04-02
+> **版本**: v19.0（Phase AM + AN）
 
 ---
 
@@ -9,7 +9,7 @@
 
 | 指標 | 數值 |
 |------|------|
-| 後端 Python | 170+ 檔 / 40,800+ LOC |
+| 後端 Python | 175+ 檔 / 45,000+ LOC（+4,768 Phase AM/AN） |
 | 測試 | 130+ 檔 / 29,000+ LOC / **1,810 unit + 210 integration/e2e/security/resilience** tests (0 failed) |
 | CI | 9 jobs（lint + mypy + test + web + e2e + android + release） |
 | API 端點 | 120+（17 路由模組，新增 `/ops`） |
@@ -22,9 +22,10 @@
 | 數據平台 | DataCatalog + Registry + SecuritiesMaster + QualityGate + RefreshEngine + Schemas + CLI |
 | SecuritiesMaster | 3,936 家公司（2,241 active + 1,695 delisted）+ 39 產業分類 |
 | 運營架構 | daily_ops + eod_ops + Heartbeat + 通知分級 P0-P3 + Trade Ledger |
-| Autoresearch | 400+ 實驗（0 L3+），合併數據生效中，preflight.py 防洩漏 |
-| 部署管線 | 日頻 paper trading + kill switch OFF in Validator + 精煉管線（AG Step 2.5） |
-| 壓力測試 | 6 台股歷史情景 + 5 成本敏感度 + benchmark 比較（Phase AJ） |
+| Autoresearch | 冷重啟後 8 實驗（1 L2 keep），行業中性化 IC + 5 normalization variant + 白名單 5 家族 |
+| 部署管線 | 日頻 paper trading + Validator v3.0-AM（7 hard + 9 soft + 6 descriptive）+ overlay + risk-budget |
+| 壓力測試 | 6 固定壓力情境 + capacity 1x/3x/5x/10x + 5 regime split + benchmark-relative |
+| Validator 版本 | v3.0-AM — DSR N=n_independent, OOS 切割, 行業中性化, promotion policy |
 
 ---
 
@@ -32,19 +33,21 @@
 
 ### 核心策略
 
-| 策略 | Validator | Sharpe | CAGR | 卡在 |
-|------|:---------:|:------:|:----:|------|
-| revenue_momentum_hedged | 13/15 | 0.926 | 12.8% | oos_sharpe(-0.73), construction_sensitivity(0.596) |
+| 策略 | Validator | Hard | Sharpe | CAGR | 狀態 |
+|------|:---------:|:----:|:------:|:----:|:----:|
+| **revenue_acceleration** | **PASSED** | **7/7** | 1.174 | 19.0% | **可進 paper trading** |
+| per_value | FAIL | 5/7 | 0.651 | 11.4% | DSR 0.48 + PBO 0.90 |
+| revenue_momentum_hedged | 未重測 | — | — | — | 舊版 Validator 結果，需重跑 v3.0-AM |
 
-**884 stocks, 16 項檢查（permutation 跳過：手寫策略無 compute_fn）。** Hard/soft 分離後：OOS Sharpe 為軟門檻（不阻擋），construction_sensitivity 0.596 > 0.50 為硬門檻 fail。**硬門檻未全通過，不符合部署條件。**
+**revenue_acceleration 是系統第一個通過全部 Hard Gate 的因子。** Experiment #25（2026-04-02）完整報告含 cost-adjusted IR、5 regime split、capacity 衰減、6 壓力情境、benchmark-relative、factor attribution。
 
 ### 進行中的工作
 
 | 項目 | 狀態 | 文件 |
 |------|------|------|
-| **Phase 2 乾淨研究** | 🔜 下一步 | 研究記憶已清空，評估標準已凍結 |
-| Autoresearch (Docker) | ⏸ 等研究啟動 | `docs/guides/autoresearch-guide-zh.md` |
-| Paper Trading | 🟢 運行中 | `docs/paper-trading/` |
+| Autoresearch | 🟢 冷重啟後運行中（Sonnet 模型） | `docs/guides/autoresearch-guide-zh.md` |
+| Paper Trading | 🟢 04-02 清空重啟（30 天重新計數） | `data/paper_trading/` |
+| Phase AN 架構拆分 | 🔜 下一步（5 項大型重構） | `docs/plans/phase-an-architecture.md` |
 | CA 憑證（永豐金） | ⏳ 申請中 | 阻塞 live mode |
 
 **近期完成的計畫：**
@@ -73,8 +76,8 @@
 | AG | 因子部署管線 | 75% | watchdog auto-submit + 精煉 2.5b/2.5d |
 | AK | 整合測試體系 | 85% | AK-4 效能基準（上線後） |
 | AJ | 壓力測試 | 50% | 台股歷史情景 + 相關性壓力 |
-| AL | Trading Safety | 90% | 等 30 天 paper 數據累積 |
-| AN | 架構整理（從 AM 獨立） | 0% | 拆 app.py / engine.py / validator.py / singleton |
+| AL | Trading Safety | 90% | 等 30 天 paper 數據累積（04-02 重啟） |
+| AN | 架構 + 金融品質（44 項） | 87% | 剩 5 項大型架構拆分 + 2 項 E2E/WebSocket |
 
 **延後或已取代的計畫：**
 
